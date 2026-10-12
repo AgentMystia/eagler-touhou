@@ -12,6 +12,12 @@ The primary evidence comes from TH07MP because that project produced the deepest
 
 This document intentionally preserves **successful changes, unsuccessful experiments, invalid measurements, misleading partial wins and production tradeoffs**. A rollback optimization history is only useful if future work can see what not to repeat.
 
+For the later TH09/TH08 success chain, continuous high-refresh motion, bounded
+recovery, managed touch and the pitfalls encountered, read the Chinese
+[Multiplayer Rollback Architecture](multiplayer-rollback-architecture.zh-CN.md).
+It distinguishes shared invariants from each title's implementation and records
+the 2026-10-12 human acceptance alongside reproducible build evidence.
+
 ## Applicability and authority
 
 - Read `multiplayer.md` first when the task is about product architecture, protocol, transport, spectator or Launcher room behavior.

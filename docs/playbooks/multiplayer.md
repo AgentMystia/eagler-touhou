@@ -10,6 +10,12 @@ For rollback **optimization** rather than multiplayer architecture, use
 `rollback.md`. It preserves the complete TH07 journal/input/snapshot/mobile
 optimization exploration, including failed experiments and zero-delay evidence.
 
+The Chinese [Multiplayer Rollback Architecture](multiplayer-rollback-architecture.zh-CN.md)
+records the later TH09/TH08 successful implementations, input and recovery
+ownership, gradual pacing, high-refresh motion, known pitfalls and migration
+checks for subsequent titles. Its title-specific timing policies do not replace
+the general product contract below.
+
 ## Applicability and authority
 
 Multiplayer implementation and rollback/netplay experiments must use a topic
