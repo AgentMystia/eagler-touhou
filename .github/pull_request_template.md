@@ -1,28 +1,17 @@
-## Summary
+## 解决的问题
 
-Describe the user-visible or engineering problem this change solves and name
-the subsystem that owns the behavior.
+说明实际问题、复现依据，以及负责该行为的组件。
 
-## Validation
+## 改动与结果
 
-- [ ] `npm run check`
-- [ ] `npm run check:workspace` when this change intentionally depends on sibling Runtime repositories
-- [ ] Relevant explicit browser/device/deployment lane, when applicable
-- [ ] `git diff --check`
+说明职责或行为如何改变，以及用户或维护者能观察到的结果。
 
-List any additional commands or manual acceptance performed:
+## 验证
 
-```text
+列出实际执行的命令、输入范围和结果；未执行或未覆盖的项目明确说明。按改动选择原生、UI、浏览器、Runtime 或交付验证，不以源码形状断言代替行为。
 
-```
+## 文档与交付
 
-## Repository boundaries
+说明受影响的架构、playbook、能力进度，以及需要配套更新的子模块。确认提交内容没有混入无关工作、原版资源、个人文件或生成缓存。
 
-- [ ] No original game data, music, extracted artwork, user saves, credentials, or other private content is included.
-- [ ] Generated output (`.cache`, `dist`, `artifacts`, dependency directories) is not treated as authoritative source.
-- [ ] Tests protect stable behavior/contracts rather than incidental implementation shape.
-- [ ] Public behavior, deployment contracts, or compatibility boundaries have matching documentation updates when needed.
-
-See [CONTRIBUTING.md](../CONTRIBUTING.md) and the
-[documentation index](../docs/README.md) for repository ownership and test-lane
-guidance.
+[贡献指南](../CONTRIBUTING.md) · [文档索引](../docs/README.md)

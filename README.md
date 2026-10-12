@@ -1,147 +1,62 @@
-<h1 align="center">
-  <img src="docs/assets/eagler-touhou-wordmark.svg" alt="EAGLER TOUHOU" width="312">
-</h1>
+<h1 align="center"><img src="docs/assets/eagler-touhou-wordmark.svg" alt="EAGLER TOUHOU" width="312"></h1>
 
-<div align="center">
-  <p>一个旨在<strong>极大降低玩家入门门槛</strong>的，东方 Project 官方游戏、同人游戏及其工具、联机 Mod 的<strong> Web 适配计划</strong>。</p>
-  <p>
-    <a href="https://qm.qq.com/q/eeUrxIltug?from=tim"><img src="https://img.shields.io/badge/QQ%20Group-1124121427-12B7F5?style=flat-square&amp;logo=tencentqq&amp;logoColor=white" alt="QQ Group 1124121427"></a>
-    <img src="https://img.shields.io/badge/Chromium-%E2%89%A5108-4285F4?style=flat-square&amp;logo=googlechrome&amp;logoColor=white" alt="Chromium >=108">
-    <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg?style=flat-square" alt="License: GPL-3.0-or-later"></a>
-  </p>
-  <p>简体中文 | <a href="README.en.md">English</a></p>
-</div>
+<p align="center">东方 Project 游戏的 Web 适配、统一启动器与多人联机工程。</p>
+<p align="center">简体中文 | <a href="README.en.md">English</a></p>
 
-> [!TIP]
-> 对于游戏支持情况，参见[游戏还原和适配总进度表](https://github.com/YomotsuHisami/eagler-touhou/blob/main/docs/TOUHOU_PROGRESS.md)。<br>
-> 如果您已经着手做某作了，直接提交修改表格的 Issue 或 PR 即可。<br>
-> 如果您对原作逆向或原作/东二适配感兴趣，欢迎加入我们的 [QQ 群](https://qm.qq.com/q/eeUrxIltug?from=tim)，我们有个开发者群。
+本仓库保留原有历史，统一管理 Web 启动器、共享协议、联机服务，以及 TH06—TH11、TH15 的源码依赖。游戏以 WebAssembly Runtime 运行；启动器负责资源安装、设置、触控、存档和 Replay 管理。原版游戏数据需要另外提供。
 
-## 概要
+**当前能力和验证范围以[项目进度](docs/TOUHOU_PROGRESS.md)为准。** 功能登记、编译成功和真实游戏验收分别记录。TH09 的 Runtime 仍明确标记为未完成；TH20 保留现有产品与预编译接入，其源码不在本轮工程审计范围内。
 
-这计划的基本目标是用户在**任何现代设备下都能无门槛地**游玩。
+![启动器界面](docs/assets/readme/launcher.webp)
 
-在保证原游戏体验的基础上（包括保留原游戏的一些 Bug），
+## 使用与部署
 
-1. 提供高刷新率、触控适配（直触移动、菜单手势）、STG 社区热门工具（thcrap、thprac）。
-2. 提供以预测回滚为主，输入延迟为辅，高延迟鲁棒性优秀的多人联机实现。
-3. 提供一套能实时更新的，能管理触控布局、存档 & REPLAY 的，设备离线后也能运行的 Web App。
-4. 提供一个完全无门槛，只需点点按钮就可以快速联机的联机大厅。
-5. 有一个更新速度快，维护热情高，广为接受意见和批评的开发组。
+- 玩家使用已部署站点，可按站点能力安装资源或导入自己持有的游戏包；问题见 [FAQ](launcher/web/docs/FAQ.md)。
+- 部署者见[自托管指南](launcher/web/docs/SELF_HOSTING.md)。Hosted、External、Import 共用当前 Web 前端。
+- 已安装资源和已缓存 Runtime 可以用于离线运行。浏览器存储、站点版本和安全上下文仍会影响可用性，详见[缓存维护](launcher/web/docs/CACHE_AND_COMPATIBILITY.md)。
+- 多人能力仅在对应 Runtime、房间服务和网络配置均可用时启用；TH15 没有多人模式。
 
-## 目录
+## 开发入口
 
-- [Runtime 适配](#runtime-适配)
-  - [完整的原作体验](#完整的原作体验)
-  - [触控适配](#触控适配)
-  - [STG 社区热门工具](#stg-社区热门工具)
-  - [多人游戏](#多人游戏)
-- [启动器](#启动器)
-  - [游戏与文件管理](#游戏与文件管理)
-  - [多人联机大厅](#多人联机大厅)
-  - [游戏包与离线运行](#游戏包与离线运行)
-- [自托管](#自托管)
-- [常见问题](#常见问题)
-- [许可证](#许可证)
-- [星标历史](#星标历史)
+维护环境使用 Node.js 24.15 或同一主版本的后续版本，也接受 Node.js 26 及以上。Python、CMake、Ninja 和 Emscripten 按实际任务准备。
 
-## Runtime 适配
+```text
+npm ci --ignore-scripts
+npm run doctor
+npm run dev
+npm run build
+npm run check
+```
 
-### 完整的原作体验
+Web 前端开发不要求先下载游戏数据。需要构建某部作品时，先初始化该依赖：
 
-- 在浏览器中运行游戏，支持键盘、手柄和触控操作。
-- 支持原版存档和 Replay 的导入导出。原版格式可以记录的输入保持和原版互通；原版格式无法记录的适配输入使用扩展数据。
-- 力求完美体验。解决了原 portable 分支中出现的 弹幕抖动、弹幕运动不流畅、闪烁、单线程切换音乐卡顿、手机卡顿 等大量问题。
-- 支持高刷新率（>60Hz），th09 除外。\[感谢 [reallyportable](https://github.com/some100/th07/tree/reallyportable)\]
+```text
+npm run dependencies -- init th15
+npm run runtime -- th15 --emsdk "<SDK目录>" --font-root "<字体目录>"
+```
 
-不同作品的适配情况有所不同，见[作品进度表](docs/TOUHOU_PROGRESS.md)。
+完整参数、TH06/TH07 的资源要求和多人源码选择见[开发指南](docs/DEVELOPMENT.md)及[Runtime 构建](docs/playbooks/runtime-build.md)。
 
-### 触控适配
+## 工程布局
 
-![可调整位置、大小、灵敏度和低速操作方式的触控布局](docs/assets/readme/touch-controls.webp)
+| 目录 | 职责 |
+| --- | --- |
+| [launcher/web/](launcher/web/) | 当前 Web 启动器、站点组装与部署工具 |
+| [contracts/](contracts/) | Web、Node 服务和工具共同使用的协议与数据格式 |
+| [services/netplay/](services/netplay/) | 房间、信令、中继和联机遥测服务 |
+| `th06/`—`th11/`、`th15/` | 根目录 Git 子模块，各作产出 Runtime |
+| [eagler-common/](eagler-common/) | C++ 公共运行支持、浏览器桥接和共享 testkit |
+| [tools/](tools/)、[config/](config/) | 工程入口、依赖与构建声明 |
+| [docs/](docs/) | 项目架构、能力进度、审计和维护 playbook |
 
-- 触摸轨迹 = 游戏人物移动轨迹。提供直接触摸、无限速直接触摸，除此之外，还提供轮盘等移动方式。\[感谢 [reallyportable](https://github.com/some100/th07/tree/reallyportable)\]
-- 触控布局自定义。触控按键可以随意拖动、缩放（60% ~ 180%）。
-- 横屏和竖屏可以分别保存布局。
-- 提供放大镜，允许玩家在游戏中即时地用双指缩放手势去放大游戏画面。再也不怕看不清弹幕了（x
-- 触控输入也可以记录和回放 Replay。
-- 触控菜单手势。\[by [reallyportable](https://github.com/some100/th07/tree/reallyportable)\]
-- 触控灵敏度。
-- 可以调整游戏画面的默认位置。
-- 提供按住按钮、切换按钮和双指操作等低速方式。
+当前整理范围是现有工程；其他平台启动器尚未实现，也没有确定外壳技术选型。
 
-### STG 社区热门工具
+## 维护与贡献
 
-![在浏览器中使用 thprac 练习菜单](docs/assets/readme/stg-community-tools.webp)
+先读[文档索引](docs/README.md)和[工程审计与改进清单](docs/ENGINEERING_AUDIT.md)。修复应说明受影响的行为、实际验证和尚未覆盖的范围。不要以源码字符串、整份 CSS 哈希或历史目标文件一致性替代行为验证。
 
-#### thprac
+[项目交流群](https://qm.qq.com/q/eeUrxIltug?from=tim)用于交流适配与使用问题。
 
-- 为 th06、th07、th08 和 th10 适配 [thprac](https://github.com/touhouworldcup/thprac)。
-- 支持在触控设备上操作练习菜单，并提供打开 Tab Tracker 和作弊菜单的模拟按键。
-- th09 不提供 thprac。
+## 许可证与资源
 
-#### thcrap 多语言
-
-- 提供 [thcrap](https://srv.thpatch.net/) 语言包适配。
-- 服务器可以按作品指定语言包。你可以往里面加一堆奇怪的语言包，玩家只下载他选中的那个。
-- 具体可用语言取决于作品的适配情况和站点提供的语言包。
-
-### 多人游戏
-
-- 提供 th06MP、th07MP、th08MP、th09MP 和 th10MP。
-- th06MP 和 th07MP 均基于 [th07MP 的规则](https://github.com/sbrik1111/th07_multi_player)。
-- th06MP、th07MP、th08MP 和 th10MP 支持 2～3 人，th09MP 支持 2 人。
-- 支持暂停后按 R 或者手动重开本局。
-- 可以保存多人 Replay。
-- 单人和多人的存档和 Replay 相互隔离，不过允许共用设置。
-
-## 启动器
-
-### 游戏与文件管理
-
-![Eagler Touhou 启动器与游戏管理界面](docs/assets/readme/launcher.webp)
-
-- 提供统一的游戏入口，可以选择作品并启动对应的 Runtime。
-- 提供导入导出存档、Replay 等文件的界面。
-- 管理已经安装的游戏包，以及游戏数据、OGG、字体和语言包。
-
-### 多人联机大厅
-
-![支持玩家与旁观者的多人联机大厅](docs/assets/readme/multiplayer-lobby.webp)
-
-- 提供了一个大厅，支持创建房间后输入房间号加入、选择角色和难度、玩家都准备后再开始、旁观者。
-- 可选角色和难度取决于作品，包括对应作品的 Extra 和 Phantasm。
-- 优先使用 WebRTC，也可以通过 WebSocket Relay 连接。
-- 支持旁观。旁观者不占玩家席位，只能观看，不会参与游戏状态（但不能中途进入旁观）。
-
-### 游戏包与离线运行
-
-- 可以从站点安装游戏包，也可以导入自己合法持有的游戏包 ZIP。
-- 游戏包安装后保存在浏览器本地，游戏数据、OGG、字体和语言包可以分别管理；运行组件由站点统一提供。
-- 玩家导入的原版游戏数据不会上传服务器，只会保存在浏览器本地。
-
-在 HTTPS 或可信 loopback 等安全上下文条件下，已经安装的游戏和启动器**可以被离线运行**。在玩家离线或服务器宕机时，玩家即使刷新了页面也可以使用本地保存的文件正常进行游戏。
-
-## 自托管
-
-部署者可以根据资源和带宽条件选择三种模式：
-
-- **Hosted**：站点直接提供启动器、运行组件和全部游戏资源。玩家可以直接安装，部署最集中，站点需要承担全部资源流量。
-- **External**：用户站点提供启动器和运行组件，游戏大文件由单独的完整资源站或 CDN 提供。玩家仍可直接安装，前端服务器无需承担大文件流量。
-- **Import**：站点只提供启动器和运行组件，不发布原版游戏数据。玩家导入自己合法持有的游戏包 ZIP，适合没有 CDN 流量预算或不希望托管原版资源的部署者。
-
-三种模式共用同一套前端、浏览器本地游戏包和离线运行能力。完整部署方法见[自托管指南](docs/SELF_HOSTING.md)。
-
-## 常见问题
-
-详见[常见问题](docs/FAQ.md)。
-
-## 许可证
-
-本仓库采用 [GNU General Public License v3.0 or later](LICENSE)。各游戏 Runtime 的许可证见对应仓库。
-
-完整的第三方来源、素材归属和许可信息见 [THIRD_PARTY.md](THIRD_PARTY.md) 与 [ASSETS.md](ASSETS.md)。
-
-## 星标历史
-
-[![Star History Chart](https://api.star-history.com/chart?repos=yomotsuhisami/eagler-touhou&type=date&legend=top-left)](https://www.star-history.com/?repos=yomotsuhisami%2Feagler-touhou&type=date&legend=top-left)
+本工程自身代码采用 [GPL-3.0-or-later](LICENSE)。游戏仓库和第三方组件遵循各自许可证，见[第三方说明](THIRD_PARTY.md)。原版数据、个人存档、工具链和部署配置不属于公开源码，见[资源说明](ASSETS.md)。

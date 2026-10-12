@@ -1,0 +1,21 @@
+{
+  "schema": "eagler-touhou/internal-operator-profile/1",
+  "resourceMode": "hosted",
+  "requireGameDataFallback": false,
+  "originMigration": null,
+  "netplayRelay": "absent",
+  "games": {
+    "th15": {
+      "languages": [
+        "ja"
+      ],
+      "music": [
+        "ogg"
+      ],
+      "thprac": true,
+      "runtimeVariants": [
+        "normal"
+      ]
+    }
+  }
+}

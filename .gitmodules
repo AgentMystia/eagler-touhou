@@ -1,0 +1,32 @@
+[submodule "eagler-common"]
+	path = eagler-common
+	url = https://github.com/YomotsuHisami/eagler-common.git
+	branch = main
+[submodule "th06"]
+	path = th06
+	url = https://github.com/YomotsuHisami/th06.git
+	branch = eagler
+[submodule "th07"]
+	path = th07
+	url = https://github.com/YomotsuHisami/th07.git
+	branch = eagler
+[submodule "th08"]
+	path = th08
+	url = https://github.com/YomotsuHisami/th08.git
+	branch = eagler
+[submodule "th09"]
+	path = th09
+	url = https://github.com/YomotsuHisami/th09.git
+	branch = eagler
+[submodule "th10"]
+	path = th10
+	url = https://github.com/YomotsuHisami/th10.git
+	branch = eagler
+[submodule "th11"]
+	path = th11
+	url = https://github.com/YomotsuHisami/th11.git
+	branch = eagler
+[submodule "th15"]
+	path = th15
+	url = https://github.com/YomotsuHisami/th15.git
+	branch = eagler

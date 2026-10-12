@@ -1,112 +1,57 @@
-<h1 align="center">
-  <img src="docs/assets/eagler-touhou-wordmark.svg" alt="EAGLER TOUHOU" width="312">
-</h1>
+<h1 align="center"><img src="docs/assets/eagler-touhou-wordmark.svg" alt="EAGLER TOUHOU" width="312"></h1>
 
-<div align="center">
-  <p>A <strong>Web adaptation project</strong> for official Touhou Project games, fangames, community tools, and multiplayer mods, aiming to <strong>greatly lower the barrier to entry</strong>.</p>
-  <p>
-    <a href="https://qm.qq.com/q/eeUrxIltug?from=tim"><img src="https://img.shields.io/badge/QQ%20Group-1124121427-12B7F5?style=flat-square&amp;logo=tencentqq&amp;logoColor=white" alt="QQ Group 1124121427"></a>
-    <img src="https://img.shields.io/badge/Chromium-%E2%89%A5108-4285F4?style=flat-square&amp;logo=googlechrome&amp;logoColor=white" alt="Chromium >=108">
-    <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg?style=flat-square" alt="License: GPL-3.0-or-later"></a>
-  </p>
-  <p><a href="README.md">简体中文</a> | English</p>
-</div>
+<p align="center">Web adaptations, a shared launcher, and multiplayer infrastructure for Touhou Project games.</p>
+<p align="center"><a href="README.md">简体中文</a> | English</p>
 
-> [!TIP]
-> For game support, see the [Game Restoration and Adaptation Progress](https://github.com/YomotsuHisami/eagler-touhou/blob/main/docs/TOUHOU_PROGRESS.md).<br>
-> If you have started working on a game, submit an Issue or PR to update the table.<br>
-> If you are interested in reverse engineering the original games or adapting official games and Touhou fangames, join our [QQ group](https://qm.qq.com/q/eeUrxIltug?from=tim). We also have a developer group.
+This repository retains its existing history and coordinates the Web launcher, shared contracts, network services, and source dependencies for TH06–TH11 and TH15. Games run as WebAssembly Runtimes. The launcher manages resources, settings, touch input, saves, and Replays. Original game data must be supplied separately.
 
-## Overview
+See the [capability and verification table](docs/TOUHOU_PROGRESS.md) for current support. Registered features, successful builds, and verified gameplay are different evidence. TH09 still declares its Runtime incomplete. TH20 retains its existing catalog and prebuilt integration; its source is outside this engineering audit.
 
-The project's basic goal is to let users play **on any modern device without barriers**.
+![Launcher interface](docs/assets/readme/launcher.webp)
 
-While preserving the original game experience, including some original bugs:
+## Use and self-hosting
 
-1. Provide high refresh rates, touch controls (direct movement and menu gestures), and popular STG community tools (thcrap and thprac).
-2. Provide multiplayer built primarily around predictive rollback, with input delay as a supplement and strong tolerance for high latency.
-3. Provide an updatable Web App that manages touch layouts, saves, and Replays and keeps working offline.
-4. Provide a multiplayer lobby where players can get into a game with just a few button presses.
-5. Maintain an active development team that updates quickly and welcomes feedback and criticism.
+Use a deployed site to install available resources or import a game package you own. The [FAQ](launcher/web/docs/FAQ.md) and [self-hosting guide](launcher/web/docs/SELF_HOSTING.md) cover the current Web frontend and its Hosted, External, and Import resource modes.
 
-## Features
+Offline use requires installed resources and cached Runtime code. Browser storage, site versions, and secure-context requirements still apply. Multiplayer also requires a compatible Runtime and configured network services. TH15 has no multiplayer mode.
 
-### The Complete Original Game Experience
+## Development
 
-![The Eagler Touhou Launcher and game management interface](docs/assets/readme/launcher.webp)
+The source workspace requires Node.js 24.15 or later within Node 24, or Node.js 26 and newer. Install Python, CMake, Ninja, and Emscripten when the selected task needs them.
 
-- Run games in the browser with keyboard, gamepad, and touch controls. See the [game progress table](docs/TOUHOU_PROGRESS.md) for support by title.
-- Import and export original-format saves and Replays. Inputs supported by the original format remain interoperable; adaptation inputs that it cannot record use extension data.
-- Aims for a polished experience. It fixes numerous issues inherited from the original portable branches, including jittery bullets, uneven bullet movement, flickering, music stutters when switching tracks in single-threaded mode, and poor performance on phones.
-- Supports refresh rates above 60 Hz, except for th09. \[Thanks to [reallyportable](https://github.com/some100/th07/tree/reallyportable)\]
+```text
+npm ci --ignore-scripts
+npm run doctor
+npm run dev
+npm run build
+npm run check
+```
 
-### Touch Controls
+Frontend development does not require original game data. To build a game:
 
-![A touch layout with adjustable positions, sizes, sensitivity, and Focus controls](docs/assets/readme/touch-controls.webp)
+```text
+npm run dependencies -- init th15
+npm run runtime -- th15 --emsdk "<SDK directory>" --font-root "<font directory>"
+```
 
-- Your touch path becomes the player's movement path. Available movement methods include Touch, Touch (cheat, unlimited speed), Joystick, and more. \[Thanks to [reallyportable](https://github.com/some100/th07/tree/reallyportable)\]
-- Customizable touch layouts. Touch buttons can be freely moved and scaled from 60% to 180%.
-- Landscape and portrait layouts can be saved separately.
-- A Magnifier lets players zoom the game viewport at any time with a two-finger gesture. No more losing bullets because they are too small to see (x
-- Touch Replays preserve the touch trajectory actually sent to the game.
-- Menu gestures: swipe to move the selection cursor, tap to confirm, and tap with two fingers to go back. \[by [reallyportable](https://github.com/some100/th07/tree/reallyportable)\]
-- Adjustable touch sensitivity.
-- Adjustable default game viewport position.
-- Multiple Focus methods, including hold, toggle, and two-finger controls.
+See the Chinese [development guide](docs/DEVELOPMENT.md) and [Runtime build playbook](docs/playbooks/runtime-build.md) for complete inputs, TH06/TH07 asset handling, and explicit multiplayer source selection.
 
-### Popular STG Community Tools
+## Repository
 
-![Using the thprac practice menu in the browser](docs/assets/readme/stg-community-tools.webp)
+| Directory | Responsibility |
+| --- | --- |
+| `launcher/web/` | Web frontend, site assembly, and deployment tooling |
+| `contracts/` | Protocols and data formats shared by frontend, services, and tools |
+| `services/netplay/` | Rooms, signaling, relay, and telemetry |
+| `th06/`–`th11/`, `th15/` | Root-level Git submodules producing game Runtimes |
+| `eagler-common/` | Shared C++ support, browser bridges, and testkits |
+| `tools/`, `config/` | Project commands and dependency/build declarations |
+| `docs/` | Project architecture, capability tracking, audit, and playbooks |
 
-#### thprac
+Other platform launchers are not implemented and no shell technology has been selected. Maintenance documents are kept in Chinese; this README and the Chinese README describe the same project.
 
-- Provides [thprac](https://github.com/touhouworldcup/thprac) integration for th06, th07, th08, and th10. th09 does not provide thprac.
-- Touch devices can operate practice menus, with virtual buttons for opening the Tab Tracker and cheat menu.
+## Contributing and licensing
 
-#### thcrap Languages
+Start with the [documentation index](docs/README.md) and [engineering audit](docs/ENGINEERING_AUDIT.md). Describe the affected behavior, actual verification, and remaining limits. Source-text snapshots, full stylesheet hashes, and historical object-file identity are not substitutes for behavioral tests.
 
-- Provides [thcrap](https://srv.thpatch.net/) language-pack support.
-- Available languages depend on the game adaptation and the packs offered by the site.
-- Servers can choose which language packs to offer for each game. You can throw in a whole pile of unusual language packs; players download only the one they select.
-
-### Multiplayer Lobby
-
-![A multiplayer lobby with player and spectator seats](docs/assets/readme/multiplayer-lobby.webp)
-
-- Provides th06MP, th07MP, th08MP, th09MP, and th10MP. th06MP and th07MP are based on the [th07MP rules](https://github.com/sbrik1111/th07_multi_player).
-- th06MP, th07MP, th08MP, and th10MP support 2–3 players; th09MP supports 2 players.
-- The lobby supports room creation, joining by room code, character and difficulty selection—including Extra and Phantasm—ready checks before the game starts, and spectators.
-- Restart a run by pressing R while paused or by using the restart control.
-- Multiplayer Replays can be saved.
-- Uses WebRTC whenever possible, with WebSocket Relay as a fallback.
-- Spectators do not occupy player seats and can only watch rather than affect game state, but they cannot join midway through a game.
-- Single-player and multiplayer saves and Replays are isolated. Settings may still be shared.
-
-### Game Packages and Offline Play
-
-- Install game packages from the site or import a ZIP containing a legally owned copy of the game.
-- Installed packages remain in the browser. Game data, OGG music, fonts, and language packs can be managed independently, while Runtime components are provided by the site.
-- In secure contexts such as HTTPS or a trusted loopback address, installed games and the Launcher can run offline.
-- Original game data imported by the player is never uploaded to the server; it remains in the browser.
-
-Operators can choose among three modes based on their resources and bandwidth:
-
-- **Hosted**: the site serves the Launcher, Runtime components, and all game resources. Players can install games directly, while the site carries all resource traffic;
-- **External**: the user-facing site serves the Launcher and Runtime components, while a separate complete resource site or CDN serves large game files. Players can still install games directly without sending large-file traffic through the frontend server;
-- **Import**: the site serves only the Launcher and Runtime components and does not publish original game data. Players import a ZIP made from their legally owned game copy. This suits operators without a CDN traffic budget or who do not want to host original resources.
-
-All three modes share the same frontend, browser-local game packages, and offline-play support. See the [self-hosting guide](docs/SELF_HOSTING.md) for complete deployment instructions.
-
-## Frequently Asked Questions
-
-See the [FAQ](/docs/FAQ.md). The website page is generated from this Markdown source. (Only Chinese is currently available.)
-
-## License
-
-Licensed under the [GNU General Public License v3.0 or later](LICENSE).
-
-Complete third-party source, asset attribution, and licensing information is available in [THIRD_PARTY.md](THIRD_PARTY.md) and [ASSETS.md](ASSETS.md).
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/chart?repos=yomotsuhisami/eagler-touhou&type=date&legend=top-left)](https://www.star-history.com/?repos=yomotsuhisami%2Feagler-touhou&type=date&legend=top-left)
+The project's code uses [GPL-3.0-or-later](LICENSE). Each game and third-party component retains its own license. See [third-party notices](THIRD_PARTY.md) and [resource handling](ASSETS.md). Original data, personal saves, toolchains, and deployment configuration are not public source files.

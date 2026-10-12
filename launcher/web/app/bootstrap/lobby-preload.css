@@ -1,0 +1,76 @@
+html {
+  background: #111210;
+}
+#lobbyPreload {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: #111210;
+  color: #f4eee8;
+  font:
+    15px/1.6 system-ui,
+    sans-serif;
+  transition: opacity 0.18s ease-out;
+}
+#lobbyPreload.is-done {
+  opacity: 0;
+  pointer-events: none;
+}
+.lobby-preload-card {
+  display: grid;
+  justify-items: center;
+  gap: 18px;
+  padding: 32px;
+  border-radius: 26px;
+  background: #20211e;
+}
+.lobby-preload-spinner {
+  width: 28px;
+  height: 28px;
+  box-sizing: border-box;
+  border: 2px solid #fce5ec30;
+  border-top-color: #fce5ec;
+  border-radius: 50%;
+  animation: lobby-preload-spin 0.7s linear infinite;
+}
+.lobby-preload-failure {
+  display: none;
+  text-align: center;
+}
+.lobby-preload-failure p {
+  margin: 0 0 16px;
+}
+.lobby-preload-failure a {
+  color: #fce5ec;
+  margin: 0 12px;
+}
+html[data-lobby-boot] .lobby-main {
+  visibility: hidden;
+}
+html[data-lobby-boot='failed'] .lobby-preload-spinner {
+  display: none;
+}
+html[data-lobby-boot='failed'] .lobby-preload-failure {
+  display: block;
+}
+@keyframes lobby-preload-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #lobbyPreload {
+    transition: none;
+  }
+  .lobby-preload-spinner {
+    animation: none;
+  }
+}
+.less-motion #lobbyPreload {
+  transition: none;
+}
+.less-motion .lobby-preload-spinner {
+  animation: none;
+}

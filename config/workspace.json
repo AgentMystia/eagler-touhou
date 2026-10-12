@@ -1,18 +1,18 @@
 {
   "schema": "eagler-touhou/workspace-layout/1",
   "repositories": {
-    "launcher": "eagler-touhou",
+    "launcher": "launcher/web",
     "th06": "th06",
     "th07": "th07",
     "th08": "th08",
-    "th09": "th09-eagler",
+    "th09": "th09",
     "th10": "th10",
-    "th11": "th11-eagler",
-    "th15": "th15-eagler",
-    "th20": "th20-eagler",
+    "th11": "th11",
+    "th15": "th15",
+    "th20": "th20",
     "thprac": "thprac",
     "dependencies": "dependencies",
     "toolchains": "toolchains",
-    "th11mp": "worktrees/th11-multiplayer"
+    "common": "eagler-common"
   }
 }

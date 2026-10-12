@@ -1,0 +1,22 @@
+{
+  "name": "@eagler/netplay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "联机大厅、中继、观战与遥测服务",
+  "engines": {
+    "node": "^24.15.0 || >=26"
+  },
+  "scripts": {
+    "start": "node netplay-relay.mjs",
+    "telemetry": "node netplay-telemetry.mjs",
+    "test": "node test.mjs"
+  },
+  "dependencies": {
+    "@eagler/contracts": "0.1.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

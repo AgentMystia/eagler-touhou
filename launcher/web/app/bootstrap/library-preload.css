@@ -1,0 +1,64 @@
+#eaglerPreload {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: grid;
+  place-items: center;
+  background: #0d0d0c;
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 220ms ease-out;
+}
+#eaglerPreload.is-done {
+  opacity: 0;
+  pointer-events: none;
+}
+.eagler-preload-card {
+  width: min(190px, calc(100vw - 48px));
+  height: 132px;
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 26px;
+  background: rgba(25, 26, 23, 0.96);
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.56),
+    inset 0 1px rgba(255, 255, 255, 0.035);
+  animation: eagler-preload-card-in 420ms cubic-bezier(0.22, 0.8, 0.24, 1) both;
+}
+.eagler-preload-spinner {
+  width: 28px;
+  height: 28px;
+  box-sizing: border-box;
+  border: 2px solid rgba(244, 239, 235, 0.16);
+  border-top-color: rgba(239, 106, 88, 0.92);
+  border-radius: 50%;
+  animation: eagler-preload-spin 620ms linear infinite;
+}
+@keyframes eagler-preload-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@keyframes eagler-preload-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #eaglerPreload {
+    transition-duration: 60ms;
+  }
+  .eagler-preload-spinner {
+    animation-duration: 1100ms;
+  }
+  .eagler-preload-card {
+    animation: none;
+  }
+}
