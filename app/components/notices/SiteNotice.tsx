@@ -1,3 +1,4 @@
+import type {SiteNoticeLine} from './site-notice-source';
 import {Fragment, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type CSSProperties, type Ref} from 'react';
 import {createEdgeDrawerGesture} from '../../../src/launcher/edge-drawer-gesture.mts';
 import {useLocale} from '../../i18n';
@@ -20,6 +21,7 @@ export interface SiteNoticeProps {
   /** Original launcher has left-edge gestures; original lobby does not. */
   edgeGestures?: boolean;
   onOptOut?: (restoreHint: string) => void;
+  onContentChanged?: (lines: readonly SiteNoticeLine[]) => void;
   environment?: SiteNoticeEnvironment;
   ref?: Ref<SiteNoticeHandle>;
 }
@@ -29,11 +31,12 @@ const identityAsset = (path: string) => path;
  * history entry, content HTML, styles, or extra layout wrapper is introduced.
  */
 export function SiteNotice({preferences, assetUrl = identityAsset, autoLoad = false, visible = true, edgeGestures = true,
-  onOptOut, environment, ref}: SiteNoticeProps) {
+  onOptOut, onContentChanged, environment, ref}: SiteNoticeProps) {
   const {t} = useLocale();
   const bar = useRef<HTMLDivElement>(null);
   const state = useMemo(() => createSiteNoticeState(preferences, environment), [preferences, environment]);
   const snapshot = useSyncExternalStore(state.subscribe, state.getSnapshot, state.getSnapshot);
+  useEffect(() => {onContentChanged?.(snapshot.lines);}, [onContentChanged, snapshot.lines]);
   const nativeOpen = () => !!bar.current && !bar.current.hidden && !bar.current.classList.contains('site-notice-closing');
   useImperativeHandle(ref, () => ({load: state.load, close: state.close, isOpen: nativeOpen, isEnabled: state.isEnabled}), [state]);
   useLayoutEffect(() => state.connect(), [state]);
