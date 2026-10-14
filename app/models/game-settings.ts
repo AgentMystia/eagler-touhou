@@ -1,3 +1,5 @@
+import {loadGameVersion, persistGameVersion, GAME_VERSIONS} from "../../package/game-version.mjs";
+import type {GameVersion} from "../../src/contracts/package-read-models.mts";
 import {
   applySharedTouchPreferences, loadOrInitializeSharedTouchPreferences,
   loadStoredGamePreferences, loadStoredLanguagePreference, persistSharedTouchPreferences,
@@ -37,6 +39,7 @@ export interface SettingsSnapshot {
   musicPreference: MusicMode;
   musicPreferenceExplicit: boolean;
   language: string;
+  gameVersion: GameVersion;
   disclosure: Readonly<SettingsDisclosureState>;
   /** Game editors only: what this game would use if it followed global settings. */
   globalBaseline?: Readonly<{options: Readonly<GameOptions>; musicPreference: MusicMode; musicPreferenceExplicit: boolean}>;
@@ -45,7 +48,7 @@ export interface SettingsSnapshot {
 export interface SettingsChange {
   previous: SettingsSnapshot | null;
   current: SettingsSnapshot;
-  reason: 'hydrate' | 'host-restore' | 'locale-restore' | 'context' | 'option' | 'music' | 'language' | 'sharing' | 'preview' | 'presentation';
+  reason: 'hydrate' | 'host-restore' | 'locale-restore' | 'context' | 'option' | 'music' | 'language' | 'sharing' | 'game-version' | 'preview' | 'presentation';
 }
 
 /** Original settings event policy, independent of Runtime/save ownership.
@@ -58,6 +61,7 @@ export function settingsChangeResetsRuntime({previous, current, reason}: Setting
   switch (reason) {
     case 'hydrate': return previous.context.productId !== current.context.productId;
     case 'sharing': return true;
+    case 'game-version': return previous.gameVersion !== current.gameVersion;
     case 'language': return !current.multiplayer && previous.language !== current.language;
     case 'music': return !current.multiplayer && (previous.music !== current.music
       || previous.musicPreference !== current.musicPreference
@@ -88,6 +92,7 @@ export interface GameSettingsModel {
   commitPreferences(): void;
   setMusic(value: MusicMode): void;
   setLanguage(value: string): void;
+  setGameVersion(value: GameVersion): void;
   setShareSingleplayerSettings(enabled: boolean): void;
   setDisclosure(name: keyof SettingsDisclosureState, open: boolean): void;
   /** Game editors only: drop this game's own value so it follows global settings again. */
@@ -172,6 +177,7 @@ export function createGameSettingsModel({storage, onChange, editorScope, scopedS
     publish({...(editorScope ? {editorScope} : {}),...(globalBaseline ? {globalBaseline} : {}),context, gameId, preferenceId, multiplayer, shareSingleplayerSettings, disclosure: {...disclosure}, options,
       music: resolveEffectiveMusicMode({...context.musicAvailability, requested: combined.musicPreference, explicit: combined.musicPreferenceExplicit}),
       musicPreference: combined.musicPreference, musicPreferenceExplicit: combined.musicPreferenceExplicit,
+      gameVersion: loadGameVersion(storage, gameId),
       language: resolvePreferredGameLanguage(context.languages, local.language ?? global.language ?? savedLanguage, context.uiLocale)}, reason);
   }
   return Object.freeze({
@@ -261,6 +267,13 @@ export function createGameSettingsModel({storage, onChange, editorScope, scopedS
       const state = required();
       if (!state.context.languages.some(entry => entry.id === value)) return;
       languageTouched = true;publish({...state, language: value}, 'language'); commitPreferences('language');
+    },
+    setGameVersion(value: GameVersion) {
+      const state = required();
+      if (!GAME_VERSIONS.includes(value) || state.gameVersion === value) return;
+      // Persist before publishing: metadata/import readers see the same selection.
+      persistGameVersion(storage, state.gameId, value);
+      publish({...state, gameVersion: value}, 'game-version');
     },
     setDisclosure(name: keyof SettingsDisclosureState, open: boolean) {
       const state = required();

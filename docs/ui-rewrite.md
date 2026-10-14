@@ -219,6 +219,9 @@ keyboard browsing, then recentres the chosen option within the game rail.
 Announcement brand icons disappear when their optional asset fails to load.
 TH10 play-time parsing falls back to distinct loadout totals when an older save
 contains a zero aggregate beside nonzero loadout records.
+The integration also retains main's independent original/beautified package
+install slots and manual startup after resource import. Game version selection
+stays in the per-game settings card; it is not exposed as a global preference.
 
 `page-history.ts` declares fixed page parents: launcher is the root, lobby returns to launcher, single-player options return to launcher, and multiplayer options and rooms return to lobby. Direct invitations seed those same browser history parents. Page buttons and browser Back use the same navigation owner and save/leave cleanup. History records retain bounded ancestor positions, not a separate route stack or inferred entry source.
 

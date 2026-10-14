@@ -49,6 +49,12 @@ Multiplayer, THPrac and THCRAP adaptation starts in an additional topic
 worktree and reaches `thXX-eagler` only after its focused review and gates.
 See [Adaptation Worktree Isolation](playbooks/adaptation-worktrees.md).
 
+Purple THPrac's cross-title input, key monitor/HUD, reaction test and speed
+tools are owned by the optional `eagler-common` component `eagler::thprac`.
+See [Purple THPrac shared library](playbooks/thprac.md#purple-thprac-shared-library)
+for consumer bindings, cache inputs, source checks and common-first publication.
+An unpublished workspace override is for validation only, not a release pin.
+
 ```powershell
 mkdir eagler-touhou-workspace
 cd .\eagler-touhou-workspace
@@ -111,7 +117,7 @@ npm start
 
 Open `http://127.0.0.1:8130/`. Do not open `index.html` directly.
 
-Game-card artwork and the site icon are legally owned Host inputs supplied by the operator and are not public source. A standard workspace may place prepared `th06-card.webp`, `th07-card.webp`, `th08-card.webp`, `th10-card.webp`, and `th06.ico` files under `..\games\host-artwork\`. The source development server serves those fixed files from that directory without copying them into the repository. A non-standard layout specifies the same input directory explicitly through `EAGLER_TOUHOU_ARTWORK_DIR`. Formal Host assembly still generates artwork from original resources or accepts an override through `--artwork-dir`.
+Game-card artwork is a legally owned Host input supplied by the operator and is not public source. The bundled `favicon.ico` uses the touhou98 yin-yang glyph. A standard workspace may place prepared `th06-card.webp`, `th07-card.webp`, `th08-card.webp`, `th10-card.webp` files under `..\games\host-artwork\`. The source development server serves those fixed files from that directory without copying them into the repository. A non-standard layout specifies the same input directory explicitly through `EAGLER_TOUHOU_ARTWORK_DIR`. Formal Host assembly still generates artwork from original resources or accepts an override through `--artwork-dir`.
 
 ## Build Runtimes
 
