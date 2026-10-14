@@ -767,13 +767,22 @@ def main() -> int:
         before_identity = host.evaluate(IDENTITY)
         report["room"] = room
         trace("Real room " + room + " has all requested players and admitted spectators")
+        # This acceptance remains the measured pure-delay lane. TH11 now also
+        # offers Direct rollback, so select mode 1 through the real owner UI;
+        # retain the native calibration and P0 assertions below.
+        rollback = host.locator("#mpRollbackToggle")
+        assert rollback.is_visible() and rollback.is_enabled()
+        assert rollback.get_attribute("aria-checked") == "true"
+        rollback.click()
+        wait_for(lambda: rollback.get_attribute("aria-checked") == "false",
+            "Host did not select the pure-delay acceptance lane")
+        report["timingLane"] = {"adonisMode": 1, "bridgePredictionLimit": 0,
+            "roomPredictionLimit": 12, "selection": "owner-ui"}
         screenshot(host, "standard-room")
         for seat, page in enumerate(live):
-            assert page.locator("#mpRollbackToggle").get_attribute("aria-checked") == "false"
-            assert page.locator("#mpRollbackToggle").is_disabled()
-            page.locator("#mpRollbackToggle").evaluate("toggle => toggle.dispatchEvent(new MouseEvent('click', {bubbles:true}))")
-            assert page.locator("#mpRollbackToggle").get_attribute("aria-checked") == "false"
-            assert page.locator("#mpRollbackToggle").is_disabled()
+            if page is not host:
+                assert page.locator("#mpRollbackToggle").is_hidden()
+                assert page.locator("#mpRollbackToggle").is_disabled()
             page.locator("#mpReady").click()
         wait_for(lambda: host.locator("#mpStartGame").is_enabled(), "Room readiness did not permit start")
         if a.loadout_check:

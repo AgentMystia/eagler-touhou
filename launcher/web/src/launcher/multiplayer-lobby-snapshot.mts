@@ -133,9 +133,9 @@ export function normalizeMultiplayerLobbySnapshot(
     return null;
   const predictionLimit = !policy.rollback
     ? 0
-    : Number.isInteger(rawLimit) && rawLimit >= 1 && rawLimit <= 8
+    : Number.isInteger(rawLimit) && rawLimit >= 1 && rawLimit <= policy.predictionLimit
       ? rawLimit
-      : 8;
+      : policy.predictionLimit;
   const normalizedLoadoutCount = normalizedNonNegativeLimit(loadouts.length);
   const settingsVersion = Math.max(1, Math.trunc(Number(source.settingsVersion) || 1));
 

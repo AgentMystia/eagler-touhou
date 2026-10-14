@@ -1172,7 +1172,7 @@ test('original initial non-MP invite fallback selects default MP without changin
   fixture.service.dispose();
 });
 const pinnedMainRevision = 'edee9633e5e3ee79cd2e1aa334f84f6caf755090';
-test('TH11 owner cannot enable rollback and preserves zero prediction through 2P/3P and Extra start', async () => {
+test('TH11 owner switches Direct D0/P12 and pure delay while preserving 2P/3P Extra runtime options', async () => {
   for (const playerCount of [2, 3]) {
     const f = roomFixture();
     f.service.enterRoom('th11mp', '1234', true);
@@ -1180,66 +1180,55 @@ test('TH11 owner cannot enable rollback and preserves zero prediction through 2P
     const socket = f.sockets[0];
     socket.open();
     const id = f.identity.lobbyClientId('th11mp');
-    const seats = Array.from(
-      {
-        length: playerCount,
-      },
-      (_, i) => ({
-        clientId: i ? `peer-seat${i}` : id,
-        name: 'A',
-        loadout: i ? 4 : 0,
-        ready: true,
-      }),
-    );
-    socket.message({
-      type: 'state',
-      room: roomState(id, {
-        playerCount,
-        difficulty: 4,
-        seats,
-        predictionLimit: 0,
-        adonisMode: 1,
-      }),
-    });
+    const seats = Array.from({ length: playerCount }, (_, i) => ({
+      clientId: i ? `peer-seat${i}` : id, name: 'A', loadout: i ? 4 : 0, ready: true,
+    }));
+    socket.message({ type: 'state', room: roomState(id, {
+      playerCount, difficulty: 4, seats, predictionLimit: 12, adonisMode: 0,
+    }) });
     f.service.setRollbackEnabled(true);
-    assert.equal(f.service.getSnapshot().rollbackEnabled, false);
+    assert.equal(f.service.getSnapshot().rollbackEnabled, true);
     f.service.start();
-    const start = socket.sent.findLast((m) => m.type === 'start');
+    let start = socket.sent.findLast((m) => m.type === 'start');
+    assert.equal(start.adonisMode, 0);
+    assert.equal(start.predictionLimit, 12);
+    assert.equal(start.inputDelay, 0);
+    assert.equal(start.inputDelayAuto, false);
+    f.service.setRollbackEnabled(false);
+    f.service.setTimingChoice(9);
+    f.service.start();
+    start = socket.sent.findLast((m) => m.type === 'start');
     assert.equal(start.adonisMode, 1);
-    assert.equal(start.predictionLimit, 0);
-    assert.equal(start.inputDelayAuto, true);
-    socket.message({
-      type: 'state',
-      room: roomState(id, {
-        playerCount,
-        difficulty: 4,
-        seats,
-        phase: 'running',
-        predictionLimit: 0,
-        adonisMode: 1,
-        inputDelay: 3,
-      }),
-    });
-    const options = f.service.runtimeOptions();
-    assert.equal(options.netplayPredictionLimit, 0);
+    assert.equal(start.predictionLimit, 12, 'room envelope advertises cap, not active pure-delay prediction');
+    assert.equal(start.inputDelay, 9);
+    assert.equal(start.inputDelayAuto, false);
+    socket.message({ type: 'state', room: roomState(id, {
+      playerCount, difficulty: 4, seats, phase: 'running', predictionLimit: 12,
+      adonisMode: 1, inputDelay: 9, inputDelayAuto: false,
+    }) });
+    let options = f.service.runtimeOptions();
+    assert.equal(options.netplayPredictionLimit, 0, 'pure delay bridge keeps legacy P0');
     assert.equal(options.netplayAdonisMode, 1);
+    assert.equal(options.netplayInputDelay, 9);
     assert.equal(options.netplayDifficulty, 4);
     assert.equal(options.netplayPlayerCount, playerCount);
     assert.equal(options.netplayLoadouts[1].shot, 1);
-    // A stale/modified relay cannot make the React room accept a hybrid run.
-    socket.message({
-      type: 'state',
-      room: roomState(id, {
-        playerCount,
-        difficulty: 0,
-        seats,
-        phase: 'running',
-        predictionLimit: 8,
-        adonisMode: 2,
-      }),
-    });
-    assert.equal(f.service.getSnapshot().room.difficulty, 4);
-    assert.equal(f.service.runtimeOptions().netplayPredictionLimit, 0);
+    socket.message({ type: 'state', room: roomState(id, {
+      playerCount, difficulty: 4, seats, phase: 'running', predictionLimit: 12,
+      adonisMode: 0, inputDelay: 0, inputDelayAuto: false,
+    }) });
+    options = f.service.runtimeOptions();
+    assert.equal(options.netplayPredictionLimit, 12, 'real relay cap survives both typed boundaries');
+    assert.equal(options.netplayAdonisMode, 0);
+    assert.equal(options.netplayInputDelay, 0);
+    assert.equal(options.netplayInputDelayAuto, false);
+    // A relay room that requests a smaller window must not silently become a
+    // different native fixed-P12 session.
+    socket.message({ type: 'state', room: roomState(id, {
+      playerCount, difficulty: 4, seats, phase: 'running', predictionLimit: 8,
+      adonisMode: 0, inputDelay: 0, inputDelayAuto: false,
+    }) });
+    assert.throws(() => f.service.runtimeOptions(), /TH11/);
     f.service.dispose();
   }
 });
