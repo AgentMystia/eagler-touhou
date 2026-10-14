@@ -211,6 +211,15 @@ existing `ReplayModel`, lists actual native files, and reuses its download and
 mutation queue. Import refreshes those rows; leaving closes the model and
 releases only an idle Runtime acquired for its file session. No match is started.
 
+Game-scoped settings now mark option/music values that differ from their global
+baseline and provide a per-field return to global settings. This removes only
+that field's local override and updates its legacy preference fallback; other
+game settings are retained. The desktop category menu expands for pointer and
+keyboard browsing, then recentres the chosen option within the game rail.
+Announcement brand icons disappear when their optional asset fails to load.
+TH10 play-time parsing falls back to distinct loadout totals when an older save
+contains a zero aggregate beside nonzero loadout records.
+
 `page-history.ts` declares fixed page parents: launcher is the root, lobby returns to launcher, single-player options return to launcher, and multiplayer options and rooms return to lobby. Direct invitations seed those same browser history parents. Page buttons and browser Back use the same navigation owner and save/leave cleanup. History records retain bounded ancestor positions, not a separate route stack or inferred entry source.
 
 `InformationalDialog` owns the native modal shell and `useMainDialog` lifecycle for Apple refresh help, donations and multiplayer rules. Callers supply body content and one explicit layout: standard, artwork-width or scrollable. All three use the same completion-driven Web Animations adapter, including interruption and reduced-motion handling. Native animation completion closes the dialog; there is no mirrored CSS duration, fallback close timer or separate presence owner. Unsupported/partial animation APIs degrade to immediate presentation and closure. Donation's immediate-close mode and unavailable-artwork action use that same lifecycle. The shared motion replaces the older per-dialog timings with one whole-dialog fade/translate; backdrop colors remain static until native close. This intentional visual change still needs browser review. Other numeric `useMainDialog` callers retain their established timing. The colocated stylesheet is React's sole shell styling owner; old Apple/guide selectors in `public/styles.css` remain unchanged for canonical main, and no React shell matches them.

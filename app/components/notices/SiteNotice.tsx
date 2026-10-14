@@ -4,6 +4,7 @@ import {createEdgeDrawerGesture} from '../../../src/launcher/edge-drawer-gesture
 import {useLocale} from '../../i18n';
 import type {SitePreferencesModel} from '../../models/site-preferences';
 import {createSiteNoticeState, type SiteNoticeEnvironment} from './site-notice-state';
+import {SiteNoticeBrandIcon} from './SiteNoticeBrandIcon';
 
 export interface SiteNoticeHandle {
   load(): Promise<boolean>;
@@ -99,7 +100,7 @@ export function SiteNotice({preferences, assetUrl = identityAsset, autoLoad = fa
         {line.map((segment, segmentIndex) => segment.type === 'text' ? <Fragment key={segmentIndex}>{segment.text}</Fragment>
           : <a key={segmentIndex} className="site-notice-brand" href={segment.href} title={segment.resolvedHref}
             target={segment.external ? '_blank' : undefined} rel={segment.external ? 'noopener noreferrer' : undefined}>
-            {segment.asset && <span className="site-notice-brand-icon"><img src={assetUrl(segment.asset)} alt="" decoding="async"/></span>}
+            {segment.asset && <SiteNoticeBrandIcon src={assetUrl(segment.asset)}/>}
             <span>{segment.label}</span>
           </a>)}
       </div>)}

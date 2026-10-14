@@ -23,7 +23,7 @@ export function MastheadBrand({interactive = true, updatedAge, lessMotion}: Pick
       if (++clicks.current === 10) {clicks.current = 0;setPhase('hide-status');}
     }}><span className="brand-eagler"><span className="brand-title">EAGLER</span></span><span className="brand-separator" aria-hidden="true"><span className="brand-yinyang">☯</span></span><span className="brand-title">TOUHOU</span></button>
     <span className="brand-subtitle" aria-live="polite">
-      <time className="brand-version" id="brandUpdateAge" aria-hidden={!normal} title={updatedAge?.title} dateTime={updatedAge?.dateTime}>{updatedAge?.text ?? t('brand.neverUpdated')}</time>
+      <time className="brand-version" id="brandUpdateAge" aria-hidden={!normal} title={updatedAge?.title} dateTime={updatedAge?.dateTime}>{updatedAge?.text ?? t('brand.noUpdateRecord')}</time>
       <span className="brand-visit" aria-hidden={phase !== 'show-visit'} inert={phase !== 'show-visit'}><a href={grass1337CreditHref} target="_blank" rel="noopener noreferrer">Grass1337</a><span>{t('brand.visitSuffix')}</span></span>
     </span>
   </div>;

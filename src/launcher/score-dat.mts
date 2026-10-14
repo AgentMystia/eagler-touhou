@@ -167,7 +167,8 @@ export function parseScoreDat(gameId: string, bytes: Uint8Array): ScoreReport {
   }
   if (!blocks) throw Error('DAT 记录不完整');
   // The saved total is authoritative. Without it, sum distinct loadouts once.
-  if(g===10 && frames10.size)report.playSeconds=(frames10.get(chars[g].length) ?? [...frames10].reduce((total,[c,frames])=>c<chars[g].length?total+frames:total,0))/60;
+  // Early TH10 saves can carry an all-zero aggregate block beside real loadout frames.
+  if(g===10 && frames10.size)report.playSeconds=(frames10.get(chars[g].length) || [...frames10].reduce((total,[c,frames])=>c<chars[g].length?total+frames:total,0))/60;
   if(!report.rankingCount)report.notes.push('此存档没有普通排行榜记录。');
   return report;
 }

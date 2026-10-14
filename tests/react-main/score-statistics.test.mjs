@@ -120,6 +120,7 @@ test('play duration reads gameplay time and keeps TH10 aggregate frames separate
  const individual=[score10Block(0,3600*60,1),score10Block(1,7200*60,2)];
  const withoutTotal=api.parseScoreDat('th10',encode(10,Buffer.concat(individual)));assert.equal(withoutTotal.playSeconds,10800);assert.equal(withoutTotal.clears.flat().filter(Boolean).length,2);
  const withTotal=api.parseScoreDat('th10',encode(10,Buffer.concat([...individual,score10Block(6,10000*60,0)])));assert.equal(withTotal.playSeconds,10000,'saved total is not added to loadout frames');assert.equal(withTotal.clears.flat().filter(Boolean).length,2,'aggregate clear does not mark a loadout');
+ assert.equal(api.parseScoreDat('th10',encode(10,Buffer.concat([...individual,score10Block(6,0)]))).playSeconds,10800,'an all-zero saved total does not hide loadout frames');
 });
 test('cold reads neither create absent databases nor modify existing IDBFS bytes/version',async()=>{
  const factory=new IDBFactory();assert.equal(await api.readStoredScore('th06','ja',factory),null);assert.deepEqual(await factory.databases(),[]);
@@ -233,7 +234,7 @@ test('matrix names highlight just their own column or row, while cell entry rest
 });
 test('play-time text separates larger numbers from units and keeps a recorded zero distinct from missing time',async()=>{
  let bytes=plays(7,0,1);const model=api.createScoreStatistics({read:async()=>stored(bytes)});await mount(model,'th07');
- assert.equal(env.document.querySelector('.score-playtime').textContent,'游戏时长: 0时0分');
+ assert.equal(env.document.querySelector('.score-playtime').textContent,'游戏时长：0时0分');
  const content=env.document.querySelector('.score-content');
  assert.equal(env.document.querySelector('.score-playtime').parentElement,content,'duration remains below the matrix stage in the shared content area');
  assert.equal(env.document.querySelector('.score-character').parentElement,content,'artwork shares the content bottom instead of centering in the matrix stage');
@@ -243,7 +244,7 @@ test('play-time text separates larger numbers from units and keeps a recorded ze
  const payload=Buffer.alloc(352);payload.writeUInt32LE(46,20);payload.writeUInt32LE(57,24);payload.writeUInt32LE(59,28);
  bytes=encode(7,Buffer.concat([block('TH7K',Buffer.from([16,0,0,0])),block('PLST',payload)]));
  await React.act(async()=>model.refresh());
- assert.equal(env.document.querySelector('.score-playtime').textContent,'游戏时长: 46时57分');
+ assert.equal(env.document.querySelector('.score-playtime').textContent,'游戏时长：46时57分');
  assert.equal(env.document.querySelector('.score-playtime time').dateTime,'PT169079S');
  bytes=encode(7,block('TH7K',Buffer.from([16,0,0,0])));await React.act(async()=>model.refresh());
  assert.equal(env.document.querySelector('.score-playtime'),null,'changing to a save without time removes prior duration');model.dispose();

@@ -62,6 +62,13 @@ const visible=selector=>[...env.document.querySelectorAll(selector)].filter(e=>!
 const n=selector=>visible(selector)[0] ?? null;
 const act=fn=>React.act(async()=>fn());
 const click=value=>act(()=>n(`[data-category="${value}"]`).click());
+const pointer=(x,type='mouse')=>act(()=>env.document.dispatchEvent(new env.window.PointerEvent('pointermove',{bubbles:true,pointerType:type,clientX:x,clientY:130})));
+function menuStrip(){
+ const choices=n('.directory-category-options');Object.defineProperty(choices,'offsetWidth',{configurable:true,value:470});
+ [...choices.querySelectorAll('button')].forEach((button,index)=>Object.defineProperties(button,{offsetLeft:{configurable:true,value:10+index*92},offsetWidth:{configurable:true,value:88}}));
+ n('.redesign-directory').getBoundingClientRect=()=>new env.window.DOMRect(44,80,160,520);
+ return act(()=>env.window.dispatchEvent(new env.window.Event('resize')));
+}
 async function mount(values=products(),extra={},narrow=false,motion=false){
  setup(narrow,motion);const target=env.document.createElement('main');env.document.body.append(target);root=createRoot(target);const activations=[];
  await act(()=>root.render(React.createElement(api.GameDirectory,{products:values,selectedProduct:'th06',onActivate:id=>activations.push(id),onSite:()=>activations.push('site'),siteHref:'/',...extra})));
@@ -125,11 +132,14 @@ test('desktop menu opens at the top and in free space, but retracts beneath a co
  await act(()=>{rail.scrollTop=100;rail.dispatchEvent(new env.window.Event('scroll'));});assert.equal(n('.desktop-directory-menu').dataset.open,'false');
  await act(()=>{rail.scrollTop=190;rail.dispatchEvent(new env.window.Event('scroll'));});assert.equal(n('.desktop-directory-menu').dataset.open,'true','no cover occupies the menu area');
 });
-test('menu wheel scrolls its options horizontally without scrolling games or selecting categories',async()=>{
- const {activations}=await mount(),choices=n('.directory-category-options'),rail=n('.game-rail');
- Object.defineProperties(choices,{clientWidth:{configurable:true,value:120},scrollWidth:{configurable:true,value:300}});
- const event=new env.window.WheelEvent('wheel',{bubbles:true,cancelable:true,deltaY:25});await act(()=>choices.dispatchEvent(event));
- assert.equal(event.defaultPrevented,true);assert.equal(choices.scrollLeft,25);assert.equal(rail.scrollTop,0);assert.deepEqual(activations,[]);assert.equal(n('[data-category="all"]').getAttribute('aria-pressed'),'true');
+test('a nearby mouse unrolls every desktop choice without scrolling games or selecting categories',async()=>{
+ const {activations}=await mount(),menu=n('.desktop-directory-menu');await menuStrip();
+ assert.equal(menu.style.getPropertyValue('--category-frame-width'),'220px','the resting menu spans the game column');assert.equal(menu.dataset.clipEnd,'true');
+ await pointer(400);assert.equal(menu.dataset.wide,'false');
+ await pointer(100,'touch');assert.equal(menu.dataset.wide,'false','touch never unrolls the menu');
+ await pointer(100);assert.equal(menu.dataset.wide,'true');assert.equal(menu.style.getPropertyValue('--category-frame-width'),'470px');assert.equal(menu.dataset.clipEnd,'false');
+ await pointer(600);assert.equal(menu.dataset.wide,'false');assert.equal(menu.style.getPropertyValue('--category-frame-width'),'220px');assert.equal(menu.dataset.clipEnd,'true');
+ assert.equal(n('.game-rail').scrollTop,0);assert.deepEqual(activations,[]);assert.equal(n('[data-category="all"]').getAttribute('aria-pressed'),'true');
 });
 test('scrolling works retracts a focused filter and the enlarged menu remains keyboard-accessible without a head button',async()=>{
  const {activations}=await mount();await act(()=>n('[data-category="mainline"]').focus());await click('mainline');
@@ -178,25 +188,6 @@ test('narrow category selection from the site commits the centered game after se
 test('a scroll interruption cancels pending category activation and chooses the actual settled entry',async context=>{
  const {activations}=await mount(products(),{selectedProduct:undefined},true);context.mock.timers.enable({apis:['setTimeout']});
  await click('mainline');await scrollCenter(0);await act(()=>context.mock.timers.tick(180));assert.deepEqual(activations,[],'returning the selector to the already-selected site cancels the pending game');
-});
-test('desktop category edges scroll only menu choices and stop for leave, touch or reduced motion',async context=>{
- const frames=new Map();let next=1;
- context.mock.method(globalThis,'requestAnimationFrame',callback=>{const id=next++;frames.set(id,callback);return id;});
- context.mock.method(globalThis,'cancelAnimationFrame',id=>frames.delete(id));
- const {activations}=await mount(products(),{},false,true),menu=n('.desktop-directory-menu'),choices=n('.directory-category-options');
- choices.getBoundingClientRect=()=>new env.window.DOMRect(0,110,220,60);
- Object.defineProperties(choices,{clientWidth:{configurable:true,value:220},scrollWidth:{configurable:true,value:470}});
- const move=(x,type='mouse')=>act(()=>menu.dispatchEvent(new env.window.PointerEvent('pointermove',{bubbles:true,pointerType:type,clientX:x,clientY:130})));
- const step=time=>act(()=>{const pending=[...frames.values()];frames.clear();pending.forEach(callback=>callback(time));});
- await move(215);await step(16);assert.ok(choices.scrollLeft>0);const right=choices.scrollLeft;
- await move(5);await step(32);assert.ok(choices.scrollLeft<right);assert.equal(n('.game-rail').scrollTop,0);assert.deepEqual(activations,[]);
- await move(215);await act(()=>menu.dispatchEvent(new env.window.PointerEvent('pointerleave')));assert.equal(frames.size,0);
- await act(()=>menu.dispatchEvent(new env.window.MouseEvent('mousemove',{bubbles:true,clientX:215,clientY:130})));assert.ok(frames.size>0,'legacy mouse movement can start edge scrolling');
- await act(()=>menu.dispatchEvent(new env.window.PointerEvent('pointerdown',{pointerType:'touch'})));assert.equal(frames.size,0);
- await act(()=>menu.dispatchEvent(new env.window.MouseEvent('mousemove',{bubbles:true,clientX:215,clientY:130})));assert.equal(frames.size,0,'touch compatibility mouse events cannot start edge scrolling');
- await move(215,'touch');assert.equal(frames.size,0);
- await move(215);const reduced=media.get('(prefers-reduced-motion:reduce)');await act(()=>{reduced.matches=true;for(const fn of reduced.listeners)fn({matches:true});});assert.equal(frames.size,0);
- await move(215);assert.equal(frames.size,0);assert.deepEqual(activations,[]);
 });
 test('narrow All is actionable when its filter is already All and commits the site after recentering',async context=>{
  const {activations}=await mount(products(),{},true);context.mock.timers.enable({apis:['setTimeout']});
@@ -253,13 +244,16 @@ test('filtering retains loaded image owners while hidden works cannot take carou
  await click('all');assert.equal(env.document.querySelector('.game[data-game="th06"] img'),image);assert.equal(env.document.querySelector('.game[data-game="th08"] img'),fan);
  assert.deepEqual(activations,[]);
 });
-test('desktop rear category choices center on the game rail instead of staying clipped at the right edge',async()=>{
- await mount();const choices=n('.directory-category-options'),active=n('[data-category="fan"]');
- Object.defineProperties(choices,{clientWidth:{configurable:true,value:220},scrollWidth:{configurable:true,value:600}});
- Object.defineProperties(active,{offsetLeft:{configurable:true,value:388},offsetWidth:{configurable:true,value:88}});
- choices.style.setProperty('--category-align-x','165.5');await click('fan');assert.equal(choices.scrollLeft,266.5);
- assert.equal(active.offsetLeft + active.offsetWidth/2 - choices.scrollLeft,165.5);
- choices.scrollLeft=100;await click('fan');assert.equal(choices.scrollLeft,266.5,'choosing the active option again also restores its alignment');
+test('a chosen desktop category slides onto the game rail axis unless it already sits left of it',async()=>{
+ await mount();const menu=n('.desktop-directory-menu'),fan=n('[data-category="fan"]');await menuStrip();
+ const shift=()=>menu.style.getPropertyValue('--category-shift'),frame=()=>menu.style.getPropertyValue('--category-frame-width');
+ await pointer(100);assert.equal(shift(),'0px','an unrolled menu shows every choice from the screen edge');
+ await click('fan');assert.equal(shift(),'256.5px');assert.equal(fan.offsetLeft + fan.offsetWidth/2 - 256.5,165.5,'the choice sits on the game rail axis');
+ assert.equal(menu.dataset.wide,'true');assert.equal(frame(),'213.5px');assert.equal(menu.dataset.clipStart,'true');assert.equal(menu.dataset.clipEnd,'false');
+ await pointer(600);assert.equal(shift(),'256.5px','the resting menu keeps the choice on the rail axis');assert.equal(frame(),'213.5px');
+ await pointer(100);assert.equal(shift(),'0px','a new visit unrolls the choices again');
+ await click('classic');assert.equal(shift(),'72.5px');
+ await click('mainline');assert.equal(shift(),'0px','a choice left of the rail axis does not move');assert.equal(menu.dataset.clipStart,'false');
 });
 
 test('programmatic alignment and late scrollend events never replace the selected route',async context=>{

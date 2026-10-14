@@ -34,10 +34,11 @@ export interface LobbySurfaceProps extends Omit<LibraryCardsProps, 'variant' | '
 export function LobbySurface({masthead, footer, embedded = false, launcherHref = './', siteHref = '?view=lobby', onSite, assetUrl = path => path, onGuide, onNetwork, onRefreshRooms, networkRunning = false, connectionWarning, notice, roomTools, roomList, hasRooms, loading, emptyState, roomCount, connectionNote, roomUsersArtwork, children, ...rail}: LobbySurfaceProps) {
   const {t} = useLocale();
   const testProduct = ['th08mp', 'th09mp', 'th10mp'].includes(rail.selectedProduct ?? '');
+  const selectedTitle = rail.products.find(product => product.id === rail.selectedProduct)?.title;
   const inRouter = useInRouterContext();
   const Link = rail.interactive === false || !inRouter ? 'a' : AppLink;
   const workspace = <><section className="workspace-panel lobby-workspace" aria-label={t('lobby.title')} data-all-products={!rail.selectedProduct}>
-    <header className="lobby-intro"><h1>{t('lobby.title')}</h1>
+    <header className="lobby-intro"><h1>{t('lobby.title')}{selectedTitle && <span className="lobby-intro-game">{selectedTitle}</span>}</h1>
       <nav className="lobby-header-actions" aria-label={t('lobby.title')}>
         <button className="lobby-button" id="lobbyGuideOpen" type="button" disabled={!onGuide} onClick={onGuide ?? undefined}>{t('workspace.gameplayGuide')}</button>
         <button className={`lobby-button${networkRunning ? ' running' : ''}`} id="lobbyNetworkCheck" aria-disabled={networkRunning ? 'true' : undefined} type="button" disabled={!onNetwork} onClick={onNetwork ?? undefined}>{t('networkCheck.action')}</button>
@@ -48,11 +49,11 @@ export function LobbySurface({masthead, footer, embedded = false, launcherHref =
     {connectionWarning}
     <p className="lobby-notice" id="notice" role="status" hidden={!notice}>{notice}</p>
     <section className="lobby-list-surface" aria-label={t('lobby.rooms')} tabIndex={0}>
+      <p className="lobby-test-notice" id="gameTestNotice" role="status" hidden={!testProduct}>{t('lobby.testStageHint')}</p>
       <div className="lobby-list-head" id="listHead" aria-hidden="true" hidden={!hasRooms}><span>{t('workspace.roomNumber')}</span><span>{t('lobby.difficulty')}</span><span/><span>{t('lobby.capacity')}</span><span>{t('lobby.state')}</span><span/></div>
       <div className="lobby-room-list" id="roomList" role="list" aria-busy={loading}>{roomList}</div>
       <div className="lobby-list-loading" id="listLoading" role="status" hidden={!loading}><i className="lobby-preload-spinner" aria-hidden="true"/><span className="lobby-sr-only">{t('lobby.loadingHint')}</span></div>
       {emptyState && <div className="lobby-empty" id="emptyState"><img src={roomUsersArtwork} alt="" width="36" height="36"/><h2 id="emptyTitle">{emptyState.title}</h2><p id="emptyHint">{emptyState.hint}</p>{emptyState.action && <button className="lobby-button" id="emptyAction" type="button" onClick={emptyState.action.onClick}>{emptyState.action.label}</button>}</div>}
-      <p className="lobby-test-notice" id="gameTestNotice" role="status" hidden={!testProduct}>{t('lobby.testStageHint')}</p>
     </section>
     <p className="lobby-notice" id="connectionNote" role="status" hidden={!connectionNote}>{connectionNote}</p>
     <footer className="lobby-room-tools"><Link className="lobby-button lobby-back" id="launcherLink" href={launcherHref} {...(Link === AppLink ? {preventScrollReset: true} : {})}><img src={assetUrl('assets/room-caret-left.svg')} alt="" width="20" height="20"/>{t('lobby.back')}</Link><div className="lobby-actions">{roomTools}</div></footer>

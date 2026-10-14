@@ -748,7 +748,8 @@ export function createBrowserSession({document, window, baseUrl: configuredBaseU
     settings: () => ({touchEnabled: settings.getSnapshot()?.options.touchEnabled === true, touchMovementMode: settings.getSnapshot()?.options.touchMovementMode ?? 'touch', mobileDevice: mobile, deviceType: multiplayerDeviceType(window.navigator), iceServers: [{urls: ['stun:stun.cloudflare.com:3478']}]}),
     setMovementMode: mode => settings.setOption('touchMovementMode', mode), decisions, translate: t, notify: feedback.toast,
     prepareResources: roomPreparation.prepare,
-    preparationFailed(error) {if (isGameDataAcquisitionFailure(error)) gameData.beginManual({reason: errorText(error), kind: 'install-only'}); else feedback.toast(errorText(error), 4000);},
+    // Other failures stay visible in the room's own preparation warning.
+    preparationFailed(error) {if (isGameDataAcquisitionFailure(error)) gameData.beginManual({reason: errorText(error), kind: 'install-only'});},
     beginManualImport: () => gameData.beginManual(),
     beforePreparationRetry() {const attempt = gameData.getSnapshot().attempt; if (attempt?.manual && attempt.continuation?.kind === 'install-only') gameData.clear();},
     launch: launchRoom, checkGame: checkRoom,

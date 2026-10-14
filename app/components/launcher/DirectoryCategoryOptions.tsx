@@ -20,10 +20,6 @@ export function DirectoryCategoryOptions({options, filter, highlight = filter, o
         const left = active.offsetLeft, right = left + active.offsetWidth;
         if (left < choices.scrollLeft + 8) choices.scrollLeft = Math.max(0,left - 8);
         else if (right > choices.scrollLeft + choices.clientWidth - 8) choices.scrollLeft = right - choices.clientWidth + 8;
-      } else if (!narrow && choices.scrollWidth > choices.clientWidth) {
-        const center = Number.parseFloat(getComputedStyle(choices).getPropertyValue('--category-align-x')) || choices.clientWidth/2;
-        const reduced = matchMedia('(prefers-reduced-motion:reduce)').matches || document.body.classList.contains('less-motion');
-        choices.scrollTo({left:Math.max(0,Math.min(choices.scrollWidth - choices.clientWidth,active.offsetLeft + active.offsetWidth/2 - center)),behavior:reduced ? 'instant' : 'smooth'});
       }
     };
     alignCurrent.current = measure;measure(); if (!interactive) return () => {alignCurrent.current = null;};

@@ -59,6 +59,24 @@ test('an MP editor sharing change refreshes the effective model and uses the cho
  local.setShareSingleplayerSettings(!before);assert.equal(f.model.getSnapshot().shareSingleplayerSettings,!before);assert.equal(f.model.getSnapshot().preferenceId,local.getSnapshot().preferenceId);
  assert.equal(f.model.getSnapshot().options.alwaysHitbox,true,'the other preference owner inherits the global default');
 });
+test('a game editor exposes the global baseline and reset makes the game follow later global edits',()=>{
+ const f=fixture(),global=editor(f.model,'global');global.setOption('alwaysHitbox',true);global.setMusic('ogg-full');
+ const local=editor(f.model,'game');assert.equal(global.getSnapshot().globalBaseline,undefined);assert.equal(f.model.getSnapshot().globalBaseline,undefined);
+ assert.equal(local.getSnapshot().globalBaseline.options.alwaysHitbox,true);local.setOption('alwaysHitbox',false);local.setMusic('none');
+ assert.equal(local.getSnapshot().options.alwaysHitbox,false);assert.equal(local.getSnapshot().globalBaseline.musicPreference,'ogg-full');
+ local.resetToGlobal('alwaysHitbox');local.resetToGlobal('music');
+ assert.equal(local.getSnapshot().options.alwaysHitbox,true);assert.equal(local.getSnapshot().musicPreference,'ogg-full');assert.equal(f.model.getSnapshot().options.alwaysHitbox,true);
+ assert.deepEqual(JSON.parse(f.values.get(api.localSettingsStorageKey('th06'))),{options:{}});
+ global.setOption('alwaysHitbox',false);f.model.hydrate(context());assert.equal(f.model.getSnapshot().options.alwaysHitbox,false);
+});
+test('reset also retires a legacy per-game value that global settings never set',()=>{
+ const f=fixture();f.values.set(api.gamePreferenceStorageKey('th07'),JSON.stringify({options:{alwaysHitbox:!api.DEFAULT_GAME_OPTIONS.alwaysHitbox}}));
+ const local=editor(f.model,'game',context('th07'));assert.equal(local.getSnapshot().options.alwaysHitbox,!api.DEFAULT_GAME_OPTIONS.alwaysHitbox);
+ assert.equal(local.getSnapshot().globalBaseline.options.alwaysHitbox,api.DEFAULT_GAME_OPTIONS.alwaysHitbox);
+ local.resetToGlobal('alwaysHitbox');assert.equal(local.getSnapshot().options.alwaysHitbox,api.DEFAULT_GAME_OPTIONS.alwaysHitbox);
+ const global=editor(f.model,'global',context('th07'));global.setOption('alwaysHitbox',!api.DEFAULT_GAME_OPTIONS.alwaysHitbox);f.model.hydrate(context('th07'));
+ assert.equal(f.model.getSnapshot().options.alwaysHitbox,!api.DEFAULT_GAME_OPTIONS.alwaysHitbox);
+});
 test('live room restrictions adapt scoped unlimited movement without overwriting the global preference',()=>{
  const f=fixture(),global=editor(f.model,'global');global.setOption('touchMovementMode','touch-unlimited');f.model.hydrate(context('th06mp'));
  f.model.setMovementRestriction(true);assert.equal(f.model.getSnapshot().options.touchMovementMode,'touch');assert.equal(JSON.parse(f.values.get(api.globalSettingsStorageKey)).options.touchMovementMode,'touch-unlimited');

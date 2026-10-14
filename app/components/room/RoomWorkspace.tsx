@@ -70,7 +70,8 @@ export function RoomWorkspace(props: RoomViewProps) {
       </div>
       </div>
     </header>
-    {state.preparation?.status === 'failed' && <p className="room-preparation-warning" role="alert">{t('room.resourcesUnavailable')}: {state.preparation.error}<button onClick={service.retryPreparation}>{t('room.retryDownload')}</button></p>}
+    {/* A seated player's own seat already names the failure and offers retry. */}
+    {state.preparation?.status === 'failed' && <p className="room-preparation-warning" role="alert">{state.preparation.error || t('room.resourcesUnavailable')}{state.seat == null && <button onClick={service.retryPreparation}>{t('room.retryDownload')}</button>}</p>}
     <div className="room-workspace-content"><div className="room-workspace-seats" id="mpSeatStage" data-player-count={room.playerCount}>
       {Array.from({length:room.playerCount},(_,index) => <WorkspaceSeat key={`${state.epoch}:${index}`} state={state} service={service} index={index} assetUrl={assetUrl} onPersonal={element => open('personal',element)} onNetwork={(element,peer) => open('network',element,peer)}/>)}
     </div>{owner && config.playerCounts.includes(3) && room.playerCount === 2 && <button className="room-add-player" id="roomAddPlayer" disabled={!editable} aria-label={t('room.addThirdPlayer')} onClick={() => service.setRoomSettings({playerCount:3})}>＋</button>}

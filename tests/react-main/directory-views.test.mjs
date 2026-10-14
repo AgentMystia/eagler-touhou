@@ -221,7 +221,8 @@ for (const locale of ['zh-CN', 'en']) test(`Lobby real loading/live/empty/list c
   assert.equal(survey.textContent,t(locale,'lobby.surveyAction'));
   assert.equal(env.document.querySelector('.lobby-support-menu'),null);
   assert.deepEqual(all('.lobby-header-actions > *').map(el=>el.id),['lobbyGuideOpen','lobbyNetworkCheck','lobbySurvey','refreshRooms']);
-  await click('#emptyAction'); await click('#createButton'); await click('#codeButton'); assert.deepEqual(opens, ['create', 'create']); assert.equal(n('#codeButton').getAttribute('aria-expanded'), 'true'); assert.equal(env.document.activeElement, n('#lobbyCodeInput')); assert.equal(env.document.querySelector('.lobby-context'),null);
+  assert.equal(env.document.querySelector('#emptyAction'), null, 'live empty state leaves creation to the footer action');
+  await click('#createButton'); await click('#codeButton'); assert.deepEqual(opens, ['create']); assert.equal(n('#codeButton').getAttribute('aria-expanded'), 'true'); assert.equal(env.document.activeElement, n('#lobbyCodeInput')); assert.equal(env.document.querySelector('.lobby-context'),null);
   assert.equal(n('#refreshRooms').getAttribute('aria-label'), t(locale, 'lobby.refresh'));
   await f.receive([room()], {total: 45}); assert.equal(n('#listHead').hidden, false); assert.equal(env.document.querySelector('#emptyState'), null);
   assert.equal(n('#connectionNote').hidden, false); assert.equal(n('#connectionNote').textContent, t(locale, 'lobby.truncated', {count: 1}));
@@ -436,20 +437,20 @@ for (const parentKey of ['original-parent', null]) test(`Dialog newer destinatio
   await submit(); await m.update({open: false, completionContext: {locationKey: 'newer-entry', parentKey: null, href: '/lobby.html?game=th07mp'}});
   assert.equal(f.navigations.length, 1); assert.equal(owners.decodeRoomInvite(new URL(f.navigations[0].url).searchParams.get('j')).r, '5678');
 });
-for (const trigger of ['#createButton', '#emptyAction']) test(`selected-game one-click create uses fresh defaults and retires stale dialog receipts: ${trigger}`, async () => {
+for (const visibility of ['populated', 'empty']) test(`selected-game one-click create uses fresh defaults and retires stale dialog receipts: ${visibility}`, async () => {
   const f = await fixture({selectedProduct: 'th07mp'}).live([room({product: 'th07mp', code: '1023'})]), oldOwner = {};
   f.service.prepareForm('create'); f.service.updateForm({capacity: 3, difficulty: 3, visibility: 'private', disableCheatMovement: true});
   assert.equal(f.service.submitForm(oldOwner), 'close');
-  // The populated button checks collisions; the empty-state action checks
-  // the same immediate path when no room for this product is visible.
+  // The populated list checks collisions; the empty case checks the same
+  // immediate path when no room for this product is visible.
   const {opens} = await mountLobby(f, {onCreateRoom: () => f.service.createRoom()});
-  if (trigger === '#emptyAction') await f.receive([room({product: 'th06mp'})]);
-  await click(trigger);
+  if (visibility === 'empty') await f.receive([room({product: 'th06mp'})]);
+  await click('#createButton');
   assert.deepEqual(opens, []); assert.equal(f.navigations.length, 1); assert.equal(f.closeCalls, 0);
   const invite = owners.decodeRoomInvite(new URL(f.navigations[0].url).searchParams.get('j'));
   assert.equal(invite.g, 'th07mp'); assert.equal(invite.a, 'create'); assert.equal(invite.p, 2); assert.equal(invite.d, 1);
   assert.equal(invite.v, 'public'); assert.equal(invite.c, false);
-  assert.equal(invite.r, trigger === '#createButton' ? '1024' : '1023');
+  assert.equal(invite.r, visibility === 'populated' ? '1024' : '1023');
   assert.equal(f.service.createRoom(), false, 'duplicate create is rejected while leaving');
   f.service.formDidClose(oldOwner); f.service.formDidClose();
   assert.equal(f.navigations.length, 1); assert.equal(f.sessionWrites.length, 1);

@@ -32,7 +32,7 @@ export function ScorePanel({model, product, language, assetUrl, notice}: {model:
         </div>
       </div> : <p className={report ? 'score-status' : 'score-empty'} role="status">{status}</p>}
     </div>
-    {playMinutes != null && <p className="score-playtime"><span className="score-playtime-label">{t('scores.playTime')}: </span><time dateTime={`PT${report!.playSeconds}S`}>
+    {playMinutes != null && <p className="score-playtime"><span className="score-playtime-label">{t('scores.playTime')}{locale === 'en' ? ': ' : '：'}</span><time dateTime={`PT${report!.playSeconds}S`}>
       <span className="score-time-number">{Math.floor(playMinutes / 60)}</span><span className="score-time-unit">{t('scores.hourUnit')}</span><span className="score-time-number">{playMinutes % 60}</span><span className="score-time-unit">{t('scores.minuteUnit')}</span>
     </time></p>}
       {notice}

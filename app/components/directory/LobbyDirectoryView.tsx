@@ -29,7 +29,8 @@ export function LobbyDirectoryView({service, assetUrl, onOpenForm, onCreateRoom,
   const empty = state.loading || state.visibleRooms.length || state.connectionInterrupted ? null : {
     title: t(state.connection === 'live' ? 'lobby.empty' : state.connection === 'loading' ? 'lobby.connecting' : state.connection === 'unsupported' ? 'lobby.unsupported' : 'lobby.offline'),
     hint: t(state.connection === 'live' ? 'lobby.emptyHint' : state.connection === 'loading' ? 'lobby.loadingHint' : state.connection === 'unsupported' ? 'lobby.unsupportedHint' : state.connection === 'missing' ? 'lobby.noService' : 'lobby.offlineHint'),
-    action: state.connection === 'loading' || (state.connection === 'live' && !!state.mine) ? undefined : {label: t(state.connection === 'live' ? 'lobby.create' : 'lobby.retry'), onClick: () => state.connection === 'live' ? create() : service.retry()},
+    // A live lobby already shows the primary create action in its footer.
+    action: state.connection === 'loading' || state.connection === 'live' ? undefined : {label: t('lobby.retry'), onClick: service.retry},
   };
   return <LobbySurface {...surface} assetUrl={assetUrl} onRefreshRooms={service.refreshRooms} selectedProduct={state.selectedProduct} connectionWarning={warning} notice={state.notice} roomTools={roomTools}
     roomList={<DirectoryRoomRows snapshot={state} service={service} assetUrl={assetUrl} initialRows={initialRows}/>}

@@ -25,13 +25,22 @@ export function createScopedSettingsStore(storage: GamePreferenceStorage | null)
     }
     return {options, ...(typeof raw.music === 'string' && isMusicMode(raw.music) ? {music:raw.music} : {}), ...(typeof raw.language === 'string' ? {language:raw.language} : {})};
   }
+  function save(id: string, next: SettingsPatch) {
+    unsaved.set(id,next);
+    try {if(storage){storage.setItem(id,JSON.stringify(next));unsaved.delete(id);}} catch {}
+  }
   return {
     read,
     write(scope: SettingsScope, product: string, patch: SettingsPatch) {
-      const id = key(scope,product), previous = read(scope,product);
-      const next = {...previous,...patch,options:{...previous.options,...patch.options}};
-      unsaved.set(id,next);
-      try {if(storage){storage.setItem(id,JSON.stringify(next));unsaved.delete(id);}} catch {}
+      const previous = read(scope,product);
+      save(key(scope,product),{...previous,...patch,options:{...previous.options,...patch.options}});
+    },
+    clear(scope: SettingsScope, product: string, fields: {options?: readonly (keyof GameOptions)[]; music?: boolean}) {
+      const previous = read(scope,product), options = {...previous.options};
+      for (const name of fields.options ?? []) delete options[name];
+      const next: SettingsPatch = {...previous, options};
+      if (fields.music) delete next.music;
+      save(key(scope,product),next);
     },
   };
 }

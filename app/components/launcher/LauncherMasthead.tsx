@@ -59,7 +59,7 @@ export function LauncherMasthead(props: LauncherMastheadProps) {
   return <header className="masthead">
     <MastheadBrand interactive={interactive} updatedAge={props.updatedAge} lessMotion={props.lessMotion}/>
     <nav className="masthead-links" aria-label={t('nav.siteInfo')}>
-      {<button className="masthead-link" id="globalSettingsOpen" type="button" aria-controls="globalSettingsDialog" disabled={!interactive} onClick={props.onSettings}>{t('settings.title')}</button>}
+      {<button className="masthead-link" id="globalSettingsOpen" type="button" aria-controls="globalSettingsDialog" disabled={!interactive} onClick={props.onSettings}>{t('settings.globalTitle')}</button>}
       <a className="masthead-link" id="originMigrationOpen" href={props.migrationHref ?? 'migrate.html'} hidden={!props.migrationHref} data-policy={props.migrationPolicyKnown ? 'host-manifest-origin-migration-policy/1' : undefined}><span className="masthead-label"><span>{t('nav.oldSitePart1')}</span><wbr/><span>{t('nav.migrationPart2')}</span></span></a>
       <button className="masthead-link" id="donationOpenTop" type="button" hidden={props.donationAvailable === false} onClick={props.onDonation}><span className="masthead-label">{t('nav.donate')}</span></button>
       <a className="masthead-link" href={props.faqHref}><span className="masthead-label"><span>{t('nav.faqFirst')}</span><wbr/><span>{t('nav.faqSecond')}</span></span></a>
