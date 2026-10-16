@@ -28,6 +28,12 @@ npm run runtime -- th09 --emsdk "<SDK>" --build-only
 
 TH06/TH07 的练习界面使用根 `third_party/imgui` 中有来源和许可证的源码。`--imgui-root` 可覆盖它；`--runtime-extension` 才引入额外的扩展 CMake 文件。基础练习构建不代表完整上游 thprac 功能。
 
+## TH06/TH07 的 Web 音频缓冲
+
+两作在 `src/SoundPlayer.cpp` 打开 Web 音频设备前，用 SDL 官方 `SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES` 请求 1024 帧。当前锁定的 SDL 3.4.12 Emscripten 后端会加倍该值，得到 2048 帧的 ScriptProcessor 回调缓冲。PCM 队列低/高水位为 2048/3072 帧，补充时每次最多混合三个 1024 帧片段，避免新音效等待过深的已混合队列，也避免依赖后续多个呈现帧才能补回安全水位。SDL 子模块可以使用官方提交，不需要修改其音频后端源码。
+
+此设置只在 Emscripten 构建生效。升级 SDL 或音频后端时，需要检查实际设备帧数、浏览器节点缓冲大小与播放回调，而不是仅确认编译通过；不同后端不保证按请求值分配缓冲。当前配置不能直接按 2048 传入，否则这个后端会再次加倍为 4096。这些数值是两作参数，不是跨作品默认值。缓冲配置验证不替代完整游戏音频、失焦恢复或长时间负载验收。
+
 ## 多人变体
 
 TH06/TH07 用明确的 CMake 变体开关；TH09 有对应的打包变体。TH08/TH10/TH11 的多人构建必须显式传入 `--source`，以免把普通分支当成多人源码：
