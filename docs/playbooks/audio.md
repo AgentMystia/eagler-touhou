@@ -232,6 +232,22 @@ For an audio or scheduler change:
 4. For MIDI, record actual message categories and nonzero TinySynth/audio evidence, not only `isPlaying` or an open device.
 5. Check loop/切曲/fade and background/foreground or gesture behavior when the changed code touches lifecycle.
 6. Re-run Replay/storage checks if scheduler ownership changed, then label Edge, WebView, real-device and public evidence separately.
+7. For a cross-title fix, inventory every declared ordinary and multiplayer
+   source branch separately. An ordinary-mode build from `eagler-mp` does not
+   establish that `eagler` contains the fix. Transfer only the shared audio
+   changes onto each target's own ancestor, with a reachable common pin.
+   TH06/TH07 require separate ordinary and MP CMake build results even when
+   they share a source branch. For TH08 and later, verify the declared `eagler`
+   and `eagler-mp` source owners before selecting each build entry.
+8. Record source branch/commit, common revision, build variant and JS/WASM
+   hashes together. Verify the release's selected generation against the actual
+   downloaded runtime; a pushed source change or a new package timestamp does
+   not establish deployment coverage. Label absent, compiled and measured
+   variants separately, and retain a per-title/variant coverage table.
+9. Independent SFX must obey existing multiplayer output suppression as well as
+   browser pause: Replay seeking must retain the caller's pause owner, and
+   entering a silent spectator phase must stop existing independent voices and
+   suppress new requests. Keep rollback deduplication with the game owner.
 
 ## Deliberately omitted claims
 
