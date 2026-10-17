@@ -395,3 +395,16 @@ Merged the room worktree with the current library UI from the common base, then 
 Occupied seat avatars show only the first character of the participant's chosen display name, or `?` when absent. The adjacent game loadout remains visible. Local relay browser verification displayed 琪 for a named peer and ? for an empty name; no full nickname appeared in the seat label. The Launcher also limits the `name` field of outgoing lobby messages to that first character; an absent name stays empty on the wire.
 
 Checked menu → room → settings → menu at desktop and 390×844 portrait. The settings fold and cover had one instance before, during and after the room; disclosure state survived the move. Replay button computed font, color, corner radius and shadow matched in both locations; the mobile room settings scroller had equal client/scroll width (373px). Library launcher build and relevant DOM, i18n, identity, product, preference, network and relay tests pass. Two temporary QA players were removed from room 9419. No physical device acceptance was performed.
+
+## Main quick-navigation follow-up (2026-10-08)
+
+- Selected visual source: C:/Users/Ritosa/.codex/generated_images/01a10535-23a4-7663-a4b8-e130db217cc1/exec-cfb88044-f3a9-418a-bb5b-7d11d4badf32.png.
+- User adjustments: omit the bottom line and preserve hold-to-scrub navigation without a further click.
+- One row with full-size targets, pale pink selection and conditional edge fades. No new font or artwork.
+- Restore horizontal pointer ownership. Hold/scrub selects the nearest visible title, and holding at an edge scrolls through otherwise hidden titles. Release and cancellation terminate the animation, and the release click cannot open options.
+- Source-level tests cover both ends of the index, reverse travel, release-click suppression, cancellation and vertical page intent. These are DOM-port simulations, not real touchscreen results.
+- Earlier browser checks at 320px and 350px found no horizontal document overflow; keyboard End revealed TH20. Screenshot main-first-350.png predates line removal and is not final evidence.
+- Final browser capture, normalized comparison and Android/WebView touch verification remain incomplete. The saved browser permission blocks the preview origin; it was not bypassed.
+- Local preview: http://127.0.0.1:28152/?test=1
+
+final result: blocked
