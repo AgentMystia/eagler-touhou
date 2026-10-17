@@ -108,6 +108,7 @@ export interface RuntimeConfigureOptions {
   netplaySpectator?: boolean;
   netplaySpectatorId?: string;
   netplaySpectatorCount?: number;
+  netplaySpectatorTimeline?: boolean;
   netplayIceServers?: unknown[];
   netplayLoadouts?: RuntimeNetplayLoadout[];
 }
@@ -249,6 +250,11 @@ export const RUNTIME_CONFIGURE_OPTION_BEHAVIOR = Object.freeze({
     requirement: 'profile-required',
     capability: 'multiplayer',
     when: 'multiplayer',
+  }),
+  netplaySpectatorTimeline: Object.freeze({
+    requirement: 'optional',
+    capability: 'multiplayer',
+    when: 'experimental TH09 confirmed-input playback advertised by the room service',
   }),
   netplayIceServers: Object.freeze({
     requirement: 'profile-required',

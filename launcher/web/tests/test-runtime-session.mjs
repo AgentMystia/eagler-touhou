@@ -1,5 +1,6 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import { createRuntimeSessionOwner } from "../.cache/build/browser/assets/launcher/runtime-session.mjs";
+const { createRuntimeSessionOwner } = await importClientService('launcher/runtime-session.mjs');
 
 const owner = createRuntimeSessionOwner();
 const changes = [];

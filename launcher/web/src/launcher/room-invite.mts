@@ -16,6 +16,8 @@ export interface RoomInvite {
   f?: boolean;
   /** create | join intent carried by the originating directory navigation. */
   a?: 'create' | 'join';
+  /** Explicit TH09 spectator entry from a running room card. */
+  s?: boolean;
   /** Initial player count for a freshly created room. */
   p?: number;
   /** Initial difficulty for a freshly created room. */
@@ -46,6 +48,7 @@ export function encodeRoomInvite(invite: RoomInvite): string {
   const payload: Record<string, unknown> = { g: invite.g, r: invite.r };
   if (invite.f) payload.f = true;
   if (invite.a) payload.a = invite.a;
+  if (invite.s && invite.g === 'th09mp' && invite.a === 'join') payload.s = true;
   if (invite.p !== undefined) payload.p = invite.p;
   if (invite.d !== undefined) payload.d = invite.d;
   if (invite.v) payload.v = invite.v;
@@ -66,6 +69,7 @@ export function decodeRoomInvite(token: string): RoomInvite | null {
       r,
       f: record.f === true,
       a: record.a === 'create' || record.a === 'join' ? record.a : undefined,
+      ...(g === 'th09mp' && record.a === 'join' && record.s === true ? { s: true } : {}),
       p: typeof record.p === 'number' ? record.p : undefined,
       d: typeof record.d === 'number' ? record.d : undefined,
       v: record.v === 'public' || record.v === 'private' ? record.v : undefined,

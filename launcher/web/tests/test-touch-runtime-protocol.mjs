@@ -1,11 +1,12 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import {
+const {
   postDirectTouch,
   postHostedKey,
   postThpracMouse,
   postTouchCancel,
   postTouchControls,
-} from "../.cache/build/browser/assets/launcher/touch-runtime-protocol.mjs";
+} = await importClientService('launcher/touch-runtime-protocol.mjs');
 
 const sent = [];
 const target = {

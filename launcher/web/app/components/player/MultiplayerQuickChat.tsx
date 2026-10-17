@@ -52,6 +52,73 @@ export function MultiplayerQuickChat({ model }: { model: MultiplayerQuickChatMod
   );
   const state = useSyncExternalStore(subscribe, model.getSnapshot, model.getSnapshot);
   const context = state.context;
+  const th09 = context?.room.startsWith('th09mp-') === true;
+  useLayoutEffect(() => {
+    const element = root.current,
+      frame = document.getElementById('gameFrame') as HTMLIFrameElement | null;
+    if (!element || context?.inRoom || !frame) return;
+    let panel: HTMLElement | null = null,
+      bodyObserver: MutationObserver | null = null,
+      resize: ResizeObserver | null = null;
+    const measure = () => {
+      const player = element.closest('.player');
+      if (!player) return;
+      const inset = panel?.isConnected
+        ? player.getBoundingClientRect().bottom -
+          (frame.getBoundingClientRect().top + panel.getBoundingClientRect().top) +
+          10
+        : 0;
+      element.style.setProperty('--mp-chat-lift', `${Math.max(0, inset)}px`);
+      (player as HTMLElement).style.setProperty(
+        '--spectator-panel-lift',
+        `${Math.max(0, inset)}px`,
+      );
+    };
+    const bind = () => {
+      bodyObserver?.disconnect();
+      resize?.disconnect();
+      panel = null;
+      try {
+        const body = frame.contentDocument?.body;
+        if (!body) {
+          measure();
+          return;
+        }
+        const watch = () => {
+          const next = body.querySelector<HTMLElement>('#spectatorTimeline');
+          if (next !== panel) {
+            resize?.disconnect();
+            panel = next;
+            if (panel && typeof ResizeObserver !== 'undefined') {
+              resize = new ResizeObserver(measure);
+              resize.observe(panel);
+            }
+          }
+          measure();
+        };
+        if (typeof MutationObserver !== 'undefined') {
+          bodyObserver = new MutationObserver(watch);
+          bodyObserver.observe(body, { childList: true });
+        }
+        watch();
+      } catch {
+        measure();
+      }
+    };
+    frame.addEventListener('load', bind);
+    window.addEventListener('resize', measure);
+    bind();
+    return () => {
+      bodyObserver?.disconnect();
+      resize?.disconnect();
+      frame.removeEventListener('load', bind);
+      window.removeEventListener('resize', measure);
+      element.style.removeProperty('--mp-chat-lift');
+      (element.closest('.player') as HTMLElement | null)?.style.removeProperty(
+        '--spectator-panel-lift',
+      );
+    };
+  }, [context?.inRoom]);
   function duration(milliseconds: number) {
     return model.getSnapshot().context?.lessMotion ||
       matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -60,7 +127,7 @@ export function MultiplayerQuickChat({ model }: { model: MultiplayerQuickChatMod
   }
   useLayoutEffect(() => {
     const element = root.current;
-    if (!element) return;
+    if (!element || context?.inRoom) return;
     const prevent = (event: Event) => event.preventDefault();
     const stop = (event: Event) => event.stopPropagation();
     const key = (event: KeyboardEvent) => {
@@ -111,7 +178,7 @@ export function MultiplayerQuickChat({ model }: { model: MultiplayerQuickChatMod
       detach();
       before.current = null;
     };
-  }, [model]);
+  }, [model, context?.inRoom]);
   useLayoutEffect(() => {
     const element = log.current;
     if (!element) return;
@@ -168,11 +235,11 @@ export function MultiplayerQuickChat({ model }: { model: MultiplayerQuickChatMod
       {t(state.muteOpen ? 'chat.back' : 'chat.mute')}
     </button>
   );
-  return (
+  const section = (
     <section
       ref={root}
-      className="mp-quick-chat"
-      hidden={!context?.visible}
+      className={`mp-quick-chat${th09 ? ' th09-player-chat' : ''}`}
+      hidden={!context?.visible || context.inRoom}
       aria-label={t('chat.players')}
     >
       <button
@@ -182,7 +249,14 @@ export function MultiplayerQuickChat({ model }: { model: MultiplayerQuickChatMod
         disabled={!context?.connected}
         onClick={model.togglePicker}
       >
-        {t('chat.prompt')}
+        {th09 && (
+          <img
+            className="th09-chat-icon"
+            src={new URL('assets/player-chat.svg', document.baseURI).href}
+            alt=""
+          />
+        )}
+        {t(th09 ? 'th09.quickChat' : 'chat.prompt')}
       </button>
       <div className="mp-quick-chat-picker" hidden={!state.pickerOpen}>
         {QUICK_CHAT_ROWS.map((phrases, index) => (
@@ -194,7 +268,9 @@ export function MultiplayerQuickChat({ model }: { model: MultiplayerQuickChatMod
                 className="mp-quick-chat-phrase"
                 data-phrase={phrase.id}
                 title={label(phrase)}
-                disabled={context?.localSeat == null || !context.connected}
+                disabled={
+                  !context?.connected || (context.localSeat == null && !context.localSpectator)
+                }
                 onClick={() => model.sendPhrase(phrase.id)}
               >
                 {label(phrase)}
@@ -219,6 +295,19 @@ export function MultiplayerQuickChat({ model }: { model: MultiplayerQuickChatMod
                 >{`P${index + 1} ${seat.name} · ${t(state.muted.includes(seat.clientId) ? 'chat.unmute' : 'chat.mute')}`}</button>,
               ],
         )}
+        {context?.spectators
+          ?.filter((member) => member.clientId !== context.localClientId)
+          .map((member) => (
+            <button
+              key={member.clientId}
+              type="button"
+              className="mp-quick-chat-mute-member"
+              aria-pressed={state.muted.includes(member.clientId)}
+              onClick={() => model.toggleMember(member.clientId)}
+            >
+              {`${t('multiplayer.spectators')} ${member.name} · ${t(state.muted.includes(member.clientId) ? 'chat.unmute' : 'chat.mute')}`}
+            </button>
+          ))}
         {state.muteOpen && muteButton}
       </div>
       <div ref={log} className="mp-quick-chat-log" role="log" aria-live="polite">
@@ -239,6 +328,7 @@ export function MultiplayerQuickChat({ model }: { model: MultiplayerQuickChatMod
       </div>
     </section>
   );
+  return section;
 }
 
 /** Detached portal carrier is presentation storage only. React creates and
@@ -271,9 +361,10 @@ function RetainedRow({
     },
     [entry.id, carrier, rows, log, visible],
   );
+  const sender = `${entry.spectator ? '观众' : `P${entry.seat + 1}`}${entry.name ? `(${entry.name})` : ''}`;
   return (
-    <p ref={ref} title={`P${entry.seat + 1} ${entry.name}: ${label}`}>
-      <strong>{`P${entry.seat + 1} ${entry.name}`}</strong>
+    <p ref={ref} title={`${sender}: ${label}`}>
+      <strong>{sender}</strong>
       {`: ${label}`}
     </p>
   );

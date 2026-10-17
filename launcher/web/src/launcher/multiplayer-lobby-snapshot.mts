@@ -12,10 +12,12 @@ import {
   multiplayerControlMode,
   validMultiplayerClientId,
 } from './multiplayer-identity.mjs';
+import { parseTh09PlayerStats, type Th09PlayerStats } from './th09-room-stats.mjs';
 
 export interface MultiplayerLobbySeat {
   clientId: string;
   name: string;
+  stats?: Th09PlayerStats;
   loadout: number;
   ready: boolean;
   offline: boolean;
@@ -52,6 +54,7 @@ export interface NormalizedMultiplayerLobbySnapshot {
   phase: 'lobby' | 'starting' | 'running';
   spectators: MultiplayerLobbySpectator[];
   spectatorCount: number;
+  spectatorTimeline?: boolean;
   seats: Array<MultiplayerLobbySeat | null>;
   localSeat: number | null;
   localSpectator: boolean;
@@ -133,9 +136,9 @@ export function normalizeMultiplayerLobbySnapshot(
     return null;
   const predictionLimit = !policy.rollback
     ? 0
-    : Number.isInteger(rawLimit) && rawLimit >= 1 && rawLimit <= 8
+    : Number.isInteger(rawLimit) && rawLimit >= 1 && rawLimit <= policy.predictionLimit
       ? rawLimit
-      : 8;
+      : policy.predictionLimit;
   const normalizedLoadoutCount = normalizedNonNegativeLimit(loadouts.length);
   const settingsVersion = Math.max(1, Math.trunc(Number(source.settingsVersion) || 1));
 
@@ -170,6 +173,7 @@ export function normalizeMultiplayerLobbySnapshot(
     return {
       clientId,
       name: normalizeMultiplayerDisplayName(seat.name || ''),
+      stats: parseTh09PlayerStats(seat.stats),
       loadout,
       ready: !!seat.ready,
       offline: !!seat.offline,
@@ -205,6 +209,7 @@ export function normalizeMultiplayerLobbySnapshot(
     phase,
     spectators,
     spectatorCount,
+    ...(source.spectatorTimeline === true ? { spectatorTimeline: true } : {}),
     seats,
     localSeat,
     localSpectator,

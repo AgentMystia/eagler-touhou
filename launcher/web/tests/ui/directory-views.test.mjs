@@ -627,6 +627,54 @@ test('Rows enforce live/recruiting/joinable/membership/leaving gates and use the
   assert.equal(f.closeCalls, 0);
   assert.deepEqual(f.sessionWrites, [['clear', 'th06mp']]);
 });
+
+test('playing experimental TH09 row admits spectators while player seats stay full, and withdraws stale capability',async()=>{
+  const playing=room({product:'th09mp',capacity:2,players:2,phase:'playing',joinable:false,spectatable:true,
+    seats:[{initial:'A',online:true,ready:true},{initial:'B',online:true,ready:true}]});
+  const f=await fixture().live([playing]);
+  await React.act(async()=>f.service.selectProduct('th09mp'));
+  await f.receive([playing]);assert.equal(f.service.getSnapshot().visibleRooms.length,1);
+  const m=await mount(owners.DirectoryRoomRows,{snapshot:f.service.getSnapshot(),service:f.service,assetUrl});
+  assert.equal(n('.lobby-room-state').getAttribute('data-state'),'playing');
+  assert.equal(n('.lobby-join').disabled,false);assert.equal(n('.lobby-join').textContent,t('en','multiplayer.joinSpectator'));
+  // The latest service snapshot remains the authority even if React has not
+  // yet replaced a previously enabled button.
+  await f.receive([{...playing,spectatable:false}]);await click('.lobby-join');assert.equal(f.navigations.length,0);
+  await f.receive([playing]);await m.update({snapshot:f.service.getSnapshot()});
+  await click('.lobby-join');assert.equal(f.navigations.length,1);
+  assert.deepEqual(f.sessionWrites,[['clear','th09mp']]);await m.unmount();
+  const legacy=await fixture().live([room({phase:'playing',spectatable:true})]);
+  const blocked=await mount(owners.DirectoryRoomRows,{snapshot:legacy.service.getSnapshot(),service:legacy.service,assetUrl});
+  assert.equal(n('.lobby-join').disabled,true);await blocked.unmount();
+});
+test('TH09 duel uses optional public machine signs, whole-match score and one elapsed clock', async () => {
+  const sign = '这是公开机签且昵称很长'.repeat(6);
+  const f = await fixture({locale:'zh-CN'}).live();
+  await React.act(async () => f.service.selectProduct('th09mp'));
+  const data = room({product:'th09mp',capacity:2,phase:'playing',spectatable:true,
+    spectators:3,seats:[{initial:'私',name:'房间私有昵称',machineSign:sign,stats:{wins:2,losses:1,minutes:2}},
+      {initial:'另',name:'不要作为公开昵称',stats:{wins:1,losses:2,minutes:2}}]});
+  await f.receive([data]);
+  const m = await mount(owners.DirectoryRoomRows,{snapshot:f.service.getSnapshot(),service:f.service,assetUrl},{locale:'zh-CN'});
+  assert.equal(all('.th09-duel-name')[0].textContent,sign);
+  assert.equal(all('.th09-duel-name')[1].textContent,'P2');
+  assert.equal(all('.th09-duel-avatar')[0].textContent,'私');
+  assert.equal(all('.th09-duel-avatar')[1].textContent,'另');
+  assert.equal(n('.th09-room-score').textContent,'2 : 1');
+  assert.equal(n('.th09-room-duration').textContent,'已进行 2 分钟');
+  assert.equal(n('.th09-room-spectators').textContent,'3 人旁观');
+  assert.equal(n('.lobby-difficulty').textContent,'Normal');
+  assert.equal(n('.th09-room-row').querySelector('.lobby-cover'),null);
+  assert.equal(n('.th09-room-row').textContent.includes('房间私有昵称'),false);
+  await f.receive([{...data,phase:'lobby',joinable:true,seats:[data.seats[0],null]}]);
+  await m.update({snapshot:f.service.getSnapshot()});
+  assert.equal(n('.th09-room-score').textContent,'VS');
+  assert.equal(all('.th09-duel-name')[1].textContent,'等待玩家');
+  assert.equal(all('.th09-duel-avatar')[1].getAttribute('data-empty'),'true');
+  assert.equal(n('.th09-room-duration').textContent,'尚未开赛');
+  assert.equal(n('.lobby-join').disabled,false);
+  await m.unmount();
+});
 for (const locale of ['zh-CN', 'en'])
   test(`Lobby real loading/live/empty/list conditions and original static sections: ${locale}`, async () => {
     const f = fixture({
@@ -1159,7 +1207,7 @@ for (const mode of ['create', 'join'])
   test(`Actual navigation owner: ${mode} submit waits for same-URL Router close commit, then enters once`, async () => {
     const f = await fixture().live([
       room({
-        code: '1023',
+        code: '00000023',
       }),
     ]);
     const h = await mountRouter(f, {
@@ -1194,7 +1242,7 @@ for (const mode of ['create', 'join'])
     assert.equal(url.hash, '#retained');
     const invite = owners.decodeRoomInvite(url.searchParams.get(owners.ROOM_INVITE_KEY));
     assert.equal(invite.g, 'th06mp');
-    assert.equal(invite.r, mode === 'create' ? '1024' : '5678');
+    assert.equal(invite.r, mode === 'create' ? '00000024' : '5678');
     assert.equal(invite.a, mode);
     assert.equal(invite.f, true);
     if (mode === 'create') {
@@ -1260,7 +1308,10 @@ for (const locale of ['zh-CN', 'en'])
         snapshot: f.service.getSnapshot(),
       });
       const snapshot = f.service.getSnapshot();
-      assert.equal(n('.lobby-seats').classList.contains('has-controls'), false);
+      if (product === 'th09mp') {
+        assert.ok(n('.th09-room-row'));
+        assert.equal(all('.th09-duel-name')[0].textContent,'P1');
+      } else assert.equal(n('.lobby-seats').classList.contains('has-controls'), false);
     }
     await rowsMount.unmount();
     const { m } = await mountDialog(

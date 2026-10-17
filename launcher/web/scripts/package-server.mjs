@@ -1,3 +1,5 @@
+import { validateRuntimeVariants } from '../lib/runtime-variants.mjs';
+import { selectRuntimeInputs, publishRuntimeVariants } from '../lib/runtime-publication.mjs';
 import {workspaceRepositoryRoot} from '../lib/workspace-layout.mjs';
 import {normalizeSiteManifestArguments, readCompatibleSiteManifest, writeLegacySiteManifestAlias} from '../compat/site-manifest.mjs';
 import { freezeHostRuntimes } from "../lib/runtime-generations.mjs";
@@ -27,12 +29,11 @@ import { RESOURCE_MODE_EXTERNAL, RESOURCE_MODE_HOSTED, RESOURCE_MODE_IMPORT } fr
 import { BUILD_AUTHORITY_PUBLICATION, classifyBuildProfile } from "../lib/build-profile.mjs";
 import { extractGameDataLayout } from "../lib/runtime-data-layout.mjs";
 import { assemblePreloadData } from "../lib/preload-data-assembler.mjs";
-import { assertRuntimeDataShell } from "../lib/runtime-data-provider.mjs";
 import { buildAppShell } from "../lib/app-shell-build.mjs";
 import { writeAppShellRetirementWorker } from "../lib/app-shell-retirement.mjs";
 import { deploymentAppShellPatterns, runtimeAppShellPaths } from "../lib/app-shell-policy.mjs";
 import { sourceIdentity, verifyReleaseManifest, writeReleaseManifest, fileSetIdentity } from "../lib/release-manifest.mjs";
-import { verifyRuntimeRelease, runtimeFileNames, runtimeStem } from "../lib/runtime-release.mjs";
+import { verifyRuntimeRelease } from "../lib/runtime-release.mjs";
 import { PRODUCT_CONTENT } from "../lib/content-definition.mjs";
 import { WORKSPACE_REPOSITORIES, workspacePath, workspaceRoot } from "../lib/workspace-layout.mjs";
 import { FRONTEND_PACKAGE_FILES, REACT_FRONTEND_ARTIFACT, hostArtworkFiles, resolveFrontendPackageSource } from "../lib/frontend-manifest.mjs";
@@ -95,14 +96,14 @@ const buildProfile = args.profile;
 const buildAuthority = classifyBuildProfile(buildProfile);
 if (!buildAuthority || buildProfile === "web-development") throw new Error("packaging requires an explicit web-validation-* or web-release-* --profile=NAME");
 const publicationBuild = buildAuthority === BUILD_AUTHORITY_PUBLICATION;
-const gameIds = normalizeProductSelection(args.games);
+const runtimeReleaseRoot = args["runtime-release"] ? resolve(args["runtime-release"]) : null;
+const runtimeRelease = runtimeReleaseRoot ? await verifyRuntimeRelease(runtimeReleaseRoot) : null;
+const gameIds = normalizeProductSelection(args.games ?? (runtimeRelease ? Object.keys(runtimeRelease.games) : undefined));
 const languageGames = gameIds.filter(game => PRODUCT_GAMES[game].features.languages);
 const thpracGames = gameIds.filter(game => PRODUCT_GAMES[game].features.thprac);
 const serverFeatureGames = gameIds.filter(game =>
   PRODUCT_GAMES[game].features.languages || PRODUCT_GAMES[game].features.thprac);
 const preloadGames = gameIds.filter(game => PRODUCT_GAMES[game].dataProvider === "emscripten-preload");
-const runtimeReleaseRoot = args["runtime-release"] ? resolve(args["runtime-release"]) : null;
-const runtimeRelease = runtimeReleaseRoot ? await verifyRuntimeRelease(runtimeReleaseRoot) : null;
 if (externalRecoveryRequest) {
   const requested = externalRecoveryRequest.requestedOverrides;
   const requestedKeys = requested && typeof requested === "object" && !Array.isArray(requested)
@@ -127,16 +128,8 @@ if (runtimeReleaseRoot && gameIds.some(game => args[`${game}-build`] || args[`${
 }
 // Runtime HTML/JS/WASM are Launcher/App resources in every publication mode.
 // Only game content/assets/fonts remain conditional on hosted-resource mode.
-const builds = Object.fromEntries(gameIds.flatMap(game => [
-  [game, runtimeRelease
-    ? resolve(runtimeReleaseRoot, runtimeRelease.games[game].runtime.root)
-    : required(`${game}-build`)],
-  ...(PRODUCT_GAMES[game].multiplayerRuntime
-    ? [[`${game}Multiplayer`, runtimeRelease
-      ? resolve(runtimeReleaseRoot, runtimeRelease.games[game].multiplayerRuntime.root)
-      : required(`${game}-multiplayer-build`)]]
-    : []),
-]));
+const runtimeInputs = Object.fromEntries(gameIds.map(game =>
+  [game, selectRuntimeInputs(game, args, runtimeRelease, runtimeReleaseRoot)]));
 const assets = hostedResources
   ? Object.fromEntries(gameIds.map(game => [game, required(`${game}-assets`)]))
   : Object.fromEntries(gameIds.map(game => [game, null]));
@@ -296,7 +289,8 @@ for (const game of languageGames) {
 for (const game of thpracGames) {
   if (!hostedResources || !serverFeatures[game].thprac) continue;
   if (runtimeRelease) continue;
-  const compileCommandsPath = resolve(builds[game], "compile_commands.json");
+  for (const {runtime: input} of validateRuntimeVariants(game, runtimeInputs[game])) {
+  const compileCommandsPath = resolve(input.directory, "compile_commands.json");
   let compileCommands;
   try {
     compileCommands = await readFile(compileCommandsPath, "utf8");
@@ -306,6 +300,7 @@ for (const game of thpracGames) {
   if (!compileCommands.includes("THPRAC_PORTABLE_ENABLED=1") ||
       !compileCommands.replaceAll("\\\\", "/").includes(`/portable/adapters/${game}/adapter.cpp`)) {
     throw new Error(`${game.toUpperCase()} thprac publication requires the full reallyportable adapter, not the ImGui shell alone`);
+  }
   }
 }
 
@@ -447,15 +442,6 @@ async function versionFiles(sourceBase, files) {
   return hash.digest("hex").slice(0, 16);
 }
 
-async function versionRuntimeVariant(runtimeRoot, dataPath, game) {
-  const hash = createHash("sha256");
-  for (const extension of ["html", "js", "wasm"]) {
-    hash.update(await readFile(resolve(runtimeRoot, `${game}.${extension}`)));
-  }
-  hash.update(await readFile(dataPath));
-  return hash.digest("hex").slice(0, 16);
-}
-
 async function fileIdentity(path) {
   const bytes = await readFile(path);
   return { bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
@@ -471,13 +457,6 @@ async function descriptorFile(source, target) {
     bytes: identity.bytes,
     sha256: identity.sha256,
   };
-}
-
-async function assertAppManagedRuntimeShell(buildRoot, game, variant, stem = game, declaredFiles = null) {
-  const htmlPath = resolve(buildRoot, `${stem}.html`);
-  const source = await readFile(htmlPath, "utf8");
-  assertRuntimeDataShell(source, game, variant);
-
 }
 
 async function runtimeDataIdentity(gameRoot, dataPath) {
@@ -602,35 +581,10 @@ for (const game of gameIds.filter(id => PRODUCT_GAMES[id].runtimeFileLayout === 
   const entry = manifest.games[game], product = PRODUCT_GAMES[game];
   const requestedFeatures = serverFeatures[game] || { languages: null, thprac: false };
   const runtimeCapabilities = runtimeRelease?.games[game]?.features;
-  const stem = runtimeStem(game);
-  const declared = runtimeRelease?.games[game]?.runtime.files ||
-    JSON.parse(await readFile(resolve(builds[game], "runtime-files.json"), "utf8")).files;
-  const names = runtimeFileNames(game, declared), appRuntimeRoot = resolve(staging, "runtime", game);
-  await assertAppManagedRuntimeShell(builds[game], game, "normal", stem, declared);
-  for (const name of names) {
-    const source = resolve(builds[game], name), identity = await fileIdentity(source), expected = declared[name];
-    if (identity.bytes !== expected.bytes || identity.sha256 !== expected.sha256) throw new Error(`${game}: Runtime identity mismatch: ${name}`);
-    await mkdir(dirname(resolve(appRuntimeRoot, name)), { recursive: true });
-    await cp(source, resolve(appRuntimeRoot, name));
-  }
-  await writeFile(resolve(appRuntimeRoot, "runtime-files.json"), JSON.stringify({ schema: "eagler-touhou/runtime-directory/1", files: declared }, null, 2));
-  entry.runtime = `runtime/${game}/${stem}.html?hosted=1&v=${await versionFiles(appRuntimeRoot, names)}`;
-  if (product.multiplayerRuntime) {
-    const multiplayerBuild = builds[`${game}Multiplayer`];
-    const multiplayerDeclared = runtimeRelease?.games[game]?.multiplayerRuntime?.files ||
-      JSON.parse(await readFile(resolve(multiplayerBuild, "runtime-files.json"), "utf8")).files;
-    const multiplayerNames = runtimeFileNames(game, multiplayerDeclared);
-    const multiplayerRoot = resolve(appRuntimeRoot, "multiplayer");
-    await assertAppManagedRuntimeShell(multiplayerBuild, game, "multiplayer", stem, multiplayerDeclared);
-    for (const name of multiplayerNames) {
-      const source = resolve(multiplayerBuild, name), identity = await fileIdentity(source), expected = multiplayerDeclared[name];
-      if (identity.bytes !== expected.bytes || identity.sha256 !== expected.sha256) throw new Error(`${game}: multiplayer Runtime identity mismatch: ${name}`);
-      await mkdir(dirname(resolve(multiplayerRoot, name)), { recursive: true });
-      await cp(source, resolve(multiplayerRoot, name));
-    }
-    await writeFile(resolve(multiplayerRoot, "runtime-files.json"), JSON.stringify({ schema: "eagler-touhou/runtime-directory/1", files: multiplayerDeclared }, null, 2));
-    entry.multiplayerRuntime = `runtime/${game}/multiplayer/${stem}.html?hosted=1&v=${await versionFiles(multiplayerRoot, multiplayerNames)}`;
-  }
+  const published = await publishRuntimeVariants({game, inputs: runtimeInputs[game], site: staging});
+  delete entry.runtime;
+  delete entry.multiplayerRuntime;
+  Object.assign(entry, published.urls);
   entry.features = publishedHostRuntimeFeatures(game, requestedFeatures, runtimeCapabilities);
   // External packaging inherits the hosted manifest's language catalogs; only
   // hosted/import assembly resets them before (re)publishing.
@@ -728,28 +682,11 @@ for (const game of preloadGames) {
     ...(entry.features || {}),
     ...publishedHostRuntimeFeatures(game, requestedFeatures, runtimeCapabilities),
   };
-  // Executable Runtime belongs to the App Shell in every resource mode.
-  const appRuntimeRoot = resolve(staging, "runtime", game);
-  await mkdir(appRuntimeRoot, { recursive: true });
-  const appRuntimeFiles = ["html", "js", "wasm"].map(extension => `${game}.${extension}`);
-  await assertAppManagedRuntimeShell(builds[game], game, "normal");
-  for (const extension of ["html", "js", "wasm"]) {
-    await cp(resolve(builds[game], `${game}.${extension}`), resolve(appRuntimeRoot, `${game}.${extension}`));
-  }
-  const runtimeVersion = await versionFiles(appRuntimeRoot, appRuntimeFiles);
-  entry.runtime = `runtime/${game}/${game}.html?hosted=1&v=${runtimeVersion}`;
-  let multiplayerRuntimeVersion = null;
-  const multiplayerBuild = builds[`${game}Multiplayer`];
-  if (multiplayerBuild) {
-    const multiplayerRoot = resolve(appRuntimeRoot, "multiplayer");
-    await mkdir(multiplayerRoot, { recursive: true });
-    await assertAppManagedRuntimeShell(multiplayerBuild, game, "multiplayer");
-    for (const extension of ["html", "js", "wasm"]) {
-      await cp(resolve(multiplayerBuild, `${game}.${extension}`), resolve(multiplayerRoot, `${game}.${extension}`));
-    }
-    multiplayerRuntimeVersion = await versionFiles(multiplayerRoot, appRuntimeFiles);
-    entry.multiplayerRuntime = `runtime/${game}/multiplayer/${game}.html?hosted=1&v=${multiplayerRuntimeVersion}`;
-  }
+  const published = await publishRuntimeVariants({game, inputs: runtimeInputs[game], site: staging});
+  delete entry.runtime;
+  delete entry.multiplayerRuntime;
+  Object.assign(entry, published.urls);
+  const dataRuntimeRoot = Object.values(published.directories)[0];
   if (serverResourceMode === RESOURCE_MODE_IMPORT) {
     // Runtime HTML/JS/WASM belong to the Launcher/App, not to imported or
     // remotely acquired game content. Publish the supported App Runtime in
@@ -794,7 +731,7 @@ for (const game of preloadGames) {
   const dataPath = dataTarget.slice(1);
   const assembled = await assemblePreloadData({
     game,
-    runtimeScript: resolve(appRuntimeRoot, `${game}.js`),
+    runtimeScript: resolve(dataRuntimeRoot, `${game}.js`),
     sourceDirectory: dataAssets[game],
     output: resolve(gameRoot, dataPath),
   });
@@ -803,10 +740,10 @@ for (const game of preloadGames) {
   if (dataIdentity.bytes !== runtimeLayout.bytes) throw new Error(`${game}: packaged DATA size does not match Runtime layout`);
   entry.gameData = { path: dataPath, ...dataIdentity,
     version: `sha256-${dataIdentity.sha256}`, layout: runtimeLayout.layout };
-  if (multiplayerBuild) {
-    const multiplayerLayout = extractGameDataLayout(await readFile(resolve(appRuntimeRoot, "multiplayer", `${game}.js`), "utf8"), game);
-    if (multiplayerLayout.bytes !== runtimeLayout.bytes || multiplayerLayout.layout !== runtimeLayout.layout) {
-      throw new Error(`${game}: normal and multiplayer Runtime builds must use identical shared DATA content/layout`);
+  for (const runtimeRoot of Object.values(published.directories)) {
+    const selectedLayout = extractGameDataLayout(await readFile(resolve(runtimeRoot, game + '.js'), 'utf8'), game);
+    if (selectedLayout.bytes !== runtimeLayout.bytes || selectedLayout.layout !== runtimeLayout.layout) {
+      throw new Error(game + ': Runtime variants must use identical shared DATA content/layout');
     }
   }
   await publishLanguagePacks(game, entry, gameRoot);

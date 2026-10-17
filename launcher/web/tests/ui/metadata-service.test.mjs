@@ -420,3 +420,13 @@ test('metadata: original language overlays and music context use current package
   assert.equal(context.mobile, true);
   service.dispose();
 });
+
+test('an MP-only site offers only its published product mode', async () => {
+  const game = hostGame('th06', {multiplayerRuntime: 'runtime/th06/multiplayer/th06.html'});
+  delete game.runtime;
+  const manifest = {...host({th06: game}), schema: 'eagler-touhou/site-manifest/2'};
+  const service = fixture(network(manifest, {schema: 'eagler-touhou/release-catalog/1', games: {}}));
+  await service.initialize();
+  assert.deepEqual(service.getSnapshot().products, ['th06mp']);
+  service.dispose();
+});

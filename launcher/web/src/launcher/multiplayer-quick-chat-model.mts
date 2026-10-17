@@ -10,6 +10,10 @@ export interface QuickChatContext {
   serial: number;
   localSeat: number | null;
   seats: readonly (QuickChatSeat | null)[];
+  spectators?: readonly QuickChatSeat[];
+  localSpectator?: boolean;
+  localClientId?: string;
+  inRoom?: boolean;
   connected: boolean;
   language: string;
   lessMotion?: boolean;
@@ -18,6 +22,7 @@ export interface QuickChatEntry {
   readonly id: number;
   readonly clientId: string;
   readonly seat: number;
+  readonly spectator: boolean;
   readonly name: string;
   readonly phrase: QuickChatPhrase;
 }
@@ -92,6 +97,9 @@ export function createMultiplayerQuickChatModel(ports: Ports) {
       previous.connected !== next.connected ||
       previous.language !== next.language ||
       previous.lessMotion !== next.lessMotion ||
+      previous.localSpectator !== next.localSpectator ||
+      previous.inRoom !== next.inRoom ||
+      JSON.stringify(previous.spectators) !== JSON.stringify(next.spectators) ||
       previous.seats.length !== next.seats.length ||
       next.seats.some(
         (seat, index) =>
@@ -100,7 +108,11 @@ export function createMultiplayerQuickChatModel(ports: Ports) {
       );
     if (!changed) return;
     if (reset) for (const entry of snapshot.entries) cancel(entry);
-    const context = { ...next, seats: next.seats.map((seat) => (seat ? { ...seat } : null)) };
+    const context = {
+      ...next,
+      seats: next.seats.map((seat) => (seat ? { ...seat } : null)),
+      spectators: next.spectators?.map((member) => ({ ...member })),
+    };
     publish({
       ...snapshot,
       context,
@@ -120,23 +132,32 @@ export function createMultiplayerQuickChatModel(ports: Ports) {
       !Number.isInteger(message.seat)
     )
       return;
-    const seat = context.seats[message.seat];
+    const spectator = message.spectator === true && message.seat === -1;
+    const seat = spectator
+      ? context.spectators?.find((member) => member.clientId === message.clientId)
+      : context.seats[message.seat];
     if (!seat || message.clientId !== seat.clientId) return;
     const entry: QuickChatEntry = {
       id: ++sequence,
       clientId: seat.clientId,
       seat: message.seat,
+      spectator,
       name: seat.name,
       phrase,
     };
-    if (!snapshot.muted.includes(entry.clientId)) ports.voice(phrase.id);
+    if (
+      !snapshot.muted.includes(entry.clientId) &&
+      entry.clientId !== context.localClientId &&
+      (!spectator || context.localSeat == null)
+    )
+      ports.voice(phrase.id);
     const entries = [...snapshot.entries, entry];
     if (entries.length > 50) cancel(entries.shift()!);
     publish({ ...snapshot, entries });
     if (!disposed && snapshot.entries.includes(entry))
       timers.set(
         entry,
-        ports.timers.setTimeout(() => expire(entry), 3000),
+        ports.timers.setTimeout(() => expire(entry), 10000),
       );
   }
   return {
@@ -176,7 +197,14 @@ export function createMultiplayerQuickChatModel(ports: Ports) {
     sendPhrase(id: unknown) {
       const context = snapshot.context,
         phrase = quickChatPhrase(id);
-      if (disposed || !phrase || context?.localSeat == null || !context.connected) return;
+      if (
+        disposed ||
+        !phrase ||
+        !context ||
+        (context.localSeat == null && !context.localSpectator) ||
+        !context.connected
+      )
+        return;
       ports.voice(phrase.id);
       ports.send({ type: 'quick-chat', phrase: phrase.id, serial: context.serial });
       publish({ ...snapshot, pickerOpen: false });

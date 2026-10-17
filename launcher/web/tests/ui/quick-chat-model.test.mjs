@@ -145,6 +145,20 @@ const projectEntries = (entries) =>
     name,
     phrase,
   }));
+
+test('admitted spectators send text to all, with no spectator voice for players', (t) => {
+  const observers=[{clientId:'viewer',name:'观众'}];
+  const {model,voices,sends}=fixture(t,context({spectators:observers}));
+  model.receive(message({seat:-1,clientId:'viewer',spectator:true}));
+  assert.equal(model.getSnapshot().entries.length,1);
+  assert.deepEqual(voices,[]);
+  model.receive(message({seat:-1,clientId:'intruder',spectator:true}));
+  assert.equal(model.getSnapshot().entries.length,1);
+  model.receive(message());assert.equal(voices.length,1);
+  model.update(context({spectators:observers,localSeat:null,localSpectator:true}));
+  model.receive(message({seat:-1,clientId:'viewer',spectator:true}));assert.equal(voices.length,2);
+  model.sendPhrase('thanks');assert.deepEqual(sends,[{type:'quick-chat',phrase:'thanks',serial:7}]);
+});
 const flush = async () => {
   await Promise.resolve();
   await Promise.resolve();
@@ -532,19 +546,19 @@ test('the 50-entry bound includes muted entries, evicts oldest first and cancels
   assert.equal(clock.jobs.size, 50);
   model.toggleMember('peer');
   assert.equal(model.getSnapshot().entries.length, 50);
-  clock.advance(3000);
+  clock.advance(10000);
   assert.deepEqual(model.getSnapshot().entries, []);
   assert.equal(clock.jobs.size, 0);
 });
-test('each duplicate has an independent identity and expires at exactly 3000 ms', (t) => {
+test('each duplicate has an independent identity and expires at exactly 10000 ms', (t) => {
   const { model, clock } = fixture(t);
   model.receive(message());
   clock.advance(1000);
   model.receive(message());
   const [first, second] = model.getSnapshot().entries;
   assert.notEqual(first.id, second.id);
-  assert.deepEqual(clock.deadlines(), [2000, 3000]);
-  clock.advance(1999);
+  assert.deepEqual(clock.deadlines(), [9000, 10000]);
+  clock.advance(8999);
   assert.equal(model.getSnapshot().entries.length, 2);
   clock.advance(1);
   assert.deepEqual(model.getSnapshot().entries, [second]);
@@ -553,7 +567,7 @@ test('each duplicate has an independent identity and expires at exactly 3000 ms'
   clock.advance(1);
   assert.deepEqual(model.getSnapshot().entries, []);
 });
-test('expiry presenter starts after 3000 ms and owns completion without extending the original timer', async (t) => {
+test('expiry presenter starts after 10000 ms and owns completion without extending the original timer', async (t) => {
   const { model, clock } = fixture(t),
     gate = deferred(),
     presented = [];
@@ -563,7 +577,7 @@ test('expiry presenter starts after 3000 ms and owns completion without extendin
   });
   model.receive(message());
   const entry = model.getSnapshot().entries[0];
-  clock.advance(2999);
+  clock.advance(9999);
   assert.deepEqual(presented, []);
   clock.advance(1);
   assert.deepEqual(presented, [entry]);
@@ -581,12 +595,12 @@ test('a synchronous expiry presenter removes immediately and detaching restores 
   });
   model.receive(message());
   const id = model.getSnapshot().entries[0].id;
-  clock.advance(3000);
+  clock.advance(10000);
   assert.deepEqual(presented, [id]);
   assert.deepEqual(model.getSnapshot().entries, []);
   detach();
   model.receive(message());
-  clock.advance(3000);
+  clock.advance(10000);
   assert.deepEqual(presented, [id]);
   assert.deepEqual(model.getSnapshot().entries, []);
 });
@@ -596,7 +610,7 @@ test('late presentation completion after a room reset cannot remove a new-sessio
   const detach = model.setExpiryPresenter(() => gate.promise);
   model.receive(message());
   const old = model.getSnapshot().entries[0];
-  clock.advance(3000);
+  clock.advance(10000);
   model.update(
     context({
       room: 'NEXT',
@@ -613,7 +627,7 @@ test('late presentation completion after a room reset cannot remove a new-sessio
   gate.resolve();
   await flush();
   assert.deepEqual(model.getSnapshot().entries, [current]);
-  clock.advance(3000);
+  clock.advance(10000);
   assert.deepEqual(model.getSnapshot().entries, []);
 });
 test('dispose clears scheduled expiry and late presenter completion cannot notify subscribers', async (t) => {
@@ -623,7 +637,7 @@ test('dispose clears scheduled expiry and late presenter completion cannot notif
   model.subscribe(() => notifications++);
   model.setExpiryPresenter(() => gate.promise);
   model.receive(message());
-  clock.advance(3000);
+  clock.advance(10000);
   model.receive(message());
   assert.equal(clock.jobs.size, 1);
   model.dispose();

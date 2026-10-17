@@ -5,10 +5,11 @@ import vm from "node:vm";
 import { runtimeGenerationId } from "../lib/runtime-generations.mjs";
 import { RUNTIME_MANIFEST_SCHEMA, RUNTIME_PROTOCOL, RUNTIME_GENERATION_SCHEMA,
   runtimeGenerationBase, runtimeGenerationEntry } from "../lib/contracts/runtime-generations.mjs";
+import { resolveRuntimeGenerationWorkerSource } from "../lib/contracts-build.mjs";
 const source = (await Promise.all([
-  "../.cache/build/browser/assets/contracts/runtime-generations-worker.js",
-  "../compat/runtime-generation-reader.js", "../src/runtime-cache-sw.js",
-].map(path => readFile(new URL(path, import.meta.url), "utf8")))).join("\n");
+  await resolveRuntimeGenerationWorkerSource(),
+  new URL("../compat/runtime-generation-reader.js", import.meta.url), new URL("../src/runtime-cache-sw.js", import.meta.url),
+].map(path => readFile(path, "utf8")))).join("\n");
 const sha = text => createHash("sha256").update(text).digest("hex");
 class MemoryCache {
   entries = new Map();

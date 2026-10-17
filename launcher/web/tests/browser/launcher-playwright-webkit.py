@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -15,12 +16,10 @@ from support.runtime_document_observation import install_runtime_document_observ
 
 def is_runtime_frame(frame_src: str, game: str) -> bool:
     path = urlparse(frame_src or "").path
-    runtime_names = {f"{game}.html"}
-    return any(
-        path.endswith(f"/runtime/{game}/{name}")
-        or path.endswith(f"/games/{game}/{name}")
-        for name in runtime_names
-    )
+    return re.search(
+        rf"/runtime/{re.escape(game)}/(?:[a-f0-9]{{64}}/)?{re.escape(game)}\.html$",
+        path,
+    ) is not None
 
 
 def runtime_generation(frame_src: str, game: str) -> str:
@@ -32,7 +31,7 @@ def runtime_generation(frame_src: str, game: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("url", nargs="?", default="http://127.0.0.1:8136/")
+    parser.add_argument("url", help="显式 Launcher 地址")
     parser.add_argument("game", nargs="?", default="th07")
     parser.add_argument("music", nargs="?", default="none")
     parser.add_argument("--package-zip")
@@ -53,8 +52,7 @@ def main() -> int:
 
     with sync_playwright() as p:
         browser = p.webkit.launch(headless=True)
-        # This exercises the mobile/touch WebKit code path on Windows. It is
-        # deliberately not presented as real iOS/Safari hardware coverage.
+        # 桌面 WebKit 模拟移动视口和触摸输入，不代表真实 iOS / Safari 设备。
         context = browser.new_context(
             viewport={"width": 844, "height": 390},
             user_agent=(
@@ -122,7 +120,7 @@ def main() -> int:
             try:
                 page_state = page.evaluate(
                     """
-                    () => ({
+                    async () => ({
                       readyState: document.readyState,
                       hasBoot: typeof window.__eaglerBoot !== 'undefined',
                       boot: window.__eaglerBoot || null,

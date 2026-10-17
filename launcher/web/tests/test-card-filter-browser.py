@@ -6,7 +6,7 @@ from playwright.sync_api import sync_playwright
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('url', nargs='?', default='http://127.0.0.1:8130/')
+    parser.add_argument('url', help='显式 Launcher 地址')
     parser.add_argument('--test-build', action='store_true')
     args = parser.parse_args()
     with sync_playwright() as p:

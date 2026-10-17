@@ -59,7 +59,7 @@ def digest(data):
 def registry():
     result = subprocess.run(
         ["node", "--input-type=module", "-e",
-         "import {PRODUCT_GAMES} from './product-catalog.mjs'; console.log(JSON.stringify(PRODUCT_GAMES))"],
+         "import {PRODUCT_GAMES} from './lib/contracts/product-catalog.mjs'; console.log(JSON.stringify(PRODUCT_GAMES))"],
         cwd=ROOT, check=True, capture_output=True, text=True, encoding="utf-8",
     )
     return json.loads(result.stdout)
@@ -280,7 +280,7 @@ class StorageCase:
 def main():
     products = registry()
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--url", default="http://127.0.0.1:8130/")
+    parser.add_argument("--url", required=True, help="显式 Launcher 地址")
     parser.add_argument("--fixture-root", type=Path, required=True, help="explicit directory containing <game>/score.dat")
     parser.add_argument("--package", action="append", default=[], help="optional explicit content input GAME=PATH, imported through Launcher UI")
     parser.add_argument("--games", nargs="+", choices=products, default=list(products))

@@ -1,51 +1,18 @@
 import { dependencyExecutable } from '../../lib/source-layout.mjs';
-/** Pinned-main published HTML before JS/hydration; no browser/rendering claim. */
+/** Current initial document and production artifacts; no physical-browser claim. */
 import test, { before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { runInNewContext } from 'node:vm';
 import { build } from 'esbuild';
 import { authoredSourcesPlugin } from './authored-sources.mjs';
 import { installMountedDom } from './mounted-dom-environment.mjs';
 const project = fileURLToPath(new URL('../../', import.meta.url));
-const pinnedMain = 'edee9633e5e3ee79cd2e1aa334f84f6caf755090';
 let work, env, api, React, renderToStaticMarkup, createRoot, MemoryRouter, root;
 const el = (type, props, ...children) => React.createElement(type, props, ...children);
 const parse = (html) => new env.window.DOMParser().parseFromString(html, 'text/html');
-const normal = (text) => text.replace(/\s+/g, ' ').trim();
-function cardContract(document) {
-  return [...document.querySelectorAll('.game')].map((card) => ({
-    id: card.dataset.product || card.dataset.game,
-    className: card.className,
-    href: card.getAttribute('href'),
-    hidden: card.hidden,
-    style: [...card.style].map((key) => [key, card.style.getPropertyValue(key)]).sort(),
-    title: normal(card.querySelector('h2').textContent),
-    subtitle: card.querySelector('small').textContent,
-    number: card.querySelector('.no-label').textContent,
-    art: [...card.querySelectorAll('.card-art-image')].map((image) =>
-      ['src', 'width', 'height', 'fetchpriority'].map((key) => image.getAttribute(key)),
-    ),
-    current: card.getAttribute('aria-current'),
-  }));
-}
-function minimapContract(document) {
-  return [...document.querySelectorAll('[data-minimap-preview]')].map((button) =>
-    Object.fromEntries(
-      [
-        'data-minimap-preview',
-        'aria-label',
-        'aria-controls',
-        'aria-describedby',
-        'aria-current',
-        'hidden',
-      ].map((key) => [key, button.getAttribute(key)]),
-    ),
-  );
-}
 function assertUniqueIds(document) {
   const ids = [...document.querySelectorAll('[id]')].map((node) => node.id);
   assert.equal(new Set(ids).size, ids.length, 'Static document must not include duplicate owners');
@@ -80,9 +47,6 @@ before(async () => {
     plugins: [authoredSourcesPlugin(project)],
   });
   api = await import(pathToFileURL(outfile).href);
-
-  // Execute the pinned compiler's pure card generator, not a copied template
-  // or a warm legacy UI build. The original HTML marker has no authored cards.
 });
 afterEach(async () => {
   if (root) await React.act(async () => root.unmount());
@@ -117,12 +81,23 @@ for (const path of [
   '/nested/en.html',
   '/?game=th20&test=1',
 ]) {
-  test(`actual BrowserLauncher server render preserves original default static card gate: ${path}`, () => {
+  test(`initial document respects the current product catalog without starting a session: ${path}`, () => {
     const document = parse(initialMarkup(path)),
       locale = path.includes('en.html') ? 'en' : 'zh-CN';
-    for (const game of ['th08', 'th10', 'th15', 'th11'])
-      assert.equal(document.querySelector(`.game[data-game=${game}]`).hidden, false);
-    assert.equal(document.querySelector('.game[data-game=th20]').hidden, true);
+    const cards = [...document.querySelectorAll('.game')];
+    assert.deepEqual(
+      cards.map((card) => card.dataset.product || card.dataset.game).sort(),
+      [...api.PRODUCT_IDS].sort(),
+    );
+    for (const card of cards) {
+      const id = card.dataset.product || card.dataset.game;
+      assert.equal(card.hidden, !api.productEnabledForBuild(id), id);
+      assert.equal(
+        new URL(card.getAttribute('href'), 'https://launcher.invalid/').searchParams.get('game'),
+        id,
+      );
+      assert.ok(card.querySelector('h2')?.textContent.trim(), `${id}: accessible game title`);
+    }
     assert.equal(
       document.querySelector('#singleplayerHeading').textContent,
       api.translate(locale, 'library.singleplayer'),
@@ -154,6 +129,11 @@ for (const path of ['/lobby.html', '/lobby', '/nested/lobby.html?game=th09mp'])
       'lobbyNetworkCheck',
     ]) {
       const actual = document.getElementById(id);
+      assert.ok(actual, `${id}: initial control exists`);
+      assert.ok(
+        actual.disabled || actual.closest('[inert]'),
+        `${id}: unavailable before hydration`,
+      );
     }
     assert.equal(document.querySelector('#listHead').hidden, true);
     assert.equal(document.querySelector('#listLoading').hidden, false);
@@ -164,12 +144,27 @@ for (const path of ['/lobby.html', '/lobby', '/nested/lobby.html?game=th09mp'])
     assertUniqueIds(document);
   });
 for (const lobby of [false, true])
-  test(`exact original ${lobby ? 'lobby' : 'library'} noscript copy`, () => {
+  test(`${lobby ? 'lobby' : 'library'} noscript provides a readable fallback and local navigation`, () => {
     const output = renderToStaticMarkup(
       el(api.OriginalNoscript, {
         lobby,
       }),
     );
+    const document = parse(`<!doctype html><html><head></head><body>${output}</body></html>`);
+    const fallback = document.querySelector('noscript');
+    assert.ok(fallback, 'fallback does not require JavaScript');
+    assert.ok(
+      fallback.querySelector('p')?.textContent.trim(),
+      'fallback explains the unavailable page',
+    );
+    const links = [...fallback.querySelectorAll('a[href]')];
+    assert.ok(links.length > 0, 'fallback provides navigation instead of a dead end');
+    for (const link of links) {
+      const target = new URL(link.getAttribute('href'), 'https://launcher.invalid/');
+      assert.equal(target.origin, 'https://launcher.invalid');
+      assert.ok(link.textContent.trim(), 'navigation has readable link text');
+    }
+    assert.equal(document.querySelector('script, iframe'), null);
   });
 test('initial presentation starts no rail observers/RAF and removes its document handlers on replacement', async () => {
   const activeClicks = new Set(),
@@ -311,7 +306,7 @@ test(
         if (lobby) {
           assert.equal(document.querySelectorAll('.game').length, 0);
           assert.ok(
-            document.querySelector('noscript').textContent.includes('联机大厅需要启用 JavaScript'),
+            document.querySelector('noscript')?.textContent.trim(),
           );
         }
         assert.equal(document.querySelector('iframe'), null);

@@ -12,8 +12,8 @@ from support.launcher_target import launcher_test_file
 
 
 ROOT = Path(__file__).resolve().parents[1]
-INDEX = launcher_test_file(ROOT, "index.html", legacy=".cache/build/optimized/index.html").read_bytes()
-GUIDE = launcher_test_file(ROOT, "compatibility.html", legacy="public/compatibility.html").read_bytes()
+INDEX = launcher_test_file(ROOT, "index.html").read_bytes()
+GUIDE = launcher_test_file(ROOT, "compatibility.html").read_bytes()
 ORIGIN = "http://compatibility.test/"
 
 

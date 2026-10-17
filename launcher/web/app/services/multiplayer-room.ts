@@ -164,6 +164,8 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
     intent: '' | 'create' | 'join' = '',
     autoSeat = false;
   let ownerController = new AbortController();
+  let launchedSpectatorSerial = 0,
+    spectatorResumeSerial = 0;
   let preparation: { epoch: number; controller: AbortController; task: Promise<void> } | null =
     null;
   let movementDecision: Promise<boolean> | null = null;
@@ -592,6 +594,7 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
     state.spectatorRequested = false;
     state.roomSettingsOpen = false;
     state.startSerial = 0;
+    launchedSpectatorSerial = spectatorResumeSerial = 0;
     state.launchBusy = false;
     state.checkBusy = false;
   }
@@ -625,7 +628,8 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
     stopped = false;
     intent = invite.a || '';
     state.fromDirectory = invite.f === true;
-    autoSeat = state.fromDirectory && intent === 'join';
+    const spectatorEntry = restoredProduct === 'th09mp' && intent === 'join' && invite.s === true;
+    autoSeat = state.fromDirectory && intent === 'join' && !spectatorEntry;
     const created = state.fromDirectory && intent === 'create';
     const requestedCount = invite.p;
     room = {
@@ -649,9 +653,9 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
       synced: false,
       connection: 'connecting',
     };
-    state.seat = saved?.seat ?? (created ? 0 : null);
+    state.seat = spectatorEntry ? null : (saved?.seat ?? (created ? 0 : null));
     state.ready = !!saved?.ready;
-    state.spectatorRequested = !!saved?.spectatorRequested;
+    state.spectatorRequested = spectatorEntry || !!saved?.spectatorRequested;
     state.roomSettingsOpen = !!saved?.roomSettingsOpen;
     state.timingChoice = 'auto';
     state.rollbackEnabled = multiplayerInputTimingPolicy(config).rollback;
@@ -1005,6 +1009,7 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
         spectator,
         spectatorId: spectator ? clientId : '',
         spectatorCount: Math.max(0, Number(room.spectatorCount) || 0),
+        spectatorTimeline: room.spectatorTimeline === true,
         ...(config.gameplay === 'cooperative'
           ? { challengeMode: room.challengeMode === true }
           : {}),
@@ -1034,7 +1039,12 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
         return;
       if (state.seat != null && !(await ensureMovementAllowed())) return;
       if (!owned.isCurrent()) return;
-      await ports.launch({ ...owned, runtimeOptions: runtimeOptions(), snapshot });
+      const options = runtimeOptions();
+      await ports.launch({ ...owned, runtimeOptions: options, snapshot });
+      if (owned.isCurrent() && state.spectatorRequested)
+        launchedSpectatorSerial =
+          Number(new URL(options.netplayUrl, 'http://localhost').searchParams.get('run')) ||
+          state.startSerial;
     } catch (error) {
       if (owned.isCurrent()) await ports.operationFailed(error, 'launch', owned);
     } finally {
@@ -1228,6 +1238,21 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
     reconnectTimer = null;
     connect(true);
   }
+  function resumeSpectator() {
+    if (
+      !room?.spectatorTimeline ||
+      !state.spectatorRequested ||
+      !state.connected ||
+      room.phase === 'lobby' ||
+      ports.isLaunched() ||
+      state.launchBusy ||
+      state.startSerial <= launchedSpectatorSerial ||
+      state.startSerial <= spectatorResumeSerial
+    )
+      return;
+    if (send({ type: 'spectate', name: state.displayName }))
+      spectatorResumeSerial = state.startSerial;
+  }
   function noteActivity(trusted: boolean) {
     const now = ports.now?.() ?? Date.now();
     if (
@@ -1262,6 +1287,7 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
     takeSeat,
     standUp,
     spectate,
+    resumeSpectator,
     leaveSpectator,
     setDisplayName,
     changeLoadout,
@@ -1284,6 +1310,26 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
     setRollbackEnabled,
     timingRecommendation,
     acceptMeasuredTiming,
+    acceptTh09Match(value: unknown) {
+      if (
+        product !== 'th09mp' ||
+        state.seat !== 0 ||
+        state.spectatorRequested ||
+        !state.connected ||
+        !ports.isLaunched() ||
+        !value ||
+        typeof value !== 'object'
+      )
+        return;
+      const match = value as Record<string, unknown>;
+      send({
+        type: 'th09-match',
+        serial: state.startSerial,
+        start: match.start,
+        frames: match.frames,
+        ...(match.winner !== undefined ? { winner: match.winner } : {}),
+      });
+    },
     noteActivity,
     setRoomSettingsOpen(open: boolean) {
       state.roomSettingsOpen = open;

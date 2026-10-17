@@ -48,10 +48,10 @@ See the Chinese [development guide](docs/DEVELOPMENT.md) and [Runtime build play
 | `tools/`, `config/` | Project commands and dependency/build declarations |
 | `docs/` | Project architecture, capability tracking, audit, and playbooks |
 
-Other platform launchers are not implemented and no shell technology has been selected. Maintenance documents are kept in Chinese; this README and the Chinese README describe the same project.
+Other platform launchers are not implemented and no shell technology has been selected. Current operation guides are in Chinese; the restored implementation playbooks retain their original English text. This README and the Chinese README describe the same project.
 
 ## Contributing and licensing
 
-Start with the [documentation index](docs/README.md) and [engineering audit](docs/ENGINEERING_AUDIT.md). Describe the affected behavior, actual verification, and remaining limits. Source-text snapshots, full stylesheet hashes, and historical object-file identity are not substitutes for behavioral tests.
+Game adaptation starts with the [Runtime guide](docs/ADAPTING_A_GAME.md) and [integration protocol](docs/GAME_ADAPTER_CONTRACT.md). Frontend registration follows the [Web integration guide](launcher/web/docs/ADAPTING_A_GAME.md). The [documentation index](docs/README.md) routes other maintenance work; the [engineering audit](docs/ENGINEERING_AUDIT.md) records this refactor separately.
 
 The project's code uses [GPL-3.0-or-later](LICENSE). Each game and third-party component retains its own license. See [third-party notices](THIRD_PARTY.md) and [resource handling](ASSETS.md). Original data, personal saves, toolchains, and deployment configuration are not public source files.

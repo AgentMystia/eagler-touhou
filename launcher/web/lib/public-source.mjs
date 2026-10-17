@@ -15,24 +15,25 @@ function normalizePublicPath(value) {
   return path;
 }
 
-export function resolvePublicSource(value) {
+export function resolvePublicSource(value, {project: sourceProject = project} = {}) {
+  const publicRoot = resolve(sourceProject, "public");
   const path = normalizePublicPath(value);
-  const source = resolve(PUBLIC_SOURCE_ROOT, path);
-  if (source === PUBLIC_SOURCE_ROOT || !source.startsWith(PUBLIC_SOURCE_ROOT + sep)) {
+  const source = resolve(publicRoot, path);
+  if (source === publicRoot || !source.startsWith(publicRoot + sep)) {
     throw new Error(`public source path escapes its root: ${value}`);
   }
   return source;
 }
 
-export function resolvePublicOrRepositorySource(value) {
+export function resolvePublicOrRepositorySource(value, {project: sourceProject = project} = {}) {
   const path = normalizePublicPath(value);
-  if (path === "favicon.ico" || path === "assets/favicon.ico") return resolve(project, "favicon.ico");
+  if (path === "favicon.ico" || path === "assets/favicon.ico") return resolve(sourceProject, "favicon.ico");
   if (path === "LICENSE") {
-    const shared = resolve(project, "../..", path);
+    const shared = resolve(sourceProject, "../..", path);
     if (existsSync(shared)) return shared;
   }
   const alias = compatibilitySourcePath(path);
-  if (alias) return resolve(project, alias);
-  const publicSource = resolvePublicSource(path);
-  return existsSync(publicSource) ? publicSource : resolve(project, path);
+  if (alias) return resolve(sourceProject, alias);
+  const publicSource = resolvePublicSource(path, {project: sourceProject});
+  return existsSync(publicSource) ? publicSource : resolve(sourceProject, path);
 }

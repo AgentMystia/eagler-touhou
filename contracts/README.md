@@ -11,3 +11,5 @@
 从项目根运行 `npm ci --ignore-scripts`、`npm run check`。更改协议需覆盖有效/无效输入、代次和旧格式读取，不用接口自报能力字典替代真实行为。
 
 [工程架构](../docs/ARCHITECTURE.md) · [验证流程](../docs/playbooks/verification.md)
+
+[Runtime 协议](../docs/GAME_ADAPTER_CONTRACT.md)说明游戏 shell 如何消费这些数据；[Web 新游戏接入](../launcher/web/docs/ADAPTING_A_GAME.md)说明前端与资源登记。

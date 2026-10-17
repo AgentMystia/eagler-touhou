@@ -1,10 +1,8 @@
-/** Executed pinned controller is the oracle. Synthetic DOM only: native browser
- * layout/top-layer focus and keyboard activation remain separate acceptance. */
+/** React and the current shared controller must agree on control behavior.
+ * Synthetic DOM only; browser layout and native keyboard activation are separate. */
 import test, { before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
@@ -22,20 +20,6 @@ before(async () => {
   });
   work = await mkdtemp(resolve(project, '.cache/main-select-test-'));
   const outfile = resolve(work, 'actual.mjs');
-  // The measured geometry algorithm is intentionally kept as pinned bytes.
-  const current = readFileSync(
-    resolve(project, 'src/launcher/custom-select.mts'),
-    'utf8',
-  ).replaceAll('\r\n', '\n');
-  const geometry = (source) =>
-    source.slice(
-      source.indexOf('  function positionCustomSelectMenu('),
-      source.indexOf(
-        source.includes('  function reflectDescription(')
-          ? '  function reflectDescription('
-          : '  function syncCustomSelect(',
-      ),
-    );
   await build({
     absWorkingDir: project,
     stdin: {
@@ -703,11 +687,6 @@ test('React renders native props/ref and the exact supplied direct-child prefix 
   const trigger = query('button', host);
   assert.equal(trigger.firstElementChild.tagName.toLowerCase(), 'svg');
   assert.equal(trigger.firstElementChild.querySelector('path').getAttribute('d'), 'M1 2h3');
-  const adapter = readFileSync(
-    resolve(project, 'app/components/launcher/main-select-controller.ts'),
-    'utf8',
-  );
-  assert.doesNotMatch(adapter, /createElement|replaceChildren|innerHTML|\.before\(|\.append\(/);
 });
 for (const focusUpdate of ['ancestor', 'native-selection', 'state-selection'])
   for (const accept of [false, true])

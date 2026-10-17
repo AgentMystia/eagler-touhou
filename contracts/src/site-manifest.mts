@@ -15,7 +15,8 @@ import {
   type ResourceMode,
 } from './resource-mode.mts';
 
-export const SITE_MANIFEST_SCHEMA = 'eagler-touhou/site-manifest/1';
+export const LEGACY_SITE_MANIFEST_SCHEMA = 'eagler-touhou/site-manifest/1';
+export const SITE_MANIFEST_SCHEMA = 'eagler-touhou/site-manifest/2';
 export const SITE_MANIFEST_FILE = 'site-manifest.json';
 
 export interface SiteGameData {
@@ -61,7 +62,7 @@ export interface SiteLanguageOption {
 }
 
 export interface SiteGameManifest {
-  runtime: string;
+  runtime?: string;
   multiplayerRuntime?: string;
   gameData: SiteGameData;
   music: {
@@ -91,7 +92,7 @@ export interface SiteManifestShared {
 }
 
 export interface SiteManifest {
-  schema: typeof SITE_MANIFEST_SCHEMA;
+  schema: typeof SITE_MANIFEST_SCHEMA | typeof LEGACY_SITE_MANIFEST_SCHEMA;
   protocol: typeof HOST_PROTOCOL;
   profile: string;
   shared: SiteManifestShared;
@@ -267,8 +268,9 @@ function validGame(
   value: unknown,
   resourceMode: ResourceMode,
 ): value is SiteGameManifest {
-  if (!isGameId(gameId) || !isRecord(value) || typeof value.runtime !== 'string' || !value.runtime)
-    return false;
+  if (!isGameId(gameId) || !isRecord(value)) return false;
+  if (value.runtime != null && (typeof value.runtime !== 'string' || !value.runtime)) return false;
+  if (value.runtime == null && value.multiplayerRuntime == null) return false;
   const music = value.music;
   const gameData = value.gameData;
   if (!isRecord(music) || !validMidiManifest(music.midi) || !isRecord(gameData)) return false;
@@ -338,7 +340,7 @@ export function siteOriginMigrationAvailable(
 export function validateSiteManifest(value: unknown): SiteManifest {
   if (
     !isRecord(value) ||
-    value.schema !== SITE_MANIFEST_SCHEMA ||
+    ![SITE_MANIFEST_SCHEMA, LEGACY_SITE_MANIFEST_SCHEMA].includes(String(value.schema)) ||
     value.protocol !== HOST_PROTOCOL ||
     typeof value.profile !== 'string' ||
     !value.profile ||
@@ -407,6 +409,14 @@ export function validateSiteManifest(value: unknown): SiteManifest {
     }
   }
   const games = value.games;
+  if (
+    value.schema === LEGACY_SITE_MANIFEST_SCHEMA &&
+    Object.values(games).some(
+      (game) => !isRecord(game) || typeof game.runtime !== 'string' || !game.runtime,
+    )
+  ) {
+    throw new Error('Legacy Site Manifest requires a normal Runtime for every game');
+  }
   const actualGames = Object.keys(games).sort();
   if (
     !actualGames.length ||

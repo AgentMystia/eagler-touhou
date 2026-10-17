@@ -4,7 +4,6 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "rootDir": "src",
-    "outDir": ".cache/build/browser/assets",
     "strict": true,
     "noEmitOnError": true,
     "verbatimModuleSyntax": true,
@@ -12,8 +11,11 @@
     "declaration": false,
     "sourceMap": false,
     "types": [],
-    "erasableSyntaxOnly": true
-    ,"rewriteRelativeImportExtensions": true
+    "erasableSyntaxOnly": true,
+    "rewriteRelativeImportExtensions": true,
+    "noEmit": true
   },
-  "include": ["src/**/*.mts"]
+  "include": [
+    "src/**/*.mts"
+  ]
 }

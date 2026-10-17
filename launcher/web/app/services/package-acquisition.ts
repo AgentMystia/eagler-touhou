@@ -436,8 +436,7 @@ export function createPackageAcquisition({
     const entry = isMultiplayerProductId(request.productId)
       ? hosted.multiplayerRuntime
       : hosted.runtime;
-    if (!entry)
-      throw new Error(t('runtime.multiplayerRuntimeMissing', { game: game.toUpperCase() }));
+    if (!entry) throw new Error(t('runtime.variantMissing', { game: game.toUpperCase() }));
     return { kind: 'direct-preload', host, entry, gameData: hosted.gameData };
   }
   async function importPackage({

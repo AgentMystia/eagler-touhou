@@ -2,6 +2,9 @@
 
 Status: active
 
+TH06/TH07 use the game's official SDL sample-frame hint to keep the existing
+2048-frame Web output buffer with upstream SDL. See [Web audio buffer configuration](runtime-build.md#th06th07-的-web-音频缓冲) before changing that backend; compiling alone does not verify output size or callbacks.
+
 ## Purpose
 
 Preserve each title's audio ownership and timing while adapting BGM, SFX,
@@ -38,10 +41,10 @@ fourth/fifth music mode. Raw retail PCM/WAV/archive paths are source or Host
 preparation mechanisms, not additional player-selectable modes.
 
 The game remains the owner of track selection, command queues, looping, fade,
-volume and SFX timing. The current directory Runtimes use this shape:
+volume and SFX timing. The directory Runtime BGM path uses this shape:
 
 ```text
-title GameAudio/MIDI state
+title BGM state
     ↓
 miniaudio / title OGG source policy
     ↓
@@ -59,6 +62,23 @@ Runtime MIDI event bridge → Launcher/browser synth
 ```
 
 The browser bridge receives the final MIDI bytes; it does not reparse the MIDI file or become the owner of tempo, looping or fade semantics.
+
+### Prerecorded game sound effects
+
+Web SFX may use `eagler-common/include/eagler/audio/WebSfx.hpp` to copy decoded
+PCM into browser AudioBuffers and play them independently of queued music PCM.
+The game still owns sound IDs, aggregation/deduplication, stop, seek, looping,
+volume and balance. This is an output service, not another event sequencer.
+Notification-backed mutable music rings retain their existing mixer/refill
+ownership. A buffer replacement or release must retire the previous native
+source; suspend/resume must preserve the active voice and cursor without
+duplicating it. A BGM source transition alone must not stall independent SFX.
+
+Queued BGM PCM telemetry does not measure the independent SFX path.
+Measure SFX onset at the rendered audio graph, with BGM disabled and prior
+feedback drained. A play-call timestamp alone does not prove audible onset.
+The native device build and unavailable browser-buffer paths retain the
+title's original mixer as a fallback.
 
 ### External MIDI output
 
@@ -88,11 +108,12 @@ second sequencer:
   Channel Pressure arrives zero-padded, and framing that pad as a running-status
   message would emit a phantom "program 0" after every authored program change.
   TH08 records the real two-byte length and must pass through unchanged;
-- external output accepts channel messages and exact broadcast GM System On,
-  GS Reset and XG System On only. Other SysEx, System Common and System Real Time
-  messages are blocked at the final device-send boundary. Imported music cannot
-  select arbitrary manufacturer commands. Custom SysEx effects and patches are
-  consequently unavailable on external hardware; the built-in synth is unchanged;
+- external output accepts ordinary channel messages and exact broadcast GM
+  System On, GS Reset and XG System On messages only. Other SysEx, System Common
+  and System Real Time messages are blocked at the final device-send boundary,
+  including calls that bypass stream framing. Imported music cannot select
+  arbitrary manufacturer commands. Custom SysEx effects/patches are consequently
+  unavailable on external hardware; the built-in synth path is unchanged;
 - an active external device replaces the built-in synth for the audible path,
   so notes are never doubled; with no granted device the synth keeps playing;
 - only the selected output is opened at game launch, after the player has chosen
@@ -177,6 +198,10 @@ while the resumed browser output stutters. This is an output-lifecycle fix; do
 not restart the BGM owner, seek the track, reset loops or replace fade state.
 
 ## Code anchors
+
+- `eagler-common/include/eagler/audio/WebSfx.hpp`: prerecorded SFX output,
+  buffer lifetime, gain/balance and pause/resume; title audio adapters retain
+  command ownership and classify SFX separately from mutable music streams.
 
 Current directory-Runtime reference anchors (in the sibling TH08/TH10 Runtime
 repositories):

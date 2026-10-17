@@ -1,19 +1,55 @@
 import { useLocale } from '../../i18n';
 import type { RoomOwnerSnapshot, MultiplayerRoomService } from '../../services/multiplayer-room';
+import type { TransferSnapshot } from '../../models/transfer';
 import { roomMiB } from './presentation';
 /** Main app1274–1369; actual preparation measurements only. */
 export function RoomProgress({
   state,
   service,
+  transfer,
 }: {
   state: RoomOwnerSnapshot;
   service: MultiplayerRoomService;
+  transfer?: TransferSnapshot;
 }) {
   const { t } = useLocale(),
     progress = state.preparation,
     status = progress?.status || 'preparing';
   const total = progress?.total || 0,
     loaded = progress?.loaded || 0;
+  if (
+    state.product === 'th09mp' &&
+    state.spectatorRequested &&
+    state.launchBusy &&
+    status === 'ready'
+  ) {
+    const active = transfer && !transfer.hidden ? transfer : undefined;
+    return (
+      <div
+        className="mp-room-resource-progress"
+        id="mpRoomResourceProgress"
+        data-status="preparing"
+        aria-busy="true"
+      >
+        <strong id="mpRoomResourceLabel" role="status">
+          {t('room.loadingSpectator')}
+        </strong>
+        <span id="mpRoomResourceAmount">
+          {active
+            ? [active.title, active.label, active.amount].filter(Boolean).join(' — ')
+            : t('room.preparingRuntime')}
+        </span>
+        <div
+          className={`mp-room-resource-track${!active || active.indeterminate ? ' indeterminate' : ''}`}
+          id="mpRoomResourceTrack"
+          role="progressbar"
+          aria-label={t('room.loadingSpectator')}
+        >
+          <span id="mpRoomResourceFill" style={{ width: active?.barWidth }} />
+        </div>
+      </div>
+    );
+  }
   const label =
     status !== 'preparing'
       ? t(

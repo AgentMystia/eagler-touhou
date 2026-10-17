@@ -5,10 +5,7 @@ import {
   resolveFrontendPackageSource,
 } from './frontend-manifest.mjs';
 import { localModuleClosure } from './browser-module-graph.mjs';
-import {
-  isMappedBrowserPublicationPath,
-  resolveBrowserPublicationSource,
-} from './client-services-build.mjs';
+import { resolvePublicOrRepositorySource } from './public-source.mjs';
 import { PRODUCT_CONTENT } from './content-definition.mjs';
 import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,7 +19,7 @@ function resolveHostBuildSource(path) {
     return projectConfigurationPath(path.slice('config/'.length), project);
   return reactContracts && path.startsWith('assets/contracts/')
     ? resolve(reactContracts.contractsDirectory, path.slice('assets/contracts/'.length))
-    : resolveBrowserPublicationSource(path);
+    : resolvePublicOrRepositorySource(path);
 }
 
 const verifiedOggBaselineFiles = Object.entries(PRODUCT_CONTENT)
@@ -54,6 +51,7 @@ const hostRuntimeRoots = [
   'host/lib/node-environment.mjs',
   'host/lib/process.mjs',
   'host/lib/python-environment.mjs',
+  'host/lib/python-environment.py',
   'host/lib/site-builder.mjs',
   'host/lib/thtk.mjs',
   ...verifiedOggBaselineFiles,
@@ -67,7 +65,6 @@ const hostRuntimeRoots = [
   'lib/content-definition.mjs',
   'lib/frontend-manifest.mjs',
   'lib/host-config.mjs',
-  'lib/client-services-build.mjs',
   'lib/preload-data-assembler.mjs',
   'lib/product-selection.mjs',
   'lib/publication-host-seed.mjs',

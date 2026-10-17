@@ -1,26 +1,27 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 import { APP_SHELL_FILES, FRONTEND_PACKAGE_FILES, resolveFrontendPackageSource } from "../lib/frontend-manifest.mjs";
 import { PRODUCT_GAMES } from "../product-catalog.mjs";
-import {
+const {
   gamePreferenceStorageKey,
   languagePreferenceStorageKey,
-} from "../.cache/build/browser/assets/launcher/game-preferences.mjs";
-import {
+} = await importClientService('launcher/game-preferences.mjs');
+const {
   multiplayerDisplayNameLockedStorageKey,
   multiplayerDisplayNameStorageKey,
-} from "../.cache/build/browser/assets/launcher/multiplayer-identity.mjs";
-import {
+} = await importClientService('launcher/multiplayer-identity.mjs');
+const {
   multiplayerLoadoutStorageKey,
   multiplayerShareSettingsStorageKey,
-} from "../.cache/build/browser/assets/launcher/multiplayer-preferences.mjs";
-import {
+} = await importClientService('launcher/multiplayer-preferences.mjs');
+const {
   multiplayerSpectatorRailLegacyPositionStorageKey,
   multiplayerSpectatorRailPositionStorageKey,
-} from "../.cache/build/browser/assets/launcher/multiplayer-spectator-rail-position.mjs";
-import { touchLayoutStorageKey } from "../.cache/build/browser/assets/launcher/touch-layout-model.mjs";
-import { touchLayoutWindowPositionsStorageKey } from "../.cache/build/browser/assets/launcher/touch-layout-editor-state.mjs";
+} = await importClientService('launcher/multiplayer-spectator-rail-position.mjs');
+const { touchLayoutStorageKey } = await importClientService('launcher/touch-layout-model.mjs');
+const { touchLayoutWindowPositionsStorageKey } = await importClientService('launcher/touch-layout-editor-state.mjs');
 import {
   LEGACY_GAME_DATA_CACHE_NAME,
   LEGACY_IMPORT_STORAGE,

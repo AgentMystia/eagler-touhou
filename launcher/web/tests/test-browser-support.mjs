@@ -1,5 +1,6 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import { discouragedBrowserId } from "../.cache/build/browser/assets/launcher/browser-support.mjs";
+const { discouragedBrowserId } = await importClientService('launcher/browser-support.mjs');
 
 // One representative UA per vendor token. Detection is token-based, so these
 // only pin the feature markers, not the surrounding version numbers.

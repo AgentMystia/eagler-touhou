@@ -1,6 +1,7 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
 
-import { validateStaticLanguagePackEntries } from "../.cache/build/browser/assets/launcher/language-pack-validation.mjs";
+const { validateStaticLanguagePackEntries } = await importClientService('launcher/language-pack-validation.mjs');
 
 const encoder = new TextEncoder();
 const filePath = "/thcrap/th06/localization/stages.etl";

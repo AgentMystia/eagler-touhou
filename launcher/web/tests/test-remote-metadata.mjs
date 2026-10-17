@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
-import { ensureClientServicesBuild } from "../lib/client-services-build.mjs";
+import { importClientService } from './support/client-services.mjs';
 import { SITE_MANIFEST_SCHEMA } from "../lib/contracts/site-manifest.mjs";
 import { RELEASE_CATALOG_SCHEMA } from "../lib/contracts/release-catalog.mjs";
 
-await ensureClientServicesBuild();
-const { loadRemoteMetadata } = await import("../.cache/build/browser/assets/launcher/remote-metadata.mjs");
+const { loadRemoteMetadata } = await importClientService('launcher/remote-metadata.mjs');
 
 const hostManifest = {
   schema: SITE_MANIFEST_SCHEMA,

@@ -58,6 +58,7 @@ export function createRoomSession(options: RoomSessionOptions) {
     const state = service.getSnapshot(),
       room = state.room,
       runtime = options.runtime()?.getSnapshot();
+    if (runtime?.launched === false) service.resumeSpectator();
     probes.update({
       localId: state.localClientId,
       peers: (room?.seats ?? [])
@@ -72,14 +73,19 @@ export function createRoomSession(options: RoomSessionOptions) {
     });
     quickChat.update({
       visible:
-        runtime?.launched === true &&
-        runtime.runtimeVariant === 'multiplayer' &&
-        !options.replayViewer() &&
-        !!room,
+        (state.product === 'th09mp' && !!room) ||
+        (runtime?.launched === true &&
+          runtime.runtimeVariant === 'multiplayer' &&
+          !options.replayViewer() &&
+          !!room),
+      inRoom: state.product === 'th09mp' && runtime?.launched !== true,
       room: room ? `${state.product}-${room.code}` : '',
       serial: state.startSerial,
       localSeat: state.seat,
       seats: room?.seats ?? [],
+      spectators: state.product === 'th09mp' ? room?.spectators : [],
+      localSpectator: state.product === 'th09mp' && state.spectatorRequested,
+      localClientId: state.localClientId,
       connected: state.connected,
       language: options.settingsModel.getSnapshot()?.language ?? '',
       lessMotion: options.sitePreferences.getSnapshot().lessMotion,

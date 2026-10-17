@@ -20,13 +20,13 @@ FIXTURE = component_fixture(PROJECT, "multiplayer-guide")
 
 class QuietHandler(SimpleHTTPRequestHandler):
     def do_GET(self) -> None:
-        if FIXTURE and self.path.split("?", 1)[0] == "/public/__component-fixture.html":
+        if self.path.split("?", 1)[0] == "/public/__component-fixture.html":
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
             self.end_headers()
             self.wfile.write(b"<!doctype html><title>Original guide component fixture</title>")
             return
-        if FIXTURE and self.path.split("?", 1)[0] == "/__component-fixture.mjs":
+        if self.path.split("?", 1)[0] == "/__component-fixture.mjs":
             data = FIXTURE["module"].encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/javascript")
@@ -49,13 +49,6 @@ def free_port() -> int:
 def main() -> int:
     # Keep this browser test focused on the guide. The full development server
     # needs private Runtime DATA inputs which are unrelated to this surface.
-    if FIXTURE is None:
-        subprocess.run(
-            ["node", "scripts/build-launcher.mjs", "--force"],
-            cwd=PROJECT,
-            check=True,
-            stdout=subprocess.DEVNULL,
-        )
 
     port = free_port()
     handler = partial(QuietHandler, directory=str(PROJECT))
@@ -66,7 +59,7 @@ def main() -> int:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 430, "height": 820})
-            page.goto(f"http://127.0.0.1:{port}/public/" + ("__component-fixture.html" if FIXTURE else ""), wait_until="domcontentloaded")
+            page.goto(f"http://127.0.0.1:{port}/public/" + "__component-fixture.html", wait_until="domcontentloaded")
             page.set_content(
                 """
 <!doctype html>
@@ -95,7 +88,7 @@ def main() -> int:
                   window.__mpGuide = module.createMultiplayerGuideController({ getGameId: () => 'th07' });
                   await window.__mpGuide.show();
                 }""",
-                "/__component-fixture.mjs" if FIXTURE else "/.cache/build/browser/assets/launcher/multiplayer-guide.mjs",
+                "/__component-fixture.mjs",
             )
             page.wait_for_selector("#mpGuideContent [data-mp-rule-guide]")
 

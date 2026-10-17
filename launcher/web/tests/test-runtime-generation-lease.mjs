@@ -1,6 +1,7 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
 
-import { createManagedRuntimeGenerationLease } from "../.cache/build/browser/assets/launcher/runtime-generation-lease.mjs";
+const { createManagedRuntimeGenerationLease } = await importClientService('launcher/runtime-generation-lease.mjs');
 
 const generationA = { id: "generation-a", game: "th08" };
 const generationB = { id: "generation-b", game: "th08" };

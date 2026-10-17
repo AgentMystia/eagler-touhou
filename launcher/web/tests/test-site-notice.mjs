@@ -1,8 +1,9 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import {
+const {
   parseSiteNoticeText,
   siteNoticeBrandAsset,
-} from "../.cache/build/browser/assets/launcher/site-notice-content.mjs";
+} = await importClientService('launcher/site-notice-content.mjs');
 
 const baseUrl = "https://test.example/eagler-touhou/";
 

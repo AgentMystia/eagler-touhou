@@ -92,7 +92,7 @@ export function validateOperatorProfile(profile) {
 export function assertHostedSiteMatchesOperatorProfile(manifest, profileInput) {
   const profile = validateOperatorProfile(profileInput);
   if (
-    manifest?.schema !== 'eagler-touhou/site-manifest/1' ||
+    !['eagler-touhou/site-manifest/1', 'eagler-touhou/site-manifest/2'].includes(manifest?.schema) ||
     manifest.shared?.resourceMode !== profile.resourceMode
   ) {
     throw new Error('Operator input is not a Hosted Eagler Touhou site');

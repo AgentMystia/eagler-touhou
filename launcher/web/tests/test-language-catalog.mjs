@@ -1,11 +1,12 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import {
+const {
   buildLanguageCatalog,
   resolvePreferredGameLanguage,
   resolveLanguagePackSource,
   selectLanguageEntry,
   thpracLocaleForLanguage,
-} from "../.cache/build/browser/assets/launcher/language-catalog.mjs";
+} = await importClientService('launcher/language-catalog.mjs');
 import { languagePriority } from "../lib/contracts/product-catalog.mjs";
 
 const translate = key => ({

@@ -3,13 +3,13 @@ import argparse,json,hashlib,time,uuid,traceback,re
 from pathlib import Path
 from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
-p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:18382/')
+p=argparse.ArgumentParser();p.add_argument('--url',required=True)
 p.add_argument('--game',choices=['th08','th10'],required=True);p.add_argument('--output',type=Path,required=True)
 p.add_argument('--package-dir',type=Path,required=True)
 p.add_argument('--descriptor',type=Path,required=True)
 p.add_argument('--data',type=Path,required=True)
 p.add_argument('--font',type=Path,required=True)
-p.add_argument('--relay-url',default='ws://127.0.0.1:18381/')
+p.add_argument('--relay-url',required=True)
 a=p.parse_args();package=a.package_dir.resolve()
 a.output.parent.mkdir(parents=True,exist_ok=True)
 data=a.data.read_bytes();font=a.font.read_bytes()

@@ -4,6 +4,7 @@
 /.codex-tmp/
 /artifacts/
 /dist/
+/launcher/web/build/
 /private-assets/
 /screenshots/
 /debug.log

@@ -53,7 +53,7 @@ npm run runtime -- th15 --emsdk "<SDK目录>" --font-root "<字体目录>"
 
 ## 维护与贡献
 
-先读[文档索引](docs/README.md)和[工程审计与改进清单](docs/ENGINEERING_AUDIT.md)。修复应说明受影响的行为、实际验证和尚未覆盖的范围。不要以源码字符串、整份 CSS 哈希或历史目标文件一致性替代行为验证。
+游戏适配从[Runtime 教程](docs/ADAPTING_A_GAME.md)和[接入协议](docs/GAME_ADAPTER_CONTRACT.md)开始；前端新增游戏见 [Web 接入教程](launcher/web/docs/ADAPTING_A_GAME.md)。其他维护入口在[文档索引](docs/README.md)，本次重构记录单独保留在[工程审计](docs/ENGINEERING_AUDIT.md)。
 
 [项目交流群](https://qm.qq.com/q/eeUrxIltug?from=tim)用于交流适配与使用问题。
 

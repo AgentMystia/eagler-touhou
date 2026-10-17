@@ -1,5 +1,6 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import { createGameZoomController } from "../.cache/build/browser/assets/launcher/game-zoom.mjs";
+const { createGameZoomController } = await importClientService('launcher/game-zoom.mjs');
 
 class FakeClassList {
   #values = new Set();

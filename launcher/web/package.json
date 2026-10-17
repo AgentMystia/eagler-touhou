@@ -52,11 +52,11 @@
     "verify:hsts-cutover": "node scripts/verify-hsts-cutover.mjs",
     "audit:publish": "node scripts/audit-publication.mjs",
     "audit:publish:workspace": "node scripts/audit-publication.mjs --workspace",
-    "verify:unified": "node scripts/verify-unified-layout.mjs",
     "test:thcrap-static-pack": "node tests/test-thcrap-static-pack.mjs",
     "test:thcrap-timed-dialogue": "node tests/test-thcrap-timed-dialogue.mjs",
     "test:touch": "node tests/test-touch-layout-model.mjs && node tests/test-touch-function-key.mjs && node tests/test-game-preferences.mjs && node tests/test-touch-runtime-protocol.mjs && node tests/test-shell-protocol.mjs",
     "test:keyboard:browser": "python tests/test-keyboard-ownership-browser.py",
+    "test:runtime-document:browser": "python tests/test-launcher-target-runtime-browser.py",
     "test:runtime-release-host": "node tests/test-runtime-release-host-assembly.mjs",
     "test:package-store:browser": "python tests/test-package-update-atomicity-browser.py",
     "test:package-large-object:browser": "npm run build:launcher && node tests/test-package-large-object-browser.mjs",
@@ -122,7 +122,8 @@
     "test:ui:artifact": "node tests/run-ui.mjs --group=artifact",
     "assemble:site": "node scripts/assemble-site.mjs",
     "package:self-host": "node scripts/build-self-host-bundle.mjs",
-    "package:release-assets": "node scripts/build-release-assets.mjs"
+    "package:release-assets": "node scripts/build-release-assets.mjs",
+    "test:host-environment": "node tests/test-python-environment.mjs"
   },
   "dependencies": {
     "fflate": "0.8.3",

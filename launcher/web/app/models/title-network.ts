@@ -6,6 +6,7 @@ import {
   type ProductId,
 } from '@eagler/contracts/product-catalog';
 import { normalizeRoomCode } from '../../src/launcher/route-state.mts';
+import { generateMultiplayerRoomCode } from '../../src/launcher/multiplayer-identity.mts';
 import { errorText } from '../services/error-text';
 export interface TitleNetworkSnapshot {
   open: boolean;
@@ -86,8 +87,7 @@ export function createTitleNetwork(options: TitleNetworkOptions) {
     },
     create() {
       if (disposed) return;
-      const value = options.randomValues(new Uint32Array(1));
-      enter(String(1000 + ((value[0] ?? 0) % 9000)), true);
+      enter(generateMultiplayerRoomCode(() => options.randomValues(new Uint32Array(1))[0]!), true);
     },
     join() {
       if (disposed) return;

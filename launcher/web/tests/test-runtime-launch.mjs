@@ -1,6 +1,7 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { prepareRuntimeLaunch } from "../.cache/build/browser/assets/launcher/runtime-launch.mjs";
+const { prepareRuntimeLaunch } = await importClientService('launcher/runtime-launch.mjs');
 import { canonicalRuntimePayload, RUNTIME_MANIFEST_SCHEMA, RUNTIME_PROTOCOL,
   RUNTIME_CACHE_PROTOCOL, RUNTIME_CAPABILITIES, RUNTIME_PREPARE } from "../lib/contracts/runtime-generations.mjs";
 const hash = text => createHash("sha256").update(text).digest("hex");

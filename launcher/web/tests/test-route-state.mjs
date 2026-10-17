@@ -1,6 +1,7 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
 import { PRODUCT_IDS } from "../lib/contracts/product-catalog.mjs";
-import {
+const {
   MP_ROOM_HISTORY_KEY,
   MP_ROOM_URL_KEY,
   PLAYER_HISTORY_KEY,
@@ -19,8 +20,8 @@ import {
   roomRouteUrl,
   routedProductFromUrl,
   touchLayoutEditorHistoryOperation,
-} from "../.cache/build/browser/assets/launcher/route-state.mjs";
-import { ROOM_INVITE_KEY, decodeRoomInvite, encodeRoomInvite } from "../.cache/build/browser/assets/launcher/room-invite.mjs";
+} = await importClientService('launcher/route-state.mjs');
+const { ROOM_INVITE_KEY, decodeRoomInvite, encodeRoomInvite } = await importClientService('launcher/room-invite.mjs');
 
 const products = new Set(PRODUCT_IDS);
 

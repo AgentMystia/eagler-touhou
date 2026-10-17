@@ -14,6 +14,11 @@ export function RoomComposition({
   settingsClosing: boolean;
 }) {
   const navigation = useSurfaceNavigation();
+  const transfer = useSyncExternalStore(
+    session.transfer.subscribe,
+    session.transfer.getSnapshot,
+    session.transfer.getSnapshot,
+  );
   const state = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
   const room = useSyncExternalStore(
     session.room.service.subscribe,
@@ -60,8 +65,10 @@ export function RoomComposition({
     <RoomView
       visible={!!navigation.productId && isMultiplayerProductId(navigation.productId)}
       service={session.room.service}
+      quickChat={session.room.quickChat}
       network={session.room.network}
       context={{
+        transfer,
         launched: state.runtime?.launched === true,
         th09NetworkOverlayOpen: state.th09NetworkOverlayOpen,
         launchStage: state.roomLaunchStage === 'runtime' ? 'preparing' : state.roomLaunchStage,

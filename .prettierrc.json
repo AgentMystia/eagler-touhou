@@ -3,6 +3,7 @@
   "printWidth": 100,
   "trailingComma": "all",
   "bracketSpacing": true,
+  "endOfLine": "auto",
   "overrides": [
     {
       "files": "launcher/web/app/bootstrap/*.js",

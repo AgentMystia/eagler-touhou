@@ -174,6 +174,8 @@ export function normalizeRelaySignal(message) {
 }
 
 export function clearSpectatorHistory(run) {
+  // Experimental TH09 viewers may join later; their prefix must remain exact.
+  if (run.spectatorTimeline && !run.spectatorStopped) return;
   run.spectatorHistory.length = 0;
   run.spectatorHistoryBytes = 0;
 }
@@ -182,6 +184,7 @@ export function stopSpectatorStream(run) {
   if (run.spectatorStopped) return;
   run.spectatorStopped = true;
   run.spectatorAdmissionOpen = false;
+  run.onSpectatorAvailabilityChange?.();
   if (run.spectatorGraceTimer) clearTimeout(run.spectatorGraceTimer);
   run.spectatorGraceTimer = null;
   clearSpectatorHistory(run);

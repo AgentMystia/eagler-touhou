@@ -5,6 +5,7 @@ import type {
 } from '../../../src/launcher/room-network.mts';
 import type { MultiplayerRoomService } from '../../services/multiplayer-room';
 import type { TouchMovementMode } from '../../../src/launcher/game-preferences.mts';
+import type { MultiplayerQuickChatModel } from '../../../src/launcher/multiplayer-quick-chat-model.mts';
 export type RoomPanelKind = 'personal' | 'network' | 'spectators' | 'game';
 export interface RoomNetworkPresentation {
   subscribe(listener: () => void): () => void;
@@ -14,6 +15,7 @@ export interface RoomNetworkPresentation {
   retry(peer?: string): void;
 }
 export interface RoomViewContext {
+  transfer?: import('../../models/transfer').TransferSnapshot;
   launched: boolean;
   th09NetworkOverlayOpen: boolean;
   launchStage: 'path' | 'preparing' | null;
@@ -21,6 +23,7 @@ export interface RoomViewContext {
   touchMovementMode: TouchMovementMode;
 }
 export interface RoomViewProps {
+  quickChat?: MultiplayerQuickChatModel;
   service: MultiplayerRoomService;
   network: RoomNetworkPresentation;
   context: RoomViewContext;

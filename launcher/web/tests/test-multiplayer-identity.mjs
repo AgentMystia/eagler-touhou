@@ -1,19 +1,28 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import {
+const {
   createMultiplayerIdentityStore,
+  generateMultiplayerRoomCode,
   multiplayerDisplayInitial,
   multiplayerDisplayNameLockedStorageKey,
   multiplayerDisplayNameStorageKey,
   multiplayerLobbyClientStorageKey,
   normalizeMultiplayerDisplayName,
   validMultiplayerClientId,
-} from "../.cache/build/browser/assets/launcher/multiplayer-identity.mjs";
+} = await importClientService('launcher/multiplayer-identity.mjs');
 
 class MemoryStorage {
   constructor(entries = []) { this.values = new Map(entries); }
   getItem(key) { return this.values.has(key) ? this.values.get(key) : null; }
   setItem(key, value) { this.values.set(key, String(value)); }
 }
+
+assert.equal(generateMultiplayerRoomCode(() => 0), '00000000');
+assert.equal(generateMultiplayerRoomCode(() => 99_999_999), '99999999');
+const randomWords = [0xffffffff, 4_200_000_000, 12345];
+assert.equal(generateMultiplayerRoomCode(() => randomWords.shift()), '00012345', 'biased samples are rejected');
+assert.throws(() => generateMultiplayerRoomCode(() => 0xffffffff), /Unable to generate/);
+assert.throws(() => generateMultiplayerRoomCode(() => -1), /Invalid/);
 
 assert.equal(normalizeMultiplayerDisplayName("  A\u0000B\nC  "), "ABC");
 assert.equal(normalizeMultiplayerDisplayName("一二三四五六七八九十十一十二十三"), "一二三四五六七八九十十一");

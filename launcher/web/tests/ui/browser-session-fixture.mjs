@@ -800,6 +800,9 @@ async function until(predicate, message) {
       fetches: mounted.fetches.map((x) => x.url),
       status: env.document.querySelector('#status')?.textContent,
       startup: env.document.querySelector('#startupError')?.textContent,
+      startupDetail: api.getTestSession()?.startupError.getSnapshot().detail,
+      runtime: api.getTestSession()?.getRuntime()?.getSnapshot(),
+      warnings: mounted.warnings,
       body: env.document.body.textContent.slice(-1600),
     })}`,
   );

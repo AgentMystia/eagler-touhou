@@ -1,3 +1,4 @@
+import { validateRuntimeVariants } from './runtime-variants.mjs';
 import {normalizeProductSelection} from "./product-selection.mjs";
 import { runtimeGenerationId, verifyRuntimeGenerationDirectory } from "./runtime-generations.mjs";
 import { RUNTIME_GENERATION_FILE } from "./contracts/runtime-generations.mjs";
@@ -10,7 +11,8 @@ import { extractGameDataLayout } from "./runtime-data-layout.mjs";
 import { assertRuntimeDataShell } from "./runtime-data-provider.mjs";
 
 export const LEGACY_RUNTIME_RELEASE_SCHEMA = "eagler-touhou/runtime-release/1";
-export const RUNTIME_RELEASE_SCHEMA = "eagler-touhou/runtime-release/2";
+export const IMMUTABLE_RUNTIME_RELEASE_SCHEMA = "eagler-touhou/runtime-release/2";
+export const RUNTIME_RELEASE_SCHEMA = "eagler-touhou/runtime-release/3";
 
 const SHA256 = /^[a-f0-9]{64}$/i;
 const LAYOUT = /^sha256-[a-f0-9]{64}$/i;
@@ -51,7 +53,7 @@ export function runtimeFileNames(game, files) {
 }
 
 export function validateRuntimeReleaseManifest(manifest) {
-  if (!manifest || ![RUNTIME_RELEASE_SCHEMA, LEGACY_RUNTIME_RELEASE_SCHEMA].includes(manifest.schema) || manifest.protocol !== "eagler-touhou/1") {
+  if (!manifest || ![RUNTIME_RELEASE_SCHEMA, IMMUTABLE_RUNTIME_RELEASE_SCHEMA, LEGACY_RUNTIME_RELEASE_SCHEMA].includes(manifest.schema) || manifest.protocol !== "eagler-touhou/1") {
     throw new Error("invalid Runtime Release manifest");
   }
   if (!manifest.games || typeof manifest.games !== "object" || Array.isArray(manifest.games)) {
@@ -64,22 +66,18 @@ export function validateRuntimeReleaseManifest(manifest) {
     if (!entry || entry.dataProvider !== product.dataProvider || !LAYOUT.test(entry.dataLayout || "")) {
       throw new Error(`${game}: invalid Runtime Release data contract`);
     }
-    if (!entry.runtime || typeof entry.runtime !== "object") throw new Error(`${game}: normal Runtime is missing`);
-    const variants = [["runtime", entry.runtime]];
-    if (product.multiplayerRuntime) {
-      if (!entry.multiplayerRuntime || typeof entry.multiplayerRuntime !== "object") {
-        throw new Error(`${game}: multiplayer Runtime is missing`);
-      }
-      variants.push(["multiplayerRuntime", entry.multiplayerRuntime]);
-    } else if (entry.multiplayerRuntime != null) {
-      throw new Error(`${game}: unexpected multiplayer Runtime`);
+    if (manifest.schema !== RUNTIME_RELEASE_SCHEMA &&
+        (!entry.runtime || (product.multiplayerRuntime && !entry.multiplayerRuntime))) {
+      throw new Error(game + ': legacy Runtime Release requires its original complete variant set');
     }
-    for (const [variant, runtime] of variants) {
+    const variants = validateRuntimeVariants(game, entry);
+    for (const {field: variant, runtime} of variants) {
+      if (!runtime || typeof runtime !== "object" || Array.isArray(runtime)) throw new Error(game + ': invalid Runtime variant');
       if (!isCanonicalRelativePath(runtime.root)) {
         throw new Error(`${game} ${variant}: invalid Runtime root`);
       }
       const expectedNames = runtimeFileNames(game, runtime.files);
-      if (manifest.schema === RUNTIME_RELEASE_SCHEMA) {
+      if (manifest.schema !== LEGACY_RUNTIME_RELEASE_SCHEMA) {
         const expectedRoot = `runtime/${game}/${variant === "multiplayerRuntime" ? "multiplayer/" : ""}`;
         const files = expectedNames.map(path => ({ path, ...runtime.files[path] }));
         const generation = runtimeGenerationId(`${runtimeStem(game)}.html`, files);
@@ -97,6 +95,13 @@ export function validateRuntimeReleaseManifest(manifest) {
     if (entry.features == null || typeof entry.features !== "object") throw new Error(`${game}: Runtime feature attestation is missing`);
     for (const key of PRODUCT_FEATURE_IDS) {
       if (typeof entry.features[key] !== "boolean") throw new Error(`${game}: invalid Runtime feature ${key}`);
+      if (entry.features[key] && !product.features[key]) throw new Error(game + ': unsupported Runtime feature ' + key);
+      for (const {runtime} of variants) {
+        if (runtime.features == null) continue;
+        if (typeof runtime.features[key] !== 'boolean') throw new Error(game + ': invalid variant feature ' + key);
+        if (runtime.features[key] && !product.features[key]) throw new Error(game + ': unsupported variant feature ' + key);
+        if (entry.features[key] && !runtime.features[key]) throw new Error(game + ': shared feature exceeds a selected variant: ' + key);
+      }
     }
   }
   return manifest;
@@ -108,11 +113,11 @@ export async function verifyRuntimeRelease(root) {
   const expectedFiles = new Set(["runtime-release.json"]);
   for (const [game, entry] of Object.entries(manifest.games)) {
     const product = PRODUCT_GAMES[game];
-    const variants = [["normal", entry.runtime], ...(entry.multiplayerRuntime ? [["multiplayer", entry.multiplayerRuntime]] : [])];
+    const variants = validateRuntimeVariants(game, entry);
     let normalLayout = null;
-    for (const [variant, runtime] of variants) {
+    for (const {name: variant, runtime} of variants) {
       const stem = runtimeStem(game);
-      if (manifest.schema === RUNTIME_RELEASE_SCHEMA) {
+      if (manifest.schema !== LEGACY_RUNTIME_RELEASE_SCHEMA) {
         const groupRoot = runtime.root.slice(0, runtime.root.lastIndexOf("/") + 1);
         await verifyRuntimeGenerationDirectory(base, groupRoot, {
           generation: runtime.generation, entry: `${stem}.html`,
@@ -142,7 +147,7 @@ export async function verifyRuntimeRelease(root) {
         if (normalLayout && (layout.layout !== normalLayout.layout || layout.bytes !== normalLayout.bytes)) {
           throw new Error(`${game}: normal and multiplayer Runtime DATA layouts differ`);
         }
-        if (variant === "normal") normalLayout = layout;
+        normalLayout ??= layout;
       }
     }
     if (entry.dataProvider === "retail-memory") {

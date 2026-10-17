@@ -169,7 +169,13 @@ export function createRuntimeResources({
     if (!plan.localOgg) return [];
     if (!plan.generation) throw new Error('Local OGG requires a Package generation');
     const generation = plan.resourceGeneration ?? plan.generation;
-    const ids = [...plan.localOgg.fileIds],
+    // A historical TH09 viewer can cross music cues before the ordinary
+    // background transfer finishes. This opt-in experiment requires the
+    // complete compressed OGG set before either player/viewer starts.
+    const ids =
+        plan.game === 'th09' && plan.configure.options?.netplaySpectatorTimeline === true
+          ? componentFileIds(generation.descriptor, 'ogg')
+          : [...plan.localOgg.fileIds],
       allowed = new Set(componentFileIds(generation.descriptor, 'ogg'));
     if (
       plan.configure.music !== 'ogg' ||

@@ -1,8 +1,9 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { FRONTEND_PACKAGE_FILES, resolveFrontendPackageSource } from "../lib/frontend-manifest.mjs";
 import { PRODUCT_GAMES } from "../lib/contracts/product-catalog.mjs";
-import {
+const {
   applyStaticTranslations,
   UI_LOCALES,
   UI_MESSAGES,
@@ -10,7 +11,7 @@ import {
   setUiLocale,
   t,
   validateUiCatalogs,
-} from "../.cache/build/browser/assets/launcher/i18n.mjs";
+} = await importClientService('launcher/i18n.mjs');
 
 const index = await readFile(resolveFrontendPackageSource("index.html"), "utf8");
 

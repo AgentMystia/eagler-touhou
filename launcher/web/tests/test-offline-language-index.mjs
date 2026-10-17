@@ -1,6 +1,7 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import { buildLanguageCatalog } from "../.cache/build/browser/assets/launcher/language-catalog.mjs";
-import { loadOfflineLanguageIndex, rememberOfflineLanguage } from "../.cache/build/browser/assets/launcher/offline-language-index.mjs";
+const { buildLanguageCatalog } = await importClientService('launcher/language-catalog.mjs');
+const { loadOfflineLanguageIndex, rememberOfflineLanguage } = await importClientService('launcher/offline-language-index.mjs');
 class S { constructor(){this.m=new Map()} getItem(k){return this.m.get(k)??null} setItem(k,v){this.m.set(k,String(v))} }
 const storage=new S();
 const pack={language:"lang_en",url:"https://example.invalid/en.zip",sha256:"a".repeat(64),bytes:12};

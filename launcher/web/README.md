@@ -22,6 +22,7 @@ npm run build
 | --- | --- |
 | 理解 UI、导航、会话和 Runtime 的职责 | [Web 架构](docs/ARCHITECTURE.md) |
 | 修改代码、选择验证 | [Web 开发与验证](docs/DEVELOPMENT.md) |
+| 接入新的游戏 Runtime | [新游戏接入](docs/ADAPTING_A_GAME.md) |
 | 维护缓存、离线更新和历史格式 | [缓存与兼容](docs/CACHE_AND_COMPATIBILITY.md) |
 | 建立自己的站点 | [自托管指南](docs/SELF_HOSTING.md) |
 | 查询配置和服务器要求 | [自托管参考](docs/SELF_HOSTING_REFERENCE.md) |

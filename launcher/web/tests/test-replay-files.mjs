@@ -1,5 +1,6 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import {
+const {
   allocateReplayName,
   createReplayArchiveExtractionGuard,
   createReplayMutationQueue,
@@ -12,7 +13,7 @@ import {
   ReplayArchiveScanError,
   replayImportAccept,
   selectReplayExportPaths,
-} from "../.cache/build/browser/assets/launcher/replay-files.mjs";
+} = await importClientService('launcher/replay-files.mjs');
 
 assert.equal(replayImportAccept, ".zip,.rpy,.rpyx");
 assert.equal(isReplayFilePath("replay/th6_01.rpy"), true);

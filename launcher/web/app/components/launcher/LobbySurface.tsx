@@ -108,8 +108,16 @@ export function LobbySurface({
         <header className="lobby-room-tools">
           <div className="lobby-actions">{roomTools}</div>
         </header>
-        <section className="lobby-list-surface" aria-label={t('lobby.rooms')}>
-          <div className="lobby-list-head" id="listHead" aria-hidden="true" hidden={!hasRooms}>
+        <section
+          className={`lobby-list-surface${rail.selectedProduct === 'th09mp' ? ' th09-room-surface' : ''}`}
+          aria-label={t('lobby.rooms')}
+        >
+          <div
+            className="lobby-list-head"
+            id="listHead"
+            aria-hidden="true"
+            hidden={!hasRooms || rail.selectedProduct === 'th09mp'}
+          >
             <span>{t('lobby.gameAndRoom')}</span>
             <span>{t('lobby.difficulty')}</span>
             <span />

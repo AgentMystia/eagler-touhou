@@ -1,8 +1,9 @@
+import { importClientService } from './support/client-services.mjs';
 /** L1 protocol-envelope behavior contract. Mutation: none. Proves unknown
  * Runtime messages are accepted only for the current protocol/game and known
  * event or response discriminants. Does not execute a Runtime shell. */
 import assert from "node:assert/strict";
-import {
+const {
   TOUCH_SENSITIVITY_MAX,
   TOUCH_SENSITIVITY_MIN,
   RUNTIME_CONFIGURE_OPTION_BEHAVIOR,
@@ -17,7 +18,7 @@ import {
   RUNTIME_PROTOCOL_OPTIONAL_COMMANDS,
   RUNTIME_PROTOCOL_OPTIONAL_EVENTS,
   parseRuntimeInboundMessage,
-} from "../.cache/build/browser/assets/contracts/runtime-protocol.mjs";
+} = await importClientService('contracts/runtime-protocol.mjs');
 
 assert.equal(TOUCH_SENSITIVITY_MIN, 100);
 assert.equal(TOUCH_SENSITIVITY_MAX, 300);

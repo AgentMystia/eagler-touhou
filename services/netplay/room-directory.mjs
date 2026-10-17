@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { validRelayControlMessage } from './relay-flow-control.mjs';
+import {th09PlayerStats} from './th09-room-stats.mjs';
 
 export function publicControlMode(seat) {
   if (seat.touchEnabled === false) return 'normal';
@@ -57,6 +58,7 @@ export function createRoomDirectory({
     if (!connected.length && !hasGame(room)) return null;
     const idle = Date.now() - room.lastActivityAt;
     if (!hasGame(room) && idle > idleHideMs) return null;
+    const run=room.runs.get(String(room.lobby.startSerial));
     return {
       product: match[1],
       code: match[2],
@@ -80,6 +82,11 @@ export function createRoomDirectory({
         seat
           ? {
               initial: initial(seat.name),
+              ...(match[1] === 'th09mp' ? {
+                ...(typeof seat.machineSign === 'string' && seat.machineSign.trim()
+                  ? {machineSign:[...seat.machineSign.replace(/[\u0000-\u001f\u007f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g,'').trim()].slice(0,128).join('')} : {}),
+                stats:th09PlayerStats(room,seat.clientId),
+              } : {}),
               controlMode: publicControlMode(seat),
               online: online(room.lobbyClients.get(seat.clientId)),
               ready: !!seat.ready && seat.readyVersion === room.lobby.settingsVersion,
@@ -88,6 +95,11 @@ export function createRoomDirectory({
       ),
       createdAt: room.createdAt,
       joinable: room.lobby.phase === 'lobby' && occupied.length < room.lobby.playerCount,
+      // A full/playing room has no player seat to join. This separate
+      // capability admits observers only through the normal room authority.
+      spectatable: match[1]==='th09mp' && room.lobby.phase==='running' &&
+        run?.spectatorTimeline===true && run.spectatorAdmissionOpen &&
+        !run.ended && !run.spectatorStopped,
     };
   }
   function snapshot(memberId, product = '') {
@@ -162,6 +174,16 @@ export function createRoomDirectory({
     maybeDelete(entry.roomId, room);
   }
   function admit(socket, roomId, clientId, memberId) {
+    const room = rooms.get(roomId);
+    const ownerEntry = clients.get(clientId);
+    const sameMember = ownerEntry?.roomId === roomId && ownerEntry.memberId === memberId;
+    // A host removal lasts for this room's lifetime, including across tabs
+    // sharing the anonymous browser membership. Never ban a shared/NAT IP.
+    if (room?.removedMembers?.has(memberId) || room?.removedClients?.has(clientId) ||
+        (room?.removedMembers?.size >= 1024 && !sameMember)) {
+      socket.close(4010, 'removed by host');
+      return false;
+    }
     const owner = clients.get(clientId);
     // clientId is public in room snapshots. Only its private member may resume.
     if (owner && owner.memberId !== memberId) {
@@ -248,6 +270,16 @@ export function createRoomDirectory({
   function evict(roomId, clientId) {
     const entry = clients.get(clientId);
     if (!entry || entry.roomId !== roomId) return false;
+    const room = rooms.get(roomId);
+    if (!room) return false;
+    room.removedMembers ??= new Set();
+    room.removedClients ??= new Set();
+    // Once full, admit() refuses fresh members while existing members may
+    // reconnect. Keep host-controlled removal history bounded as well.
+    if (room.removedMembers.size < 1024) {
+      room.removedMembers.add(entry.memberId);
+      room.removedClients.add(clientId);
+    }
     releaseTransports?.(roomId, clientId);
     remove(entry);
     entry.socket.close(4010, 'removed by host');

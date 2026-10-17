@@ -26,6 +26,7 @@ import {
   multiplayerInputTimingPolicy,
 } from '@eagler/contracts/product-catalog';
 import { isSpectatorFrameForRoom } from './spectator-frame.mjs';
+import {th09PlayerStats, acceptTh09MatchStats} from './th09-room-stats.mjs';
 import {
   parseMeasuredNetplayTiming,
   resolveAdonisPredictionReserve,
@@ -296,6 +297,7 @@ function getRoom(id, socket) {
     }
     const multiplayer = multiplayerPolicyForRoomId(id);
     room = {
+      id,
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
       multiplayer,
@@ -358,6 +360,8 @@ function getRun(room, runId) {
 }
 
 function maybeDeleteRun(room, runId, run) {
+  if (run.spectatorTimeline && run.route && run.clients.size === 0 && run.signalClients.size === 0 &&
+      String(room.lobby.startSerial) === String(runId)) { run.ended = true; resetLobbyAfterRun(room); }
   if (run.clients.size !== 0 || run.signalClients.size !== 0 || run.spectatorClients.size !== 0)
     return;
   if (run.routeTimer) clearTimeout(run.routeTimer);
@@ -368,8 +372,11 @@ function maybeDeleteRun(room, runId, run) {
 
 function startSpectatorGrace(roomId, room, runId, run) {
   if (run.spectatorGraceTimer) clearTimeout(run.spectatorGraceTimer);
+  run.spectatorTimeline = process.env.EAGLER_NETPLAY_TH09_SPECTATOR_TIMELINE === '1' && roomId.startsWith('th09mp-');
   run.spectatorAdmissionOpen = true;
+  run.onSpectatorAvailabilityChange=run.spectatorTimeline?()=>roomDirectory.changed():null;
   clearSpectatorHistory(run);
+  if (run.spectatorTimeline) return;
   run.spectatorGraceTimer = setTimeout(() => {
     run.spectatorGraceTimer = null;
     if (room.runs.get(runId) !== run) return;
@@ -435,7 +442,7 @@ function removeClient(roomId, runId, player, socket) {
       for (const peer of [
         ...run.clients.values(),
         ...run.signalClients.values(),
-        ...run.spectatorClients.values(),
+        ...(run.spectatorTimeline && run.spectatorComplete ? [] : run.spectatorClients.values()),
       ]) {
         if (peer.readyState === WebSocket.OPEN)
           peer.close(1001, `player ${player + 1} left the run`);
@@ -664,11 +671,13 @@ function lobbySnapshot(room) {
     startSerial: room.lobby.startSerial,
     spectators,
     spectatorCount: spectators.length,
+    ...(process.env.EAGLER_NETPLAY_TH09_SPECTATOR_TIMELINE === '1' && room.id.startsWith('th09mp-') ? {spectatorTimeline: true} : {}),
     seats: room.lobby.seats.map((seat) =>
       seat
         ? {
             clientId: seat.clientId,
             name: seat.name || '',
+            ...(room.id.startsWith('th09mp-') ? {stats:th09PlayerStats(room,seat.clientId)} : {}),
             loadout: seat.loadout,
             controlMode: publicControlMode(seat),
             mobileDevice: seat.mobileDevice === true,
@@ -964,12 +973,23 @@ function handleLobbyConnection(socket, roomId, clientId, memberId, intent, initi
     }
 
     if (message.type === 'spectate') {
+      if (room.lobby.phase !== 'lobby' && lobbySeatOf(room, clientId) >= 0) {
+        sendLobby(socket, {type: 'error', error: '对局中的玩家不能切换为观众'});
+        return;
+      }
       const seatChanged = clearLobbySeat(room, clientId);
       const spectatorChanged = !room.lobby.spectators.has(clientId);
       room.lobby.spectators.set(clientId, normalizeDisplayName(message.name));
       if (seatChanged) invalidateLobbyReady(room);
       if (seatChanged || spectatorChanged) broadcastLobby(room);
       if (room.lobby.phase !== 'lobby') {
+        const run = room.runs.get(String(room.lobby.startSerial));
+        if (run?.spectatorTimeline && !run.ended && !run.spectatorStopped) {
+          run.admittedSpectators.add(clientId);
+          run.memberIds.set(clientId, roomDirectory.memberIdFor(roomId, clientId));
+          sendLobby(socket, {type: 'spectator-start', serial: room.lobby.startSerial, room: lobbySnapshot(room)});
+          return;
+        }
         sendLobby(socket, { type: 'error', error: '本局已经开始；已保留旁观席，将在下一局生效' });
       }
       return;
@@ -995,14 +1015,11 @@ function handleLobbyConnection(socket, roomId, clientId, memberId, intent, initi
     }
 
     const seat = lobbySeatOf(room, clientId);
-    if (seat < 0) {
-      sendLobby(socket, { type: 'error', error: '请先选择 P 位' });
-      return;
-    }
-    const occupant = room.lobby.seats[seat];
     if (message.type === 'quick-chat') {
+      const spectator = roomId.startsWith('th09mp-') && seat < 0 && room.lobby.spectators.has(clientId);
       if (
-        room.lobby.phase === 'lobby' ||
+        (seat < 0 && !spectator) ||
+        (room.lobby.phase === 'lobby' && !roomId.startsWith('th09mp-')) ||
         message.serial !== room.lobby.startSerial ||
         !quickChatPhrase(message.phrase)
       )
@@ -1015,9 +1032,21 @@ function handleLobbyConnection(socket, roomId, clientId, memberId, intent, initi
         room: roomId,
         serial: room.lobby.startSerial,
         seat,
+        ...(spectator ? {spectator: true} : {}),
         clientId,
         phrase: message.phrase,
       });
+      return;
+    }
+    if (seat < 0) {
+      sendLobby(socket, { type: 'error', error: '请先选择 P 位' });
+      return;
+    }
+    const occupant = room.lobby.seats[seat];
+    if (message.type === 'th09-match') {
+      if (seat === 0 && room.lobby.phase === 'running' &&
+          acceptTh09MatchStats(room, room.runs.get(String(message.serial)), clientId, message))
+        broadcastLobby(room);
       return;
     }
 
@@ -1383,13 +1412,40 @@ function handleSpectatorConnection(socket, roomId, runId, spectatorId, playerCou
   }
   run.claimedSpectators.add(spectatorId);
   run.spectatorClients.set(spectatorId, socket);
-  for (const payload of run.spectatorHistory) {
+  if (run.spectatorTimeline) {
+    // Ordered bounded replay, then live delivery. Live packets remain in the
+    // same retained tape until the replay cursor catches its append frontier.
+    socket.spectatorReplaying = true;
+    let index = 0, blockedAt = 0, history = run.spectatorHistory;
+    const replay = () => {
+      if (socket.readyState !== WebSocket.OPEN || run.spectatorStopped ||
+          run.spectatorClients.get(spectatorId) !== socket) return;
+      if (socket.bufferedAmount > 64 * 1024) {
+        blockedAt ||= Date.now();
+        if (Date.now() - blockedAt > 15000) { socket.close(1008, 'spectator history too slow'); return; }
+        socket.spectatorReplayTimer = setTimeout(replay, 10); return;
+      }
+      blockedAt = 0;
+      if(index>=history.length&&history!==run.spectatorHistory){history=run.spectatorHistory;index=0;}
+      const first = history[index];
+      if (!first) { socket.spectatorReplaying = false; return; }
+      const batch = [first]; index++;
+      if (first.length === 46) while (batch.length < 64 && history[index]?.length === 46)
+        batch.push(history[index++]);
+      if (!sendSpectatorPayload(socket, Buffer.concat(batch), roomId, runId, spectatorId)) return;
+      socket.spectatorReplayTimer = setTimeout(replay, 0);
+    };
+    replay();
+  } else for (const payload of run.spectatorHistory) {
     if (!sendSpectatorPayload(socket, payload, roomId, runId, spectatorId)) break;
   }
   if (!hasPendingSpectators(run)) clearSpectatorHistory(run);
   console.log(`SPECTATOR JOIN room=${roomId} run=${runId} client=${spectatorId}`);
   socket.on('message', () => socket.close(1008, 'spectators are receive-only'));
   socket.on('close', () => {
+    if (socket.spectatorReplayTimer) clearTimeout(socket.spectatorReplayTimer);
+    if (run.spectatorTimeline && run.spectatorClients.get(spectatorId) === socket)
+      run.claimedSpectators.delete(spectatorId);
     if (run.spectatorClients.get(spectatorId) === socket) run.spectatorClients.delete(spectatorId);
     console.log(`SPECTATOR LEAVE room=${roomId} run=${runId} client=${spectatorId}`);
     maybeDeleteRun(room, runId, run);
@@ -1467,6 +1523,12 @@ server.on('connection', (socket, request) => {
     return;
   }
   const roomId = url.searchParams.get('room') || '';
+  if (/^[A-Za-z0-9_-]{1,64}$/.test(roomId) &&
+      !abuseGuard.allowRoomLookup(socket.relayAddress, roomId)) {
+    sendLobby(socket, { type: 'error', code: 'rate-limited', error: '房间查询过于频繁，请稍后再试。' });
+    socket.close(1008, 'room lookup rate exceeded');
+    return;
+  }
   const runId = url.searchParams.get('run') || '0';
   const lobbyClient = url.searchParams.get('lobby') || '';
   if (/^[A-Za-z0-9_-]{1,64}$/.test(roomId) && /^[A-Za-z0-9_-]{8,64}$/.test(lobbyClient)) {
@@ -1595,15 +1657,52 @@ server.on('connection', (socket, request) => {
       if (run.spectatorStopped) return;
       if (player !== 0 || (!run.spectatorAdmissionOpen && run.spectatorClients.size === 0)) return;
       const payload = incoming.subarray(1);
-      if (!isSpectatorFrameForRoom(roomId, payload, run.playerCount)) return;
+      const ending = run.spectatorTimeline && payload.length === 24 &&
+        [84,57,83,69,1,0,2,0].every((v,i)=>payload[i]===v);
+      const beginning = run.spectatorTimeline && payload.length === 74 &&
+        [84,57,66,71,1,0,2,0].every((v,i)=>payload[i]===v);
+      const roundStart = run.spectatorTimeline && payload.length === 28 &&
+        [84,57,82,68,1,0,2,0].every((v,i)=>payload[i]===v);
+      if (!ending && !beginning && !roundStart && !isSpectatorFrameForRoom(roomId, payload, run.playerCount)) return;
+      if (run.spectatorTimeline && payload.length === 40) run.spectatorTiming = Buffer.from(payload);
+      if(beginning){
+        const frame=payload.readUInt32LE(8),build=payload.subarray(12,24);
+        if(frame<(run.spectatorNextFrame||0)||(!run.spectatorComplete&&frame!==(run.spectatorNextFrame||0))||
+            (run.spectatorBuild&&!run.spectatorBuild.equals(build))){stopSpectatorStream(run);return;}
+        run.spectatorBuild||=Buffer.from(build);run.spectatorNextFrame=frame;run.spectatorRound=0;run.spectatorComplete=false;
+        // A complete initializer permits bounded per-match history even when
+        // the same player connections keep running through native Retry.
+        run.spectatorHistory=run.spectatorTiming?[run.spectatorTiming]:[];
+        run.spectatorHistoryBytes=run.spectatorTiming?.length||0;
+      }
+      if (run.spectatorTimeline && (payload.length === 46 || ending || roundStart)) {
+        const frame = payload.readUInt32LE(8), build = payload.subarray(12,24);
+        if (frame !== (run.spectatorNextFrame || 0) ||
+            (run.spectatorBuild && !run.spectatorBuild.equals(build))) {
+          stopSpectatorStream(run);return;
+        }
+        run.spectatorBuild ||= Buffer.from(build);
+        if(roundStart){
+          const round=payload.readUInt32LE(24);
+          if(run.spectatorComplete||round<=(run.spectatorRound||0)||round>1024){stopSpectatorStream(run);return;}
+          run.spectatorRound=round;
+        } else if (ending) run.spectatorComplete = true;
+        else { if(run.spectatorComplete)return;run.spectatorNextFrame=frame+1; }
+      }
       if (
         run.spectatorAdmissionOpen &&
-        hasPendingSpectators(run) &&
-        !appendSpectatorHistory(run, payload)
+        (run.spectatorTimeline || hasPendingSpectators(run)) &&
+        !appendSpectatorHistory(run, payload, run.spectatorTimeline ?
+          {...RELAY_LIMITS, historyFrames: 32401, historyBytes: 2 * 1024 * 1024} : RELAY_LIMITS)
       )
         return;
       for (const [spectatorId, target] of run.spectatorClients)
+        if (!target.spectatorReplaying)
         sendSpectatorPayload(target, payload, roomId, runId, spectatorId);
+      if(beginning)for(const id of room.lobby.spectators.keys()){
+        const lobby=room.lobbyClients.get(id);
+        if(lobby)sendLobby(lobby,{type:'spectator-start',serial:room.lobby.startSerial,room:lobbySnapshot(room)});
+      }
       return;
     }
     let requestedPeer = null;

@@ -23,7 +23,6 @@ import { PRODUCT_CONTENT } from "../lib/content-definition.mjs";
 import { REACT_FRONTEND_ARTIFACT, FRONTEND_PACKAGE_FILES, hostArtworkFiles, resolveFrontendPackageSource } from "../lib/frontend-manifest.mjs";
 import { SITE_MANIFEST_FILE } from "../lib/contracts/site-manifest.mjs";
 import { RELEASE_CATALOG_FILE, RELEASE_CATALOG_SCHEMA } from "../lib/contracts/release-catalog.mjs";
-import { isMappedBrowserPublicationPath, resolveBrowserPublicationSource } from "../lib/client-services-build.mjs";
 import { privateFrontendAssetSource } from "../lib/private-frontend-assets.mjs";
 import {
   APP_SHELL_OUTPUT_FILE,
@@ -221,7 +220,7 @@ createServer(async (request, response) => {
     const possibleLegacyPath = frontendPath.startsWith("public/") ? frontendPath.slice("public/".length) : frontendPath;
     if (!FRONTEND_PACKAGE_FILES.includes(frontendPath) &&
         (possibleLegacyPath === "app.js" || possibleLegacyPath.startsWith("assets/launcher/") ||
-         isMappedBrowserPublicationPath(possibleLegacyPath))) {
+         possibleLegacyPath.startsWith("assets/contracts/"))) {
       throw new Error("Legacy frontend URL is not part of the selected React artifact");
     }
 

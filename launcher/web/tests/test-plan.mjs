@@ -7,6 +7,7 @@
 // refactor should rewrite/delete a brittle test rather than preserve the old
 // implementation solely to keep this list green.
 export const REPOSITORY_NODE_TESTS = Object.freeze([
+  "tests/test-client-services-build.mjs",
   "tests/test-archive-directory.mjs",
   "tests/test-integrations.mjs",
   "tests/test-library-index-scrub.mjs",
@@ -84,6 +85,7 @@ export const REPOSITORY_NODE_TESTS = Object.freeze([
   "tests/test-touch-function-key.mjs",
   "tests/test-touch-runtime-protocol.mjs",
   "tests/test-runtime-release.mjs",
+  "tests/test-runtime-variant-publication.mjs",
   "tests/test-runtime-generations.mjs",
   "tests/test-runtime-launch.mjs",
   "tests/test-completion-report.mjs",

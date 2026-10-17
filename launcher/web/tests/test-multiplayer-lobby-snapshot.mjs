@@ -1,7 +1,8 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
 
 import { PRODUCT_GAMES } from "../lib/contracts/product-catalog.mjs";
-import { normalizeMultiplayerLobbySnapshot } from "../.cache/build/browser/assets/launcher/multiplayer-lobby-snapshot.mjs";
+const { normalizeMultiplayerLobbySnapshot } = await importClientService('launcher/multiplayer-lobby-snapshot.mjs');
 
 const localClientId = "local_client_01";
 

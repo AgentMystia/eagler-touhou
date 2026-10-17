@@ -141,16 +141,16 @@ function identityPlan(
     throw new Error(input.translate('runtime.hostManifestMissingGame', { game }));
   const entry =
     runtimeVariant === 'normal'
-      ? (hosted?.runtime ?? product.runtime)
+      ? hosted
+        ? hosted.runtime
+        : product.runtime
       : hosted
         ? hosted.multiplayerRuntime
         : 'multiplayerRuntime' in product
           ? product.multiplayerRuntime
           : undefined;
   if (!entry)
-    throw new Error(
-      input.translate('runtime.multiplayerRuntimeMissing', { game: game.toUpperCase() }),
-    );
+    throw new Error(input.translate('runtime.variantMissing', { game: game.toUpperCase() }));
   const publishedRuntime = !!host?.shared.runtimeManifest;
   return {
     game,
@@ -287,6 +287,10 @@ async function finishPlan(
   }
   guard();
   ({ generation, music } = await ensureOggStartup({
+    completeSet:
+      input.settings.gameId === 'th09' &&
+      input.multiplayer?.kind === 'room' &&
+      input.multiplayer.options.netplaySpectatorTimeline === true,
     generation,
     music,
     acquisition,

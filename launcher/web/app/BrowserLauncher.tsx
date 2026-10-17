@@ -7,6 +7,7 @@ import {
   PRODUCT_IDS,
 } from '@eagler/contracts/product-catalog';
 import { buildMultiplayerDiagnosticRelayUrl } from '../src/launcher/multiplayer-relay-url.mts';
+import { generateMultiplayerRoomCode } from '../src/launcher/multiplayer-identity.mts';
 import { errorText } from './services/error-text';
 import { readReactAppShellDeployment } from './services/app-shell-deployment';
 import { siteOriginMigrationAvailable } from '@eagler/contracts/site-manifest';
@@ -217,9 +218,7 @@ function LegacyMultiplayerOnline({ session }: { session: BrowserSession }) {
     <MultiplayerOnlineFold
       configuration={configuration}
       onCreate={() => {
-        const value = new Uint32Array(1);
-        crypto.getRandomValues(value);
-        enter(String(1000 + (value[0] % 9000)), true);
+        enter(generateMultiplayerRoomCode(), true);
       }}
       onJoin={(code) => enter(code, false)}
       onInvalidCode={() => session.feedback.toast(t('status.enterRoomCode'))}

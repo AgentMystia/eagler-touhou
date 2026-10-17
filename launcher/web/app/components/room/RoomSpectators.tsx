@@ -21,7 +21,13 @@ export function RoomSpectators({
       data-room-panel="spectators"
       hidden={hidden}
     >
-      <p className="mp-spectator-intro">{t('room.spectatorHint')}</p>
+      <p className="mp-spectator-intro">
+        {t(
+          state.product === 'th09mp' && room.spectatorTimeline
+            ? 'room.th09SpectatorHint'
+            : 'room.spectatorHint',
+        )}
+      </p>
       <div className="mp-spectator-list" id="mpSpectatorList">
         {entries.length ? (
           entries.map((entry, index) => {
@@ -38,7 +44,13 @@ export function RoomSpectators({
                 </span>
                 <div className="mp-spectator-copy">
                   <strong>{title}</strong>
-                  <small>{t('room.watching')}</small>
+                  <small>
+                    {t(
+                      state.product === 'th09mp' && room.phase !== 'lobby'
+                        ? 'room.spectatorJoined'
+                        : 'room.watching',
+                    )}
+                  </small>
                 </div>
                 <span className="mp-spectator-marker">{mine ? t('multiplayer.you') : ''}</span>
                 {owner && ready && room.phase === 'lobby' && !mine && (

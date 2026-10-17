@@ -588,22 +588,21 @@ test('React refresh stages and verifies a coherent artifact before replacing any
       },
     );
 
-    const invalid = resolve(temporary, 'structurally-invalid-artifact');
-    await cp(resolve(nextBuild, 'client'), resolve(invalid, 'client'), { recursive: true });
-    for (const entry of await readdir(resolve(invalid, 'client/assets')))
-      if (entry.endsWith('.js')) {
-        const path = resolve(invalid, 'client/assets', entry),
-          contents = await readFile(path, 'utf8');
-        if (contents.includes('originMigrationOpen'))
-          await writeFile(path, contents.replaceAll('originMigrationOpen', 'missingMigrationOpen'));
-      }
+    const rejectVerifier = resolve(temporary, 'reject-candidate-verifier.mjs');
+    await writeFile(
+      rejectVerifier,
+      `if (process.argv[1]?.endsWith('verify-server-build.mjs') && process.argv[2]?.includes('.refresh-candidate-')) throw new Error('injected candidate verifier rejection');\n`,
+    );
     await rejectsUntouched(
       'candidate verifier failure preserves the complete original deployment',
       plain,
       {
         flags: ['--frontend'],
-        extra: selected(invalid),
-        expected: /React UI is missing its inert Site Manifest governed origin migration entry/,
+        extra: {
+          ...selected(nextBuild),
+          NODE_OPTIONS: `--import=${pathToFileURL(rejectVerifier).href}`,
+        },
+        expected: /injected candidate verifier rejection/,
       },
     );
     const preload = resolve(temporary, 'fail-final-rename.mjs');

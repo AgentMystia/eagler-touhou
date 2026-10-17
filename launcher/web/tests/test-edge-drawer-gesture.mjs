@@ -1,5 +1,6 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import { createEdgeDrawerGesture } from "../.cache/build/browser/assets/launcher/edge-drawer-gesture.mjs";
+const { createEdgeDrawerGesture } = await importClientService('launcher/edge-drawer-gesture.mjs');
 
 class FakeClassList {
   values = new Set();

@@ -42,6 +42,8 @@ Web 状态的具体拥有者和离开页面的处理见 [Web 架构](../launcher
 
 ## 扩展一部作品
 
-在 `contracts/src/product-catalog.mts` 登记实际产品，在 `config/runtime-builds.json` 登记源码构建入口，在 Web 的 `lib/content-definition.mjs` 声明原版资源与准备方式。提供 Runtime 协议实现及普通玩法验证后，再开放站点能力。
+游戏维护者按[Runtime 适配教程](ADAPTING_A_GAME.md)实现平台层、[接入协议](GAME_ADAPTER_CONTRACT.md)、存档/Replay 和所选可选功能，再交付实际 Runtime Release。
+
+Web 维护者按[前端接入教程](../launcher/web/docs/ADAPTING_A_GAME.md)登记产品与原版资源，复用目录、安装、设置和会话流程，并完成真实界面的安装、启动与重载。产品和消息类型共享根 `contracts`，不因此把前端具体操作放进根架构说明。
 
 开发用诊断导出、Presentation Lab 和 Replay Verifier 是独立验证边界。诊断核心通过比较不能直接代表浏览器绘制、音乐、存储或完整游戏验收。

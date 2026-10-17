@@ -3,24 +3,19 @@ import { findChromiumExecutable } from '../../lib/chromium-executable.mjs';
 // while executable markup, unsafe URLs and DOM-clobbering attributes are dropped.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
 import {createComponentFixture} from '../support/component-fixture.mjs';
 
 const componentFixture = await createComponentFixture('content-fragments');
 
-const project = fileURLToPath(new URL('../../', import.meta.url));
 const server = createServer(async (request, response) => {
   if (request.url === '/') { response.writeHead(200, { 'Content-Type': 'text/html' }); response.end('<!doctype html><title>Content security</title>'); return; }
   const name = /^\/modules\/([a-z-]+\.mjs)$/.exec(request.url || '')?.[1];
   if (!name) { response.writeHead(404); response.end(); return; }
-  if (componentFixture && ['first-use-notice.mjs', 'multiplayer-guide.mjs'].includes(name)) {
+  if (['first-use-notice.mjs', 'multiplayer-guide.mjs'].includes(name)) {
     response.writeHead(200, { 'Content-Type': 'text/javascript' }); response.end(componentFixture.module); return;
   }
-  try { response.writeHead(200, { 'Content-Type': 'text/javascript' }); response.end(await readFile(resolve(project, '.cache/build/browser/assets/launcher', name))); }
-  catch { response.writeHead(404); response.end(); }
+  response.writeHead(404); response.end();
 });
 await new Promise(resolveListen => server.listen(0, '127.0.0.1', resolveListen));
 let browser;

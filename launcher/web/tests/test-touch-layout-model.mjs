@@ -1,5 +1,6 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import {
+const {
   canonicalTouchLayout,
   cloneTouchLayout,
   emptyTouchLayout,
@@ -14,7 +15,7 @@ import {
   touchLayoutScaleMin,
   touchLayoutStorageKey,
   touchLayoutVersion,
-} from "../.cache/build/browser/assets/launcher/touch-layout-model.mjs";
+} = await importClientService('launcher/touch-layout-model.mjs');
 
 const placement = (priority, overrides = {}) => ({ x: 0.25, y: 0.5, scale: 1, priority, ...overrides });
 const requiredControls = () => ({

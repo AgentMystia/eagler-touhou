@@ -1,3 +1,4 @@
+import { createRuntimeFileSessions, type FileSessionOwner } from './runtime/file-sessions';
 import { createRuntimeChannel } from './runtime/channel';
 import { createRuntimeResources } from './runtime/resources';
 import type { Translate } from '../i18n';
@@ -5,7 +6,6 @@ import { directPreloadRuntimeUrl } from './direct-preload-runtime';
 import { liveRuntimeEntryAuthorized } from './runtime-entry-authority';
 import { errorText } from './error-text';
 import { GameDataAcquisitionError } from './game-data-acquisition';
-import { isReplayFilePath, isSafeReplayArchivePath } from '../../src/launcher/replay-files.mts';
 import type { SiteManifest } from '@eagler/contracts/site-manifest';
 /**
  * Bounded current-main Runtime orchestration seam, independent of React/DOM UI.
@@ -76,8 +76,6 @@ import type {
   RuntimeReadyContinuation,
   RuntimePhase,
   RuntimeRequestCommand,
-  RuntimeFileCommand,
-  RuntimeFileSession,
   RuntimeInputCommand,
   RuntimeSnapshot,
   RuntimeDependencies,
@@ -200,16 +198,30 @@ export function createRuntimeService(options: RuntimeServiceOptions) {
   let preflightEpoch: number | null = null;
   let closing: Promise<boolean> | null = null;
   let fileClosing: Promise<boolean> | null = null;
-  interface FileSessionOwner {
-    token: RuntimeSessionToken;
-    promise: Promise<unknown>;
-    invalidated: boolean;
-    restarting: boolean;
-    invalidate(): void;
-  }
-  let fileSession: FileSessionOwner | null = null;
+  const fileSessions = createRuntimeFileSessions({
+    state: () => ({
+      token: sessions.current(),
+      snapshot,
+      plan: preparedPlan,
+      preflight: preflightEpoch !== null,
+      disposed,
+      closing: closing !== null || fileClosing !== null,
+      launchRequested,
+    }),
+    assertCurrent,
+    send,
+    update,
+    retire: (owner) => reset('idle', null, null, null, owner),
+    prepare: (plan, owner) => prepareOwned(plan, owner),
+    retainGeneration: deps.retainGeneration,
+    releaseGeneration: deps.releaseGeneration,
+    timers,
+    leaseTimeout: options.timeouts?.lease ?? 300_000,
+    warn: (error) => options.onWarning?.(error),
+  });
+  const withFileSession = fileSessions.run;
   function invalidateFileSession() {
-    fileSession?.invalidate();
+    fileSessions.invalidate();
   }
   let telemetry: Partial<Pick<RuntimeSnapshot, 'frameHealth' | 'audioHealth'>> | null = null;
   let telemetryTimer: Timer | null = null;
@@ -336,7 +348,7 @@ export function createRuntimeService(options: RuntimeServiceOptions) {
     saveError: string | null = null,
     fileOwner?: FileSessionOwner,
   ): boolean {
-    if (fileOwner && (fileOwner !== fileSession || fileOwner.invalidated))
+    if (fileOwner && (fileOwner !== fileSessions.current() || fileOwner.invalidated))
       throw new RuntimeSessionSupersededError();
     if (frame.isConnected === false) {
       disposeDetachedFrame();
@@ -408,7 +420,7 @@ export function createRuntimeService(options: RuntimeServiceOptions) {
       error,
       exit,
       saveError,
-      fileOperationBusy: fileSession !== null,
+      fileOperationBusy: fileSessions.current() !== null,
       saveUnavailable,
     });
     return true;
@@ -634,7 +646,7 @@ export function createRuntimeService(options: RuntimeServiceOptions) {
         original.configure.music !== 'ogg' ||
         closing ||
         fileClosing ||
-        fileSession ||
+        fileSessions.current() ||
         !snapshot.launched ||
         !['running', 'launching'].includes(snapshot.phase)
       )
@@ -718,13 +730,16 @@ export function createRuntimeService(options: RuntimeServiceOptions) {
       disposeDetachedFrame();
       throw new RuntimeSessionSupersededError();
     }
-    if (fileOwner && (fileOwner !== fileSession || fileOwner.invalidated || !fileOwner.restarting))
+    if (
+      fileOwner &&
+      (fileOwner !== fileSessions.current() || fileOwner.invalidated || !fileOwner.restarting)
+    )
       throw new RuntimeSessionSupersededError();
     if (
       sessions.current() ||
       closing ||
-      (fileClosing && fileOwner !== fileSession) ||
-      (fileSession && fileOwner !== fileSession)
+      (fileClosing && fileOwner !== fileSessions.current()) ||
+      (fileSessions.current() && fileOwner !== fileSessions.current())
     )
       throw new Error('Close the current Runtime before preparing another');
     if (!isGameId(input.game)) throw new Error('Invalid Runtime game');
@@ -787,7 +802,7 @@ export function createRuntimeService(options: RuntimeServiceOptions) {
         }
         update({
           ...initialSnapshot(),
-          fileOperationBusy: fileSession !== null,
+          fileOperationBusy: fileSessions.current() !== null,
           fileOnly: plan.fileOnly === true,
           phase: 'loading',
           game: plan.game,
@@ -1023,7 +1038,7 @@ export function createRuntimeService(options: RuntimeServiceOptions) {
       snapshot.phase !== 'prepared' ||
       closing ||
       fileClosing ||
-      fileSession
+      fileSessions.current()
     )
       throw new Error('Prepare the Runtime before launch');
     const product = PRODUCT_GAMES[plan.game];
@@ -1077,7 +1092,7 @@ export function createRuntimeService(options: RuntimeServiceOptions) {
       sessions.current() ||
       closing ||
       fileClosing ||
-      fileSession ||
+      fileSessions.current() ||
       snapshot.saveError ||
       snapshot.closeError ||
       snapshot.ready ||
@@ -1174,7 +1189,8 @@ export function createRuntimeService(options: RuntimeServiceOptions) {
   }
   async function sync() {
     if (preflightEpoch !== null) throw new Error('Game checks do not save Runtime data');
-    if (fileSession) throw new Error('Wait for the Runtime file operation before saving');
+    if (fileSessions.current())
+      throw new Error('Wait for the Runtime file operation before saving');
     const token = sessions.current();
     if (!token || !snapshot.ready) throw new Error(options.translate('runtime.notReady'));
     await send('sync', {}, 10_000);
@@ -1198,179 +1214,9 @@ export function createRuntimeService(options: RuntimeServiceOptions) {
     }
     if (preflightEpoch !== null)
       return Promise.reject(new Error('Game-check files are owned by its Runtime preparation'));
-    if (fileSession || fileClosing)
+    if (fileSessions.current() || fileClosing)
       return Promise.reject(new Error('Runtime file access is already in progress'));
     return send(command, payload, timeout);
-  }
-  /** Acquire synchronously so a same-tick Start cannot race file decoding or writes.
-   * A terminal Runtime event invalidates callbacks even while local file I/O waits. */
-  function withFileSession<T>(
-    game: GameId,
-    operation: (access: RuntimeFileSession) => Promise<T>,
-    {
-      readOnly = false,
-      replayMutation = false,
-      runtimeVariant,
-      epoch,
-    }: {
-      readOnly?: boolean;
-      replayMutation?: boolean;
-      runtimeVariant?: 'normal' | 'multiplayer';
-      epoch?: number;
-    } = {},
-  ): Promise<T> {
-    const token = sessions.current();
-    const readableRunning =
-      (readOnly || replayMutation) && snapshot.phase === 'running' && snapshot.launched;
-    if (
-      !token ||
-      preflightEpoch !== null ||
-      disposed ||
-      closing ||
-      fileClosing ||
-      fileSession ||
-      (!readableRunning &&
-        (launchRequested || snapshot.launched || snapshot.phase !== 'prepared')) ||
-      snapshot.game !== game ||
-      !snapshot.ready ||
-      snapshot.saveUnavailable ||
-      (runtimeVariant !== undefined && snapshot.runtimeVariant !== runtimeVariant) ||
-      (epoch !== undefined && token.id !== epoch)
-    ) {
-      return Promise.reject(
-        new Error('Prepare this game and stop playback before managing its files'),
-      );
-    }
-    let invalidate!: () => void;
-    const invalidated = new Promise<never>((_resolve, reject) => {
-      invalidate = () => reject(new RuntimeSessionSupersededError());
-    });
-    const session: FileSessionOwner = {
-      token,
-      invalidated: false,
-      restarting: false,
-      invalidate() {
-        session.invalidated = true;
-        invalidate();
-      },
-      promise: Promise.resolve(),
-    };
-    const assertOwner = () => {
-      if (disposed || session.invalidated || fileSession !== session)
-        throw new RuntimeSessionSupersededError();
-    };
-    function fileAccess(currentToken: RuntimeSessionToken): RuntimeFileSession {
-      const assertAccess = () => {
-        assertOwner();
-        assertCurrent(currentToken);
-        const allowed =
-          (snapshot.phase === 'prepared' && !launchRequested && !snapshot.launched) ||
-          ((readOnly || replayMutation) && snapshot.phase === 'running' && snapshot.launched);
-        if (session.token !== currentToken || session.restarting || !allowed)
-          throw new RuntimeSessionSupersededError();
-      };
-      return Object.freeze({
-        epoch: currentToken.id,
-        async send<C extends RuntimeFileCommand>(command: C, payload: RuntimeCommandPayloads[C]) {
-          assertAccess();
-          if (!['list', 'read', 'write', 'remove'].includes(command))
-            throw new Error('Invalid Runtime file command');
-          if (readOnly && !['list', 'read'].includes(command))
-            throw new Error('Read-only Runtime file sessions cannot mutate files');
-          if (replayMutation && ['write', 'remove'].includes(command)) {
-            const path = (payload as { path?: unknown }).path;
-            if (!isReplayFilePath(path) || !isSafeReplayArchivePath(path))
-              throw new Error('A Replay mutation cannot change save, config or Hint files');
-          }
-          const response = await send(command, payload);
-          assertAccess();
-          return response;
-        },
-        async sync() {
-          assertAccess();
-          await send('sync', {}, 10_000);
-          assertAccess();
-          update({ saveError: null });
-        },
-        async retire() {
-          assertAccess();
-          if (readOnly) throw new Error('Read-only Runtime file sessions cannot retire the game');
-          if (!reset('idle', null, null, null, session))
-            throw new Error(snapshot.closeError ?? 'Could not retire the imported-file Runtime');
-        },
-        async restart({ sync: flush = true } = {}) {
-          assertAccess();
-          if (readOnly) throw new Error('Read-only Runtime file sessions cannot restart the game');
-          const plan = preparedPlan;
-          if (!plan || plan.game !== game) throw new RuntimeSessionSupersededError();
-          session.restarting = true;
-          // A separate Package lease bridges retirement's release and the new
-          // owner's retain, including asynchronous code/resource preparation.
-          const pin = `runtime-restart-${game}-${currentToken.id}-${Math.random().toString(36).slice(2)}`;
-          let pinAcquired = false,
-            pinActive = false,
-            pinTimer: Timer | null = null;
-          try {
-            if (flush) await send('sync', {}, 10_000);
-            assertOwner();
-            assertCurrent(currentToken);
-            const pinnedGeneration = plan.generation;
-            if (pinnedGeneration) {
-              await deps.retainGeneration(game, pinnedGeneration.id, { leaseId: pin });
-              pinAcquired = true;
-              assertOwner();
-              assertCurrent(currentToken);
-              pinActive = true;
-              pinTimer = timers.setInterval(() => {
-                if (!pinActive) return;
-                void deps
-                  .retainGeneration(game, pinnedGeneration.id, { leaseId: pin })
-                  .then(() => {
-                    if (!pinActive) return deps.releaseGeneration(pin);
-                  })
-                  .catch(warn);
-              }, options.timeouts?.lease ?? 300_000);
-            }
-            if (!reset('idle', null, null, null, session))
-              throw new Error(
-                snapshot.closeError ?? 'Could not retire Runtime for save verification',
-              );
-            assertOwner();
-            await prepareOwned(plan, session);
-            assertOwner();
-            const next = sessions.current();
-            if (!next || next.id === currentToken.id || next.game !== game)
-              throw new RuntimeSessionSupersededError();
-            assertCurrent(next);
-            session.token = next;
-            session.restarting = false;
-            return fileAccess(next);
-          } finally {
-            pinActive = false;
-            if (pinTimer !== null) timers.clearInterval(pinTimer);
-            if (pinAcquired) await deps.releaseGeneration(pin).catch(warn);
-            session.restarting = false;
-          }
-        },
-      });
-    }
-    const access = fileAccess(token);
-    fileSession = session;
-    session.promise = Promise.race([
-      Promise.resolve().then(() => {
-        assertOwner();
-        assertCurrent(token);
-        return operation(access);
-      }),
-      invalidated,
-    ]).finally(() => {
-      if (fileSession === session) {
-        fileSession = null;
-        update({ fileOperationBusy: false });
-      }
-    });
-    update({ fileOperationBusy: true });
-    return session.promise as Promise<T>;
   }
   function close({
     discardUnsaved = false,
@@ -1389,12 +1235,13 @@ export function createRuntimeService(options: RuntimeServiceOptions) {
     preflight?.interrupt?.();
     if (closing) return closing;
     if (fileClosing) return fileClosing;
-    if (fileSession) {
+    const currentFileSession = fileSessions.current();
+    if (currentFileSession) {
       const continueClose = () => {
         fileClosing = null;
         return close({ discardUnsaved, decide, beforeReset });
       };
-      const waiting = fileSession.promise.then(continueClose, continueClose);
+      const waiting = currentFileSession.promise.then(continueClose, continueClose);
       fileClosing = waiting;
       return waiting;
     }
@@ -1496,7 +1343,7 @@ export function createRuntimeService(options: RuntimeServiceOptions) {
       snapshot.launched ||
       closing ||
       fileClosing ||
-      fileSession ||
+      fileSessions.current() ||
       terminalLossEpoch !== null
     )
       throw new Error('Save and close the current Runtime first');
@@ -1541,7 +1388,7 @@ export function createRuntimeService(options: RuntimeServiceOptions) {
       finishDisposal();
       return;
     }
-    if (snapshot.ready || launchRequested || closing || fileSession || fileClosing)
+    if (snapshot.ready || launchRequested || closing || fileSessions.current() || fileClosing)
       throw new Error('Close the Runtime before disposing its service');
     if (!reset())
       throw new Error(

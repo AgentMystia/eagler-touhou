@@ -1,10 +1,11 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
 import { WebSocket, WebSocketServer } from "ws";
-import {
+const {
   legacyDiagnosticRelayUrl,
   probeRelay,
   turnServerLatencyFromLoopback,
-} from "../.cache/build/browser/assets/launcher/network-diagnostics.mjs";
+} = await importClientService('launcher/network-diagnostics.mjs');
 
 assert.equal(turnServerLatencyFromLoopback(86), 43,
   "same-browser relay-to-relay RTT contains two client-to-TURN round trips");

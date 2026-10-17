@@ -1,9 +1,10 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import {
+const {
   buildMultiplayerGameplayRelayUrl,
   buildMultiplayerLobbyRelayUrl,
   multiplayerTransportRoomId,
-} from "../.cache/build/browser/assets/launcher/multiplayer-relay-url.mjs";
+} = await importClientService('launcher/multiplayer-relay-url.mjs');
 
 assert.equal(multiplayerTransportRoomId("th06mp", "1234"), "th06mp-1234");
 assert.notEqual(multiplayerTransportRoomId("th06mp", "1234"), multiplayerTransportRoomId("th07mp", "1234"),

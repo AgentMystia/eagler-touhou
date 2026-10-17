@@ -387,33 +387,22 @@ test('opt-in React artifacts use the actual server packager and generic verifier
       /exact isolated origin and mount/,
     );
     await rejectsMutation(
-      'missing inert React migration entry fails structural verification',
+      'missing standalone migration asset fails publication verification',
       plain,
       async (directory, deployment) => {
-        for (const item of deployment.files.filter((item) => /^assets\/.+\.js$/.test(item.path))) {
-          const source = await readFile(resolve(directory, item.path), 'utf8');
-          if (source.includes('originMigrationOpen'))
-            await writeFile(
-              resolve(directory, item.path),
-              source.replaceAll('originMigrationOpen', 'missingMigrationOpen'),
-            );
-        }
+        deployment.files = deployment.files.filter((item) => item.path !== 'migrate.html');
+        await rm(resolve(directory, 'migrate.html'));
       },
-      /React UI is missing its inert Site Manifest governed origin migration entry/,
+      /migrate\.html|migration page missing/,
     );
     await rejectsMutation(
-      'hosted shared-font targets remain a required React UI contract',
+      'hosted manifest cannot point to a missing shared font',
       hosted,
       async (directory, deployment) => {
-        for (const item of deployment.files.filter((item) => /^assets\/.+\.js$/.test(item.path))) {
-          const source = await readFile(resolve(directory, item.path), 'utf8');
-          await writeFile(
-            resolve(directory, item.path),
-            source.replaceAll('/msgothic.ttc', '/wrong-font.ttc'),
-          );
-        }
+        deployment.files = deployment.files.filter((item) => item.path !== 'shared/msgothic.ttc');
+        await rm(resolve(directory, 'shared/msgothic.ttc'));
       },
-      /host shared font target mismatch: \/msgothic.ttc/,
+      /msgothic\.ttc/,
     );
     await rejectsMutation(
       'Runtime identity is still checked with React SW disabled',

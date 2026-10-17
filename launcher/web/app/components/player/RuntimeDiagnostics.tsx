@@ -17,10 +17,12 @@ export type NetplayDiagnosticLines = Partial<Record<(typeof netplayRows)[number]
 export function RuntimeDiagnostics({
   model,
   netplay,
+  playbackControls = false,
   children,
 }: {
   model: Pick<ReturnType<typeof createRuntimeDiagnostics>, 'subscribe' | 'getSnapshot'>;
   netplay?: NetplayDiagnosticLines;
+  playbackControls?: boolean;
   /** Actual original calibration report trigger, when its owner has a report. */
   children?: ReactNode;
 }) {
@@ -28,7 +30,7 @@ export function RuntimeDiagnostics({
     state = useSyncExternalStore(model.subscribe, model.getSnapshot, model.getSnapshot);
   return (
     <aside
-      className={`runtime-diagnostics${state.severity ? ` ${state.severity}` : ''}`}
+      className={`runtime-diagnostics${state.severity ? ` ${state.severity}` : ''}${playbackControls ? ' runtime-diagnostics-playback' : ''}`}
       id="runtimeDiagnostics"
       aria-label={t('diagnostics.aria')}
       hidden={!state.visible}

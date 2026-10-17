@@ -1,3 +1,4 @@
+import { importClientService } from './support/client-services.mjs';
 import { findChromiumExecutable } from '../lib/chromium-executable.mjs';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
@@ -5,7 +6,7 @@ import {readFile, mkdir} from 'node:fs/promises';
 import {resolve, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import puppeteer from 'puppeteer-core';
-import { QUICK_CHAT_ROWS } from '../.cache/build/browser/assets/contracts/multiplayer-quick-chat.mjs';
+const { QUICK_CHAT_ROWS } = await importClientService('contracts/multiplayer-quick-chat.mjs');
 import {createComponentFixture} from './support/component-fixture.mjs';
 
 const componentFixture=await createComponentFixture('multiplayer-quick-chat');
@@ -14,7 +15,7 @@ const root=resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const server=createServer(async(req,res)=>{
   try {
     const path=new URL(req.url,'http://localhost').pathname;
-    if(componentFixture && path==='/assets/launcher/multiplayer-quick-chat.mjs') {
+    if(path==='/assets/launcher/multiplayer-quick-chat.mjs') {
       res.setHeader('content-type','text/javascript');res.end(componentFixture.module);return;
     }
     if(path==='/') {
@@ -22,7 +23,8 @@ const server=createServer(async(req,res)=>{
       res.end('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/features.css"><main id="fixture" class="player open" style="background:#141413"><button class="orientation-toggle">横竖屏</button><button class="touch-help-open">帮助</button><button class="fullscreen-toggle">全屏</button></main>');
       return;
     }
-    const target=['/styles.css','/features.css'].includes(path)?resolve(root,'public',path.slice(1)):resolve(root,'.cache/build/browser',`.${path}`);
+    if (!['/styles.css', '/features.css'].includes(path)) { res.writeHead(404); res.end(); return; }
+    const target=resolve(root,'public',path.slice(1));
     assert.ok(target.startsWith(root));
     const source=await readFile(target,'utf8');
     res.setHeader('content-type',path.endsWith('.css')?'text/css':'text/javascript');res.end(source);
@@ -106,7 +108,7 @@ try {
     const layout=await chromeLayout();
     for(const control of layout.controls){
       assert.ok(layout.prompt.y>control.bottom,'fixed quick-chat button is below player controls');
-      assert.ok(layout.log.y>=layout.prompt.bottom&&layout.picker.y>=layout.prompt.bottom,'messages and picker clear the quick-chat button');
+      assert.ok(layout.log.bottom<=layout.prompt.y&&layout.picker.bottom<=layout.prompt.y,'messages and picker open above the quick-chat button');
     }
   };
   await assertLayout();
@@ -157,7 +159,7 @@ try {
   assert.equal(await page.$eval('.mp-quick-chat-log p',el=>getComputedStyle(el).whiteSpace),'normal','received phrases wrap to show their complete text');
   assert.match(await page.$eval('.mp-quick-chat-log p',el=>el.textContent),/停止开火，然后在我旁边低速即可/);
   await page.waitForFunction(()=>document.querySelector('.mp-quick-chat-log p')?.getAnimations().some(animation=>
-    Number(animation.effect.getKeyframes().at(-1).opacity)===0),{timeout:3500});
+    Number(animation.effect.getKeyframes().at(-1).opacity)===0),{timeout:10500});
   await page.waitForFunction(()=>document.querySelector('.mp-quick-chat-log').children.length===0,{timeout:1000});
   assert.deepEqual(errors,[]);
   console.log('Multiplayer quick chat: sender/session validation, safe text, send, mute, scroll/focus stability, plain text, fixed button, portrait/landscape controls and spectator controls PASS');

@@ -1,4 +1,5 @@
 """Touch layout settings remain shared when the selected game changes."""
+import argparse
 import json
 import sys
 
@@ -6,7 +7,9 @@ from playwright.sync_api import sync_playwright
 
 
 def main() -> int:
-    url = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8130/"
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("url", help="显式 Launcher 地址")
+    url = parser.parse_args().url
     errors = []
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)

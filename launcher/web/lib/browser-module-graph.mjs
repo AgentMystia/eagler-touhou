@@ -15,7 +15,7 @@ function isWithinRoot(root, candidate) {
   return rel === "" || (!rel.startsWith(`..${sep}`) && rel !== "..");
 }
 
-function moduleSpecifiers(source, path, { allowDynamicImports = false } = {}) {
+function moduleSpecifierNodes(source, path, { allowDynamicImports = false } = {}) {
   const ast = parse(source, {
     ecmaVersion: "latest",
     sourceType: "module",
@@ -29,7 +29,7 @@ function moduleSpecifiers(source, path, { allowDynamicImports = false } = {}) {
       if (allowDynamicImports && kind === "dynamic import") return;
       throw new Error(`${path}: ${kind} must use a static string specifier so offline closure is deterministic`);
     }
-    specifiers.push(node.value);
+    specifiers.push(node);
   }
 
   function visit(node) {
@@ -81,7 +81,7 @@ export async function localModuleClosure({
   while (pending.length) {
     const path = pending.shift();
     if (visited.has(path)) continue;
-    const absolute = resolveFile ? resolve(resolveFile(path)) : resolve(frontendRoot, path);
+    const absolute = resolveFile ? resolve(await resolveFile(path)) : resolve(frontendRoot, path);
     if (!isWithinRoot(frontendRoot, absolute)) throw new Error(`browser module escapes frontend root: ${path}`);
     let source;
     try {
@@ -90,7 +90,7 @@ export async function localModuleClosure({
       throw new Error(`browser module is missing: ${path}`, { cause: error });
     }
     visited.add(path);
-    for (const specifier of moduleSpecifiers(source, path, { allowDynamicImports })) {
+    for (const {value: specifier} of moduleSpecifierNodes(source, path, { allowDynamicImports })) {
       if (!specifier.startsWith(".")) {
         if (allowBareImports) continue;
         throw new Error(`${path}: browser modules must use local relative imports; found ${JSON.stringify(specifier)}`);
@@ -106,4 +106,14 @@ export async function localModuleClosure({
 
 export function browserModuleClosure(options) {
   return localModuleClosure(options);
+}
+
+/** Change import/export literals without touching comments or other strings. */
+export function rewriteModuleSpecifiers(source, rewrite) {
+  const nodes = moduleSpecifierNodes(source, '<compiled module>', { allowDynamicImports: true });
+  for (const node of nodes.sort((a, b) => b.start - a.start)) {
+    const replacement = rewrite(node.value);
+    if (replacement !== node.value) source = source.slice(0, node.start) + JSON.stringify(replacement) + source.slice(node.end);
+  }
+  return source;
 }

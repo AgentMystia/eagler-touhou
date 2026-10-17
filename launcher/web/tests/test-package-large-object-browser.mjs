@@ -1,3 +1,4 @@
+import { ensureContractsBuild } from '../lib/contracts-build.mjs';
 /** Browser storage gate with synthetic bytes, no retail data or game Runtime.
  * Proves large ArrayBuffer/Blob acquisition, committed-generation reload and
  * exact offline IndexedDB reads. Does not prove offline App Shell/game boot. */
@@ -20,12 +21,13 @@ const bytes = 150943726;
 const fixture = Buffer.alloc(bytes, 0x5a);
 fixture[0] = 0x12; fixture[bytes - 1] = 0x34;
 const expectedHash = createHash("sha256").update(fixture).digest("hex");
+const contracts = await ensureContractsBuild({project});
 const server = createServer(async (req, res) => {
   try {
     const path = new URL(req.url, "http://localhost").pathname;
     if (path === "/") { res.setHeader("Content-Type", "text/html"); res.end("<!doctype html><title>Package Store test</title>"); return; }
     const file = path === '/product-catalog.mjs'
-      ? resolve(project, '.cache/build/browser/assets/contracts/product-catalog.mjs')
+      ? resolve(contracts.contractsDirectory, 'product-catalog.mjs')
       : resolve(project, `.${decodeURIComponent(path)}`);
     if (!file.startsWith(project + sep)) { res.writeHead(403).end(); return; }
     res.setHeader("Content-Type", extname(file) === ".mjs" ? "text/javascript" : "application/octet-stream");

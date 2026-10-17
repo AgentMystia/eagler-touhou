@@ -1,10 +1,11 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from 'node:assert/strict';
 import {
   parseMeasuredNetplayTiming,
   resolveAdonisPredictionReserve,
 } from '../lib/contracts/netplay-timing.mjs';
-import { buildMultiplayerRuntimeOptions } from '../.cache/build/browser/assets/launcher/multiplayer-runtime-options.mjs';
-import { normalizeMultiplayerLobbySnapshot } from '../.cache/build/browser/assets/launcher/multiplayer-lobby-snapshot.mjs';
+const { buildMultiplayerRuntimeOptions } = await importClientService('launcher/multiplayer-runtime-options.mjs');
+const { normalizeMultiplayerLobbySnapshot } = await importClientService('launcher/multiplayer-lobby-snapshot.mjs');
 import { isSpectatorFrameForRoom } from '../../../services/netplay/spectator-frame.mjs';
 
 const timing = {

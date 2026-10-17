@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def products():
     result = subprocess.run(
         ["node", "--input-type=module", "-e",
-         "import {PRODUCT_GAMES} from './product-catalog.mjs'; console.log(JSON.stringify(PRODUCT_GAMES))"],
+         "import {PRODUCT_GAMES} from './lib/contracts/product-catalog.mjs'; console.log(JSON.stringify(PRODUCT_GAMES))"],
         cwd=ROOT, check=True, capture_output=True, text=True, encoding="utf-8",
     )
     return json.loads(result.stdout)
@@ -71,7 +71,7 @@ def main():
     catalog = products()
     default_games = [game for game, product in catalog.items() if product["dataProvider"] == "emscripten-preload"]
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--url", default="http://127.0.0.1:8130/")
+    parser.add_argument("--url", required=True, help="显式 Launcher 地址")
     parser.add_argument("--games", nargs="+", choices=catalog, default=default_games)
     parser.add_argument("--browsers", nargs="+", choices=["chromium", "webkit"], default=["chromium", "webkit"])
     parser.add_argument("--output", type=Path, default=ROOT / "artifacts" / "validation" / "browser-capabilities" / time.strftime("%Y%m%d-%H%M%S"))

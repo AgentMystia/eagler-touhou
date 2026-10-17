@@ -26,4 +26,4 @@
 
 通用入口不再默认为 Windows 的字体路径。Unicode 字体是明确输入；独立自托管包放在 `shared/unifont.otf` 并携带许可。Windows 自托管适配可探测系统日文字体，其他环境可提供 `shared/japanese-font.otf`，没有时使用明确的 Unicode 回退。
 
-thtk 用于需要它的语言转换，不是所有日文站点的前置条件。Windows 按固定上游版本与摘要下载；其他平台使用已安装的工具。Python 环境按当前 requirements 准备；其范围版本和传递依赖尚未形成完整跨平台锁，列入审计改进项。
+thtk 用于需要它的语言转换，不是所有日文站点的前置条件。Windows 按固定上游版本与摘要下载；其他平台使用已安装的工具。Python host/ci/browser requirements 已锁定精确版本及 wheel hash，Host 校验解释器、发行包集合和文件指纹，维护方法见[Python 依赖锁](../DEVELOPMENT.md#python-依赖锁)。新锁下冷安装和三系统运行仍需实际验证，不由环境行为测试推导安装成功。

@@ -84,6 +84,7 @@ export interface MultiplayerRoomState {
   seats?: NormalizedMultiplayerLobbySnapshot['seats'] | null;
   spectators?: NormalizedMultiplayerLobbySnapshot['spectators'];
   spectatorCount?: number;
+  spectatorTimeline?: boolean;
   synced?: boolean;
   [key: string]: unknown;
 }

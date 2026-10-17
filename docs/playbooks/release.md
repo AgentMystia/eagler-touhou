@@ -23,7 +23,7 @@ node scripts/build-release-assets.mjs --candidate="<候选目录>" --output="<�
 node scripts/build-self-host-bundle.mjs --runtime-release="<Runtime Release>" --output="<新目录>" --unicode-font="<字体>" --font-license="<许可文本>" --archive="<新ZIP>"
 ```
 
-自托管包包含预构建 Web、操作工具及自己的依赖锁，不包含游戏原版 DATA。首次安装依赖需要网络或完整缓存。验收必须在解压后的独立目录执行，不能借用开发仓库依赖。
+自托管包包含预构建 Web、操作工具及自己的依赖锁，不包含游戏原版 DATA。Python 锁、环境检查器与内容身份随工具闭包交付，安装复核 wheel hash 和实际环境身份。首次安装依赖需要网络或完整缓存。验收必须在解压后的独立目录执行，不能借用开发仓库依赖。
 
 ## 内部运营交付
 
@@ -33,4 +33,4 @@ node scripts/build-self-host-bundle.mjs --runtime-release="<Runtime Release>" --
 
 ## 本轮证据边界
 
-已执行真实 TH15 的 Node 组装、独立 ZIP 解压及自托管重建；未提供 BGM，不代表完整音频发布验收。ZIP 的 Unicode 路径、空目录和 CRC 有专项验证。完整正式发布候选、远端上传、生产切换与所有作品的运营配置未在本轮执行。
+2026-10-14 已用新 Python 锁重新生成并解压独立 ZIP，冷安装包自身 Node/Python 依赖，以真实 TH15 DATA 完成组装和 131 文件站点验证；重复构建正确复用环境。运行环境为 Windows、Node 24.15 和 CPython 3.14，日文/练习入口、无 BGM，不代表完整音频或玩法验收。普通-only、多人-only 和混合变体 collection/Host 行为测试保留。三系统安装已有 CI 作业，Linux/macOS 实际结果仍待执行。完整正式候选、远端上传与生产切换未执行。证据见工作区 `artifacts/refactor-closeout-20261014/`。

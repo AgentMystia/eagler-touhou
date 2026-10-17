@@ -6,6 +6,19 @@ type UiMessageEntry = readonly [key: string, zhCN: string, english: string];
 // One tuple owns both translations, so a new key cannot silently exist in only
 // one locale. Keys describe meaning rather than copying the Chinese source.
 const entries = [
+  ['th09.elapsed', '已进行 {minutes} 分钟', '{minutes} min elapsed'],
+  ['th09.spectatorCount', '{count} 人旁观', '{count} spectators'],
+  ['th09.playing', '正在对战', 'Playing'],
+  ['th09.waitingPlayer', '等待玩家', 'Waiting for player'],
+  ['th09.waitingStart', '等待开赛', 'Waiting to start'],
+  ['th09.notStarted', '尚未开赛', 'Not started'],
+  ['th09.score', '整局胜场', 'Match wins'],
+  ['th09.quickChat', '快捷发言', 'Quick chat'],
+  [
+    'room.matchStats',
+    '{wins} 胜 {losses} 负 · {minutes} 分钟',
+    '{wins} W {losses} L · {minutes} min',
+  ],
   ['touch.tools', '画面工具', 'Screen tools'],
   ['touch.actionHold', '（按住）', ' (hold)'],
   ['touch.actionToggle', '（切换）', ' (toggle)'],
@@ -36,11 +49,11 @@ const entries = [
   ['lobby.loadingOptions', '正在打开选项…', 'Opening options…'],
   ['room.visibility', '房间可见性', 'Room visibility'],
   ['room.public', '公共', 'Public'],
-  ['room.private', '私密', 'Private'],
+  ['room.private', '隐藏', 'Unlisted'],
   [
     'room.privateHint',
-    '私密房间不在大厅展示，仍可凭房间号加入。',
-    'Private rooms are hidden from the lobby. Players can still join with the room code.',
+    '隐藏房间不在大厅展示。任何知道房间号的人都能加入，请只分享给信任的人。',
+    'Unlisted rooms are hidden from the lobby. Anyone with the room code can join. Share it only with people you trust.',
   ],
   ['room.cheatMovement', '作弊移动', 'Cheat movement'],
   [
@@ -226,6 +239,14 @@ const entries = [
   ['room.connections', '连接详情', 'Connection details'],
   ['room.done', '完成', 'Done'],
   ['room.spectatorLounge', '观战席', 'Spectators'],
+  [
+    'room.th09SpectatorHint',
+    '可中途加入，从本局开头观看，也可手动向前快进。',
+    'Join during play, watch from the start of this match, or fast-forward manually.',
+  ],
+  ['room.spectatorJoined', '已加入旁观', 'Joined as spectator'],
+  ['room.loadingSpectator', '正在加载观战', 'Loading spectator playback'],
+  ['room.versus', '{count} 人对战', '{count} players · versus'],
   ['room.spectatorNumber', '观战者 {number}', 'Spectator {number}'],
   [
     'room.spectatorHint',
@@ -1063,6 +1084,11 @@ const entries = [
     'runtime.hostManifestMissingGame',
     'Site Manifest 缺少 {game}',
     'Site Manifest is missing {game}',
+  ],
+  [
+    'runtime.variantMissing',
+    '当前站点未提供 {game} 的所选运行模式',
+    'This site does not provide the selected Runtime mode for {game}',
   ],
   [
     'runtime.multiplayerRuntimeMissing',

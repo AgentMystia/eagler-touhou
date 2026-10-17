@@ -71,6 +71,7 @@ export async function writeSyntheticRuntimeRelease(root, selected = Object.keys(
       const payloads = product.runtimeFileLayout === "directory"
         ? Object.fromEntries(product.runtimeAssets.map(name => [name,
           name === `${stem}.html` ? html :
+          name === "manifest.json" ? Buffer.from(JSON.stringify({game, protocol: "eagler-touhou/1", features: entry.features})) :
           name === "shell.mjs" ? Buffer.from(directoryProtocolFixture(game)) :
           name === "eagler-host.mjs" ? Buffer.from(directoryManagedDataFixture()) :
           Buffer.from(name.endsWith(".mjs") || name.endsWith(".js") ? `// ${game}:${variant}:${name}\n` : `${game}:${variant}:${name}`)]))

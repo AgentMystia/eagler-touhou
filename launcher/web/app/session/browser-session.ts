@@ -1,8 +1,8 @@
+import { createRuntimeObservation } from './runtime-observation';
 import { createFileRuntimeCoordinator } from './file-runtime';
 import { RuntimeWaitTimeoutError } from '../services/runtime/errors';
 import { loadCompatibleSiteManifest } from '@eagler/contracts/compat/host-manifest';
-import { createNetplayTelemetry } from '../../src/launcher/netplay-telemetry.mts';
-import { linkAbortSignals } from '../services/abort-signals';
+import { createPreparationActivity } from './preparation-activity';
 import {
   DEFAULT_PRODUCT_ID,
   DEFAULT_MULTIPLAYER_PRODUCT_ID,
@@ -51,11 +51,8 @@ import {
 } from '../../src/launcher/route-state.mts';
 import { createStartupErrorModel } from '../models/startup-error';
 import { createFeedbackModel } from '../models/feedback';
-import { createRuntimeDiagnostics } from '../models/runtime-diagnostics';
-import { createGameplayNetwork } from '../models/gameplay-network';
 import { createNetplayCalibration } from '../models/netplay-calibration';
 import { createTitleNetwork } from '../models/title-network';
-import { describeBrowserEnvironment } from '../../src/launcher/runtime-diagnostics-model.mts';
 import {
   createSitePreferencesModel,
   bindSitePreferencesToDocument,
@@ -203,20 +200,11 @@ export function createBrowserSession({
   let replays: ReplayModel | null = null,
     files: ReturnType<typeof createFileActions> | null = null;
   let midi: ReturnType<typeof createMidiBridge> | null = null;
-  let diagnostics: ReturnType<typeof createRuntimeDiagnostics> | null = null;
-  let telemetryTimer: number | null = null;
-  let gameplayNetwork: ReturnType<typeof createGameplayNetwork> | null = null;
+  let runtimeObservation: ReturnType<typeof createRuntimeObservation> | null = null;
   let roomSession: RoomSession | null = null;
   let activeSettings: SettingsSnapshot | null = null;
   let invalidatedSettingsEpoch: number | null = null;
-  let launchAbort: AbortController | null = null,
-    launchPending: Promise<void> | null = null;
-  let updateAbort: AbortController | null = null,
-    musicAbort: AbortController | null = null,
-    updating = false,
-    downloadingMusic = false,
-    downloadingPackage = false,
-    downloadingLanguage = false;
+  let launchPending: Promise<void> | null = null;
   let appShell: ReturnType<typeof createAppShellService> | null = null;
   let blockingDownload: { label: string; cancel(): Promise<void> } | null = null;
   let unsubscribeRuntime: (() => void) | null = null;
@@ -305,7 +293,7 @@ export function createBrowserSession({
       const current = runtime.getSnapshot();
       if (current.epoch === null || current.launched) return;
       invalidatedSettingsEpoch = current.epoch;
-      launchAbort?.abort(new RuntimeSessionSupersededError());
+      preparation.abort(new RuntimeSessionSupersededError());
       fileRuntime.abort(new RuntimeSessionSupersededError());
       queueMicrotask(retireChangedSettings);
     },
@@ -344,16 +332,20 @@ export function createBrowserSession({
       retryMusic: (timeout) => requiredRuntime().send('retry-music', {}, timeout),
       cancelDownload: async () => {
         if (fileRuntime.cancelDownload(new DOMException('已取消下载', 'AbortError'))) return;
-        if (updating) updateAbort?.abort();
-        else if (downloadingMusic) musicAbort?.abort();
-        else if (downloadingPackage || downloadingLanguage)
-          launchAbort?.abort(new DOMException('已取消下载', 'AbortError'));
-        else if (blockingDownload) await blockingDownload.cancel();
-        else launchAbort?.abort(new DOMException('已取消下载', 'AbortError'));
+        await preparation.cancelDownload(blockingDownload);
       },
       playerStatus: feedback.playerStatus,
       toast: feedback.toast,
       noteGameDataTransfer: (message) => gameData.noteTransfer(message),
+    },
+  });
+  const preparation = createPreparationActivity({
+    translate: t,
+    onChange(finished) {
+      transfer.setCancellation(
+        finished ? null : preparation.cancellationLabel(blockingDownload?.label ?? null),
+      );
+      publish({});
     },
   });
   const network = createNetworkActivityTracker({
@@ -457,7 +449,7 @@ export function createBrowserSession({
     settings.refreshContext(
       settingsContext(settings.getSnapshot()!.context.productId, snapshot.locale),
     );
-    diagnostics?.refresh();
+    runtimeObservation?.diagnostics.refresh();
     publish({ metadataRevision: snapshot.metadataRevision + 1 });
   });
   const localManifest = createLocalProductManifest();
@@ -602,9 +594,12 @@ export function createBrowserSession({
     return capture.getSnapshot()!;
   }
   function captureFilePresentation(playerIntent = playerIntentRevision) {
-    const launchOwnedAtCapture = !!launchAbort;
+    const launchOwnedAtCapture = preparation.hasLaunch();
     return () =>
-      !disposed && !launchOwnedAtCapture && playerIntent === playerIntentRevision && !launchAbort;
+      !disposed &&
+      !launchOwnedAtCapture &&
+      playerIntent === playerIntentRevision &&
+      !preparation.hasLaunch();
   }
   const fileRuntime = createFileRuntimeCoordinator({
     getRuntime: requiredRuntime,
@@ -651,7 +646,7 @@ export function createBrowserSession({
     const owner = requiredRuntime();
     // Pending preparation cancellation is fenced before asynchronous acquisition
     // can publish another document. A launched writer remains intact until sync.
-    if (!owner.getSnapshot().launched) launchAbort?.abort(new RuntimeSessionSupersededError());
+    if (!owner.getSnapshot().launched) preparation.abort(new RuntimeSessionSupersededError());
     // Main native exit (including failure status) has no surviving sync receiver.
     // Only the authenticated event owner supplies this completed-engine flag.
     if (
@@ -757,7 +752,7 @@ export function createBrowserSession({
             if (blockingDownload !== operation) return;
             blockingDownload = null;
             transfer.setCancellation(null);
-            launchAbort?.abort(new DOMException('已取消下载', 'AbortError'));
+            preparation.abort(new DOMException('已取消下载', 'AbortError'));
             runtime?.postInput('network-cancel', {});
             await onCancel();
           },
@@ -884,6 +879,8 @@ export function createBrowserSession({
           calibration.record(message.netplayTiming, runtime!.getSnapshot().epoch ?? 0);
           roomSession?.service.acceptMeasuredTiming(message.netplayTiming);
         }
+        if (message.event === 'runtime-info' && message.th09Match)
+          roomSession?.service.acceptTh09Match(message.th09Match);
         if (message.event === 'notice' && typeof message.message === 'string' && message.message)
           feedback.toast(message.message);
         if (ownsPresentation && message.event === 'error')
@@ -917,30 +914,18 @@ export function createBrowserSession({
         }
       },
     });
-    const browser = describeBrowserEnvironment({
-      userAgent: window.navigator.userAgent,
-      platform: window.navigator.platform,
-      userAgentDataPlatform: (
-        window.navigator as Navigator & { userAgentData?: { platform?: string } }
-      ).userAgentData?.platform,
-      mobile,
-      brave: !!(window.navigator as Navigator & { brave?: unknown }).brave,
-    });
-    diagnostics = createRuntimeDiagnostics({
+    runtimeObservation = createRuntimeObservation({
       runtime,
       frame: element,
       window,
       storage,
+      mobile,
       translate: stringTranslate,
-      browser: () => browser.browser,
       testBuild: () => metadata.getSnapshot().siteManifest?.shared.testBuild === true,
       frameLimit60: () => activeSettings?.options.frameLimit60Enabled === true,
-    });
-    gameplayNetwork = createGameplayNetwork({
-      runtime,
-      timers: window,
       english: () => snapshot.locale === 'en',
-      translate: stringTranslate,
+      product: () => activeSettings?.context.productId ?? DEFAULT_PRODUCT_ID,
+      endpoint: () => metadata.getSnapshot().siteManifest?.shared.netplayTelemetry,
       context: () => {
         const control = runtime?.getLauncherControlContext(),
           config = control?.options;
@@ -961,38 +946,6 @@ export function createBrowserSession({
         };
       },
     });
-    const telemetry = createNetplayTelemetry({
-      origin: window.location.origin,
-      endpoint: () => metadata.getSnapshot().siteManifest?.shared.netplayTelemetry,
-      snapshot: () => {
-        const state = runtime?.getSnapshot(),
-          token = runtime?.getMidiEventContext();
-        const net = gameplayNetwork?.readNativeSnapshot(),
-          config = runtime?.getLauncherControlContext()?.options;
-        if (
-          disposed ||
-          !state?.launched ||
-          !token ||
-          !net?.active ||
-          net.failed ||
-          net.frame == null ||
-          net.frame < 0 ||
-          net.frame === 4294967295
-        )
-          return null;
-        return {
-          identity: token.document,
-          product: activeSettings?.context.productId ?? DEFAULT_PRODUCT_ID,
-          players: config?.netplayPlayerCount ?? 2,
-          spectator: net.spectator,
-          transport: net.transport,
-          peers: net.peerState?.peers ?? [],
-        };
-      },
-    });
-    telemetryTimer = window.setInterval(() => {
-      void telemetry.tick();
-    }, 1000);
     midi = createMidiBridge({
       runtime,
       external: externalMidi,
@@ -1105,29 +1058,11 @@ export function createBrowserSession({
   ) {
     const owner = requiredRuntime(),
       clickSettings = capturedSettings(product),
-      controller = new AbortController();
-    const linked = linkAbortSignals(controller.signal, externalSignal),
-      signal = linked.signal;
+      intent = preparation.begin(externalSignal);
+    const { controller, signal } = intent;
     let directAttemptId: number | null = null;
-    launchAbort = controller;
     activeSettings = clickSettings;
-    updateAbort = new AbortController();
-    musicAbort = new AbortController();
     startupError.close();
-    const cancellation = () => {
-      if (launchAbort === controller) {
-        transfer.setCancellation(
-          updating
-            ? t('package.cancelUpdate')
-            : downloadingMusic
-              ? t('music.cancelDownload')
-              : downloadingPackage || downloadingLanguage
-                ? t('package.cancelDownload')
-                : (blockingDownload?.label ?? null),
-        );
-        publish({});
-      }
-    };
     const input: GamePreparationInput & { runtime: RuntimeService; signal: AbortSignal } = {
       productId: product,
       settings: clickSettings,
@@ -1136,38 +1071,18 @@ export function createBrowserSession({
       translate: t,
       signal,
       multiplayer,
-      updateSignal: updateAbort.signal,
-      musicDownloadSignal: musicAbort.signal,
-      onUpdateActivity: (value) => {
-        if (launchAbort === controller) {
-          updating = value;
-          cancellation();
-        }
-      },
-      onMusicDownloadActivity: (value) => {
-        if (launchAbort === controller) {
-          downloadingMusic = value;
-          cancellation();
-        }
-      },
-      onAcquisitionActivity: (value) => {
-        if (launchAbort === controller) {
-          downloadingPackage = value;
-          cancellation();
-        }
-      },
-      onLanguageDownloadActivity: (value) => {
-        if (launchAbort === controller) {
-          downloadingLanguage = value;
-          cancellation();
-        }
-      },
+      updateSignal: intent.updateSignal,
+      musicDownloadSignal: intent.musicSignal,
+      onUpdateActivity: (value) => intent.setActivity('update', value),
+      onMusicDownloadActivity: (value) => intent.setActivity('music', value),
+      onAcquisitionActivity: (value) => intent.setActivity('package', value),
+      onLanguageDownloadActivity: (value) => intent.setActivity('language', value),
       onTransferHide: transfer.hide,
       onLocalMusicFailure: transfer.localFailure,
       touchLayout: touchLayout.getSnapshot().saved,
       runtime: owner,
       onRuntimePlan: (plan) => {
-        updating = false;
+        intent.runtimePlanned();
         transfer.beginRuntime(plan);
         if (!plan.generation && plan.directPreloadHost) {
           gameData.beginDirectDownload();
@@ -1194,7 +1109,7 @@ export function createBrowserSession({
         // Runtime may already have reset its failed epoch;
         // the existing launch/attempt identities fence this presentation instead.
         if (
-          launchAbort === controller &&
+          intent.isCurrent() &&
           !signal.aborted &&
           directAttemptId !== null &&
           gameData.getSnapshot().attempt?.id === directAttemptId &&
@@ -1203,20 +1118,7 @@ export function createBrowserSession({
         )
           gameData.unlock(t('runtime.loadTimedOutImport'));
       },
-      finish() {
-        linked.dispose();
-        if (launchAbort === controller) {
-          launchAbort = null;
-          updateAbort = null;
-          musicAbort = null;
-          updating = false;
-          downloadingMusic = false;
-          downloadingPackage = false;
-          downloadingLanguage = false;
-          transfer.setCancellation(null);
-          publish({});
-        }
-      },
+      finish: intent.finish,
     };
   }
   async function configuredLaunch(
@@ -1341,7 +1243,9 @@ export function createBrowserSession({
     if (!context.isCurrent()) throw new RuntimeSessionSupersededError();
     if (cover) {
       publish({ roomLaunchStage: 'path' });
-      await gameplayNetwork!.waitForGameplayPath({ isCurrent: context.isCurrent });
+      await runtimeObservation!.gameplayNetwork.waitForGameplayPath({
+        isCurrent: context.isCurrent,
+      });
     }
     publish({ roomLaunchStage: null });
   }
@@ -1365,7 +1269,7 @@ export function createBrowserSession({
     }
   }
   async function closeRoomPlayerWithoutSync() {
-    launchAbort?.abort(new RuntimeSessionSupersededError());
+    preparation.abort(new RuntimeSessionSupersededError());
     await requiredRuntime().close({
       discardUnsaved: true,
       beforeReset: () => nativeTouch.exitPlayerFullscreen().catch(() => {}),
@@ -1548,12 +1452,7 @@ export function createBrowserSession({
       runtimeSessionActive: runtime?.getSnapshot().epoch != null,
       touchLayoutEditing: touchLayout.getSnapshot().isEditing,
       blockingOperation:
-        !!blockingDownload ||
-        fileRuntime.isDownloading() ||
-        updating ||
-        downloadingMusic ||
-        downloadingPackage ||
-        downloadingLanguage,
+        !!blockingDownload || fileRuntime.isDownloading() || preparation.isBlocking(),
       gameDataAttempt: !!gameData.getSnapshot().attempt,
       launchInFlight:
         snapshot.activity > 0 ||
@@ -1764,7 +1663,7 @@ export function createBrowserSession({
         return;
       }
       if (snapshot.roomLaunchStage && snapshot.playerOpen) {
-        launchAbort?.abort(new RuntimeSessionSupersededError());
+        preparation.abort(new RuntimeSessionSupersededError());
         await requiredRuntime().close({
           discardUnsaved: true,
           beforeReset: () => nativeTouch.exitPlayerFullscreen().catch(() => {}),
@@ -1866,8 +1765,8 @@ export function createBrowserSession({
     },
     getRuntime: () => runtime,
     getReplays: () => replays,
-    getDiagnostics: () => diagnostics,
-    getGameplayNetwork: () => gameplayNetwork,
+    getDiagnostics: () => runtimeObservation?.diagnostics ?? null,
+    getGameplayNetwork: () => runtimeObservation?.gameplayNetwork ?? null,
     async chooseReplayFile(product: ProductId) {
       const file = await ports.pickFile(replayImportAccept);
       if (file) {
@@ -1923,8 +1822,7 @@ export function createBrowserSession({
       document.documentElement.dataset.uiLocale = locale;
       window.dispatchEvent(new CustomEvent('eagler-ui-locale-change', { detail: { locale } }));
       appShellOwner.refreshLocale();
-      diagnostics?.refresh();
-      gameplayNetwork?.refresh();
+      runtimeObservation?.refresh();
       const canonical = document.querySelector<HTMLLinkElement>('link[rel=canonical]');
       if (canonical)
         canonical.href = new URL(locale === 'en' ? 'en.html' : './', canonical.href).href;
@@ -1934,8 +1832,8 @@ export function createBrowserSession({
       if (disposed) return;
       disposed = true;
       fileRuntime.abort(new RuntimeSessionSupersededError());
-      if (telemetryTimer !== null) window.clearInterval(telemetryTimer);
-      launchAbort?.abort();
+      runtimeObservation?.dispose();
+      preparation.abort();
       if (roomReturnTimer !== null) window.clearTimeout(roomReturnTimer);
       document.body.classList.remove('mp-room-returning');
       for (const type of playerGestureTypes)
@@ -1968,8 +1866,6 @@ export function createBrowserSession({
       feedback.dispose();
       replays?.dispose();
       unsubscribeRuntime?.();
-      diagnostics?.dispose();
-      gameplayNetwork?.dispose();
       midi?.dispose();
       externalMidi.dispose();
       await nativeTouch.dispose();

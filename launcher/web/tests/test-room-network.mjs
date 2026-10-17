@@ -1,5 +1,6 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from 'node:assert/strict';
-import { createRoomNetwork, recordProbeSample, freshProbeMetric } from '../.cache/build/browser/assets/launcher/room-network.mjs';
+const { createRoomNetwork, recordProbeSample, freshProbeMetric } = await importClientService('launcher/room-network.mjs');
 import { roomProbeEnvelope } from '../../../services/netplay/room-probe-policy.mjs';
 
 const blank = { rtt: null, jitter: null, state: 'checking', at: 0 };

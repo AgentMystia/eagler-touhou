@@ -73,10 +73,8 @@ export function createMetadataService(options: MetadataServiceOptions) {
         if (!host) return true;
         const game = host.games[gameIdForProduct(product)];
         if (!game) return false;
-        return (
-          !isMultiplayerProductId(product) ||
-          (typeof game.multiplayerRuntime === 'string' && game.multiplayerRuntime.length > 0)
-        );
+        const runtime = isMultiplayerProductId(product) ? game.multiplayerRuntime : game.runtime;
+        return typeof runtime === 'string' && runtime.length > 0;
       }),
     );
   }

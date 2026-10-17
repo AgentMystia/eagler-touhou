@@ -53,6 +53,7 @@ before(async () => {
     'host',
     'server',
     'integrations',
+    'examples',
     'content',
     'docs/FAQ.md',
     'docs/SELF_HOSTING.md',
@@ -295,7 +296,8 @@ test('actual build keeps canonical public URLs including bounded legacy readers'
   for (const { directory } of outputs.values()) {
     for (const file of STATIC_FRONTEND_PACKAGE_FILES)
       assert.equal(await exists(resolve(directory, file)), true, file);
-    for (const file of ['README.md', 'ASSETS.md', 'THIRD_PARTY.md', 'NOTICE.txt']) {
+    assert.equal(await exists(resolve(directory, 'README.md')), false, 'maintenance README is not a site asset');
+    for (const file of ['ASSETS.md', 'THIRD_PARTY.md', 'NOTICE.txt']) {
       assert.deepEqual(await readFile(resolve(directory, file)), await readFile(resolvePublicOrRepositorySource(file)));
     }
     for (const file of ['faq.html', 'content/FIRST_USE_NOTICE.html', 'content/MULTIPLAYER.html']) {

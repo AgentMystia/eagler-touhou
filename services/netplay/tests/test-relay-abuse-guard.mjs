@@ -10,6 +10,7 @@ import {
 
 const defaults = relayAbuseConfig({});
 assert.equal(defaults.maxRoomsPerIp, 2);
+assert.equal(defaults.roomLookupsPerMinute, 12);
 const request = (peer, forwarded) => ({
   socket: { remoteAddress: peer },
   headers: { 'x-real-ip': forwarded },
@@ -65,6 +66,17 @@ assert(guard.allowHandshake('c'));
 const totalGuard = createRelayAbuseGuard({ ...defaults, maxConnections: 1 });
 assert(totalGuard.trackSocket('a', new EventEmitter()));
 assert(!totalGuard.allowHandshake('b'));
+
+let lookupTime = 0;
+const lookupGuard = createRelayAbuseGuard({ ...defaults, now: () => lookupTime, roomLookupsPerMinute: 2 });
+assert(lookupGuard.allowRoomLookup('a', 'th09mp-11111111'));
+assert(lookupGuard.allowRoomLookup('a', 'th09mp-22222222'));
+for (let i = 0; i < 100; ++i)
+  assert(lookupGuard.allowRoomLookup('a', 'th09mp-11111111'), 'same-room transports/reconnects share a lookup');
+assert(!lookupGuard.allowRoomLookup('a', 'th09mp-33333333'));
+assert(lookupGuard.allowRoomLookup('b', 'th09mp-33333333'), 'client IPs have separate room lookup quotas');
+lookupTime = 60_001;
+assert(lookupGuard.allowRoomLookup('a', 'th09mp-33333333'), 'lookup quota expires');
 
 // Reproduce the supplied script locally. Never contact the public deployment.
 const env = {

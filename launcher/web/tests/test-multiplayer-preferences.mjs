@@ -1,10 +1,11 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import {
+const {
   createMultiplayerPreferenceStore,
   multiplayerLoadoutStorageKey,
   multiplayerShareSettingsStorageKey,
   normalizePreferredLoadout,
-} from "../.cache/build/browser/assets/launcher/multiplayer-preferences.mjs";
+} = await importClientService('launcher/multiplayer-preferences.mjs');
 
 class MemoryStorage {
   constructor(entries = []) { this.values = new Map(entries); }

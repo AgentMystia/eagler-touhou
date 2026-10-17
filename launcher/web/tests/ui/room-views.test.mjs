@@ -171,7 +171,7 @@ test('Room connection distinguishes initial connect, synchronization and actual 
   await act(() => f.socket.open());
   assert.equal(message(), t('zh-CN', 'multiplayer.syncingMembers'));
   await f.receive({
-    predictionLimit: 8,
+    inputDelayAuto: true,
     adonisMode: 0,
   });
   assert.equal(f.service.getSnapshot().room.synced, false);
@@ -386,8 +386,8 @@ function fixture({ product = 'th06mp', locale = 'en', created = true } = {}) {
           startSerial: 0,
           ...(product === 'th11mp'
             ? {
-                adonisMode: 1,
-                predictionLimit: 0,
+                adonisMode: 0,
+                predictionLimit: 12,
               }
             : {}),
           seats: [
@@ -2209,14 +2209,16 @@ test('Drawer departure and unmount cancel retained 220ms timers with no stale fo
     clock.restore();
   }
 });
-test('TH11 rollback is hidden and disabled even for a ready host', async () => {
+test('TH11 ready host can choose rollback and pure delay', async () => {
   const f = await fixture({
     product: 'th11mp',
   }).live();
   const { m } = await mountRoom(f);
-  assert.equal(n('#mpRollbackToggle').hidden, true);
-  assert.equal(n('#mpRollbackToggle').disabled, true);
+  assert.equal(n('#mpRollbackToggle').hidden, false);
+  assert.equal(n('#mpRollbackToggle').disabled, false);
   await act(() => f.service.setRollbackEnabled(true));
+  assert.equal(f.service.getSnapshot().rollbackEnabled, true);
+  await act(() => f.service.setRollbackEnabled(false));
   assert.equal(f.service.getSnapshot().rollbackEnabled, false);
   await m.unmount();
 });

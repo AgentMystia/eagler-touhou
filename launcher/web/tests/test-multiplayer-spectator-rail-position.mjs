@@ -1,9 +1,10 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import {
+const {
   createMultiplayerSpectatorRailPositionStore,
   multiplayerSpectatorRailLegacyPositionStorageKey,
   multiplayerSpectatorRailPositionStorageKey,
-} from "../.cache/build/browser/assets/launcher/multiplayer-spectator-rail-position.mjs";
+} = await importClientService('launcher/multiplayer-spectator-rail-position.mjs');
 
 class MemoryStorage {
   values = new Map();

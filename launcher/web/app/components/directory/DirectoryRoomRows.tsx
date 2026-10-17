@@ -6,11 +6,13 @@ import {
 } from '@eagler/contracts/product-catalog';
 import {
   directoryRoomState,
+  directoryRoomCanEnter,
   type DirectoryRoom,
   type DirectorySnapshot,
   type LobbyDirectoryService,
 } from '../../services/lobby-directory';
 import { useLocale } from '../../i18n';
+import { Th09RoomCard } from './Th09RoomCard';
 
 export interface DirectoryRoomRowsProps {
   snapshot: DirectorySnapshot;
@@ -62,13 +64,27 @@ function RoomRow({
   const title = locale === 'en' ? meta.subtitle : meta.title;
   const difficulty = multiplayerConfigForProduct(room.product)!.difficulties[room.difficulty];
   const state = directoryRoomState(room);
+  const spectating = state === 'playing' && directoryRoomCanEnter(room);
   const count = t('lobby.count', { players: room.players, capacity: room.capacity });
   const disabled =
     snapshot.connection !== 'live' ||
     !!snapshot.mine ||
     snapshot.leaving ||
-    !room.joinable ||
-    state !== 'recruiting';
+    !directoryRoomCanEnter(room);
+  if (room.product === 'th09mp')
+    return (
+      <Th09RoomCard
+        room={room}
+        difficulty={difficulty}
+        state={state}
+        spectating={spectating}
+        disabled={disabled}
+        initial={initiallyHiddenMotion}
+        assetUrl={assetUrl}
+        conflict={!!snapshot.mine}
+        onJoin={() => service.joinRoom(room.product, room.code)}
+      />
+    );
   return (
     <article
       className={`lobby-room-row${initiallyHiddenMotion ? ' lobby-room-initial' : ''}`}
@@ -151,11 +167,17 @@ function RoomRow({
         className="lobby-button lobby-join"
         type="button"
         disabled={disabled}
-        aria-label={`${t('lobby.joinRoom')} ${title} #${room.code}`}
+        aria-label={`${t(spectating ? 'multiplayer.joinSpectator' : 'lobby.joinRoom')} ${title} #${room.code}`}
         title={snapshot.mine ? t('lobby.conflict') : ''}
         onClick={() => service.joinRoom(room.product, room.code)}
       >
-        {t(state === 'recruiting' ? 'lobby.join' : `lobby.${state}`)}
+        {t(
+          spectating
+            ? 'multiplayer.joinSpectator'
+            : state === 'recruiting'
+              ? 'lobby.join'
+              : `lobby.${state}`,
+        )}
       </button>
     </article>
   );

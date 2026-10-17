@@ -9,16 +9,20 @@ import {
 import { validateSiteManifest, type SiteManifest } from '@eagler/contracts/site-manifest';
 import {
   multiplayerControlMode,
+  generateMultiplayerRoomCode,
   type MultiplayerIdentityStore,
 } from '../../src/launcher/multiplayer-identity.mts';
 import { buildMultiplayerDirectoryRelayUrl } from '../../src/launcher/multiplayer-relay-url.mts';
 import type { MultiplayerRoomSessionStore } from '../../src/launcher/multiplayer-room-session.mts';
 import { encodeRoomInvite, ROOM_INVITE_KEY } from '../../src/launcher/room-invite.mts';
 import type { UiMessageKey, UiMessageParams } from '../../src/launcher/i18n.mts';
+import { parseTh09PlayerStats, type Th09PlayerStats } from '../../src/launcher/th09-room-stats.mts';
 
 export type DirectoryConnection = 'loading' | 'live' | 'offline' | 'unsupported' | 'missing';
 export type DirectoryFormMode = 'create' | 'join';
 export interface DirectorySeat {
+  machineSign?: string;
+  stats?: Th09PlayerStats;
   initial: string;
   ready: boolean;
   online: boolean;
@@ -34,6 +38,7 @@ export interface DirectoryRoom {
   spectators: number;
   phase: 'lobby' | 'playing';
   joinable: boolean;
+  spectatable?: boolean;
   seats: readonly (DirectorySeat | null)[];
   disableCheatMovement: boolean;
   challengeMode: boolean;
@@ -105,6 +110,12 @@ const bounded = (value: unknown, max: number) =>
   Math.max(0, Math.min(max, Math.trunc(Number(value) || 0)));
 export function directoryRoomState(room: DirectoryRoom): 'recruiting' | 'full' | 'playing' {
   return room.phase !== 'lobby' ? 'playing' : room.players >= room.capacity ? 'full' : 'recruiting';
+}
+export function directoryRoomCanEnter(room: DirectoryRoom): boolean {
+  return (
+    (directoryRoomState(room) === 'recruiting' && room.joinable) ||
+    (room.product === 'th09mp' && room.phase === 'playing' && room.spectatable === true)
+  );
 }
 /** Source authority: main src/launcher/lobby.mts. No DOM, history, gameplay or
  * new form fields. Starting this owner is explicit; construction performs no I/O. */
@@ -264,6 +275,24 @@ export function createLobbyDirectory(options: LobbyDirectoryOptions) {
         ][0] || '?';
       return Object.freeze({
         initial,
+        ...(row.product === 'th09mp'
+          ? {
+              machineSign:
+                typeof seat?.machineSign === 'string'
+                  ? [
+                      ...seat.machineSign
+                        .replace(
+                          /[\u0000-\u001f\u007f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g,
+                          '',
+                        )
+                        .trim(),
+                    ]
+                      .slice(0, 128)
+                      .join('')
+                  : '',
+              stats: parseTh09PlayerStats(seat?.stats),
+            }
+          : {}),
         ready: seat?.ready === true,
         online: seat?.online !== false,
         controlMode: multiplayerControlMode(seat?.controlMode),
@@ -282,6 +311,7 @@ export function createLobbyDirectory(options: LobbyDirectoryOptions) {
       difficulty: bounded(row.difficulty, policy.difficulties.length - 1),
       phase: row.phase === 'lobby' ? 'lobby' : 'playing',
       joinable: row.joinable === true,
+      spectatable: row.product === 'th09mp' && row.phase !== 'lobby' && row.spectatable === true,
     });
   }
   function connect() {
@@ -548,6 +578,7 @@ export function createLobbyDirectory(options: LobbyDirectoryOptions) {
     difficulty = 1,
     visibility: 'public' | 'private' = 'public',
     disableCheatMovement = false,
+    spectator = false,
   ) {
     if (disposed || snapshot.leaving || snapshot.connection !== 'live') return;
     if (snapshot.mine) {
@@ -580,6 +611,7 @@ export function createLobbyDirectory(options: LobbyDirectoryOptions) {
         r: code,
         f: true,
         a: created ? 'create' : 'join',
+        s: spectator,
         ...(created
           ? {
               p: playerCount || policy.playerCounts[0],
@@ -613,12 +645,9 @@ export function createLobbyDirectory(options: LobbyDirectoryOptions) {
     }
     const created = form.mode === 'create';
     if (created) {
-      const word = options.randomWord
-        ? options.randomWord()
-        : crypto.getRandomValues(new Uint32Array(1))[0];
-      code = String(1000 + (word % 9000));
+      code = generateMultiplayerRoomCode(options.randomWord);
       while (snapshot.rooms.some((room) => room.product === form.product && room.code === code))
-        code = String(1000 + ((Number(code) - 999) % 9000));
+        code = String((Number(code) + 1) % 100_000_000).padStart(8, '0');
     }
     const product = form.product;
     pendingEntry = {
@@ -646,8 +675,17 @@ export function createLobbyDirectory(options: LobbyDirectoryOptions) {
   }
   function joinRoom(product: MultiplayerProductId, code: string) {
     const current = snapshot.rooms.find((room) => room.product === product && room.code === code);
-    if (!current || !current.joinable || directoryRoomState(current) !== 'recruiting') return;
-    enterRoom(product, code, false);
+    if (!current || !directoryRoomCanEnter(current)) return;
+    enterRoom(
+      product,
+      code,
+      false,
+      undefined,
+      1,
+      'public',
+      false,
+      product === 'th09mp' && current.phase === 'playing' && current.spectatable === true,
+    );
   }
   function releaseMembership() {
     if (

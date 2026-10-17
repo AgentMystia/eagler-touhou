@@ -15,6 +15,19 @@ npm run dependencies -- status
 
 非 Windows 系统若只有 `python3`，把示例中的 `python` 换成 `python3`。工程入口也可通过 `--python` 或 `PYTHON` 指定解释器。
 
+## Python 依赖锁
+
+`config/python-dependencies.json` 声明 host、ci、browser 的精确包版本与 CPython 范围（3.12 至 3.14）。对应 requirements 由 `tools/lock-python.py` 生成，包含 wheel SHA-256、`--require-hashes` 与 `--only-binary=:all:`，不自动升级版本。
+
+升级时先修改声明，再按所需 profile 生成锁并审阅差异：
+
+```text
+python tools/lock-python.py --profile host
+python tools/lock-python.py --profile ci --profile browser
+```
+
+生成锁需要访问选定版本的 PyPI 元数据。Host 根据解释器实现/版本/平台身份、锁和检查器内容选择隔离环境，并复核已安装发行包集合与文件指纹。新锁须分别验证冷安装、复用和损坏拒绝；行为测试通过不代表三系统 wheel 安装已验收。
+
 ## 初始化依赖
 
 ```text
@@ -33,7 +46,7 @@ git submodule status --recursive
 | --- | --- |
 | `npm run dev` | 启动当前 Web 开发服务 |
 | `npm run build` | 编译浏览器服务和 React 静态入口 |
-| `npm run check` | 项目检查，包含 Web 核心、类型、UI 与服务等；耗时较长 |
+| `npm run check` | Web 核心、UI/tools 类型和 UI 检查；服务检查单独运行 |
 | `npm run check:workspace` | 加上 common、TH06、TH07 的原生 CMake/CTest |
 | `npm run test:services` | 独立联机服务行为测试 |
 | `npm run format:check` | 维护源代码格式，不冻结业务文本或文件哈希 |

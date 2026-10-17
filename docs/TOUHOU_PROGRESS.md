@@ -1,68 +1,150 @@
-# 工程能力进度
+# 东方作品进度
 
-本表记录 2026-10 工程审计及随后的整改。项目入口与游戏 gitlink 以本文件所在提交为准；状态不能由单个功能开关、旧报告或编译成功推导。后续修改应更新受影响的行和实际验证范围。
+## Windows 正作
 
-## 状态含义
+|  |  | 还原 | 移植 | Web 适配 | 多人联机 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| <img src="assets/game-covers/thumbnails/th06.jpg" width="40" height="40" alt="东方红魔乡"> | **[th06] 東方紅魔郷 v1.02h** | [GensokyoClub](https://github.com/GensokyoClub/th06/tree/master)<br>![Done][done] | [GensokyoClub](https://github.com/GensokyoClub/th06/tree/portable)<br>![Done][done] | [YomotsuHisami](https://github.com/YomotsuHisami/th06/tree/eagler)<br>![Done][done] | [YomotsuHisami](https://github.com/YomotsuHisami/th06/tree/eagler)<br>![Done][done] |
+| <img src="assets/game-covers/thumbnails/th07.jpg" width="40" height="40" alt="东方妖妖梦"> | **[th07] 東方妖々夢 v1.00b** | [some100](https://github.com/some100/th07/tree/main)<br>![Done][done] | [some100](https://github.com/some100/th07/tree/reallyportable)<br>![Done][done] | [YomotsuHisami](https://github.com/YomotsuHisami/th07/tree/eagler)<br>![Done][done] | [YomotsuHisami](https://github.com/YomotsuHisami/th07/tree/eagler)<br>![Done][done] |
+| <img src="assets/game-covers/thumbnails/th08.jpg" width="40" height="40" alt="东方永夜抄"> | **[th08] 東方永夜抄 v1.00d** | [SteinsGateON](https://github.com/YomotsuHisami/th08/tree/main)<br>![Done][done] | [SteinsGateON](https://github.com/YomotsuHisami/th08/tree/main)<br>![Done][done] | [YomotsuHisami](https://github.com/YomotsuHisami/th08/tree/eagler)<br>![Done][done] | [YomotsuHisami](https://github.com/YomotsuHisami/th08/tree/eagler-mp)<br>![Done][done] |
+| <img src="assets/game-covers/thumbnails/th09.jpg" width="40" height="40" alt="东方花映塚"> | **[th09] 東方花映塚 v1.50a** | [SteinsGateON](https://github.com/YomotsuHisami/th09/tree/main)<br>![Done][done] | [SteinsGateON](https://github.com/YomotsuHisami/th09/tree/main)<br>![Done][done] | [YomotsuHisami](https://github.com/YomotsuHisami/th09/tree/eagler)<br>[![In Progress][in-progress-detail]](#th09-web-适配) | [YomotsuHisami](https://github.com/YomotsuHisami/th09/tree/eagler)<br>![Done][done] |
+| <img src="assets/game-covers/thumbnails/th10.jpg" width="40" height="40" alt="东方风神录"> | **[th10] 東方風神録 v1.00a** | [SteinsGateON](https://github.com/YomotsuHisami/th10/tree/main)<br>![Done][done] | [SteinsGateON](https://github.com/YomotsuHisami/th10/tree/portable)<br>![Done][done] | [YomotsuHisami](https://github.com/YomotsuHisami/th10/tree/eagler)<br>![Done][done] | [YomotsuHisami](https://github.com/YomotsuHisami/th10/tree/eagler-mp)<br>![Done][done] |
+| <img src="assets/game-covers/thumbnails/th11.jpg" width="40" height="40" alt="东方地灵殿"> | **[th11] 東方地霊殿 v1.00a** | [SteinsGateON](https://github.com/YomotsuHisami/th11/tree/main)<br>![Done][done] | [SteinsGateON](https://github.com/YomotsuHisami/th11/tree/main)<br>![Done][done] | [YomotsuHisami](https://github.com/YomotsuHisami/th11/tree/eagler)<br>[![In Progress][in-progress-detail]](#th11-web-适配) | [YomotsuHisami](https://github.com/YomotsuHisami/th11/tree/eagler)<br>[![In Progress][in-progress-detail]](#th11-多人联机) |
+| <img src="assets/game-covers/thumbnails/th12.jpg" width="40" height="40" alt="东方星莲船"> | **[th12] 東方星蓮船 v1.00b** | [Tweet-META](https://github.com/Tweet-META/th12/tree/main)<br>![In Progress][in-progress] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th13.jpg" width="40" height="40" alt="东方神灵庙"> | **[th13] 東方神霊廟 v1.00c** | ![Unassigned][unassigned] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th14.jpg" width="40" height="40" alt="东方辉针城"> | **[th14] 東方輝針城 v1.00b** | Asuna<br>![In Progress][in-progress]<br>[AdingApkgg/thp](https://github.com/AdingApkgg/thp)<br>![In Progress][in-progress] | [AdingApkgg/thp](https://github.com/AdingApkgg/thp)<br>![In Progress][in-progress] | [AdingApkgg/thp](https://github.com/AdingApkgg/thp)<br>![In Progress][in-progress] | - |
+| <img src="assets/game-covers/thumbnails/th15.jpg" width="40" height="40" alt="东方绀珠传"> | **[th15] 東方紺珠伝 v1.00b** | [SteinsGateON](https://github.com/YomotsuHisami/th15/tree/main)<br>![Done][done] | [SteinsGateON](https://github.com/YomotsuHisami/th15/tree/main)<br>![Done][done] | [YomotsuHisami](https://github.com/YomotsuHisami/th15/tree/eagler)<br>![Done][done] | ![In Progress][in-progress] |
+| <img src="assets/game-covers/thumbnails/th16.jpg" width="40" height="40" alt="东方天空璋"> | **[th16] 東方天空璋 v1.00a** | ![Unassigned][unassigned] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th17.jpg" width="40" height="40" alt="东方鬼形兽"> | **[th17] 東方鬼形獣 v1.00b** | ![Unassigned][unassigned] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th18.jpg" width="40" height="40" alt="东方虹龙洞"> | **[th18] 東方虹龍洞 v1.00a** | ![Unassigned][unassigned] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th19.jpg" width="40" height="40" alt="东方兽王园"> | **[th19] 東方獣王園 v1.10c** | [Idle](https://github.com/Idle233333)<br>![In Progress][in-progress] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th20.jpg" width="40" height="40" alt="东方锦上京"> | **[th20] 東方錦上京 v1.00c** | [Oracatt](https://github.com/Oracatt/Touhou20/tree/main)<br>![In Progress][in-progress] | - | - | - |
 
-- **实现存在**：可定位到当前代码，不等于已执行验收。
-- **本轮通过**：按明确命令、输入和环境实际执行。
-- **有限覆盖**：只证明所列子系统、字段或场景。
-- **未验收/未提供**：没有本轮运行证据，或当前未登记对应能力。
+## 旧作（PC-98）
 
-本轮执行环境为 Windows、Node.js 24.15.0、Python 3.14.3，游戏构建使用实际配置的 Emscripten、CMake/Ninja。CI 已配置 Windows/Linux/macOS；远端三系统运行结果不由本机结果替代。
+|  |  | 还原 | 移植 | Web 适配 | 多人联机 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| <img src="assets/game-covers/thumbnails/th01.jpg" width="28" height="40" alt="东方灵异传"> | **[th01] 東方靈異伝** | [nmlgc](https://github.com/nmlgc/ReC98/tree/master/th01)<br>![Done][done] | ![Unassigned][unassigned] | - | - |
+| <img src="assets/game-covers/thumbnails/th02.jpg" width="32" height="40" alt="东方封魔录"> | **[th02] 東方封魔録** | [nmlgc](https://github.com/nmlgc/ReC98/tree/master/th02)<br>![In Progress][in-progress] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th03.jpg" width="28" height="40" alt="东方梦时空"> | **[th03] 東方夢時空** | [nmlgc](https://github.com/nmlgc/ReC98/tree/master/th03)<br>![In Progress][in-progress] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th04.jpg" width="60" height="40" alt="东方幻想乡"> | **[th04] 東方幻想郷** | [nmlgc](https://github.com/nmlgc/ReC98/tree/master/th04)<br>![In Progress][in-progress] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th05.jpg" width="55" height="40" alt="东方怪绮谈"> | **[th05] 東方怪綺談** | [nmlgc](https://github.com/nmlgc/ReC98/tree/master/th05)<br>![In Progress][in-progress] | - | - | - |
 
-## 大类能力
+## 小数点作
 
-| 能力大类 | 当前实现与本轮证据 | 尚未覆盖 | 架构与接手流程 |
-| --- | --- | --- | --- |
-| Runtime 与平台构建 | 七作普通源码编译通过；TH08/09/10/11/15 的目录 Runtime 打包与验证通过；TH06/07 无 DATA 和基础练习编译通过 | 所有机体/关卡游玩、Linux/macOS 原生构建和其他设备 | [架构](ARCHITECTURE.md)、[Runtime 构建](playbooks/runtime-build.md)、[构建声明](../config/runtime-builds.json) |
-| 启动器工作流与会话 | 当前 React UI；设置/目录模型、导航决策、浏览器会话和 Runtime 所有者分开；类型、mounted 行为及产物测试 | 大型生命周期协调器仍有进一步拆分空间 | [Web 架构](../launcher/web/docs/ARCHITECTURE.md)、[Web 验证](../launcher/web/docs/DEVELOPMENT.md) |
-| 资源安装、缓存与离线 | Package 事务、Runtime/App Shell 代次、导入与更新；真实 React/Service Worker 的 13 项 PWA 场景通过；TH15 真实资源组装及独立 ZIP 冷启动通过 | 全作品导入/升级、各浏览器容量回收和物理设备离线矩阵 | [缓存与兼容](../launcher/web/docs/CACHE_AND_COMPATIBILITY.md)、[资源流程](playbooks/resources.md) |
-| 输入、存储与 Replay | 键盘/触控所有权、文件会话、存档与 Replay 管理；TH15 真实浏览器进入游戏并写入/重载存档；common 输入 Replay 编解码及原生测试 | 全作品存档互通和完整原版 Replay 对照；诊断字段不是全内存 | [输入与 Replay](playbooks/input-replay.md)、[common 格式](../eagler-common/docs/input-replay.md) |
-| 呈现、性能与诊断 | 固定步/呈现边界有实现；TH08 Presentation Lab、TH10 有限适配及 common testkit 存在 | 本轮未重跑物理手机性能或原版绘制比较；TH06/07 不宣称 Lab 通过；TH10 覆盖不足时为 unknown | [游戏手册](#各作状态)、[common Lab](../eagler-common/testkit/presentation-lab/README.md)、[验证流程](playbooks/verification.md) |
-| 多人游戏与网络服务 | TH06—TH11 有多人产品登记；服务独立为 `services/netplay`；C++ 会话/输入/回滚测试及独立打包 Relay 的真实 WebSocket 房间测试通过 | 未据此证明全部游戏 2/3 端、跨网、观战、重连和全关卡正确；TH08/10/11 多人源码需明确选择；TH15 无多人 | [多人流程](playbooks/multiplayer.md)、[服务](../services/netplay/)、[common 维护](../eagler-common/docs/MAINTENANCE.md) |
-| 语言、音乐与练习 | 按 Product Catalog、Runtime Release 和 Host 选择生成资源；DATA 与音乐准备独立；TH06/07 基础练习编译，TH15 使用日文、声明练习能力的 Runtime 完成真实启动及无 BGM 组装 | 不等于完整上游 thcrap/thprac；各作翻译版布局、OGG/MIDI 循环和练习章节仍需分别验收 | [资源流程](playbooks/resources.md)、[集成边界](../launcher/web/integrations/RUNTIME_CONTRACT.md)、[Host 配置](../launcher/web/docs/SELF_HOSTING_REFERENCE.md) |
-| 工程验证与交付 | 根 workspace、Git 依赖、Node/Python/CMake 入口、受管源码检查、不可变 contracts 构建代次、事务性 Runtime 输出和中文维护体系 | Python 完整锁定、浏览器服务构建锁恢复、普通/多人独立收集及全候选验收仍需完善 | [开发](DEVELOPMENT.md)、[发布](playbooks/release.md)、[完整审计](ENGINEERING_AUDIT.md) |
+|  |  | 还原 | 移植 | Web 适配 | 多人联机 |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| <img src="assets/game-covers/thumbnails/th075.jpg" width="40" height="40" alt="东方萃梦想"> | **[th075] 東方萃夢想** | [SteinsGateON](https://space.bilibili.com/34714121)<br>![In Progress][in-progress] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th095.jpg" width="40" height="40" alt="东方文花帖"> | **[th095] 東方文花帖** | ![Unassigned][unassigned] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th105.jpg" width="40" height="40" alt="东方绯想天"> | **[th105] 東方緋想天** | ![Unassigned][unassigned] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th123.jpg" width="40" height="40" alt="东方非想天则"> | **[th123] 東方非想天則** | ![Unassigned][unassigned] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th125.jpg" width="40" height="40" alt="东方文花帖DS"> | **[th125] ダブルスポイラー** | ![Unassigned][unassigned] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th128.jpg" width="40" height="40" alt="妖精大战争"> | **[th128] 妖精大戦争** | ![Unassigned][unassigned] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th135.jpg" width="40" height="40" alt="东方心绮楼"> | **[th135] 東方心綺楼** | ![Unassigned][unassigned] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th143.jpg" width="40" height="40" alt="弹幕天邪鬼"> | **[th143] 弾幕アマノジャク** | ![Unassigned][unassigned] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th145.jpg" width="40" height="40" alt="东方深秘录"> | **[th145] 東方深秘録** | ![Unassigned][unassigned] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th155.jpg" width="40" height="40" alt="东方凭依华"> | **[th155] 東方憑依華** | ![Unassigned][unassigned] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th165.jpg" width="40" height="40" alt="秘封噩梦日记"> | **[th165] 秘封ナイトメアダイアリー** | ![Unassigned][unassigned] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th175.jpg" width="40" height="40" alt="东方刚欲异闻"> | **[th175] 東方剛欲異聞** | ![Unassigned][unassigned] | - | - | - |
+| <img src="assets/game-covers/thumbnails/th185.jpg" width="40" height="40" alt="弹幕狂们的黑市"> | **[th185] バレットフィリア達の闇市場** | ![Unassigned][unassigned] | - | - | - |
 
-## 各作状态
+## 贡献计划核对（2026-10-16）
 
-| 作品 | 本轮普通构建 | Runtime/真实浏览器 | 多人 | 主要限制与接手入口 |
-| --- | --- | --- | --- | --- |
-| TH06 红魔乡 | 无 DATA 普通与基础练习构建通过 | 产出 HTML/JS/WASM；本轮未做真实 DATA 全流程 | 已登记；5 项原生核心测试通过不等于多人全流程 | [维护](../th06/docs/MAINTENANCE.md)、[语言适配](../th06/docs/LOCALIZATION.md) |
-| TH07 妖妖梦 | 无 DATA 普通与基础练习构建通过 | 产出 HTML/JS/WASM；本轮未做真实 DATA 全流程 | 已登记；4 项原生核心测试通过不等于多人全流程 | [维护](../th07/docs/MAINTENANCE.md) |
-| TH08 永夜抄 | 通过 | 目录 Runtime 打包与完整性验证通过 | 已登记；本轮未重建或运行独立多人源码 | [维护](../th08/docs/MAINTENANCE.md)、[Lab](../th08/portable/presentation-lab/README.md)、[Replay](../th08/tools/replay-verifier/README.md) |
-| TH09 花映塚 | 通过 | 目录 Runtime 打包通过；仍为 `completeGame: false` | 独立对战适配，不能套用其他作品协作规则 | [维护](../th09/docs/MAINTENANCE.md)；旧子系统对照不代表当前整作完成 |
-| TH10 风神录 | 通过 | 目录 Runtime 打包与完整性验证通过 | 已登记；本轮未重建或运行独立多人源码 | [维护](../th10/docs/MAINTENANCE.md)、[Lab](../th10/portable/presentation-lab/README.md)、[Replay](../th10/tools/replay-verifier/README.md) |
-| TH11 地灵殿 | 通过 | 目录 Runtime 打包与完整性验证通过 | 已登记；本轮未重建或运行独立多人源码 | [维护](../th11/docs/MAINTENANCE.md)、[Replay](../th11/tools/replay-verifier/README.md) |
-| TH15 绀珠传 | 通过 | 真实 DATA 的 Chromium 启动、进入游戏、触屏模拟及存档写入/重载通过；独立自托管构建通过 | 未登记、未提供 | [维护](../th15/docs/MAINTENANCE.md)、[Replay](../th15/tools/replay-verifier/README.md)；本轮无 BGM，不代表全章节或物理手机验收 |
+[贡献计划 #34](https://github.com/YomotsuHisami/eagler-touhou/issues/34) 是持续计划，不以本轮局部验证认定全部完成。还原项目的原登记保持不变，本轮未进入还原工作。
 
-TH20 保留现有目录和预编译产品接入，但源码不在本轮 TH06—TH11、TH15 审计范围内。本轮没有实现其他平台启动器，也没有确定 Flutter、Tauri 或原生外壳选型。
-
-## 验证记录与重现
-
-| 验证 | 本轮结果 | 重现入口与范围 |
+| 项目 | 已有实现与证据 | 剩余工作与验收边界 |
 | --- | --- | --- |
-| Web 核心 | 受管源码与核心测试通过 | `node launcher/web/scripts/check.mjs` |
-| UI 类型 / 工具类型 | 通过 | Web `typecheck`、`typecheck:tools` |
-| UI 单元与 mounted | 当前完整组 1092 项通过，0 失败、0 跳过 | Web `test:ui:unit`；不包含全部真实游戏浏览器脚本 |
-| UI 产物 | 六个产物测试文件分别通过 | Web `test:ui:artifact`；编译、App Shell、刷新与服务 |
-| 原生 | common 32、TH06 5、TH07 4 项 CTest 通过 | 项目 `check:workspace` 中对应 CMake/CTest |
-| 真实浏览器 | 当前内容页、房间快捷消息、TH15 启动/存档及 13 项 PWA 场景通过 | 对应 Web npm 浏览器入口；PWA 使用合成 Runtime |
-| 分发边界 | 独立 Relay 实际房间、Unicode/空目录 ZIP、TH15 Node 组装和独立解压冷构建通过 | 服务打包、`assemble:site`、`package:self-host` |
-| 发布/远端 | 未执行推送、GitHub 发布或部署 | 不能把本地验证写成生产验收 |
+| TH11 Eagler 适配 | 已有独立源码、Launcher 接入和普通 Runtime 构建/打包记录，不再是尚未开始 | 当前产品登记仍关闭高刷新率；多人回滚的能力声明与下方进度表不一致，须按对应多人源码和实际运行重新核对。编译或能力声明不代替完整玩法、跨设备多人验收 |
+| TH15 Eagler 适配 | 已有源码、Launcher 接入和 Runtime；既有 Chromium 真实 DATA 启动及存档重载证据见工程审计 | 保留 early-test 标识；补音频、完整关卡与物理设备验收。未声明多人能力，不把它作为普通适配的必做缺口 |
+| 前端复用 | 已拆分导航离开、界面选择、准备任务和 Runtime 文件会话等拥有者；当前工作区包含未提交实现 | 源码存在不表示已发布，合入和交付状态单独记录 |
+| 前端返回行为 | 本次 Windows / Node 24.13 执行导航、返回、触控编辑和准备活动四个单元/mounted 文件，182/182 通过，0 跳过 | 属于模拟 DOM 与真实组件/导航逻辑证据，仍需系统返回、菜单返回在实际浏览器与设备上的验收 |
+| 前端性能 | 已有工程拆分与既有测试记录 | 本次没有新增帧耗时、长任务或真机卡顿测量，性能目标保持待验收 |
 
-具体失败原因、修复及剩余项见[工程审计](ENGINEERING_AUDIT.md)。原始资源、带个人路径的运行记录和浏览器配置保存在源码外；维护文档记录可重复步骤和范围。
+TH10 Ending #24 还需区分源码修复与通关复测：多人现有公开 Runtime 的来源提交包含按键宽度、场景切换及后续 Ending 操作修复；普通分支本次补齐同组 16 位按键读取修复。局部 WASI 输入/Ending 测试不能替代双端通关后退出 Ending、进入结果和保存回放的完整验收，issue 保持待复测。
 
-## common 版本
+## 实现方法与查证入口
 
-游戏实际使用自己的递归依赖。以下锁定差异仍然保留；升级时分别验证消费者，不能把根 common 较新当作已完成兼容升级。
+主表和能力表记录各作品的项目进度，Done / In Progress 对应原项目登记。工程验收按实际测试范围单独记录，编译、打包或局部测试不等于整作还原、Web 功能或多人长局通过。实现方法与查证入口见下表，当前验收证据见[工程审计](ENGINEERING_AUDIT.md#本轮实际验证)。
 
-| 消费者 | `third_party/eagler-common` 锁定 |
-| --- | --- |
-| TH06、TH07 | `af954fee72ebe623546be3ebca45dcff9b2b73bd` |
-| TH08 | `b3071f6ab720ae396777c3ff4c200d4ece0b7c8d` |
-| TH09 | `386978c8248de13b05ad390da6a3ea2cbde2e947` |
-| TH10、TH15 | `b0903054d105aed27a38b4038ed9fc4991c75c19` |
-| TH11 | `984a8a10834c35fe9ef86c4ffe03daf1fb61f87c` |
+| 主分类 | 实现方法与架构 | 验证依据与入口 |
+| --- | --- | --- |
+| 还原 | 各作保留原版数据结构、脚本与调用顺序，先按主表来源核对反编译；不能仅因类型擦除、临时链或 draw 写状态判为缺陷 | [还原兼容对照](playbooks/verification.md#还原兼容对照)记录 th06/th07 固定提交与已核实事实；整作结论仍需原版与完整 Replay 对照 |
+| 移植 | 游戏内平台层适配图形、输入、文件和音频，公共算法由 common 提供，作品布局和状态快照留作品内；见[工程架构](ARCHITECTURE.md) | [Runtime 构建](playbooks/runtime-build.md)区分 source-only、真实资源打包与可玩验证，编译通过只证明所用目标可构建 |
+| Web 适配 | Launcher 管理资源、会话与消息边界，Runtime 执行游戏；见[Web 架构](../launcher/web/docs/ARCHITECTURE.md) | 按下面六项查证，不把站点安装或单作启动扩展为全作品通过 |
+| 多人联机 | Web 房间、独立网络服务、common 输入/回滚与作品规则各自承担职责；见[工程架构](ARCHITECTURE.md) | [多人联机](playbooks/multiplayer.md)要求记录作品、普通/多人源码、参与端和实际场景，公共算法通过不等于全作品联机验收 |
 
-用 `npm run dependencies -- status` 和 `git submodule status --recursive` 核对实际工作区。Git 指针、编译身份和运行结果一起构成可接手的版本依据。
+### Web 适配查证
+
+| 原能力项 | 实现方法与入口 | 验证依据 |
+| --- | --- | --- |
+| 协议 | [共享数据格式](../contracts/README.md)与 [Web Runtime 生命周期](../launcher/web/docs/ARCHITECTURE.md#runtime-生命周期与协议)约束消息、能力和会话 | 验证版本、损坏消息、旧会话和取消后的状态，见[验证流程](playbooks/verification.md) |
+| 高刷新率 | 固定逻辑步与显示刷新分开，额外绘制按作品兼容边界观察；见[输入、Replay 与绘制](playbooks/input-replay.md) | 对照正常帧与多次 draw 的状态、画面及 Replay；原 draw 写入不自动认定为 bug |
+| 触控 | Launcher 输入拥有者向 Runtime 传递按键，布局编辑与游戏输入分离；见[Web 输入架构](../launcher/web/docs/ARCHITECTURE.md#输入房间与渲染) | 覆盖按住移动打开 UI、失焦松键、重启和真实设备；模拟触屏结果注明范围 |
+| 多语言 | 语言配置与实际 Catalog、Runtime 能力和资源包一致；见[资源流程](playbooks/resources.md) | 验证所选语言资源、缺件拒绝和实际游戏文本，不用资源清单替代呈现结果 |
+| thprac | 基础练习与额外 thprac 扩展分别登记输入；见[Runtime 构建](playbooks/runtime-build.md) | 编译、练习入口、关卡与精确功能分别验证，不由基础 ImGui 编译推导完整扩展可用 |
+| Replay | 原版单人文件由各作解释，文件会话管理准备与取消；见[输入与 Replay](playbooks/input-replay.md) | 验证读取、播放完成及明确状态字段，保留失败帧与未覆盖字段 |
+
+### 多人联机查证
+
+| 原能力项 | 实现方法与入口 | 验证依据 |
+| --- | --- | --- |
+| 规则 | 作品内定义席位、角色与玩法，common 承担共享联机算法；见[多人联机](playbooks/multiplayer.md) | 真实作品多端运行，核对规则输入和结果，不另写替身规则自证 |
+| 预测回滚 | 保存作品状态快照，预测输入并按确认输入恢复、补帧；见[输入与 Replay](playbooks/input-replay.md) | 覆盖延迟、预测分歧、对象复用与回滚恢复，保留逐步状态和原始 trace |
+| 重开 | 房间和 Runtime 使用新会话，终止旧回调及旧代次输入；见[多人联机](playbooks/multiplayer.md) | 覆盖退房、重连、失败恢复和重开，旧消息不能改变新局 |
+| Replay | common 保存已确认全席位输入，作品解释规则和状态；见[确认输入格式](../eagler-common/docs/input-replay.md) | 验证尾部确认、完整回放与状态覆盖，不能与同扩展名的单人文件混用 |
+| 旁观 | 旁观端消费确认输入与状态，操作权限与玩家席位分开；见[多人联机](playbooks/multiplayer.md) | 覆盖加入、追帧、掉线恢复和只读操作，玩家双端通过不能替代旁观证据 |
+
+## 适配详情
+
+## [th09] 東方花映塚 v1.50a
+
+### th09 Web 适配
+
+| 协议 | 高刷新率 | 触控 | 多语言 | thprac | Replay |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ❌ | ✅ | ✅ | ❌ | ✅ |
+
+## [th11] 東方地霊殿 v1.00a
+
+### th11 Web 适配
+
+| 协议 | 高刷新率 | 触控 | 多语言 | thprac | Replay |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ❌ | ✅ | ✅ | ✅ | ✅ |
+
+### th11 多人联机
+
+| 规则 | 预测回滚 | 重开 | Replay | 旁观 |
+| :---: | :---: | :---: | :---: | :---: |
+| ✅ | ❌ | ✅ | ✅ | ✅ |
+
+## [th15] 東方紺珠伝 v1.00b
+
+### th15 多人联机
+
+| 规则 | 预测回滚 | 重开 | Replay | 旁观 |
+| :---: | :---: | :---: | :---: | :---: |
+| ❌ | ❌ | ❌ | ❌ | ❌ |
+
+## 能力表样例
+
+### Web 适配
+
+| 协议 | 高刷新率 | 触控 | 多语言 | thprac | Replay |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+### 多人联机
+
+| 规则 | 预测回滚 | 重开 | Replay | 旁观 |
+| :---: | :---: | :---: | :---: | :---: |
+| ✅ | ✅ | ✅ | ✅ | ✅ |
+
+## 图片来源
+
+[THBWiki / 图片来源记录](assets/game-covers/sources.json)
+
+[done]: https://img.shields.io/badge/Done-2ea44f?style=flat-square
+[in-progress]: https://img.shields.io/badge/In%20Progress-f59e0b?style=flat-square
+[in-progress-detail]: https://img.shields.io/badge/In%20Progress%20%28Click%20for%20detail%29-f59e0b?style=flat-square
+[unassigned]: https://img.shields.io/badge/Unassigned-808080?style=flat-square

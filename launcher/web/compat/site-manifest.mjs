@@ -1,4 +1,4 @@
-import {readFile, writeFile} from 'node:fs/promises';
+import {readFile, writeFile, rm} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {loadCompiledContract} from '../lib/contracts/load-compiled-contract.mjs';
 import {SITE_MANIFEST_FILE} from '../lib/contracts/site-manifest.mjs';
@@ -21,13 +21,18 @@ export async function readSiteManifestFile(root) {
   }
 }
 export async function writeLegacySiteManifestAlias(root, manifest) {
-  await writeFile(resolve(root, LEGACY_HOST_MANIFEST_FILE), JSON.stringify(legacyHostManifestResponse(manifest), null, 2) + '\n');
+  const legacy = legacyHostManifestResponse(manifest);
+  if (!Object.keys(legacy.games).length) {
+    await rm(resolve(root, LEGACY_HOST_MANIFEST_FILE), {force: true});
+    return;
+  }
+  await writeFile(resolve(root, LEGACY_HOST_MANIFEST_FILE), JSON.stringify(legacy, null, 2) + '\n');
 }
 export async function verifyLegacySiteManifestAlias(root, manifest) {
   let legacy;
   try {legacy = JSON.parse(await readFile(resolve(root, LEGACY_HOST_MANIFEST_FILE), 'utf8'));}
   catch (error) {if (error?.code === 'ENOENT') return; throw error;}
-  if (JSON.stringify(readCompatibleSiteManifest(legacy)) !== JSON.stringify(readCompatibleSiteManifest(manifest))) {
+  if (JSON.stringify(readCompatibleSiteManifest(legacy)) !== JSON.stringify(readCompatibleSiteManifest(legacyHostManifestResponse(manifest)))) {
     throw new Error('Legacy site manifest alias differs from the authoritative site manifest');
   }
 }

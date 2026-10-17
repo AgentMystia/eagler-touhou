@@ -1,8 +1,9 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import {
+const {
   createMultiplayerRoomSessionStore,
   multiplayerRoomSessionStorageKey,
-} from "../.cache/build/browser/assets/launcher/multiplayer-room-session.mjs";
+} = await importClientService('launcher/multiplayer-room-session.mjs');
 
 class MemoryStorage {
   values = new Map();

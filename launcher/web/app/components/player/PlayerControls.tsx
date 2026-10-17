@@ -18,6 +18,7 @@ import { TouchControlPreview } from '../settings/TouchControlPreview';
 import { useSurfaceNavigation } from '../../navigation/surface-navigation';
 import { useLocale } from '../../i18n';
 import { playerUtilityIcons } from './utility-icons';
+import { SpectatorMatchScore } from './SpectatorMatchScore';
 const noopSubscribe = () => () => {};
 const initialTouch = () => undefined;
 const noNetwork = () => null;
@@ -53,9 +54,22 @@ export function PlayerControls({ session }: { session: BrowserSession }) {
     );
     return () => player?.classList.remove('netplay-player-status-visible');
   }, [network?.playerStatusVisible]);
+  const room = useSyncExternalStore(
+    session.room.service.subscribe,
+    session.room.service.getSnapshot,
+    session.room.service.getSnapshot,
+  );
+  const spectatorTimeline =
+    state.runtime?.launched && room.spectatorRequested && room.room?.spectatorTimeline === true;
   const netplay = network?.diagnostics as NetplayDiagnosticLines | undefined;
   return (
     <>
+      {spectatorTimeline && room.product === 'th09mp' && (
+        <SpectatorMatchScore
+          wins={[room.room?.seats?.[0]?.stats?.wins ?? 0, room.room?.seats?.[1]?.stats?.wins ?? 0]}
+          names={[room.room?.seats?.[0]?.name ?? '', room.room?.seats?.[1]?.name ?? '']}
+        />
+      )}
       <TitleNetworkOverlay model={session.titleNetwork} />
       {network && (
         <NetplayConnectionWindow
@@ -66,7 +80,11 @@ export function PlayerControls({ session }: { session: BrowserSession }) {
         />
       )}
       {diagnostics && (
-        <RuntimeDiagnostics model={diagnostics} netplay={netplay}>
+        <RuntimeDiagnostics
+          model={diagnostics}
+          netplay={netplay}
+          playbackControls={!!spectatorTimeline}
+        >
           <NetplayCalibrationReport
             model={session.calibration}
             english={locale === 'en'}

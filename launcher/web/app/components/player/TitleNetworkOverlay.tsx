@@ -46,7 +46,7 @@ export function TitleNetworkOverlay({
               <span>{t('multiplayer.roomCode')}</span>{' '}
               <input
                 id="th09NetworkCode"
-                maxLength={4}
+                maxLength={8}
                 inputMode="numeric"
                 autoComplete="off"
                 spellCheck={false}

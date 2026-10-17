@@ -18,7 +18,12 @@ assert.throws(() => validateRuntimeReleaseManifest({...manifest, games: {}}), /n
 assert.throws(() => validateRuntimeReleaseManifest({...manifest, games: {th99: manifest.games.th15}}), /subset/);
 const missingMultiplayer = structuredClone(manifest);
 delete missingMultiplayer.games.th06.multiplayerRuntime;
-assert.throws(() => validateRuntimeReleaseManifest(missingMultiplayer), /multiplayer Runtime is missing/);
+assert.equal(validateRuntimeReleaseManifest(missingMultiplayer), missingMultiplayer);
+const multiplayerOnly = structuredClone(manifest);
+delete multiplayerOnly.games.th06.runtime;
+assert.equal(validateRuntimeReleaseManifest(multiplayerOnly), multiplayerOnly);
+delete multiplayerOnly.games.th06.multiplayerRuntime;
+assert.throws(() => validateRuntimeReleaseManifest(multiplayerOnly), /at least one Runtime/);
 
 const staleShellPath = resolve(root, manifest.games.th08.runtime.root, "shell.mjs");
 const staleShell = await readFile(staleShellPath, "utf8");

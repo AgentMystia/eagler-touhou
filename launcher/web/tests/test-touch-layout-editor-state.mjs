@@ -1,11 +1,12 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import {
+const {
   createTouchLayoutWindowPositionStore,
   emptyTouchLayoutWindowPositions,
   normalizeTouchLayoutWindowPositions,
   touchLayoutWindowPositionsStorageKey,
   touchLayoutWindowPositionsVersion,
-} from "../.cache/build/browser/assets/launcher/touch-layout-editor-state.mjs";
+} = await importClientService('launcher/touch-layout-editor-state.mjs');
 
 class MemoryStorage {
   constructor(initial = {}) { this.values = new Map(Object.entries(initial)); }

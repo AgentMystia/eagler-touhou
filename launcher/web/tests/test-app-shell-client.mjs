@@ -1,6 +1,7 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { createAppShellClient } from "../.cache/build/browser/assets/launcher/app-shell-client.mjs";
+const { createAppShellClient } = await importClientService('launcher/app-shell-client.mjs');
 import { HOST_SITE_ARTWORK_FILES } from "../lib/frontend-manifest.mjs";
 class EventTargetStub {
   listeners = new Map();

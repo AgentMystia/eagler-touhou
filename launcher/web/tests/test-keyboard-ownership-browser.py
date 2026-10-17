@@ -86,7 +86,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urlparse(self.path)
-        if FIXTURE and parsed.path == "/__component-fixture.mjs":
+        if parsed.path == "/__component-fixture.mjs":
             body = FIXTURE["module"].encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/javascript; charset=utf-8")
@@ -110,8 +110,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return str(ROOT / "missing")
         if parts[0] == "runtime" and len(parts) >= 3:
             return str(self.runtimes[parts[1]].joinpath(*parts[2:]))
-        if parts[0] == "modules":
-            return str((ROOT / ".cache/build/browser/assets/launcher").joinpath(*parts[1:]))
         if parts[0] == "assets" and len(parts) >= 3:
             return str(self.font) if parts[2:] == ["msgothic.ttc"] else str(ROOT / "missing")
         return super().translate_path(path)

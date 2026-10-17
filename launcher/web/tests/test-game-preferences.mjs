@@ -1,5 +1,6 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import {
+const {
   DEFAULT_GAME_OPTIONS,
   applySharedTouchPreferences,
   gamePreferenceStorageKey,
@@ -12,7 +13,7 @@ import {
   persistSharedTouchPreferences,
   sharedTouchPreferenceStorageKey,
   serializeGamePreferences,
-} from "../.cache/build/browser/assets/launcher/game-preferences.mjs";
+} = await importClientService('launcher/game-preferences.mjs');
 
 assert.equal(gamePreferenceStorageKey("th06"), "eagler-touhou-game-options-v1-th06");
 assert.equal(languagePreferenceStorageKey("th07mp"), "eagler-touhou-language-v1-th07mp");

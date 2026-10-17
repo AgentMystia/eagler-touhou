@@ -10,6 +10,8 @@ import { join } from "node:path";
 const root=await mkdtemp(join(tmpdir(),"eagler-publication-audit-"));
 await mkdir(join(root,"scripts"));
 await copyFile(new URL("../scripts/audit-publication.mjs",import.meta.url),join(root,"scripts/audit-publication.mjs"));
+await mkdir(join(root,"lib"));
+await copyFile(new URL("../lib/source-layout.mjs",import.meta.url),join(root,"lib/source-layout.mjs"));
 await writeFile(join(root,".gitignore"),"*.dat\n");
 await writeFile(join(root,"private.dat"),"synthetic data, not game content");
 execFileSync("git",["init","--quiet",root]);
@@ -28,4 +30,19 @@ execFileSync("git",["-C",root,"add","--force","private.dat"]);
 const tracked=run([]);
 assert.notEqual(tracked.status,0,"force-added ignored private file must fail");
 assert.match(tracked.stderr,/private\.dat/);
+
+// The Web component has no .git after the workspace refactor. Its actual Git
+// owner must still decide which local files are publication candidates.
+const web=join(root,"launcher","web");
+await mkdir(join(web,"scripts"),{recursive:true});
+await mkdir(join(web,"lib"));
+await copyFile(new URL("../scripts/audit-publication.mjs",import.meta.url),join(web,"scripts/audit-publication.mjs"));
+await copyFile(new URL("../lib/source-layout.mjs",import.meta.url),join(web,"lib/source-layout.mjs"));
+await writeFile(join(root,"package.json"),JSON.stringify({workspaces:["launcher/web"]}));
+await writeFile(join(web,"private.dat"),"synthetic private workspace data");
+const nested=()=>spawnSync(process.execPath,[join(web,"scripts/audit-publication.mjs")],{encoding:"utf8"});
+assert.equal(nested().status,0,"nested Web uses Git ignore rules, without auditing sibling private data");
+execFileSync("git",["-C",root,"add","--force","launcher/web/private.dat"]);
+assert.match(nested().stderr,/private\.dat/,"force-added nested private data remains rejected");
+await rm(root,{recursive:true,force:true});
 console.log("Publication audit scope: PASS (ignored / exported / public-host-artwork / force-added)");

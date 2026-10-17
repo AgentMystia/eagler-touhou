@@ -1,5 +1,6 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import { buildMultiplayerRuntimeOptions } from "../.cache/build/browser/assets/launcher/multiplayer-runtime-options.mjs";
+const { buildMultiplayerRuntimeOptions } = await importClientService('launcher/multiplayer-runtime-options.mjs');
 import { PRODUCT_GAMES } from "../lib/contracts/product-catalog.mjs";
 
 const th06 = {

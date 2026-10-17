@@ -1,9 +1,10 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import {
+const {
   appliedAppShellUpdateAt,
   formatRelativeUpdateAge,
   nextRelativeUpdateRefresh,
-} from "../.cache/build/browser/assets/launcher/relative-update-time.mjs";
+} = await importClientService('launcher/relative-update-time.mjs');
 
 assert.equal(appliedAppShellUpdateAt(null), null);
 assert.equal(appliedAppShellUpdateAt({ updated: false, appliedAt: 123 }), null);

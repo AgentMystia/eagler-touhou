@@ -11,6 +11,7 @@ import { RoomPersonal } from './RoomPersonal';
 import { RoomNetwork } from './RoomNetwork';
 import { RoomSpectators } from './RoomSpectators';
 import { RoomGameSettings } from './RoomGameSettings';
+import { RoomQuickChat } from './RoomQuickChat';
 /** Main index570–713 + app8058–8353. All controls target the real room/network
  * owners; panel/drawer intents belong to the single root Router. */
 export function RoomView(props: RoomViewProps) {
@@ -122,8 +123,14 @@ export function RoomView(props: RoomViewProps) {
           {game.title}
         </h2>
         <div className="mp-room-tags">
-          <span id="mpRoomMode">{t('room.coop', { count: room.playerCount })}</span>
-          <span id="mpRoomDifficultyBadge">{config.difficulties[room.difficulty] || 'Normal'}</span>
+          <span id="mpRoomMode">
+            {t(state.product === 'th09mp' ? 'room.versus' : 'room.coop', {
+              count: room.playerCount,
+            })}
+          </span>
+          <span id="mpRoomDifficultyBadge">
+            {config.difficulties[room.difficulty] || 'Normal'}
+          </span>
           <span
             id="mpRoomPhase"
             title={state.preparation?.status === 'failed' ? state.preparation.error : ''}
@@ -131,7 +138,7 @@ export function RoomView(props: RoomViewProps) {
             {phase}
           </span>
         </div>
-        <RoomProgress state={state} service={service} />
+        <RoomProgress state={state} service={service} transfer={context.transfer} />
         <div id="mpRoomSettingsDrawer">
           <button
             className={`mp-room-settings-toggle${props.panel?.kind === 'game' ? ' open' : ''}`}
@@ -287,6 +294,9 @@ export function RoomView(props: RoomViewProps) {
           </button>
         </footer>
       </div>
+      {state.product === 'th09mp' && !context.launched && props.quickChat && (
+        <RoomQuickChat model={props.quickChat} />
+      )}
       <RoomPanel
         open={!!props.panel}
         kind={currentPanel.kind}

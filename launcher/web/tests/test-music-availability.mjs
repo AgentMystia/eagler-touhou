@@ -1,10 +1,11 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
 
-import {
+const {
   resolveEffectiveMusicMode,
   resolveMusicAvailability,
   resolveMusicMode,
-} from "../.cache/build/browser/assets/launcher/music-availability.mjs";
+} = await importClientService('launcher/music-availability.mjs');
 
 const cases = [
   [{ requested: "none", localOgg: true }, "none"],

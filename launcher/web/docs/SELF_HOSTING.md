@@ -4,7 +4,7 @@
 
 ## 准备输入
 
-独立包使用 Node.js 22 或更新版本和 Python 3；源码开发使用[项目环境要求](https://github.com/YomotsuHisami/eagler-touhou/blob/main/docs/DEVELOPMENT.md)。构建会安装锁定的 npm 依赖，并在 `.cache/python/` 建立 Python 环境。首次运行需要取得这些依赖。
+独立包使用 Node.js 22 或更新版本和 CPython 3.12—3.14。构建会安装包内锁定的 npm 依赖，并在 `.cache/python-environments/` 建立隔离 Python 环境。首次运行需要取得这些依赖。源码开发的环境要求见源码仓库根目录 `docs/DEVELOPMENT.md`。
 
 | 输入 | 位置及用途 |
 | --- | --- |
@@ -74,4 +74,4 @@ npm run verify:deployed -- https://example.com/
 
 再用目标浏览器完成一次资源安装、进入游戏和存档重载。HTTP 检查不会替浏览器执行 CORS，也不会证明游戏运行正确。
 
-自托管包制作见[项目发布流程](https://github.com/YomotsuHisami/eagler-touhou/blob/main/docs/playbooks/release.md)。上述构建命令不执行上传、GitHub 发布或生产切换。
+制作自托管包的入口见源码仓库 `docs/playbooks/release.md`。上述命令组装和检查本地站点；上传及服务器切换由部署者另行执行。

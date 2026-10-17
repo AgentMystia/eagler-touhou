@@ -1,6 +1,6 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import { appendRttSample, compactDiagnosticText, compactNetplayPeerStatus, compactRendererLabel, describeBrowserEnvironment, describeNetplayConnection, runtimeDiagnosticsVisibleByDefault, selectedRtcPair }
-  from "../.cache/build/browser/assets/launcher/runtime-diagnostics-model.mjs";
+const { appendRttSample, compactDiagnosticText, compactNetplayPeerStatus, compactRendererLabel, describeBrowserEnvironment, describeNetplayConnection, runtimeDiagnosticsVisibleByDefault, selectedRtcPair } = await importClientService('launcher/runtime-diagnostics-model.mjs');
 
 assert.equal(runtimeDiagnosticsVisibleByDefault(true, true), true);
 for (const [testBuild, launched] of [[false, true], [true, false], ["true", true], [true, 1]]) {

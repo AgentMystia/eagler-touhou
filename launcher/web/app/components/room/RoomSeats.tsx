@@ -193,6 +193,9 @@ function RoomSeat({
       <strong className="mp-seat-name" data-mp-seat-name={index}>
         {occupied ? seatLabel : ''}
       </strong>
+      {state.product === 'th09mp' && seat?.stats && (
+        <span className="mp-seat-match-stats">{t('room.matchStats', { ...seat.stats })}</span>
+      )}
       <span className="mp-seat-state" data-mp-seat-state={index}>
         {!occupied
           ? ''

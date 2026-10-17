@@ -1,5 +1,6 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from 'node:assert/strict';
-import {createFunctionKeyOwner,functionKeySpec,functionKeyGames} from '../.cache/build/browser/assets/launcher/touch-function-key.mjs';
+const {createFunctionKeyOwner,functionKeySpec,functionKeyGames} = await importClientService('launcher/touch-function-key.mjs');
 const events=[];let pending=null;
 const fire=()=>{const fn=pending;pending=null;fn();};
 const key=createFunctionKeyOwner(down=>events.push(down),'tap',fn=>(pending=fn),()=>{pending=null;});

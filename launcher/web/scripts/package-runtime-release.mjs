@@ -1,3 +1,4 @@
+import { RUNTIME_VARIANTS, validateRuntimeVariants } from '../lib/runtime-variants.mjs';
 import {normalizeProductSelection} from "../lib/product-selection.mjs";
 import { writeRuntimeGeneration } from "../lib/runtime-generations.mjs";
 import { createHash, randomUUID } from "node:crypto";
@@ -35,10 +36,19 @@ try {
 }
 const temporaryRoot = resolve(dirname(output), ".tmp");
 const staging = resolve(temporaryRoot, `${basename(output)}.staging-${randomUUID()}`);
-const builds = Object.fromEntries(selectedGames.flatMap(game => [
-  [game, required(`${game}-build`)],
-  ...(PRODUCT_GAMES[game].multiplayerRuntime ? [[`${game}Multiplayer`, required(`${game}-multiplayer-build`)]] : []),
-]));
+const builds = Object.fromEntries(selectedGames.map(game => {
+  const entry = {};
+  for (const variant of RUNTIME_VARIANTS) {
+    const key = game + (variant.name === 'normal' ? '-build' : '-multiplayer-build');
+    if (args[key]) entry[variant.field] = resolve(args[key]);
+  }
+  validateRuntimeVariants(game, entry);
+  return [game, entry];
+}));
+for (const game of Object.keys(PRODUCT_GAMES)) {
+  if (!selectedGames.includes(game) && (args[game + '-build'] || args[game + '-multiplayer-build']))
+    throw new Error(game + ': build supplied outside --games selection');
+}
 
 async function identity(path) {
   const bytes = await readFile(path);
@@ -116,49 +126,44 @@ try {
 const games = {};
 for (const game of selectedGames) {
   const product = PRODUCT_GAMES[game];
-  const normalBuild = builds[game];
-  const normalRoot = `runtime/${game}`;
-  const runtime = await immutableVariant(game, normalBuild, normalRoot, "normal");
-  let multiplayerRuntime = null;
-  if (product.multiplayerRuntime) {
-    const multiplayerBuild = builds[`${game}Multiplayer`];
-    const multiplayerRoot = `runtime/${game}/multiplayer`;
-    multiplayerRuntime = await immutableVariant(game, multiplayerBuild, multiplayerRoot, "multiplayer");
-  }
-
+  const variants = validateRuntimeVariants(game, builds[game]);
+  const collected = {};
   let dataLayout = null;
-  let normalLayout = null;
-  if (product.dataProvider === "emscripten-preload") {
-    const normalJs = await readFile(resolve(normalBuild, `${game}.js`), "utf8");
-    normalLayout = extractGameDataLayout(normalJs, game);
-    dataLayout = normalLayout.layout;
-    if (multiplayerRuntime) {
-      const multiplayerJs = await readFile(resolve(builds[`${game}Multiplayer`], `${game}.js`), "utf8");
-      const multiplayerLayout = extractGameDataLayout(multiplayerJs, game);
-      if (normalLayout.layout !== multiplayerLayout.layout || normalLayout.bytes !== multiplayerLayout.bytes) {
-        throw new Error(`${game}: normal and multiplayer Runtime DATA layouts differ`);
-      }
+  let layout = null;
+  const features = [];
+  for (const {name, field, suffix, runtime: build} of variants) {
+    collected[field] = await immutableVariant(game, build, 'runtime/' + game + suffix, name);
+    let currentLayout = null;
+    if (product.dataProvider === 'emscripten-preload') {
+      currentLayout = extractGameDataLayout(await readFile(resolve(build, game + '.js'), 'utf8'), game);
+      if (layout && (layout.layout !== currentLayout.layout || layout.bytes !== currentLayout.bytes))
+        throw new Error(game + ': Runtime variants use different DATA layouts');
+      layout ??= currentLayout;
+      dataLayout = layout.layout;
+    } else {
+      const { PRODUCT_CONTENT } = await import('../lib/content-definition.mjs');
+      dataLayout = PRODUCT_CONTENT[game]?.dataLayout;
     }
-  } else {
-    // retail-memory providers use the product's declared original-content layout.
-    const { PRODUCT_CONTENT } = await import("../lib/content-definition.mjs");
-    dataLayout = PRODUCT_CONTENT[game]?.dataLayout;
+    const directory = product.runtimeFileLayout === 'directory'
+      ? await directoryFeatureAttestation(game, build) : null;
+    const compile = directory ? '' : await compileAttestation(build);
+    const attested = {
+      thprac: !!product.features.thprac && (directory?.thprac === true || compile.includes('THPRAC_PORTABLE_ENABLED=1')),
+      languages: !!product.features.languages && (directory?.languages === true || compile.includes('-DTH_ENABLE_THCRAP ')),
+      focusHitbox: !!product.features.focusHitbox && (directory?.focusHitbox === true ||
+        !!currentLayout?.files.some(([path]) => path === '/eagler-hitbox.png')),
+    };
+    collected[field].features = attested;
+    features.push(attested);
   }
-
-  const directoryFeatures = product.runtimeFileLayout === "directory"
-    ? await directoryFeatureAttestation(game, normalBuild)
-    : null;
-  const compile = directoryFeatures ? "" : await compileAttestation(normalBuild);
+  // Site feature controls apply to every published variant of a game. Advertise
+  // only capabilities attested by each selected variant; retain individual
+  // attestations for independent collection and later combination.
   games[game] = {
-    dataProvider: product.dataProvider,
-    dataLayout,
-    runtime,
-    ...(multiplayerRuntime ? { multiplayerRuntime } : {}),
-    features: {
-      thprac: !!product.features.thprac && (directoryFeatures?.thprac === true || compile.includes("THPRAC_PORTABLE_ENABLED=1")),
-      languages: !!product.features.languages && (directoryFeatures?.languages === true || compile.includes("-DTH_ENABLE_THCRAP ")),
-      focusHitbox: !!product.features.focusHitbox && (directoryFeatures?.focusHitbox === true || !!normalLayout?.files.some(([path]) => path === "/eagler-hitbox.png")),
-    },
+    dataProvider: product.dataProvider, dataLayout, ...collected,
+    features: Object.fromEntries(Object.keys(product.features).filter(key =>
+      ['thprac', 'languages', 'focusHitbox'].includes(key)).map(key =>
+      [key, features.every(value => value[key])])),
   };
 }
 

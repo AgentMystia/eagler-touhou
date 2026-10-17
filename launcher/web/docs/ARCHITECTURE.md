@@ -23,11 +23,11 @@
 
 浏览器后退、关闭窗口、切换游戏和退出房间需要经过当前会话的退出规则。确认视图只返回选择，不能自行停止 Runtime 或重写资源状态。纯地址转换不读取房间或游戏存储。
 
-导航协调文件仍较大；后续拆分应以独立订阅、状态拥有者和行为为依据，不能为了行数把同一个历史栈拆成多个互相修正的控制器。
+`use-surface-selection.ts` 合并当前文档选择、地址与临时覆盖层，保留语言切换时的选择；`use-navigation-departure.ts` 管理异步关闭/退房与卸载，关闭结果只确认原导航目标。`surface-navigation.tsx` 仍统一连接历史与业务动作。
 
 ## Runtime 生命周期与协议
 
-`runtime/types.ts` 保存接口，`runtime/channel.ts` 负责消息通道，`runtime/resources.ts` 管理资源，`runtime/errors.ts` 定义可判断的错误。`runtime.ts` 负责组合和生命周期，避免多个模块同时创建、关闭或复用 iframe。
+`runtime/types.ts` 保存接口，`runtime/channel.ts` 负责消息通道，`runtime/resources.ts` 管理资源，`runtime/errors.ts` 定义可判断的错误。`runtime/file-sessions.ts` 独占文件事务、验证 epoch 与只读权限，重启时衔接 Package 租约；`runtime.ts` 保留 iframe 与运行生命周期的统一拥有权。
 
 等待失败通过 `RuntimeWaitTimeoutError` 等错误类型判断；中文或英文显示文本不决定重试。启动请求使用当前代次和取消信号，过期回调不能取得新会话的页面、文件或输入所有权。
 
@@ -37,7 +37,7 @@
 
 资源准备决定当前游戏所需的 DATA、语言、音乐和 Runtime；Package 安装以完整代次提交。展示进度不拥有缓存提交权限。文件 Runtime 只持有当前操作所需的租约，取消、关闭和切换会话应释放租约，失败后不得覆盖已提交存档。
 
-`browser-session.ts` 仍承担应用级协调；其内部的临时文件路径已经独立到 `file-runtime.ts`。继续拆分前先检查相应 mounted tests，尤其是取消、重新打开和旧请求迟到的行为。
+`browser-session.ts` 负责应用级组合，`file-runtime.ts` 管理临时文件 Runtime 准备和租约。`preparation-activity.ts` 拥有启动准备、可选更新/音乐及必要下载的取消信号，旧任务必须经 `isCurrent` 验证才能改变当前活动标记；取消可选更新不能误取消当前启动。`runtime-observation.ts` 拥有诊断订阅、网络观察与遥测时钟，随 iframe 会话释放，不拥有游戏或房间状态。
 
 ## 输入、房间与渲染
 

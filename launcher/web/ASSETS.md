@@ -21,3 +21,5 @@
 公告的 Bilibili、QQ、GitHub 图标来自 Font Awesome Brands；界面和触控中的 Material Symbols 使用本地 SVG 路径。Touhou Cloud 标识用于服务来源识别。房间图标来自 Phosphor，署名与许可见 [THIRD_PARTY.md](THIRD_PARTY.md) 及资源旁的许可文件。
 
 房间头像目前使用文字占位；不要把占位显示描述为真实用户身份或新发布美术。公开资源清单由发布策略检查；增加 `public/assets/` 文件后，需要同时确认来源、许可和实际用途。
+
+播放器的播放、暂停、直播、聊天及座位图标同样来自 Phosphor Icons，固定来源提交为 `2b75f3ad12b420c9504ef05df8d2564a28f8500e`。`public/assets/phosphor-ui-icons.json` 记录五个 SVG 的原始路径与 SHA256，`LICENSE-Phosphor.txt` 保留 MIT 原文；发布审计只允许这些明确登记的文件，不放宽其他资源规则。

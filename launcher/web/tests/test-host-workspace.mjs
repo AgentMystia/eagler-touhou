@@ -47,7 +47,7 @@ for (const marker of th15Alternative.markerFiles) await put(join(layout.games.th
 for (const name of PRODUCT_CONTENT.th20.original.oggSourceFiles) await put(join(layout.games.th20, name));
 const full = await inspectHostWorkspace(root);
 assert.deepEqual(full.music, ["midi", "ogg"]);
-assert.equal(full.runtimeReleaseSchema, "eagler-touhou/runtime-release/2");
+assert.equal(full.runtimeReleaseSchema, "eagler-touhou/runtime-release/3");
 assert.equal(full.games.th08, layout.games.th08);
 assert.equal(full.games.th10, layout.games.th10);
 assert.equal(full.hostConfig.present, false);

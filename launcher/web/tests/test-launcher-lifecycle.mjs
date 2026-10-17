@@ -1,11 +1,12 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import {
+const {
   confirmRuntimeClose,
   createGameDataContinuation,
   gameDataContinuationMatches,
   runtimeSessionAcceptsGenerationRevision,
   shouldDeferAppShellReload,
-} from "../.cache/build/browser/assets/launcher/launcher-lifecycle.mjs";
+} = await importClientService('launcher/launcher-lifecycle.mjs');
 
 const idle={launched:false,runtimeReady:false,runtimeSessionActive:false,touchLayoutEditing:false,blockingOperation:false,gameDataAttempt:false,launchInFlight:false,decisionOpen:false,replayOpen:false};
 assert.equal(shouldDeferAppShellReload(idle),false);

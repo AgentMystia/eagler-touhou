@@ -4,7 +4,7 @@
 
 ## 输入、缓存和产物
 
-运营者维护 `eagler-touhou.config.json`、`games/`、`shared/`、可选 `artwork/` 和 `runtime-release/`。`.cache/python/`、`.cache/tools/`、`.cache/generated/` 保存可重建的工具及中间产物。`dist/site/`、`dist/import-site/`、`dist/import/` 和派生的 `dist/external-site/` 是输出。
+运营者维护 `eagler-touhou.config.json`、`games/`、`shared/`、可选 `artwork/` 和 `runtime-release/`。`.cache/python-environments/`、`.cache/tools/`、`.cache/generated/` 保存可重建的工具及中间产物。`dist/site/`、`dist/import-site/`、`dist/import/` 和派生的 `dist/external-site/` 是输出。
 
 修改输入后重新生成；不要直接修改 DATA、语言包或音乐产物后继续使用旧清单。
 
@@ -40,7 +40,7 @@
 
 源码使用根 npm lock；独立自托管包使用包内 lock。Node 启动器会在必要时执行 npm ci，且检查要求的依赖版本。Windows 的 npm 通过实际 npm-cli.js 调用，路径包含空格也不需要拼接 shell 命令。
 
-Python 环境由 Host 创建。当前 `host/requirements.txt` 使用版本范围，环境有效性检查不能等同于完整依赖哈希锁定；可重复发布应记录实际 Python 和安装版本。后续完善见[审计清单](https://github.com/YomotsuHisami/eagler-touhou/blob/main/docs/ENGINEERING_AUDIT.md)。
+Python 环境由 Host 创建，支持 CPython 3.12—3.14。`host/requirements.txt` 锁定包版本和 wheel SHA-256，安装要求 hash 匹配且只接受 wheel。环境身份包括解释器实现/版本/平台、锁和检查器内容；复用前检查安装的发行包集合及文件指纹。修改锁后会选择新的环境，不直接覆盖旧环境。
 
 Windows 的 thtk 12 包会校验下载哈希；非 Windows 由运营者安装 `thdat` 和 `thmsg`。只选择日文不会强制安装翻译工具。原版游戏数据不会由依赖安装器下载。
 
@@ -61,7 +61,7 @@ Windows 的 thtk 12 包会校验下载哈希；非 Windows 由运营者安装 `t
 
 参考实现位于根 `services/netplay/`，源码执行 `npm run relay`。静态自托管包与独立服务包是不同交付物。可部署兼容服务并把 WSS 地址写入配置。
 
-服务端拥有房间、信令、WebSocket 中继和 TURN 凭据下发；客户端通过 WebRTC 或中继传输。配置存在不代表链路可用，须检查信令、实际双端传输及断线恢复。流程见[多人联机 playbook](https://github.com/YomotsuHisami/eagler-touhou/blob/main/docs/playbooks/multiplayer.md)。
+服务端拥有房间、信令、WebSocket 中继和 TURN 凭据下发；客户端通过 WebRTC 或中继传输。部署后检查信令、实际双端传输及断线恢复；完整服务流程在源码仓库 `docs/playbooks/multiplayer.md` 和 `docs/playbooks/deployment-network.md`。
 
 ## Origin 迁移
 

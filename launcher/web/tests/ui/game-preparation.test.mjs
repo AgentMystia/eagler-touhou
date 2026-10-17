@@ -983,6 +983,21 @@ test('main 4126: cancelling language aborts launch rather than choosing optional
   assert.equal(JSON.stringify([...state.storage]), before);
 });
 
+test('experimental complete-set startup acquires every declared OGG without replacing pinned DATA', async () => {
+  const current = generation({ogg:['track-1','track-2']}), requests=[];
+  const acquisition = {
+    catalogUrl: new URL('release-catalog.json',baseUrl).href,
+    getMetadata:()=>({siteManifest:host(),releaseCatalog:catalog()}),
+    getPackageFetch:()=>fetch,
+    installPublished:async(game,options)=>{requests.push(options.addFileIds);return {generation:added(current,options.addFileIds)};},
+    refreshInstalled:async()=>{},
+  };
+  const result=await api.ensureOggStartup({generation:current,music:'ogg-stream',completeSet:true,acquisition,translate:t});
+  assert.deepEqual(requests,[['track-1','track-2','track-3','track-4']]);
+  assert.equal(result.music,'ogg-stream');
+  assert.deepEqual(result.generation.files['game-data'],current.files['game-data']);
+  for(const id of requests[0])assert.ok(result.generation.files[id]?.objectId);
+});
 test('main 5768 and music availability original: exactly two OGG tracks gate startup, DATA stays pinned, remaining tracks start after launch', async () => {
   const initial = generation(),
     order = [],

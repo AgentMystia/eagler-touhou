@@ -27,6 +27,7 @@ before(async () => {
       loader: 'ts',
       contents: `
     export {MultiplayerQuickChat} from './app/components/player/MultiplayerQuickChat.tsx';
+    export {RoomQuickChat} from './app/components/room/RoomQuickChat.tsx';
     export {PlayerSurface} from './app/components/player/PlayerSurface.tsx';
     export {createMultiplayerQuickChatModel} from './src/launcher/multiplayer-quick-chat-model.mts';
     export {QUICK_CHAT_ROWS} from '@eagler/contracts/multiplayer-quick-chat';
@@ -133,7 +134,7 @@ const query = (selector) => {
   assert.ok(value, selector);
   return value;
 };
-async function mount(model, { strict = false, dispose } = {}) {
+async function mount(model, { strict = false, dispose, room = false } = {}) {
   const host = env.document.createElement('div');
   env.document.body.append(host);
   const root = createRoot(host);
@@ -149,9 +150,9 @@ async function mount(model, { strict = false, dispose } = {}) {
         editing: false,
         onElement: () => {},
       },
-      React.createElement(owner.MultiplayerQuickChat, {
-        model,
-      }),
+      React.createElement(React.Fragment, null,
+        React.createElement(owner.MultiplayerQuickChat, {model}),
+        room ? React.createElement(owner.RoomQuickChat, {model}) : null),
     ),
   );
   mounted = {
@@ -178,6 +179,22 @@ function fixture() {
     model,
   };
 }
+test('pregame room chat is independent and shares safe text, send and ten-second expiry', async () => {
+  const {model,clock,calls}=fixture();
+  model.update({...context(),inRoom:true});
+  await mount(model,{room:true,strict:true});
+  assert.equal(query('.mp-quick-chat').hidden,true);
+  assert.equal(query('#mpRoomChat').contains(query('.mp-quick-chat')),false);
+  await act(()=>query('#mpRoomChat [data-phrase="1"]').click());
+  assert.equal(calls.at(-1)[0],'send');
+  await act(()=>model.receive(message()));
+  assert.equal(query('#mpRoomChat .mp-room-chat-log strong').textContent,'P2(<img src=x onerror=alert(1)>)');
+  assert.equal(query('#mpRoomChat').querySelector('img'),null);
+  await act(()=>clock.tick(9999));
+  assert.equal(query('#mpRoomChat .mp-room-chat-log').children.length,1);
+  await act(()=>clock.tick(1));
+  assert.equal(query('#mpRoomChat .mp-room-chat-log').children.length,0);
+});
 test('actual React chat keeps main copy, safe author text, stable controls, mute history and Player identity', async () => {
   const { model, calls } = fixture();
   await mount(model);
@@ -201,7 +218,7 @@ test('actual React chat keeps main copy, safe author text, stable controls, mute
   assert.equal(env.document.activeElement, phrase);
   assert.equal(query('.mp-quick-chat-log').children.length, 1);
   assert.equal(query('.mp-quick-chat-log').querySelector('img'), null);
-  assert.equal(query('.mp-quick-chat-log strong').textContent, 'P2 <img src=x onerror=alert(1)>');
+  assert.equal(query('.mp-quick-chat-log strong').textContent, 'P2(<img src=x onerror=alert(1)>)');
   await act(() => phrase.click());
   assert.deepEqual(calls.at(-1), [
     'send',
@@ -332,14 +349,14 @@ test('StrictMode expiry waits fade completion; reset, unmount and dispose cancel
     await act(() => model.receive(message()));
     const arrival = native.records.find((record) => record.options.duration === 240);
     assert.equal(arrival.frames[0].opacity, 0);
-    await act(() => clock.tick(3000));
+    await act(() => clock.tick(10000));
     const fade = native.records.find((record) => record.options.duration === 280);
     assert.ok(fade);
     assert.equal(query('.mp-quick-chat-log').children.length, 1);
     await act(() => fade.finish());
     assert.equal(query('.mp-quick-chat-log').children.length, 0);
     await act(() => model.receive(message()));
-    await act(() => clock.tick(3000));
+    await act(() => clock.tick(10000));
     const stale = native.records.findLast((record) => record.options.duration === 280);
     await act(() =>
       model.update({
@@ -357,7 +374,7 @@ test('StrictMode expiry waits fade completion; reset, unmount and dispose cancel
       );
     });
     assert.equal(query('.mp-quick-chat-log').children.length, 1);
-    await act(() => clock.tick(3000));
+    await act(() => clock.tick(10000));
     const pending = native.records.findLast((record) => record.options.duration === 280);
     await act(() => mounted.root.unmount());
     assert.equal(pending.canceled, true);
@@ -583,7 +600,7 @@ test('model disposal while React remains mounted cancels active fade and leaves 
       strict: true,
     });
     await act(() => model.receive(message()));
-    await act(() => clock.tick(3000));
+    await act(() => clock.tick(10000));
     const fade = native.records.find((record) => record.options.duration === 280);
     assert.ok(fade);
     await act(() => model.dispose());
@@ -611,7 +628,7 @@ test('retained portals evict visible and muted rows at 50 and cancel all detache
     assert.equal(query('.mp-quick-chat-log').children.length, 0);
     await act(() => model.toggleMember('b'));
     assert.equal(query('.mp-quick-chat-log').children.length, 50);
-    await act(() => clock.tick(3000));
+    await act(() => clock.tick(10000));
     const fades = native.records.filter((record) => record.options.duration === 280);
     assert.equal(fades.length, 50);
     await act(() => model.toggleMember('b'));
@@ -643,7 +660,7 @@ test('presentation remount cancels detached fade but preserves another entry and
       strict: true,
     });
     await act(() => model.receive(message()));
-    await act(() => clock.tick(3000));
+    await act(() => clock.tick(10000));
     const fade = native.records.find((record) => record.options.duration === 280);
     await act(() => {
       model.toggleMember('b');
@@ -661,7 +678,7 @@ test('presentation remount cancels detached fade but preserves another entry and
     assert.equal(query('.mp-quick-chat-log').children.length, 0);
     await act(() => model.toggleMember('b'));
     assert.equal(query('.mp-quick-chat-log').children.length, 1);
-    await act(() => clock.tick(3000));
+    await act(() => clock.tick(10000));
     await act(() => native.records.findLast((record) => record.options.duration === 280).finish());
     assert.equal(query('.mp-quick-chat-log').children.length, 0);
     assert.equal(clock.tasks.size, 0);

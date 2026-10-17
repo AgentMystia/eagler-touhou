@@ -8,7 +8,7 @@ import {
   SELF_HOST_BUNDLE_COPY_RULES,
   SELF_HOST_BUNDLE_NODE_DEPENDENCIES,
 } from '../lib/self-host-bundle.mjs';
-import { FRONTEND_PACKAGE_FILES, resolveFrontendPackageSource } from '../lib/frontend-manifest.mjs';
+import { FRONTEND_PACKAGE_FILES, REACT_FRONTEND_ARTIFACT, resolveFrontendPackageSource } from '../lib/frontend-manifest.mjs';
 
 const project = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const targets = new Map(SELF_HOST_BUNDLE_COPY_RULES.map((rule) => [rule.target, rule.source]));
@@ -86,9 +86,9 @@ for (const file of ['assets/notice-github.svg', 'vendor/fflate.min.js']) {
   );
 }
 for (const file of ['index.html', 'en.html', 'styles.css']) {
-  assert.match(
+  assert.equal(
     targets.get(file),
-    /^\.cache\/build\/ui\/client\//,
+    relative(project, REACT_FRONTEND_ARTIFACT.resolveSource(file)).replaceAll('\\', '/'),
     `optimized browser output must be used for ${file}`,
   );
 }
@@ -171,10 +171,11 @@ for (const target of targets.keys()) {
 // Exercise the actual packaged boundary, not only the source-checkout
 // manifest. This fixture is assembled from the production copy rules and keeps
 // src/app-shell-sw.js while omitting all TypeScript sources and node_modules.
-// Before the source-set check in launcher-build.mjs, importing the copied
-// launcher-build module incorrectly treated this as a source checkout and
-// failed with "Application TypeScript source tree is empty".
+// Its contract facade must work without a compiler or source checkout.
 const smokeRoot = await mkdtemp(resolve(project, '.cache', 'self-host-bundle-smoke-'));
+const sourceFrontendEnvironment = Object.fromEntries(
+  Object.entries(process.env).filter(([key]) => key === 'EAGLER_FRONTEND' || key.startsWith('EAGLER_REACT_')),
+);
 try {
   for (const rule of SELF_HOST_BUNDLE_COPY_RULES) {
     const source = resolve(project, rule.source);
@@ -182,21 +183,16 @@ try {
     await mkdir(resolve(target, '..'), { recursive: true });
     await cp(source, target);
   }
-  const packagedLauncher = await import(
-    pathToFileURL(resolve(smokeRoot, 'lib/client-services-build.mjs')).href
+  // The extracted package owns its prebuilt frontend. A source checkout's
+  // selected build directory must not select an absent build inside the ZIP.
+  for (const key of Object.keys(sourceFrontendEnvironment)) delete process.env[key];
+  const packagedContracts = await import(
+    pathToFileURL(resolve(smokeRoot, 'lib/contracts-build.mjs')).href
   );
-  const packagedResult = await packagedLauncher.ensureClientServicesBuild({ force: true });
-  assert.deepEqual(packagedResult, { built: false, mode: 'prebuilt', sourceCount: 0 });
-  assert.equal(
-    packagedLauncher.resolveBrowserPublicationSource('assets/contracts/product-catalog.mjs'),
-    resolve(smokeRoot, 'assets/contracts/product-catalog.mjs'),
-    'self-host bundle must resolve compiled browser modules from packaged assets',
-  );
-  assert.equal(
-    packagedLauncher.resolveBrowserPublicationSource('product-catalog.mjs'),
-    resolve(smokeRoot, 'product-catalog.mjs'),
-    'self-host bundle must resolve browser facades from packaged root files',
-  );
+  const contractBuild = await packagedContracts.ensureContractsBuild({ project: smokeRoot });
+  assert.equal(contractBuild.mode, 'prebuilt');
+  const catalog = await import(pathToFileURL(resolve(contractBuild.contractsDirectory, 'product-catalog.mjs')).href);
+  assert.ok(catalog.PRODUCT_IDS.includes('th06'));
   const packagedManifest = await import(
     pathToFileURL(resolve(smokeRoot, 'lib/frontend-manifest.mjs')).href
   );
@@ -243,6 +239,7 @@ try {
     'packaged External entrypoint must load its complete module closure and reach argument validation',
   );
 } finally {
+  Object.assign(process.env, sourceFrontendEnvironment);
   await rm(smokeRoot, { recursive: true, force: true });
 }
 

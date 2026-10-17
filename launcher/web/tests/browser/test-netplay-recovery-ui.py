@@ -9,23 +9,16 @@ project=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(project/'tests'))
 from support.component_fixture import component_fixture
 fixture=component_fixture(project,'netplay-recovery')
-panel_selector=fixture['panelSelector'] if fixture else '#connection'
-html='''<!doctype html><html data-ui-locale="zh"><meta charset="utf-8"><link rel="stylesheet" href="/styles.css">
-<aside id="connection" class="netplay-connection-window"><header><strong id="netplayConnectionTitle"></strong></header><div id="netplayConnectionSummary"></div><div id="netplayConnectionPeers"></div><p id="netplayConnectionNote" hidden></p></aside>
-<script type="module">
-import {recordCalibrationProgress,renderCalibrationConnection} from '/assets/launcher/netplay-calibration-connection.mjs';
-window.returns=0;window.show=phase=>{recordCalibrationProgress({phase,attempt:2,maxAttempts:4,reason:1,probes:10,replies:1});renderCalibrationConnection(document.querySelector('#connection'),()=>++returns)};
-window.show('retrying');window.ready=true;
-</script></html>'''
-if fixture:html=fixture['html']
+panel_selector=fixture['panelSelector']
+html=fixture['html']
 class Handler(BaseHTTPRequestHandler):
  def log_message(self,*args):pass
  def do_GET(self):
   path=self.path.split('?')[0]
   if path=='/':data=html.encode();mime='text/html'
-  elif fixture and path=='/__component-fixture.mjs':data=fixture['module'].encode();mime='text/javascript'
+  elif path=='/__component-fixture.mjs':data=fixture['module'].encode();mime='text/javascript'
   else:
-   root=project/'.cache/build/browser' if path.startswith('/assets/launcher/') or path.startswith('/assets/contracts/') else project/'public'
+   root=project/'public'
    file=(root/path.lstrip('/')).resolve()
    if not file.is_relative_to(root.resolve()) or not file.is_file():self.send_error(404);return
    data=file.read_bytes();mime='text/javascript' if file.suffix=='.mjs' else 'text/css' if file.suffix=='.css' else 'application/octet-stream'

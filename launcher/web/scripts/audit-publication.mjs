@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { extname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sourceProjectRoot } from "../lib/source-layout.mjs";
 
 const args = process.argv.slice(2);
 const directoryArgument = args.find(value => value.startsWith("--directory="));
@@ -35,6 +36,10 @@ const publicAssets = new Set([
   "assets/room-chart-bar.svg", "assets/room-copy.svg",
   "assets/room-gear-six.svg", "assets/room-sliders-horizontal.svg",
   "assets/room-users.svg", "assets/room-icons-LICENSE.txt",
+  // Reviewed Phosphor playback/chat and seat icons, with their MIT provenance.
+  "assets/room-user.svg", "assets/player-chat.svg", "assets/player-live.svg",
+  "assets/player-pause.svg", "assets/player-play.svg",
+  "assets/LICENSE-Phosphor.txt", "assets/phosphor-ui-icons.json",
   "assets/fonts/touhou98.woff2",
   "assets/fonts/unifont-site.woff2",
   "assets/fonts/OFL-Unifont.txt",
@@ -97,12 +102,14 @@ async function walk(directory) {
     else await inspect(path);
   }
 }
-if (!directoryArgument && existsSync(resolve(project, ".git"))) {
+const repository = directoryArgument ? project : sourceProjectRoot(project);
+if (!directoryArgument && existsSync(resolve(repository, ".git"))) {
   // Source publication candidates are tracked + nonignored new source, not
   // private local validation outputs. Force-added ignored assets remain tracked
   // and therefore still fail. A concrete export is audited with --directory.
-  const files = new Set(execFileSync("git", ["-C", project, "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-    {encoding:"utf8"}).split("\0").filter(Boolean));
+  const files = new Set(execFileSync("git", ["-C", repository, "ls-files", "--cached", "--others", "--exclude-standard", "-z",
+    "--", relative(repository, project) || "."], {encoding:"utf8"}).split("\0").filter(Boolean)
+    .map(file => relative(project, resolve(repository, file)).replaceAll("\\", "/")));
   for (const asset of publicAssets) {
     const sourcePath = `public/${asset}`;
     if (existsSync(resolve(project, sourcePath))) files.add(sourcePath);

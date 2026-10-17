@@ -1,10 +1,11 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import {
+const {
   InstalledGameDataError,
   managedRuntimeUrl,
   readManagedRuntimeData,
   readManagedRuntimeResource,
-} from "../.cache/build/browser/assets/launcher/runtime-preparation.mjs";
+} = await importClientService('launcher/runtime-preparation.mjs');
 
 function bytes(...values) {
   return new Uint8Array(values).buffer;

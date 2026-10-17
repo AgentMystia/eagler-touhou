@@ -66,11 +66,11 @@ test('missing service resumes paused title with network-cancel and original toas
   assert.equal(f.model.getSnapshot().open, false);
   f.model.dispose();
 });
-test('create selects original four-digit random room and switches only overlay room state', () => {
+test('create selects an eight-digit random room and switches only overlay room state', () => {
   const f = fixture();
   f.model.open();
   f.model.create();
-  assert.deepEqual(f.calls, [['enter', 'th09mp', '4345', true]]);
+  assert.deepEqual(f.calls, [['enter', 'th09mp', '00012345', true]]);
   assert.equal(f.model.getSnapshot().room, true);
   assert.equal(f.state.product, 'th09');
   f.model.dispose();

@@ -90,7 +90,7 @@ export async function buildAppShell({
   };
   const runtimeSource = await readFile(resolve(project, "src/runtime-cache-sw.js"), "utf8");
   const shellSource = await readFile(sourcePath, "utf8");
-  const workerContract = workerContractSource ?? await readFile((await import("./client-services-build.mjs")).resolveBrowserPublicationSource("assets/contracts/runtime-generations-worker.js"), "utf8");
+  const workerContract = workerContractSource ?? await readFile(await (await import("./contracts-build.mjs")).resolveRuntimeGenerationWorkerSource(), "utf8");
   const legacyReader = await readFile(resolve(project, "compat/runtime-generation-reader.js"), "utf8");
   const source = `${workerContract}\n${legacyReader}\n${runtimeSource}\n${shellSource}`;
   if (!source.includes("__APP_SHELL_BUILD_ID__") || !source.includes("__APP_SHELL_DEFERRED_PATHS__") || !source.includes("self.__WB_MANIFEST")) {

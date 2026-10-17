@@ -1,3 +1,5 @@
+import { useNavigationDeparture } from './use-navigation-departure';
+import { useSurfaceSelection } from './use-surface-selection';
 import { navigationBlockReason } from './navigation-policy';
 import {
   createContext,
@@ -226,56 +228,62 @@ export function SurfaceNavigationProvider({
   const staleInfo = Object.keys(infoEntry).length > 0 && !validInfo;
   const resolvedSurface = (value: Location) => resolveSurface(value, dialogSession);
   const urlAddress = resolvedSurface(location);
-  // main1499–1533 keeps business selection independent of the raw address.
-  // This is one document-lived value, never a set of history-entry receipts.
-  const [hostSelection, setHostSelection] = useState<HostSelection | null>(null);
-  const selectionLocation = useRef(location);
-  const previousSelectedProduct = useRef<ProductId>(
-    urlAddress.productId && productAvailable(urlAddress.productId)
-      ? urlAddress.productId
-      : DEFAULT_PRODUCT_ID,
-  );
-  const previousSurface = useRef<Surface>(urlAddress.surface);
-  const locationChanged = selectionLocation.current.key !== location.key;
-  const previousState = plainState(selectionLocation.current.state),
-    nextState = plainState(location.state);
-  const sameAddress = href(selectionLocation.current) === href(location);
-  const overlayTransition =
-    sameAddress &&
-    (previousSurface.current === 'touch' ||
-      (navigationType === 'PUSH' && touchEntryKey in nextState) ||
-      [infoEntryKey, roomPanelKey, roomSettingsKey, directoryFormKey, gameEntryKey].some(
-        (key) => JSON.stringify(previousState[key]) !== JSON.stringify(nextState[key]),
-      ));
-  const localeTransition =
-    pendingLocaleAddress.current?.sourceKey === selectionLocation.current.key &&
-    pendingLocaleAddress.current.target === href(location);
-  const retainHostSelection = !locationChanged || overlayTransition || localeTransition;
-  const activeHostSelection = retainHostSelection ? hostSelection : null;
-  useLayoutEffect(() => {
-    if (!locationChanged) return;
-    selectionLocation.current = location;
-    if (!retainHostSelection) {
-      setHostSelection(null);
-      const owner = plainState(nextState[entryKey]);
-      const selected =
-        urlAddress.context === 'lobby' &&
-        owner.surface === 'options' &&
-        isProductId(String(owner.productId))
-          ? (owner.productId as ProductId)
-          : urlAddress.productId;
-      const freshLobbyOptions =
-        urlAddress.context === 'lobby' &&
-        owner.surface === 'options' &&
-        JSON.stringify(previousState[entryKey]) !== JSON.stringify(nextState[entryKey]);
-      if (
-        selected &&
-        productAvailable(selected) &&
-        (freshLobbyOptions || selected !== previousSelectedProduct.current)
-      )
-        onRouteSelection?.(selected, urlAddress.context);
-    }
-  }, [location.key]);
+  const optionEntry = plainState(plainState(location.state)[entryKey]);
+  // main lobby.mts58–65 retires its options sheet on a document reload.
+  // Library ?game remains a durable options address.
+  const retiredLobbyOptions =
+    urlAddress.context === 'lobby' &&
+    optionEntry.surface === 'options' &&
+    optionEntry.session !== dialogSession;
+  const selectionHidden =
+    plainState(plainState(location.state)[hiddenSelectionKey]).session === dialogSession;
+  const staleHidden = hiddenSelectionKey in plainState(location.state) && !selectionHidden;
+  const ownedOptions =
+    !selectionHidden &&
+    !retiredLobbyOptions &&
+    optionEntry.version === 1 &&
+    optionEntry.surface === 'options' &&
+    optionEntry.href === href(location) &&
+    typeof optionEntry.productId === 'string' &&
+    isProductId(optionEntry.productId);
+  const baseAddress: SurfaceAddress = ownedOptions
+    ? {
+        ...urlAddress,
+        surface: 'options',
+        productId: optionEntry.productId as ProductId,
+        roomCode: null,
+        fromDirectory: false,
+      }
+    : urlAddress;
+  const currentEntry = plainState(plainState(location.state)[touchEntryKey]);
+  // main7185 permits the retained hidden editor action from launcher home.
+  // The child owns its marker, not an invented Options prerequisite.
+  const ownedTouch =
+    currentEntry.version === 1 &&
+    currentEntry.surface === 'touch' &&
+    currentEntry.href === href(location);
+  // Main's touch editor is a live draft, not a bookmark. Forward/reload of a
+  // retired same-URL entry must never recreate it.
+  const staleTouch = ownedTouch && navigationType === 'POP' && !isEditing;
+  const {
+    address,
+    hasSelection,
+    activeHostSelection,
+    applyHostSelection,
+    syncSelectionFromRoute,
+    clearHostSelection,
+  } = useSurfaceSelection({
+    location,
+    navigationType,
+    urlAddress,
+    baseAddress,
+    pendingLocaleAddress: pendingLocaleAddress.current,
+    ownedOptions,
+    ownedTouch,
+    staleTouch,
+    productAvailable,
+    onRouteSelection,
+  });
   // Current visible layer lifetime, not a list of visited entries. Original
   // popstate dismisses these windows but never opens retired ones on Forward.
   const [panelLifetime, setPanelLifetime] = useState<string | null>(null);
@@ -314,92 +322,6 @@ export function SurfaceNavigationProvider({
     (formEntry.mode === 'create' || formEntry.mode === 'join');
   const directoryFormMode = validForm ? (formEntry.mode as DirectoryFormMode) : null;
   const retiredForm = Object.keys(formEntry).length > 0 && !validForm;
-  const optionEntry = plainState(plainState(location.state)[entryKey]);
-  // main lobby.mts58–65 retires its options sheet on a document reload.
-  // Library ?game remains a durable options address.
-  const retiredLobbyOptions =
-    urlAddress.context === 'lobby' &&
-    optionEntry.surface === 'options' &&
-    optionEntry.session !== dialogSession;
-  const selectionHidden =
-    plainState(plainState(location.state)[hiddenSelectionKey]).session === dialogSession;
-  const staleHidden = hiddenSelectionKey in plainState(location.state) && !selectionHidden;
-  const ownedOptions =
-    !selectionHidden &&
-    !retiredLobbyOptions &&
-    optionEntry.version === 1 &&
-    optionEntry.surface === 'options' &&
-    optionEntry.href === href(location) &&
-    typeof optionEntry.productId === 'string' &&
-    isProductId(optionEntry.productId);
-  const baseAddress: SurfaceAddress = ownedOptions
-    ? {
-        ...urlAddress,
-        surface: 'options',
-        productId: optionEntry.productId as ProductId,
-        roomCode: null,
-        fromDirectory: false,
-      }
-    : urlAddress;
-  const currentEntry = plainState(plainState(location.state)[touchEntryKey]);
-  // main7185 permits the retained hidden editor action from launcher home.
-  // The child owns its marker, not an invented Options prerequisite.
-  const ownedTouch =
-    currentEntry.version === 1 &&
-    currentEntry.surface === 'touch' &&
-    currentEntry.href === href(location);
-  // Main's touch editor is a live draft, not a bookmark. Forward/reload of a
-  // retired same-URL entry must never recreate it.
-  const staleTouch = ownedTouch && navigationType === 'POP' && !isEditing;
-  const routeHasSelection =
-    baseAddress.surface !== 'library' &&
-    !!baseAddress.productId &&
-    productAvailable(baseAddress.productId);
-  const hasSelection = activeHostSelection?.hasSelection ?? routeHasSelection;
-  const selectedProductId =
-    activeHostSelection?.productId ??
-    (baseAddress.productId &&
-    (baseAddress.surface === 'room' || productAvailable(baseAddress.productId))
-      ? baseAddress.productId
-      : previousSelectedProduct.current);
-  const roomVisible =
-    baseAddress.roomCode !== null &&
-    selectedProductId !== null &&
-    isMultiplayerProductId(selectedProductId);
-  const address: SurfaceAddress = {
-    ...baseAddress,
-    productId: selectedProductId,
-    surface:
-      ownedTouch && !staleTouch
-        ? 'touch'
-        : roomVisible
-          ? 'room'
-          : hasSelection
-            ? 'options'
-            : 'library',
-  };
-  useLayoutEffect(() => {
-    previousSurface.current = address.surface;
-    if (address.productId) previousSelectedProduct.current = address.productId;
-  }, [address.surface, address.productId, location.key]);
-  function applyHostSelection(selection: HostSelection) {
-    setHostSelection((previous) =>
-      previous?.productId === selection.productId &&
-      previous.hasSelection === selection.hasSelection
-        ? previous
-        : { ...selection },
-    );
-  }
-  function syncSelectionFromRoute(): ProductId | null {
-    // Main lobby.mts434–450/795–800 keeps ?game as its directory filter;
-    // only the explicit options carrier selects a Launcher settings surface.
-    if (baseAddress.context === 'lobby' && !ownedOptions) return null;
-    const productId = baseAddress.productId;
-    if (!productId || !productAvailable(productId)) return null;
-    applyHostSelection({ productId, hasSelection: true });
-    if (productId !== address.productId) onRouteSelection?.(productId, address.context);
-    return productId;
-  }
   const retiredGameEntry =
     navigationType === 'POP' && !playerOpen && gameEntryKey in plainState(location.state);
   useEffect(() => {
@@ -626,120 +548,64 @@ export function SurfaceNavigationProvider({
     if (reason) pendingBlockKind.current = reason;
     return reason !== null;
   });
-  const latestBlocker = useRef(blocker);
-  latestBlocker.current = blocker;
-  const roomLeaveTaskKey = useRef<string | null>(null);
-  const runtimeCloseTask = useRef<{
-    destination: string;
-    settled: boolean;
-    manualRoomExit: boolean;
-    titleOverlayWasOpen: boolean;
-  } | null>(null);
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  useEffect(() => {
-    if (blocker.state !== 'blocked' || pendingBlockKind.current !== 'page') return;
-    blocker.reset();
-    returnToPageParent();
-  }, [blocker]);
-  useEffect(() => {
-    if (blocker.state !== 'blocked') {
-      if (runtimeCloseTask.current?.settled) runtimeCloseTask.current = null;
-      return;
-    }
-    if (pendingBlockKind.current !== 'runtime' || runtimeCloseTask.current) return;
-    const task = {
-      destination: blocker.location.key,
-      settled: false,
-      manualRoomExit: manualRoomPlayerExit.current,
-      titleOverlayWasOpen: titleOverlayOpen,
-    };
-    manualRoomPlayerExit.current = false;
-    runtimeCloseTask.current = task;
-    // Ordinary successful sync is silent. The Runtime service owns its exact
-    // failure-only Retry/Leave/Stay decision and retains the mounted iframe.
-    void Promise.resolve()
-      .then(() => (mounted.current ? (requestRuntimeClose?.() ?? false) : false))
-      .catch(() => false)
-      .then((closed) => {
-        if (!mounted.current || runtimeCloseTask.current !== task) return;
-        task.settled = true;
-        const current = latestBlocker.current;
-        if (current.state !== 'blocked') {
-          runtimeCloseTask.current = null;
-          return;
-        }
-        if (current.location.key !== task.destination) {
-          closeIssuedKey.current = null;
-          surfaceOpenIssuedKey.current = null;
-          current.reset();
-          return;
-        }
-        if (closed && typeof gameEntry.parentPosition === 'number' && pageHistory) {
-          current.reset();
-          completeRuntimeClose();
-        } else if (closed && address.surface === 'room' && !task.titleOverlayWasOpen) {
-          // main app5289–5306/5336–5383: MP Exit/Back closes the player,
-          // then stays in its existing room. It does not leave membership.
-          closeIssuedKey.current = null;
-          surfaceOpenIssuedKey.current = null;
-          if (
-            resolvedSurface(current.location).roomCode === address.roomCode &&
-            address.productId &&
-            address.roomCode
-          ) {
-            // main5293–5304 keeps a same-room POP destination and normalizes that
-            // entry; only departure from the room is undone with history.forward.
-            pendingRoomReturn.current = {
-              destination: current.location.key,
-              operation: completedRoomReturnOperation(
-                address.productId,
-                address.roomCode,
-                current.location,
-              ),
-            };
-            current.proceed();
-            return;
-          }
-          current.reset();
-          if (task.manualRoomExit && address.productId && address.roomCode) {
-            // Keep canonical manual Exit normalization while retaining this
-            // room's directory origin, as required for the subsequent Leave.
-            applyRoomOperations([
-              completedRoomReturnOperation(address.productId, address.roomCode),
-            ]);
-          }
-        } else if (closed) current.proceed();
-        else {
-          closeIssuedKey.current = null;
-          surfaceOpenIssuedKey.current = null;
-          current.reset();
-        }
-      });
-  }, [blocker, requestRuntimeClose, address.surface]);
-  useEffect(() => {
-    if (blocker.state === 'unblocked') roomLeaveTaskKey.current = null;
-    if (
-      blocker.state !== 'blocked' ||
-      pendingBlockKind.current !== 'room' ||
-      roomLeaveTaskKey.current === blocker.location.key
-    )
-      return;
-    roomLeaveTaskKey.current = blocker.location.key;
-    // Main's popstate commits the Back destination before computing its room
-    // return operation. The membership service resets immediately, then its
-    // leaveRoomRoute port commits that original sequence through this Router.
-    if (requestRoomLeave) requestRoomLeave();
-    else {
+  useNavigationDeparture({
+    blocker,
+    reason: pendingBlockKind.current,
+    surface: address.surface,
+    requestRuntimeClose,
+    requestRoomLeave,
+    returnToPageParent,
+    captureRuntimeClose() {
+      const context = {
+        manualRoomExit: manualRoomPlayerExit.current,
+        titleOverlayWasOpen: titleOverlayOpen,
+      };
+      manualRoomPlayerExit.current = false;
+      return context;
+    },
+    resetRuntimeDeparture() {
       closeIssuedKey.current = null;
-      blocker.reset();
-    }
-  }, [blocker, requestRoomLeave]);
+      surfaceOpenIssuedKey.current = null;
+    },
+    resetRoomDeparture() {
+      closeIssuedKey.current = null;
+    },
+    completeRuntimeDeparture(current, task) {
+      if (typeof gameEntry.parentPosition === 'number' && pageHistory) {
+        current.reset();
+        completeRuntimeClose();
+      } else if (address.surface === 'room' && !task.titleOverlayWasOpen) {
+        // main app5289–5306/5336–5383: MP Exit/Back closes the player,
+        // then stays in its existing room. It does not leave membership.
+        closeIssuedKey.current = null;
+        surfaceOpenIssuedKey.current = null;
+        if (
+          resolvedSurface(current.location).roomCode === address.roomCode &&
+          address.productId &&
+          address.roomCode
+        ) {
+          // main5293–5304 keeps a same-room POP destination and normalizes that
+          // entry; only departure from the room is undone with history.forward.
+          pendingRoomReturn.current = {
+            destination: current.location.key,
+            operation: completedRoomReturnOperation(
+              address.productId,
+              address.roomCode,
+              current.location,
+            ),
+          };
+          current.proceed();
+          return;
+        }
+        current.reset();
+        if (task.manualRoomExit && address.productId && address.roomCode) {
+          // Keep canonical manual Exit normalization while retaining this
+          // room's directory origin, as required for the subsequent Leave.
+          applyRoomOperations([completedRoomReturnOperation(address.productId, address.roomCode)]);
+        }
+      } else current.proceed();
+    },
+  });
   useLayoutEffect(() => {
     const pending = pendingHiddenSelection.current;
     if (!pending || location.key !== pending.destination) return;
@@ -945,7 +811,7 @@ export function SurfaceNavigationProvider({
         : target(params);
     if (address.surface === 'options' && address.productId === productId) return;
     surfaceOpenIssuedKey.current = location.key;
-    setHostSelection(null);
+    clearHostSelection();
     const replace = address.surface !== 'library';
     void navigate(next, {
       replace,

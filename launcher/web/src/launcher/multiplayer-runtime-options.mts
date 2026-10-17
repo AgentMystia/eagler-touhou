@@ -30,6 +30,7 @@ export interface MultiplayerRuntimeOptionInput {
   spectator: boolean;
   spectatorId: string;
   spectatorCount: number;
+  spectatorTimeline?: boolean;
   challengeMode?: boolean;
   iceServers: unknown;
   loadouts: MultiplayerRuntimeLoadout[];
@@ -50,6 +51,7 @@ export interface MultiplayerRuntimeOptions {
   netplaySpectator: boolean;
   netplaySpectatorId: string;
   netplaySpectatorCount: number;
+  netplaySpectatorTimeline?: boolean;
   netplayChallengeMode?: boolean;
   netplayIceServers: unknown[];
   netplayLoadouts: MultiplayerRuntimeLoadout[];
@@ -116,11 +118,19 @@ export function buildMultiplayerRuntimeOptions(
   });
   if (loadouts.length !== playerCount) throw new Error('LAN 机体配置数量不足');
 
-  const requestedMode = input.adonisMode ?? 0;
+  const th11 = product === multiplayerConfigForProduct('th11mp');
+  const requestedMode = input.adonisMode ?? (th11 ? 1 : 0);
   const timingPolicy = multiplayerInputTimingPolicy(product);
   const rollback = timingPolicy.rollback && [0, 2].includes(requestedMode);
   const adonisMode = rollback ? 0 : requestedMode;
   const measuredTitle = timingPolicy.measuredStartup;
+  if (
+    th11 &&
+    input.predictionLimit !== undefined &&
+    input.predictionLimit !== timingPolicy.predictionLimit &&
+    !(adonisMode === 1 && input.predictionLimit === 0)
+  )
+    throw new Error('TH11 直接回滚固定使用 12 帧预测上限');
   if (
     (input.inputDelayAuto !== undefined && typeof input.inputDelayAuto !== 'boolean') ||
     (input.inputDelayAuto && (!measuredTitle || !requestedMode)) ||
@@ -171,28 +181,31 @@ export function buildMultiplayerRuntimeOptions(
                 : 0,
         }
       : {}),
-    ...(input.adonisMode !== undefined ? { netplayAdonisMode: adonisMode } : {}),
+    ...(input.adonisMode !== undefined || th11 ? { netplayAdonisMode: adonisMode } : {}),
+    ...(th11 && rollback ? { netplayInputDelayAuto: false } : {}),
     ...(measuredTitle && adonisMode
       ? {
           netplayInputDelayAuto: input.inputDelayAuto ?? false,
           netplayPredictionReserve: input.predictionReserve ?? 2,
         }
       : {}),
-    ...(!timingPolicy.rollback || input.predictionLimit !== undefined
+    ...(!timingPolicy.rollback || input.predictionLimit !== undefined || th11
       ? {
-          netplayPredictionLimit: !timingPolicy.rollback
-            ? 0
-            : typeof input.predictionLimit === 'number' &&
-                Number.isInteger(input.predictionLimit) &&
-                input.predictionLimit >= 1 &&
-                input.predictionLimit <= 8
-              ? input.predictionLimit
-              : 8,
+          netplayPredictionLimit:
+            !timingPolicy.rollback || (th11 && adonisMode === 1)
+              ? 0
+              : typeof input.predictionLimit === 'number' &&
+                  Number.isInteger(input.predictionLimit) &&
+                  input.predictionLimit >= 1 &&
+                  input.predictionLimit <= timingPolicy.predictionLimit
+                ? input.predictionLimit
+                : timingPolicy.predictionLimit,
         }
       : {}),
     netplaySpectator: spectator,
     netplaySpectatorId: spectator ? input.spectatorId : '',
     netplaySpectatorCount: Math.max(0, Number(input.spectatorCount) || 0),
+    ...(input.spectatorTimeline === true ? { netplaySpectatorTimeline: true } : {}),
     netplayIceServers: Array.isArray(input.iceServers) ? input.iceServers : [],
     netplayLoadouts: loadouts,
   };

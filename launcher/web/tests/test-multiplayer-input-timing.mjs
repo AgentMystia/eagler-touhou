@@ -1,5 +1,6 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import { recommendMultiplayerInputTiming } from "../.cache/build/browser/assets/launcher/multiplayer-input-timing.mjs";
+const { recommendMultiplayerInputTiming } = await importClientService('launcher/multiplayer-input-timing.mjs');
 
 assert.deepEqual(recommendMultiplayerInputTiming(0, 100, 0, 8),
   { inputDelay: 0, targetRollbackFrames: 8, networkFrames: 0, mobileSeats: 0 });

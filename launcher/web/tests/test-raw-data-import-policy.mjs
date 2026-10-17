@@ -1,13 +1,14 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
 
 import { PRODUCT_GAMES } from "../lib/contracts/product-catalog.mjs";
-import {
+const {
   createRawDataImportPackageDescriptor,
   rawDataImportFileNames,
   rawDataImportHashMatches,
   rawDataImportMatchesFileName,
   rawDataImportSizeMatches,
-} from "../.cache/build/browser/assets/launcher/raw-data-import.mjs";
+} = await importClientService('launcher/raw-data-import.mjs');
 
 const rawImportGames = Object.entries(PRODUCT_GAMES)
   .filter(([, product]) => "rawDataImport" in product.package && !!product.package.rawDataImport)

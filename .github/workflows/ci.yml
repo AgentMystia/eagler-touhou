@@ -55,6 +55,27 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run test:ui:${{ matrix.group }} --workspace @eagler/web
 
+  host-environment:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.15.0'
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - run: npm ci --ignore-scripts
+      # Creates fresh locked environments, executes the actual tools, then
+      # checks reuse and rejection of a modified installed dependency.
+      - run: npm run test:host-environment --workspace @eagler/web
+
   common:
     strategy:
       fail-fast: false

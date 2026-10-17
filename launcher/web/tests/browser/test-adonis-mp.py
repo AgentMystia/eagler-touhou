@@ -2,7 +2,7 @@
 import argparse,json,time,uuid,sys
 from pathlib import Path
 from playwright.sync_api import sync_playwright
-p=argparse.ArgumentParser();p.add_argument('--url',default='http://127.0.0.1:18380');p.add_argument('--game',choices=['th08','th10'],required=True)
+p=argparse.ArgumentParser();p.add_argument('--url',required=True);p.add_argument('--game',choices=['th08','th10'],required=True)
 p.add_argument('--players',type=int,choices=[2,3],default=2);p.add_argument('--mode',type=int,choices=[1,2],default=1)
 p.add_argument('--route',choices=['rtc','relay'],default='rtc');p.add_argument('--delay',type=int);p.add_argument('--output',type=Path,required=True)
 p.add_argument('--spectator',action='store_true');p.add_argument('--replay',action='store_true');p.add_argument('--input-lag-ms',type=int,default=0)
@@ -16,13 +16,13 @@ p.add_argument('--drop-startup-echoes',type=int,default=0)
 p.add_argument('--drop-startup-echoes-all',action='store_true')
 p.add_argument('--expect-startup-unavailable',action='store_true')
 p.add_argument('--disconnect-check',action='store_true')
-p.add_argument('--relay-url',default='')
+p.add_argument('--relay-url',required=True)
 a=p.parse_args();report={'passed':False,'game':a.game,'players':a.players,'difficulty':a.difficulty,'adonisMode':a.mode,'route':a.route,'manualDelay':a.delay,'inputLagMs':a.input_lag_ms,'joinLagMs':a.join_lag_ms,'errors':[],'checkpoints':[]}
 with sync_playwright() as pw:
  browser=pw.chromium.launch(headless=True,args=['--enable-unsafe-swiftshader','--disable-features=WebRtcHideLocalIpsWithMdns']);pages=[];sessions=[]
  try:
   room=a.game+'mp-adonis-'+uuid.uuid4().hex[:12]
-  relay=(a.relay_url or a.url.replace('http://','ws://').replace(':18380',':18381')).rstrip('/')+'/?room='+room+'&run=1'
+  relay=a.relay_url.rstrip('/')+'/?room='+room+'&run=1'
   for seat in range(a.players+int(a.spectator)):
    if seat==1 and a.join_lag_ms:
     pages[0].evaluate('()=>{const r=host.runtime();r.core.sdl_loop_start(r.app);r.core.sdl_loop_pause(0)}')

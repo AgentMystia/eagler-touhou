@@ -1,6 +1,7 @@
 import {
   SITE_MANIFEST_FILE,
   SITE_MANIFEST_SCHEMA,
+  LEGACY_SITE_MANIFEST_SCHEMA,
   validateSiteManifest,
   type SiteManifest,
 } from '../site-manifest.mts';
@@ -16,14 +17,23 @@ export function readCompatibleSiteManifest(value: unknown): SiteManifest {
     !Array.isArray(value) &&
     (value as { schema?: unknown }).schema === LEGACY_HOST_MANIFEST_SCHEMA
   ) {
-    return validateSiteManifest({ ...value, schema: SITE_MANIFEST_SCHEMA });
+    return {
+      ...validateSiteManifest({ ...value, schema: LEGACY_SITE_MANIFEST_SCHEMA }),
+      schema: SITE_MANIFEST_SCHEMA,
+    };
   }
   return validateSiteManifest(value);
 }
 
 /** A generated, read-only response for already released clients. */
 export function legacyHostManifestResponse(value: SiteManifest) {
-  return { ...validateSiteManifest(value), schema: LEGACY_HOST_MANIFEST_SCHEMA };
+  const manifest = validateSiteManifest(value);
+  // Released clients require a normal entry. Do not advertise an absent normal
+  // Runtime or substitute a multiplayer executable under its name.
+  const games = Object.fromEntries(
+    Object.entries(manifest.games).filter(([, game]) => game?.runtime),
+  );
+  return { ...manifest, games, schema: LEGACY_HOST_MANIFEST_SCHEMA };
 }
 
 export async function loadCompatibleSiteManifest(fetchJson: (file: string) => Promise<unknown>) {

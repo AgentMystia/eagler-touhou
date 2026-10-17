@@ -53,6 +53,14 @@ node scripts/package-runtime-release.mjs --games=th15 --th15-build="../../dist/r
 node scripts/verify-runtime-release.mjs "../../dist/runtime-release-th15"
 ```
 
-对登记了多人产品的作品，当前收集器仍要求对应 `--<game>-multiplayer-build`，并核对普通/多人数据布局。选中作品可缩小，普通与多人独立发布仍是待解耦项，见审计清单。
+收集器按实际提供的 `--<game>-build` 和 `--<game>-multiplayer-build` 登记变体，每个选中作品至少提供一种，产品能力限定可接受变体。普通-only、多人-only 和混合 Release 均可收集及由 Host 组装；同作双变体仍校验 DATA 布局一致。多人-only 示例：
+
+```text
+node scripts/package-runtime-release.mjs --games=th08 --th08-multiplayer-build="../../dist/runtime/th08/multiplayer" --output="../../dist/runtime-release-th08-multiplayer"
+```
+
+Site Manifest v2 允许只有多人入口，旧 v1 仍要求普通入口；旧 Host 响应过滤缺少普通 Runtime 的作品，不把多人执行文件冒充普通入口。清单/Host 行为通过不代表所选真实作品已经启动或完成多人长局。
+
+五作 SDL 图形与 MotionTrack 由各作转发头消费 common 四头文件 backport，来源和许可见[公共库维护](../../eagler-common/docs/MAINTENANCE.md)。GLSL 原字符串相同，内部结构布局已扩展，须重新编译消费者，不与旧对象文件混用或宣称 ABI 完全等价。
 
 不得把源码字符串中出现协议名称当作协议实现证明。文件清单、WASM 导出检查、协议行为测试与真实启动验证各自回答不同问题。

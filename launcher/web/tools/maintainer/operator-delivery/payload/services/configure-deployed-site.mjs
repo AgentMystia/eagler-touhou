@@ -76,7 +76,7 @@ if (originMigration && !["enable", "disable"].includes(originMigration)) {
 
 const manifestPath = resolve(options.site, "site-manifest.json");
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-if (manifest?.schema !== "eagler-touhou/site-manifest/1" || manifest?.shared?.resourceMode !== "hosted") {
+if (!["eagler-touhou/site-manifest/1", "eagler-touhou/site-manifest/2"].includes(manifest?.schema) || manifest?.shared?.resourceMode !== "hosted") {
   throw new Error("target is not an Eagler Touhou Hosted site");
 }
 if (relay) manifest.shared.netplayRelay = relay.href;

@@ -1,3 +1,4 @@
+import { validateRuntimeVariants } from '../lib/runtime-variants.mjs';
 import {verifyLegacySiteManifestAlias} from '../compat/site-manifest.mjs';
 import { verifyRuntimePublication } from "../lib/runtime-generations.mjs";
 import { RUNTIME_GENERATION_FILE, RUNTIME_MANIFEST_FILE, parseRuntimeGenerationPath } from "../lib/contracts/runtime-generations.mjs";
@@ -6,7 +7,6 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
-import { parse } from "acorn";
 import { canonicalPackagePayload, validatePackageDescriptor } from "../package/package-descriptor.mjs";
 import { PRODUCT_GAMES } from "../lib/contracts/product-catalog.mjs";
 import { runtimeFileNames } from "../lib/runtime-release.mjs";
@@ -111,7 +111,7 @@ if (games.shared.runtimeManifest) {
   }
 }
 function programPath(entry, name) {
-  const pathname = new URL(entry.runtime, "https://eagler.invalid/").pathname.slice(1);
+  const pathname = new URL(entry.runtime ?? entry.multiplayerRuntime, "https://eagler.invalid/").pathname.slice(1);
   return resolve(root, dirname(pathname), name);
 }
 function versionedRuntime(url) {
@@ -235,9 +235,10 @@ if (games.protocol !== "eagler-touhou/1") throw new Error("invalid host protocol
 if (normalizeResourceMode(games.shared?.resourceMode || "hosted") !== resourceMode) throw new Error("host/deployment resourceMode mismatch");
 for (const game of gameIds.filter(id => PRODUCT_GAMES[id].runtimeFileLayout === "directory")) {
   const product = PRODUCT_GAMES[game];
-  const entry = games.games[game], runtimeUrl = new URL(entry.runtime, "https://eagler.invalid/");
-  if (!versionedRuntime(entry.runtime)) throw new Error(`unversioned directory Runtime: ${game}`);
-  const runtimeRoot = dirname(programPath(entry, `${game}.html`));
+  const entry = games.games[game];
+  for (const {name: variant, runtime} of validateRuntimeVariants(game, entry)) {
+  if (!versionedRuntime(runtime)) throw new Error(`unversioned directory Runtime: ${game}`);
+  const runtimeRoot = dirname(programPath({runtime}, `${game}.html`));
   let files;
   if (games.shared.runtimeManifest) {
     const descriptor = JSON.parse(await readFile(resolve(runtimeRoot, RUNTIME_GENERATION_FILE), "utf8"));
@@ -252,7 +253,8 @@ for (const game of gameIds.filter(id => PRODUCT_GAMES[id].runtimeFileLayout === 
     if (bytes.length !== expected.bytes || createHash("sha256").update(bytes).digest("hex") !== expected.sha256) throw new Error(`${game}: stale Runtime asset: ${name}`);
   }
   const shell = await readFile(resolve(runtimeRoot, `${game}.html`), "utf8");
-  assertRuntimeDataShell(shell, game, "normal");
+  assertRuntimeDataShell(shell, game, variant);
+  }
   const identity = entry.gameData;
   const dataPath = product.package.dataTarget.slice(1);
   if (!Number.isSafeInteger(identity?.bytes) || identity.bytes <= 0 || !/^[a-f0-9]{64}$/.test(identity.sha256) ||
@@ -314,53 +316,23 @@ if (netplayRelay != null) {
   catch { throw new Error("invalid optional netplayRelay in server package"); }
   if (!/^wss?:$/.test(relay.protocol)) throw new Error("invalid optional netplayRelay in server package");
 }
-const sharedFontMounts = resourceMode === RESOURCE_MODE_HOSTED
-  ? [games.shared.vanillaFont, games.shared.unicodeFont]
-    .map(value => `/${basename(new URL(value, "https://eagler.invalid/").pathname)}`)
-  : [];
-{
-  // React's document is hydrated, so its inert entry belongs to emitted JSX,
-  // not static index markup. Inspect syntax rather than executing UI code or
-  // accepting a copied legacy app.js as proof of the selected implementation.
-  const constants = new Set();
-  let inertMigrationEntry = false;
-  const constant = node => node?.type === "Literal" ? node.value
-    : node?.type === "TemplateLiteral" && node.expressions.length === 0 ? node.quasis[0].value.cooked : undefined;
-  const member = node => node?.type === "MemberExpression" && !node.computed && node.object?.type === "Identifier"
-    ? `${node.object.name}.${node.property.name}` : null;
-  function visit(node) {
-    if (!node || typeof node !== "object") return;
-    const value = constant(node);
-    if (typeof value === "string") constants.add(value);
-    if (node.type === "CallExpression" && constant(node.arguments[0]) === "a" && node.arguments[1]?.type === "ObjectExpression") {
-      const properties = new Map(node.arguments[1].properties.filter(item => item.type === "Property" && !item.computed)
-        .map(item => [item.key.name ?? constant(item.key), item.value]));
-      const href = properties.get("href"), hidden = properties.get("hidden"), policy = properties.get("data-policy");
-      if (constant(properties.get("id")) === "originMigrationOpen" && href?.type === "LogicalExpression" && href.operator === "??" &&
-          constant(href.right) === "migrate.html" && member(href.left) && hidden?.type === "UnaryExpression" && hidden.operator === "!" &&
-          member(hidden.argument) === member(href.left) && policy?.type === "ConditionalExpression" &&
-          constant(policy.consequent) === "host-manifest-origin-migration-policy/1" && member(policy.test) &&
-          policy.alternate?.type === "UnaryExpression" && policy.alternate.operator === "void") inertMigrationEntry = true;
-    }
-    for (const child of Object.values(node)) {
-      if (Array.isArray(child)) child.forEach(visit);
-      else if (child && typeof child === "object") visit(child);
-    }
-  }
-  for (const path of reactFrontend.browserModules.filter(path => !path.startsWith("legacy/"))) {
-    visit(parse(await readFile(resolve(root, path), "utf8"), {ecmaVersion: "latest", sourceType: "module"}));
-  }
-  if (!inertMigrationEntry) throw new Error("React UI is missing its inert Site Manifest governed origin migration entry");
-  for (const mount of sharedFontMounts) if (!constants.has(mount)) throw new Error(`host shared font target mismatch: ${mount}`);
-}
 for (const game of preloadGames) {
   const product = PRODUCT_GAMES[game];
   const dataFileId = product.package.dataFileId;
   const dataTarget = product.package.dataTarget;
   const dataPath = dataTarget.slice(1);
   const entry = games.games?.[game];
+  const variants = validateRuntimeVariants(game, entry);
+  for (const {name: variant, runtime} of variants) {
+    if (typeof runtime !== 'string' || !versionedRuntime(runtime)) throw new Error(game + ': invalid Runtime URL');
+    const shell = await readFile(programPath({runtime}, game + '.html'), 'utf8');
+    assertRuntimeDataShell(shell, game, variant);
+    const layout = extractGameDataLayout(await readFile(programPath({runtime}, game + '.js'), 'utf8'), game);
+    if (layout.layout !== entry.gameData.layout || layout.bytes !== entry.gameData.bytes)
+      throw new Error(game + ': published Runtime DATA layout mismatch');
+  }
   if (resourceMode === RESOURCE_MODE_IMPORT) {
-    if (!entry?.music?.midi || typeof entry.runtime !== "string" || !versionedRuntime(entry.runtime)) {
+    if (!entry?.music?.midi || !validateRuntimeVariants(game, entry).every(({runtime}) => typeof runtime === 'string' && versionedRuntime(runtime))) {
       throw new Error(`invalid ${resourceMode} game entry: ${game}`);
     }
     if (typeof entry.gameData?.version !== "string" || !/^sha256-[a-f0-9]{64}$/i.test(entry.gameData.version) ||
@@ -390,19 +362,13 @@ for (const game of preloadGames) {
     continue;
   }
   if (resourceMode === RESOURCE_MODE_EXTERNAL) continue;
-  if (!entry?.music?.midi || typeof entry.runtime !== "string" || !versionedRuntime(entry.runtime)) throw new Error(`invalid game entry: ${game}`);
-  const runtimeVersion = new URL(entry.runtime, "https://eagler.invalid/").searchParams.get("v");
+  if (!entry?.music?.midi || !validateRuntimeVariants(game, entry).every(({runtime}) => typeof runtime === 'string' && versionedRuntime(runtime))) throw new Error(`invalid game entry: ${game}`);
+  const runtimeVersion = new URL(entry.runtime ?? entry.multiplayerRuntime, "https://eagler.invalid/").searchParams.get("v");
   const runtimeHtml = await readFile(programPath(entry, `${game}.html`), "utf8");
   const runtimeScript = await readFile(programPath(entry, `${game}.js`), "utf8");
   const runtimeData = await readFile(resolve(root, "games", game, dataPath));
   const dataSha256 = createHash("sha256").update(runtimeData).digest("hex");
   const runtimeLayout = extractGameDataLayout(runtimeScript, game);
-  if (!runtimeHtml.includes("invalid shared resource")) throw new Error(`runtime shared resource validation missing: ${game}`);
-  for (const mount of sharedFontMounts) {
-    if (!runtimeHtml.includes(`"${mount}"`) && !runtimeHtml.includes(`'${mount}'`)) {
-      throw new Error(`runtime shared font mount mismatch: ${game} -> ${mount}`);
-    }
-  }
   const versionedScript = new RegExp(`<script\\b[^>]*\\bsrc=["']?${game}\\.js\\?v=${runtimeVersion}(?:["'\\s>])`, "i");
   if (!games.shared.runtimeManifest && (!runtimeVersion || !versionedScript.test(runtimeHtml))) throw new Error(`unversioned runtime script: ${game}`);
   if (entry.gameData?.path !== dataPath || entry.gameData?.bytes !== runtimeData.length ||

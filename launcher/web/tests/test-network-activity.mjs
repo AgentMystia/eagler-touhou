@@ -1,5 +1,6 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
-import { createNetworkActivityTracker } from "../.cache/build/browser/assets/launcher/network-activity.mjs";
+const { createNetworkActivityTracker } = await importClientService('launcher/network-activity.mjs');
 
 const events = [];
 let tick = 0;

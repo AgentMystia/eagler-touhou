@@ -25,6 +25,9 @@ npm run relay
 | `EAGLER_NETPLAY_TURN_URLS` | TURN 地址列表 |
 | `EAGLER_NETPLAY_TURN_SHARED_SECRET` | 服务端动态凭据密钥 |
 | `EAGLER_NETPLAY_TURN_USERNAME`、`EAGLER_NETPLAY_TURN_CREDENTIAL` | 成对的静态凭据选项 |
+| `EAGLER_NETPLAY_ROOM_LOOKUPS_PER_MINUTE` | 每个来源 IP 每分钟可查询的不同房间数量，默认 12。同房重连及玩家/信令连接共用一次查询 |
+
+隐藏房间仅从大厅目录隐藏，任何知道房码的人仍可加入。新建房间使用 8 位随机房码，兼容旧的 4–8 位房码。房主移除的 client/member 在该房间存续期间不能再次加入；匿名身份可通过换浏览器或清空存储绕过，不能当成账号级封禁。拒绝记录上限为 1024，达到上限后只允许已加入成员重连。
 
 其余重连、缓冲和诊断设置在 `netplay-relay.mjs` 校验。`TH07_*` 名称是既有部署读取兼容，新配置用 `EAGLER_NETPLAY_*`。测试用延迟、丢包和路由偏移选项不作为普通生产默认。
 

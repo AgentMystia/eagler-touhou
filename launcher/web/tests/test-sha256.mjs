@@ -1,7 +1,8 @@
+import { importClientService } from './support/client-services.mjs';
 import assert from "node:assert/strict";
 import { createHash, webcrypto } from "node:crypto";
 
-import { sha256Hex } from "../.cache/build/browser/assets/launcher/sha256.mjs";
+const { sha256Hex } = await importClientService('launcher/sha256.mjs');
 
 const encoder = new TextEncoder();
 const vectors = [
