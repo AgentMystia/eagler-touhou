@@ -67,6 +67,7 @@ class BrowserRuntime:public ApplicationPlatform {
 #endif
 public:
     GameApplication app;
+    bool room_preview=false;
     touhou::input::MotionTrack motion;
     bool player_motion(const PlayerMovementState&,float,const FrameTiming&,float&,float&)override;
     void begin_motion(i32 stage,bool initial,bool replay,bool record)override{motion.begin(stage,initial,replay,record);}

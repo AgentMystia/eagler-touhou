@@ -294,6 +294,10 @@ bool BrowserRuntime::initialize(){
     reset_device();return true;
 }
 bool BrowserRuntime::step(bool render,double callback_start_ms){
+    if(room_preview){
+        app.title.menus.state.startMenuIdleFrames=0;
+        app.title.menus.state.idleFrames=0;
+    }
 #ifdef TH_ENABLE_MULTIPLAYER_GAMEPLAY
     if(replay_viewer&&!replay_request.empty())return true;
     if(replay_viewer&&!app.session.netplay.Configured()&&!replay_menu_opened&&app.title.ready_for_session()){

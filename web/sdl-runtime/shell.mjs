@@ -209,7 +209,7 @@ const spectatorPlayback=createSpectatorPlaybackBridge({
  allocate:size=>core.allocate(size),deallocate:pointer=>core.deallocate(pointer),emit,
 });
 let Module,core,app=0,launched=false,first=false,closing=false,language=query.get('language')==='lang_zh-hans'?'chs':'jp',options={},music=true;
-let initializedReady=false,launchSettled=false,replayReopening=false,touchLifetime=0,touchRetired=false;
+let initializedReady=false,launchSettled=false,replayReopening=false,touchLifetime=0,touchRetired=false,roomPreview=false;
 // Source serials consume every received snapshot, including ineligible input.
 // Only accepted changes advance native serials; game open/reopen resets those
 // mapped counters, while the source baseline remains owned by this document.
@@ -377,8 +377,13 @@ const localReplay=createNativeLocalReplay({core:()=>core,module:()=>Module,
  stepReplay:()=>core.sdl_loop_tick(app,1/60,17)===0,
  replayState:()=>{if(!multiplayerRuntime){const v=Array.from(new Uint32Array(core.memory.buffer,core.eagler_replay_state(),5));return {frame:v[0],total:v[1],ended:!!v[2],stage:v[3],startStage:v[4]};}const s=replayWords();return {frame:s[4],total:s[5],ended:!!(s[9]||s[11]),stage:status()[1],startStage:localReplayStart,bootstrapTarget:s[8]};},
  onState:playback=>emit('runtime-info',{playback}),onError:error});
-async function launch(){
- if(launched)return;const touchTicket=touchLifetime;launchSettled=false;clearKeyboard();
+async function initializeTitle(){
+ if(app){
+  const multiplayer=multiplayerRuntime?validateMultiplayerOptions(options):null;
+  if(multiplayer)await configureMultiplayer(core,app,options,{runtimeBuildWords});
+  return multiplayer;
+ }
+ clearKeyboard();
  const {installStartupBranding}=await import('./startup-branding.mjs');
  const build=await(await fetch('./manifest.json')).json();
  await installStartupBranding(Module,{game:'th08',builtAt:build.builtAt});
@@ -416,6 +421,12 @@ async function launch(){
  if(!core.sdl_game_initialize())throw Error('永夜抄初始化失败');await new Promise(resolve=>setTimeout(resolve,Math.max(0,2000-(performance.now()-startupImageAt))));performance.mark('eagler-startup-menu-ready');document.querySelector('#loading').textContent='';
  if(multiplayer&&!multiplayer.spectator)await configureMultiplayer(core,app,options,{runtimeBuildWords});
  }catch(reason){calibration?.stop();core.sdl_game_close();app=0;throw reason;}
+ return multiplayer;
+}
+async function launch(){
+ if(launched)return;const touchTicket=touchLifetime;launchSettled=false;clearKeyboard();
+ if(roomPreview)core.sdl_loop_stop();
+ const multiplayer=await initializeTitle();roomPreview=false;
  if(multiplayer){window.__eaglerNetplayFailed=false;window.__eaglerNetplayError='';updateNetworkDiagnostics(core,app);if(multiplayer.adonisMode&&!multiplayer.spectator)calibration?.start();else calibration?.stop();}
  applyOptions();launched=true;first=false;lastPresented=0;lastHealth=performance.now();lastFrame=0;frames=0;maxGap=0;
  canvas.focus({preventScroll:true});core.sdl_loop_pause(1);if(!document.hidden)await resumeForegroundAudio();if(query.get('manual')!=='1')core.sdl_loop_start();
@@ -470,6 +481,18 @@ async function command(message){
  }
  case 'spectator-playback':return spectatorPlayback.command(message);
  case 'playback':if(!launched||options.replayViewer!==true)throw Error('请先打开录像管理器');return localReplay.command(message);
+ case 'prepare-room':{
+  if(!multiplayerRuntime||launched)throw Error('Invalid room preview owner');
+  await initializeTitle();
+  if(!core.sdl_room_preview())throw Error('Native room preview rejected');
+  roomPreview=true;core.sdl_loop_start();
+  const deadline=performance.now()+60000;
+  while(!core.sdl_room_preview_ready()){
+   if(closing||touchRetired||performance.now()>deadline)throw Error('Native room title did not become ready');
+   await new Promise(requestAnimationFrame);
+  }
+  return {presented:true};
+ }
  case 'launch':await launch();return {};
  case 'sync':await save();return {};
  case 'list':return {files:listLocalReplayFiles(Module.FS,root(),storage.relativeSave,path=>({path:multiplayerRuntime?path:exportReplayName(path,Module.FS.readFile(root()+'/'+path),8)}))};
@@ -553,5 +576,5 @@ const initialized=(async()=>{
  window.__th08Runtime={core,Module,get app(){return app;},status,launch,stop,command,resourceTrace:{start:traceStart,read:traceRead,export:exportResourceTrace}};
  installResourceTrace();
  initializedReady=true;
- emit('ready');
+ emit('ready',multiplayerRuntime?{roomPreview:true}:{});
 })().catch(e=>{if(isSupersededRuntimeError(e)){console.debug('Runtime navigation superseded');return false;}error(e);throw e;});
