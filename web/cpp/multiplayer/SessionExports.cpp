@@ -572,12 +572,16 @@ u32 multiplayer_commit_inputs(browser::Application* app,const u32* words,u32 cou
 }
 extern "C" __attribute__((export_name("multiplayer_configure")))
 u32 multiplayer_configure(browser::Application* app,const u32* words,u32 count){
-    if(!app||app->stopped||app->world||app->value.screen!=-2)return 0;
+    if(!app||app->stopped)return 0;
+    const bool preview=app->room_preview&&app->value.screen==4&&app->title&&!app->title->loading&&
+        app->world&&!app->world->actors.session;
+    if(!preview&&(app->world||app->value.screen!=-2))return 0;
     multiplayer::SessionSetup next=app->state.multiplayer_session;
     if(!multiplayer::DecodeSessionSetup(next,words,count))return 0;
     if(next.sessionId&&!app->state.netplay_runtime.Reset(next,next.sessionId))return 0;
     if(!next.sessionId)app->state.netplay_runtime.Clear();
     app->state.input_lanes={};
+    app->room_preview=false;app->state.inactive_frames=app->state.demo_index=0;
     app->state.multiplayer_session=next;return 1;
 }
 extern "C" __attribute__((export_name("multiplayer_contract")))
