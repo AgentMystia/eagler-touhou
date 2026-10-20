@@ -57,6 +57,13 @@ public:
         return static_cast<float>(raw * (1.0 / 2147483648.0) - 1.0);
     }
 
+    // ANM 引擎沿 th15 命名：next32 即 next；unit 为 [0,1) 浮点化（×2^-32）。
+    uint32_t next32() { return next(); }
+    float unit() {
+        const double raw = static_cast<double>(next());
+        return static_cast<float>(raw * (1.0 / 4294967296.0));
+    }
+
     uint32_t index() const { return index_; }
     uint16_t seed() const { return seed_; }
 
