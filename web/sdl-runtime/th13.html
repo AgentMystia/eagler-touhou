@@ -16,17 +16,22 @@
 <script type="module">
 const status = text => document.getElementById('status').textContent = text;
 try {
-  const Module = await import('./artifacts/sdl3/th13-sdl.mjs');
+  const Module = await import('../artifacts/sdl3/th13-sdl.mjs');
   const mod = await Module.default({
     canvas: document.getElementById('canvas'),
     print: t => console.log('[th13]', t),
     printErr: t => console.warn('[th13]', t),
   });
-  mod._th13Boot();
-  status('th13 运行时已启动（骨架：主循环运行中）');
+  mod._th13Boot();  // 安装主循环后以 unwind 展开返回，成功路径见 catch
 } catch (e) {
-  status('启动失败：' + e.message);
-  console.error(e);
+  // emscripten 主循环以 unwind 展开安装调用栈——这是启动成功的路径
+  if (e === 'unwind') {
+    status('th13 运行时已启动（骨架：主循环运行中）');
+  } else {
+    const detail = e && (e.stack || e.message) || String(e);
+    status('启动失败：' + detail);
+    console.error(e);
+  }
 }
 </script>
 </body>

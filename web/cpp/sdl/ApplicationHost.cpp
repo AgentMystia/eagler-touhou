@@ -23,7 +23,7 @@ void ApplicationHost::tick() {
 }
 
 int ApplicationHost::run() {
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER)) {
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init failed: %s", SDL_GetError());
         return 1;
     }
