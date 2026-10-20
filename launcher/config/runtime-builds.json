@@ -115,6 +115,14 @@
         }
       }
     },
+    "th13": {
+      "builder": "prebuilt",
+      "sourceBuild": { "kind": "node", "build": ["portable/build.mjs"] },
+      "workspaceRepository": "th13",
+      "variants": {
+        "normal": { "features": { "thcrap": false, "thprac": false }, "cache": {} }
+      }
+    },
     "th11": {
       "builder": "prebuilt",
       "sourceBuild": { "kind": "node", "build": ["portable/build.mjs"], "practiceFlag": "--thprac" },
