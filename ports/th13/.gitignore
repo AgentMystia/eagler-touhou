@@ -37,5 +37,8 @@ score*.dat
 # ECL 单测本地构建产物
 tests/ecl/build/
 
+# ANM 单测本地构建产物
+tests/anm/build/
+
 # UI 单测本地构建产物
 tests/ui/build/
