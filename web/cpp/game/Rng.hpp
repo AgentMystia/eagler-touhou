@@ -52,6 +52,15 @@ public:
         return (static_cast<uint32_t>(a) << 16) | b;
     }
 
+    // 0x472c20：单步 16 位变体（rand16）。与 next() 共用状态；计数 +1；
+    // 返回本步的 A 值。moveRand（412）象限掷币用（% 3 判定）。
+    uint16_t step16() {
+        const uint16_t a = static_cast<uint16_t>((seed_ ^ 0x9630u) - 0x6553u);
+        seed_ = static_cast<uint16_t>((a >> 14) + a * 4);
+        index_ += 1;
+        return a;
+    }
+
     float signed_unit() {  // 0x472e10 的浮点化（fild→×2^-31→−1.0）
         const double raw = static_cast<double>(next());
         return static_cast<float>(raw * (1.0 / 2147483648.0) - 1.0);
