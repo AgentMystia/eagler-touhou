@@ -46,5 +46,6 @@ make extract   # 解包 th13ogg.7z → games/th13/，生成 SHA256 清单与版�
 ```sh
 node --test tests/*.test.mjs   # 仓库内单元测试（rng / ecl / ui / anm）
 bash tests/ui/run.sh           # UI 基座六套件（输入/调度/ANM 句柄/HUD/标题/暂停/对局）单独运行
-node portable/build-harness.mjs && node --experimental-wasi-unstable-preview1 tools/run-harness.mjs   # WASI harness
+node portable/build-harness.mjs && node --experimental-wasi-unstable-preview1 tools/run-harness.mjs   # WASI harness（RNG 冒烟）
+node --experimental-wasi-unstable-preview1 tools/run-harness.mjs stage1   # stage1：st01 跑 3600 帧，事件流落 web/artifacts/wasi/stage1-events.jsonl（契约见 docs/plans/event-contract.md）
 ```
