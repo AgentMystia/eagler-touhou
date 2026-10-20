@@ -134,7 +134,7 @@
 | 编号 | 检查项 | multiplayer | 记录 |
 | --- | --- | --- | --- |
 | MP-RULE-01 | [死亡、幽灵与救援](../../docs/adaptation/multiplayer.md#mp-rule-01) | 待核对 | multiplayer：按本项步骤执行，结果写入验证记录 |
-| MP-RULE-02 | [个人资源与团队资源](../../docs/adaptation/multiplayer.md#mp-rule-02) | 待核对 | multiplayer：按本项步骤执行，结果写入验证记录 |
+| MP-RULE-02 | [个人资源与团队资源](../../docs/adaptation/multiplayer.md#mp-rule-02) | 已验证 | multiplayer：2026-10-20 幽冥组进面补弹修复，跨面每席资源断言见[验证记录](../../docs/adaptation/th08mp-ghost-refill-20261020.md) |
 | MP-RULE-03 | [给予资源与反馈](../../docs/adaptation/multiplayer.md#mp-rule-03) | 待核对 | multiplayer：按本项步骤执行，结果写入验证记录 |
 | MP-RULE-04 | [对话、结算与全灭](../../docs/adaptation/multiplayer.md#mp-rule-04) | 待核对 | multiplayer：按本项步骤执行，结果写入验证记录 |
 | MP-RULE-05 | [自机可见性与多人HUD](../../docs/adaptation/multiplayer.md#mp-rule-05) | 待核对 | multiplayer：按本项步骤执行，结果写入验证记录 |
@@ -170,6 +170,8 @@
 <!-- manual-verification -->
 
 ## 运行验收记录
+
+2026-10-20 multiplayer：修复幽冥组（Youmu & Yuyuko）进面不补炸弹；WASI 规则/契约单测、CI 镜像检查、全量编译与真实跨面 E2E（幽冥组 2→3、同伴不变）见[验证记录](../../docs/adaptation/th08mp-ghost-refill-20261020.md)。
 
 2026-10-19 multiplayer：修复未携带正式开局合同的标题预加载初始化，旧版复现及新版 mode 0/1 双实例检查见[房间开局修复记录](../../docs/adaptation/room-start-20261019.md)。
 

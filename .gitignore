@@ -11,3 +11,7 @@
 /prepared/
 /private-assets/
 **/__pycache__/
+
+# Agent session state and local audit reports (not part of the project)
+/.zcode/
+/redteam-report*.md

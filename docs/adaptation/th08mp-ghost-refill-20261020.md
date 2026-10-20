@@ -1,7 +1,11 @@
 # th08-mp 幽冥组进面补弹修复验证记录 | 2026-10-20
 
-分支：`fix-th08mp-ghost-team-stage-bomb`（基于上游 main `ed196505`，未推送）。
+分支：`fix-th08mp-ghost-team-stage-bomb`（基于上游 main `ed196505`）。
 范围：仅 `ports/th08-mp`（多人变体），普通版 `ports/th08` 不受影响（改动文件全部在 `#error` 守卫的 multiplayer 头/ifdef 块内，构建隔离测试确认普通构建仍排除 multiplayer 实现）。
+
+## 检查编号
+
+覆盖 `ports/th08-mp/ADAPTATION.md` 的 MP-RULE-02（个人资源与团队资源，跨面资源归属与数值）。
 
 ## 根因
 
@@ -26,6 +30,10 @@
 ## 验证（全部一次性 podman 容器，`--rm`，结束后 `podman ps -a`/`network ls` 确认零残留）
 
 工具链：wasi-sdk 34.0 官方 deb（sha256 `09f37a4781…908d4a` 与 CI pinned 一致）、emscripten/emsdk 6.0.10（上游 DEVELOPMENT.md 标注 6.0.9，差异仅补丁版本）、node 23、python 3.12-bookworm + Playwright chromium。
+构建身份：multiplayer 变体 wasm sha256 `5541f7ce9bcfe16e1201d8c0ab9f1a60fe0afa97bd53db7e801ea08e26f07476`。
+common 来源：同仓库 `common/`（未改动）。
+环境：Linux CachyOS x64，容器化 podman（node:23、emscripten/emsdk、python:3.12-bookworm），Chromium headless shell 156.0.8078.4。
+网络：本地双席路由（`mp_fixture_local_route`）；真实 RTC 双实例在容器环境未通过（见下文限制说明）。
 
 ### A. 单元/契约（WASI，无需游戏资产）
 
