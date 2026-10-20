@@ -86,6 +86,7 @@ export const REPOSITORY_NODE_TESTS = Object.freeze([
   "tests/test-th15-multiplayer-policy.mjs",
   "tests/test-th15-chapter-reward.mjs",
   "tests/test-multiplayer-input-timing.mjs",
+  "tests/test-player-keyboard-keyup-release.mjs",
   "tests/test-multiplayer-room-session.mjs",
   "tests/test-multiplayer-spectator-rail-position.mjs",
   "tests/test-replay-files.mjs",
