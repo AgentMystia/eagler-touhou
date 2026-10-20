@@ -61,7 +61,7 @@ float interpolation_weight(i32 mode, float elapsed, float duration) noexcept {
 
 float EclInterpolation::step(float rate) noexcept {
     if (duration > 0) {
-        timer.tick(rate);
+        timer.tick(&rate);
         if (timer.current >= duration) {
             timer.set(duration);
             duration = 0;

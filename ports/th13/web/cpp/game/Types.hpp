@@ -42,6 +42,23 @@ inline i32 wrapping_add(i32 a, i32 b) noexcept { return signed_bits(u32(a) + u32
 inline i32 wrapping_sub(i32 a, i32 b) noexcept { return signed_bits(u32(a) - u32(b)); }
 inline i32 wrapping_mul(i32 a, i32 b) noexcept { return signed_bits(u32(a) * u32(b)); }
 
+// 几何载体：ANM 可视状态与世界坐标共用（对齐 th15 web/cpp/game/Types.hpp）。
+struct Vec2 {
+    float x = 0, y = 0;
+};
+
+struct Vec3 {
+    float x = 0, y = 0, z = 0;
+};
+
+struct Matrix4 {
+    float m[16]{};
+    void identity() noexcept {
+        std::memset(m, 0, sizeof m);
+        m[0] = m[5] = m[10] = m[15] = 1;
+    }
+};
+
 // 向零截断（Timer 等浮点帧计数用；对齐 th15 Timer 的 truncate_int）。
 inline i32 truncate_int(float value) noexcept {
     if (!std::isfinite(value) || value >= 2147483648.f || value < -2147483648.f) return INT32_MIN;
