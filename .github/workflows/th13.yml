@@ -24,7 +24,7 @@ jobs:
       - name: WASI harness 构建 + 单元测试
         run: >-
           docker run --rm -v "$PWD/ports/th13:/work:Z" -w /work th13-ci
-          bash -lc 'node portable/build-harness.mjs && node --test tests/'
+          bash -lc 'node portable/build-harness.mjs && node --test tests/*.test.mjs'
       - name: 网页运行时构建（Emscripten + SDL3）
         run: >-
           docker run --rm -v "$PWD/ports/th13:/work:Z" -w /work th13-ci
