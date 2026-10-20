@@ -1,0 +1,33 @@
+<!doctype html>
+<!-- th13 神灵庙网页运行时骨架：加载 sdl3 构建产物并启动。 -->
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>东方神灵庙 th13 — 运行时骨架</title>
+<style>
+  html, body { margin: 0; background: #101018; color: #ddd; font: 14px system-ui, sans-serif; }
+  canvas { display: block; margin: 0 auto; image-rendering: pixelated; }
+  #status { text-align: center; padding: 8px; }
+</style>
+</head>
+<body>
+<div id="status">加载 th13 运行时…</div>
+<canvas id="canvas"></canvas>
+<script type="module">
+const status = text => document.getElementById('status').textContent = text;
+try {
+  const Module = await import('./artifacts/sdl3/th13-sdl.mjs');
+  const mod = await Module.default({
+    canvas: document.getElementById('canvas'),
+    print: t => console.log('[th13]', t),
+    printErr: t => console.warn('[th13]', t),
+  });
+  mod._th13Boot();
+  status('th13 运行时已启动（骨架：主循环运行中）');
+} catch (e) {
+  status('启动失败：' + e.message);
+  console.error(e);
+}
+</script>
+</body>
+</html>
