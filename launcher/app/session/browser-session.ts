@@ -336,6 +336,13 @@ export function createBrowserSession({document, window, baseUrl: configuredBaseU
   };
   for (const type of playerGestureTypes) document.addEventListener(type, preventPlayerBrowserGesture, {capture: true, passive: false});
   function requiredRuntime() {if (!runtime) throw new Error('Launcher Runtime frame is not attached'); return runtime;}
+  /** Ask a launched Runtime to retry its audio unlock. The command is
+   * optional: an older shell rejects it and keeps relying on its own
+   * in-document first gesture, so failures are never user-visible. */
+  async function activateRuntimeAudio(owner: RuntimeService | null) {
+    if (!owner || !owner.getSnapshot().launched) return;
+    try {await owner.send('activate-audio', {});} catch {/* optional Runtime command */}
+  }
   function requiredNavigation() {if (!navigation) throw new Error('Launcher Router is not attached'); return navigation;}
   function reportError(error: unknown) {if (error instanceof RuntimeSessionSupersededError) return; feedback.status(errorText(error)); feedback.toast(errorText(error));}
   const externalMidi = createExternalMidiPort({settings, navigator: window.navigator, translate: t, feedback: feedback.toast,
@@ -656,7 +663,11 @@ export function createBrowserSession({document, window, baseUrl: configuredBaseU
         if (snapshot.playerOpen && !snapshot.replayViewer) frame?.focus({preventScroll: true});
       },
       inspect: async (_product, path) => (await requiredRuntime().send('playback', {action: 'inspect', path})).description,
-      watch: async (_product, path, stage) => {await requiredRuntime().send('playback', {action: 'open', path, ...(stage !== undefined ? {stage} : {})});}});
+      // The workspace's file-selection and transport buttons live in this
+      // document, so the Runtime document never sees the gesture that unlocks
+      // its own AudioContext. Forward the click before playback starts; a
+      // Runtime that cannot unlock audio answers and gates it in-document.
+      watch: async (_product, path, stage) => {const owner = requiredRuntime(); await activateRuntimeAudio(owner); await owner.send('playback', {action: 'open', path, ...(stage !== undefined ? {stage} : {})});}});
     files = createFileActions({runtime, prepareFiles, releasePrepared, translate: stringTranslate, confirm: decisions.askConfirmation,
       pickFile: ports.pickFile, download: ports.download, feedback, replayMutations: replays.mutations,
       replayManager: {open: async product => {requiredNavigation().openInfoDialog('replayDialog', {replace: true}); await replays!.open(product);},
@@ -1233,6 +1244,7 @@ export function createBrowserSession({document, window, baseUrl: configuredBaseU
       } catch (error) {feedback.playerStatus(t('fullscreen.switchFailed', {reason: errorText(error)}));}
     },
     getRuntime: () => runtime, getReplays: () => replays, getDiagnostics: () => diagnostics, getGameplayNetwork: () => gameplayNetwork,
+    activateRuntimeAudio: () => activateRuntimeAudio(runtime),
     async chooseReplayFile(product: ProductId) {const file = await ports.pickFile(replayImportAccept); if (file) {if (!files) throw new Error('File service is not attached'); await activity(() => files!.importFile('replay', file, product));}},
     async warnDiscouragedBrowser(isCurrent: () => boolean = () => true): Promise<boolean> {
       let dismissed = false; try {dismissed = storage?.getItem('browser-warning-dismissed') === '1';} catch {}

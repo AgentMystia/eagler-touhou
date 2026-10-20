@@ -148,6 +148,7 @@ export const WORKSPACE_NODE_TESTS = Object.freeze([
   "tests/test-runtime-storage-contract.mjs",
   "tests/test-thcrap-upstream-contract.mjs",
   "tests/test-replay-extension-contract.mjs",
+  "tests/test-replay-audio-activation-contract.mjs",
   "tests/test-always-hitbox-contract.mjs",
   "tests/test-sdl-emscripten-audio-contract.mjs",
   "tests/test-midi-capability-contract.mjs",

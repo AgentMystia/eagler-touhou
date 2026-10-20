@@ -57,7 +57,12 @@ export function ReplayWorkspace({session}: {session: BrowserSession}) {
   if (!open) return null;
   const report = (error: unknown) => {setError(error instanceof Error ? error.message : String(error));};
   async function control(action: 'pause'|'play'|'seek'|'rate', value?: number) {
-    setError(''); try {await session.getRuntime()!.send('playback', {action, ...(value !== undefined ? {value} : {})});} catch (error) {report(error);}
+    setError(''); try {
+      // Play and seek (replay/重播) restart sound. This click lands in the
+      // launcher document, so forward it to unlock the Runtime's own audio.
+      if (action === 'play' || action === 'seek') await session.activateRuntimeAudio();
+      await session.getRuntime()!.send('playback', {action, ...(value !== undefined ? {value} : {})});
+    } catch (error) {report(error);}
   }
   const importFile = async (file: File) => {
     if (!isReplayImportFileName(file.name)) throw Error('请选择录像或录像压缩包');

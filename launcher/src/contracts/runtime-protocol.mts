@@ -26,6 +26,7 @@ export const RUNTIME_PROTOCOL_OPTIONAL_COMMANDS = Object.freeze([
   "prepare-room",
   "return-room",
   "playback",
+  "activate-audio",
   "retry-music",
   "thprac-mouse",
   "network-cancel",
@@ -229,6 +230,7 @@ export const RUNTIME_PROTOCOL_COMMAND_BEHAVIOR = Object.freeze({
   remove: Object.freeze({ phase: "ready", response: "required", requirement: "required" }),
   sync: Object.freeze({ phase: "ready", response: "required", requirement: "required" }),
   "playback": Object.freeze({ phase: "live", response: "required", requirement: "conditional", when: "local Replay workspace" }),
+  "activate-audio": Object.freeze({ phase: "live", response: "required", requirement: "conditional", when: "hosted Runtime audio is gated by the browser autoplay policy; the host forwards its own playback click so the Runtime can retry its audio unlock and, while still suspended, gate sound behind a tap inside its own document" }),
   "retry-music": Object.freeze({ phase: "live", response: "required", requirement: "conditional", when: "Runtime-managed music transfer can fail before launch and advertise retry" }),
   "thprac-mouse": Object.freeze({ phase: "live", response: "optional", requirement: "profile-required", when: "thprac capability is declared" }),
   "network-cancel": Object.freeze({ phase: "live", response: "optional", requirement: "conditional", when: "TH09 game-title multiplayer dialog is dismissed" }),
@@ -312,6 +314,7 @@ export interface RuntimeCommandPayloads {
   remove: { path: string };
   sync: Record<string, never>;
   playback: {action: "inspect" | "open" | "pause" | "play" | "seek" | "rate"; path?: string; stage?: number; value?: number};
+  "activate-audio": Record<string, never>;
   "retry-music": Record<string, never>;
   "thprac-mouse": { type: "move" | "down" | "up"; x: number; y: number };
   "network-cancel": Record<string, never>;

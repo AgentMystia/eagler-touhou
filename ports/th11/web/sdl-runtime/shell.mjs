@@ -198,6 +198,28 @@ async function resumeForegroundAudio(forcePause=false){
  if(forcePause)core.sdl_loop_pause(1);
  return resumeRuntimeAudio(Module,core,()=>!!core&&launched&&!document.hidden);
 }
+// Browser autoplay policy unlocks the first sound only for a gesture inside
+// this document; a host click forwarded over postMessage carries none. The
+// optional activate-audio command retries the resume, and while the context
+// stays suspended gates sound behind a real tap on this document.
+let audioGate=null;
+function hideAudioGate(){if(audioGate){audioGate.remove();audioGate=null;}}
+async function activateAudio(){
+ if(!launched||document.hidden)return {activated:true};
+ const context=Module?.SDL3?.audioContext;
+ if(!context||context.state==='running')return {activated:true};
+ await resumeForegroundAudio();
+ if(context.state==='running')return {activated:true};
+ if(!audioGate){
+  audioGate=document.createElement('button');
+  audioGate.type='button';audioGate.className='eagler-audio-gate';audioGate.textContent='点击开始播放';
+  audioGate.style.cssText='position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;margin:0;border:0;background:rgba(0,0,0,.78);color:#fff;font:500 17px/1.5 system-ui,sans-serif;cursor:pointer';
+  audioGate.addEventListener('click',()=>{hideAudioGate();void resumeForegroundAudio(true);});
+  document.body.appendChild(audioGate);
+  context.onstatechange=()=>{if(context.state==='running')hideAudioGate();};
+ }
+ return {activated:false};
+}
 function closeAudio(){
  // The launcher owns the shared context. SDL owns and must disconnect its
  // stream, but closing that stream must not close the launcher's context.
@@ -230,6 +252,7 @@ async function command(m){switch(m.command){
  case 'direct-touch':directTouch(core,canvas,m,{width:innerWidth,height:innerHeight});return {};
  case 'touch-controls':touchControls(core,options,m,Module);return {};
  case 'playback':if(!launched||options.replayViewer!==true)throw Error('请先打开录像管理器');return localReplay.command(m);
+ case 'activate-audio':return await activateAudio();
  case 'launch':await launch();return {};
  case 'sync':await save();return {};
  case 'list':return {files:listLocalReplayFiles(Module.FS,'/savesth11',path)};

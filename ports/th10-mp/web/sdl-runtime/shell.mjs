@@ -402,6 +402,28 @@ async function resumeForegroundAudio(forcePause=false){
  if(forcePause)core.sdl_loop_pause(1);
  return resumeRuntimeAudio(Module,core,()=>!!core&&!!app&&launched&&!closing&&!touchRetired&&!document.hidden&&ownsTouchDocument());
 }
+// Browser autoplay policy unlocks the first sound only for a gesture inside
+// this document; a host click forwarded over postMessage carries none. The
+// optional activate-audio command retries the resume, and while the context
+// stays suspended gates sound behind a real tap on this document.
+let audioGate=null;
+function hideAudioGate(){if(audioGate){audioGate.remove();audioGate=null;}}
+async function activateAudio(){
+ if(!launched||document.hidden)return {activated:true};
+ const context=Module?.SDL3?.audioContext;
+ if(!context||context.state==='running')return {activated:true};
+ await resumeForegroundAudio();
+ if(context.state==='running')return {activated:true};
+ if(!audioGate){
+  audioGate=document.createElement('button');
+  audioGate.type='button';audioGate.className='eagler-audio-gate';audioGate.textContent='点击开始播放';
+  audioGate.style.cssText='position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;margin:0;border:0;background:rgba(0,0,0,.78);color:#fff;font:500 17px/1.5 system-ui,sans-serif;cursor:pointer';
+  audioGate.addEventListener('click',()=>{hideAudioGate();void resumeForegroundAudio(true);});
+  document.body.appendChild(audioGate);
+  context.onstatechange=()=>{if(context.state==='running')hideAudioGate();};
+ }
+ return {activated:false};
+}
 async function stop(){if(closing)return;if(roomOwned&&!options.replayViewer){closing=true;try{await save();await command({command:'return-room'});emit('room-menu');}finally{closing=false;}return;}closing=true;localReplay.close();spectatorPlayback.stop();invalidateTouches();calibration?.stop();clearKeyboard();try{practice?.close();core.sdl_loop_stop();await save();core.sdl_game_close();await sync(false);app=0;launched=false;updateReplaySeek();emit('exit',{code:0,status:'success'});}finally{closing=false;}}
 const localReplay=createNativeLocalReplay({core:()=>core,module:()=>Module,physical:value=>root()+'/'+replayFiles.physical(storage.relativeSave(value)),replayState:()=>{const v=Array.from(new Uint32Array(core.memory.buffer,core.eagler_replay_state(),multiplayerRuntime?6:5));return {frame:v[0],total:v[1],ended:!!v[2],stage:v[3],startStage:v[4],bootstrapTarget:v[5]??0};},stopLoop:()=>{clearKeyboard();core.sdl_loop_stop();},onState:playback=>emit('runtime-info',{playback}),onError:error});
 async function initializeTitle(seed){
@@ -461,6 +483,7 @@ async function command(message){
  }
  case 'spectator-playback':return spectatorPlayback.command(message);
  case 'playback':if(!launched||options.replayViewer!==true)throw Error('请先打开录像管理器');return localReplay.command(message);
+ case 'activate-audio':return await activateAudio();
  case 'launch':launchSerial=Number(message.launchSerial)||0;await launch();return {};
  case 'prepare-room':roomOwned=true;return prepareRoom();
  case 'return-room':roomOwned=true;{

@@ -40,8 +40,9 @@
 | `list`、`sync` | 运行中 | 无 |
 | `read`、`remove` | 运行中 | `path` |
 | `write` | 运行中 | `path`、`bytes`；`replayMatch` 可选 |
+| `activate-audio` | 运行中 | 无；Runtime 重试音频解锁，回复 `activated: boolean`，浏览器仍挂起时在自身文档内呈现点击开始播放的兜底门 |
 
-必须上报的事件：`ready`、`first-frame`、`runtime-info`、`frame-health`、`audio-health`、`exit`、`error`。`ready` 可带 `saveRoot`、`roomPreview`、`roomReturn`；`first-frame` 表示游戏确实呈现首帧。支持 `roomReturn` 的 Runtime 以 `launchSerial` 关联每次开局的 `first-frame` 与原生返回菜单的 `room-menu`，房间菜单、玩家开局和旁观重进共用已加载的实例。旁观启动完成本作原生初始化后接收回放历史，每次重进重新选择玩家或旁观身份。按 capability 使用的命令包括 `prepare-room`、`return-room`、`playback`、`retry-music`、`thprac-mouse`、`network-cancel`、`spectator-room-state`、`spectator-playback`；条件事件包括 `room-menu`、`midi-fallback`、`music-complete`、`music-error`、`music-incomplete`、`network-request`。`notice` 与 `player-debug` 为可选事件。事件和命令的完整类型见 [`runtime-protocol.mts`](../src/contracts/runtime-protocol.mts)。
+必须上报的事件：`ready`、`first-frame`、`runtime-info`、`frame-health`、`audio-health`、`exit`、`error`。`ready` 可带 `saveRoot`、`roomPreview`、`roomReturn`；`first-frame` 表示游戏确实呈现首帧。支持 `roomReturn` 的 Runtime 以 `launchSerial` 关联每次开局的 `first-frame` 与原生返回菜单的 `room-menu`，房间菜单、玩家开局和旁观重进共用已加载的实例。旁观启动完成本作原生初始化后接收回放历史，每次重进重新选择玩家或旁观身份。按 capability 使用的命令包括 `prepare-room`、`return-room`、`playback`、`activate-audio`、`retry-music`、`thprac-mouse`、`network-cancel`、`spectator-room-state`、`spectator-playback`；条件事件包括 `room-menu`、`midi-fallback`、`music-complete`、`music-error`、`music-incomplete`、`network-request`。`notice` 与 `player-debug` 为可选事件。事件和命令的完整类型见 [`runtime-protocol.mts`](../src/contracts/runtime-protocol.mts)。
 
 | 阶段 | 命令 / 事件 | 约定 |
 | --- | --- | --- |

@@ -218,6 +218,28 @@ function closeAudio(){
  if(borrowed)s.audioContext=undefined;
  try{core._th15_audio_close();}finally{if(borrowed)s.audioContext=context;}
 }
+// Browser autoplay policy unlocks the first sound only for a gesture inside
+// this document; a host click forwarded over postMessage carries none. The
+// optional activate-audio command retries the resume, and while the context
+// stays suspended gates sound behind a real tap on this document.
+let audioGate=null;
+function hideAudioGate(){if(audioGate){audioGate.remove();audioGate=null;}}
+async function activateAudio(){
+ if(!launched||document.hidden)return {activated:true};
+ const context=core?.SDL3?.audioContext;
+ if(!context||context.state==='running')return {activated:true};
+ try{await context.resume();}catch{}
+ if(context.state==='running')return {activated:true};
+ if(!audioGate){
+  audioGate=document.createElement('button');
+  audioGate.type='button';audioGate.className='eagler-audio-gate';audioGate.textContent='点击开始播放';
+  audioGate.style.cssText='position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;margin:0;border:0;background:rgba(0,0,0,.78);color:#fff;font:500 17px/1.5 system-ui,sans-serif;cursor:pointer';
+  audioGate.addEventListener('click',()=>{hideAudioGate();try{void context.resume();}catch{}});
+  document.body.appendChild(audioGate);
+  context.onstatechange=()=>{if(context.state==='running')hideAudioGate();};
+ }
+ return {activated:false};
+}
 async function stop(){if(stopping)return;if(roomOwned&&!options.replayViewer){stopping=true;try{await save();await command({command:'return-room'});emit('room-menu');}finally{stopping=false;}return;}stopping=true;localReplay.close();spectatorPlayback.stop();try{core._th15_loop_stop();await save();multiplayerBridge?.close();closeAudio();launched=false;emit('exit',{code:0,status:'success'});}finally{stopping=false;}}
 function path(value){const name=String(value).replaceAll('\\','/').toLowerCase().replace(/^\/savesth15(?:mp)?\//,'').replace(/^\//,'');if(!/^(?:scoreth15\.dat|th15\.cfg|replay\/(?:[^./\\\x00-\x1f][^/\\\x00-\x1f]{0,127}\/)?th15(?:mp)?_(?:\d{2}|ud[a-z0-9]{4})\.rpyx?|autosave\/save[0-3]_[0-4]\.dat)$/.test(name))throw Error('存档路径无效');return name;}
 function apply(){core.eaglerOptions=options;core._th15_always_hitbox(+(options.alwaysHitbox===true));core._th15_limit_presentation(+!!options.limitPresentationTo60);core._th15_touch_options(+!!options.touchEnabled,Math.max(0,['touch','touch-unlimited','joystick','joystick-free'].indexOf(runtimeBuild.multiplayer&&options.touchMovementMode==='joystick-free'?'joystick':options.touchMovementMode)),Math.max(100,Math.min(300,Number(options.touchSensitivity)||100))/100,+(options.touchFocusMode==='two-finger'),+!!options.doubleTapBombEnabled);core._th15_music_enabled(+music);}
@@ -280,6 +302,7 @@ case 'return-room':roomOwned=true;
  if(!core._th15_room_return()||!core._th15_room_preview())throw Error(err()||'Native room return rejected');
  roomPreview=true;launched=false;first=false;core._th15_loop_start();await new Promise(requestAnimationFrame);return {presented:true};
 case 'playback':if(!launched||options.replayViewer!==true)throw Error('请先打开录像管理器');return localReplay.command(m);
+case 'activate-audio':return await activateAudio();
 case 'launch':launchSerial=Number(m.launchSerial)||0;if(!launched){if(roomPreview)core._th15_loop_stop();else await initializeTitle();launched=true;roomPreview=false;apply();first=false;$('#loading').textContent='';if(!runtimeBuild.multiplayer||await multiplayerBridge.launch())core._th15_loop_start();if(runtimeBuild.multiplayer&&options.replayViewer){first=true;emit('first-frame');}if(options.netplaySpectator)spectatorPlayback.start();emit('runtime-info',{renderer:'SDL3 / WebGL2 / C++',architecture:protocol,...runtimeBuild});}return {};
 case 'sync':await save();return {};
 case 'list':return {files:listLocalReplayFiles(core.FS,saveRoot,path)};

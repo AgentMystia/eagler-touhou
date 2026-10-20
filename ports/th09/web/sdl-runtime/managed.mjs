@@ -112,6 +112,29 @@ async function installRuntimePack(pack){
 async function save(){if(launched&&!netplay?.spectator&&!core._th09_save_snapshot())throw Error('保存失败');await sync();}
 async function stop(){if(stopping)return;if(roomOwned&&!options.replayViewer){stopping=true;try{await save();await command({command:'return-room'});emit('room-menu');}finally{stopping=false;}return;}revokeLifetime();stopping=true;clearKeyboard();try{networkOverlayPending=false;replayPlayer?.close();replayPlayer=null;core._th09_loop_stop();await netplay?.finishSpectatorOutput();netplay?.close();await save();core._th09_game_close();launched=false;delete window.__th09Runtime;if(!retired)stopPending=false;emit('exit',{code:0,status:'success'});}finally{stopping=false;}}
 function openNetwork(){if(!launched||options.netplayMode==='lan'||!status().title[1]||networkOverlayPending)return;networkOverlayPending=true;neutralTouch();core._th09_loop_pause(1);emit('network-request');}
+// Browser autoplay policy unlocks the first sound only for a gesture inside
+// this document; a host click forwarded over postMessage carries none. The
+// optional activate-audio command retries the resume, and while the context
+// stays suspended gates sound behind a real tap on this document.
+let audioGate=null;
+function hideAudioGate(){if(audioGate){audioGate.remove();audioGate=null;}}
+async function activateAudio(receivedLifetime){
+ assertLifetime(receivedLifetime);
+ if(!launched||document.hidden)return {activated:true};
+ const context=core?.SDL3?.audioContext;
+ if(!context||context.state==='running')return {activated:true};
+ try{await context.resume();}catch{}
+ if(context.state==='running')return {activated:true};
+ if(!audioGate){
+  audioGate=document.createElement('button');
+  audioGate.type='button';audioGate.className='eagler-audio-gate';audioGate.textContent='点击开始播放';
+  audioGate.style.cssText='position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;margin:0;border:0;background:rgba(0,0,0,.78);color:#fff;font:500 17px/1.5 system-ui,sans-serif;cursor:pointer';
+  audioGate.addEventListener('click',()=>{hideAudioGate();try{void context.resume();}catch{}});
+  document.body.appendChild(audioGate);
+  context.onstatechange=()=>{if(context.state==='running')hideAudioGate();};
+ }
+ return {activated:false};
+}
 let titleInitialized=false,roomPreview=false;
 async function initializeTitle(receivedLifetime){
  if(titleInitialized)return;
@@ -211,6 +234,7 @@ case 'playback':{
  }
  if(!replayPlayer)throw Error('请先选择录像');return {playback:replayPlayer.control(m.action,m.value)};
 }
+case 'activate-audio':return await activateAudio(receivedLifetime);
 case 'sync':await save();return {};
 case 'list':{const files=[];const scan=dir=>{for(const name of core.FS.readdir(saveRoot+dir)){if(name==='.'||name==='..')continue;const n=(dir+'/'+name).replace(/^\//,''),full=saveRoot+'/'+n,s=core.FS.stat(full);if(dir==='/replay'&&core.FS.isDir(s.mode)){scan('/'+n);continue;}try{path(n);}catch{continue;}if(core.FS.isFile(s.mode)){const replayMatch=autoReplay.readMatch(full);files.push({path:exportReplayName(n,core.FS.readFile(full),9),size:s.size,modifiedAt:Number(s.mtime),...(replayMatch?{replayMatch}:{})});}}};scan('');scan('/replay');return {files};}
 case 'read':return {bytes:Array.from(core.FS.readFile(saveRoot+'/'+path(m.path).replace(/\.rpyx$/,'.rpy')))};

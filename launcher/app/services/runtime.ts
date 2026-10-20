@@ -124,7 +124,7 @@ export interface RuntimePlan {
 }
 export type RuntimeReadyContinuation = (epoch: number) => Promise<RuntimePlan>;
 export type RuntimePhase = 'idle' | 'loading' | 'configuring' | 'prepared' | 'launching' | 'running' | 'saving' | 'exited' | 'error';
-export type RuntimeRequestCommand = 'playback' | 'spectator-playback' | 'list' | 'read' | 'write' | 'remove' | 'resources' | 'retry-music';
+export type RuntimeRequestCommand = 'playback' | 'activate-audio' | 'spectator-playback' | 'list' | 'read' | 'write' | 'remove' | 'resources' | 'retry-music';
 export type RuntimeFileCommand = 'list' | 'read' | 'write' | 'remove';
 /** Exclusive access to the existing prepared Runtime filesystem, never another writer. */
 export interface RuntimeFileSession {
@@ -1160,7 +1160,7 @@ export function createRuntimeService(options: RuntimeServiceOptions) {
     await send('network-cancel', {}); assertCurrent(token);
   }
   function request<C extends RuntimeRequestCommand>(command: C, payload: RuntimeCommandPayloads[C], timeout?: number) {
-    if (!['playback', 'spectator-playback', 'list', 'read', 'write', 'remove', 'resources', 'retry-music'].includes(command)) {
+    if (!['playback', 'activate-audio', 'spectator-playback', 'list', 'read', 'write', 'remove', 'resources', 'retry-music'].includes(command)) {
       return Promise.reject(new Error('Lifecycle commands must use prepare, launch or sync'));
     }
     if (preflightEpoch !== null) return Promise.reject(new Error('Game-check files are owned by its Runtime preparation'));

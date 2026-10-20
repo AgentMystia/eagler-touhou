@@ -300,6 +300,28 @@ async function resumeForegroundAudio(forcePause=false){
  if(forcePause&&!multiplayerRuntime)core.sdl_loop_pause(1);
  const resumed=await resumeRuntimeAudio(Module,core,()=>!!core&&launched&&!document.hidden);multiplayer?.afterAudioResume();return resumed;
 }
+// Browser autoplay policy unlocks the first sound only for a gesture inside
+// this document; a host click forwarded over postMessage carries none. The
+// optional activate-audio command retries the resume, and while the context
+// stays suspended gates sound behind a real tap on this document.
+let audioGate=null;
+function hideAudioGate(){if(audioGate){audioGate.remove();audioGate=null;}}
+async function activateAudio(){
+ if(!launched||document.hidden)return {activated:true};
+ const context=Module?.SDL3?.audioContext;
+ if(!context||context.state==='running')return {activated:true};
+ await resumeForegroundAudio();
+ if(context.state==='running')return {activated:true};
+ if(!audioGate){
+  audioGate=document.createElement('button');
+  audioGate.type='button';audioGate.className='eagler-audio-gate';audioGate.textContent='点击开始播放';
+  audioGate.style.cssText='position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;margin:0;border:0;background:rgba(0,0,0,.78);color:#fff;font:500 17px/1.5 system-ui,sans-serif;cursor:pointer';
+  audioGate.addEventListener('click',()=>{hideAudioGate();void resumeForegroundAudio(true);});
+  document.body.appendChild(audioGate);
+  context.onstatechange=()=>{if(context.state==='running')hideAudioGate();};
+ }
+ return {activated:false};
+}
 function closeAudio(){
  // The launcher owns the shared context. SDL owns and must disconnect its
  // stream, but closing that stream must not close the launcher's context.
@@ -362,6 +384,7 @@ async function command(m,receivedTouchLifetime=touchLifetime){
  case 'thprac-mouse':{if(!options.thpracEnabled||!core.sdl_thprac_mouse)return {};const r=canvas.getBoundingClientRect(),scale=Math.min(r.width/640,r.height/480);core.sdl_thprac_mouse(m.type==='down'?1:m.type==='up'?2:0,(Number(m.x)-r.left-(r.width-640*scale)/2)/scale,(Number(m.y)-r.top-(r.height-480*scale)/2)/scale);return {};}
  case 'spectator-playback':return spectatorPlayback.command(m);
  case 'playback':if(!launched||options.replayViewer!==true)throw Error('请先打开录像管理器');return localReplay.command(m);
+ case 'activate-audio':return await activateAudio();
  case 'prepare-room':roomOwned=true;
   if(!multiplayerRuntime||launched)throw Error('Invalid room preview owner');
   await initializeTitle(receivedTouchLifetime);
