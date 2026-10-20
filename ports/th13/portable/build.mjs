@@ -39,6 +39,7 @@ const sources = [
   ...readdirSync(resolve(root, 'cpp/game')).filter(n => n.endsWith('.cpp')).map(n => 'cpp/game/' + n),
   ...readdirSync(resolve(root, 'cpp/platform')).filter(n => n.endsWith('.cpp')).map(n => 'cpp/platform/' + n),
   ...readdirSync(resolve(root, 'cpp/sdl')).filter(n => n.endsWith('.cpp')).map(n => 'cpp/sdl/' + n),
+  '../portable/sdl/Renderer.cpp',  // 语义 GLES 渲染后端（与 sdl/ 设备层同链）
 ];
 
 function headers(dir) {
