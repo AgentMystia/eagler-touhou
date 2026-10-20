@@ -1,0 +1,37 @@
+name: th13
+on:
+  push:
+    paths: [ports/th13/**, .github/workflows/th13.yml]
+  pull_request:
+    paths: [ports/th13/**, .github/workflows/th13.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: th13-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            ports/th13
+            tools/build
+      - name: 构建 th13 ci 镜像（与本地 podman 共用 Dockerfile）
+        run: docker build --target ci -t th13-ci ports/th13/container
+      - name: WASI harness 构建 + 单元测试
+        run: >-
+          docker run --rm -v "$PWD/ports/th13:/work:Z" -w /work th13-ci
+          bash -lc 'node portable/build-harness.mjs && node --test tests/'
+      - name: 网页运行时构建（Emscripten + SDL3）
+        run: >-
+          docker run --rm -v "$PWD/ports/th13:/work:Z" -w /work th13-ci
+          bash -lc 'node portable/build.mjs'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: th13-build-json
+          path: ports/th13/web/artifacts/**/build.json
+          if-no-files-found: ignore
