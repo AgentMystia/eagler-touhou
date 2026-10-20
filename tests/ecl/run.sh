@@ -15,14 +15,8 @@ flags="-O2 -Wall -Wextra"
 out_dir="$port_dir/tests/ecl/build"
 mkdir -p "$out_dir"
 
-sources=(
-  eagler-touhou/ports/th13/web/cpp/game/Interpolation.cpp
-  eagler-touhou/ports/th13/web/cpp/game/EclResource.cpp
-  eagler-touhou/ports/th13/web/cpp/game/EclContext.cpp
-  eagler-touhou/ports/th13/web/cpp/game/EclInterpreter.cpp
-  eagler-touhou/ports/th13/web/cpp/game/EclThreads.cpp
-  eagler-touhou/ports/th13/web/cpp/game/EclFile.cpp
-)
+# 游戏源与套件均自动发现，使任意历史提交点可独立构建当时的测试。
+sources=(eagler-touhou/ports/th13/web/cpp/game/*.cpp)
 
 status=0
 for suite in "$script_dir"/ecl_*_test.cpp; do
