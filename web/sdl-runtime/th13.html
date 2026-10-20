@@ -1,32 +1,48 @@
 <!doctype html>
-<!-- th13 神灵庙网页运行时骨架：加载 sdl3 构建产物并启动。 -->
+<!-- th13 神灵庙网页运行时：加载 sdl3 构建产物，走 装载挡板 → 初始化 → RAF 主循环。
+     资源来自 /assets（text/sig/ascii/effect/title/title_v/help/front.anm 等）。 -->
 <html lang="zh">
 <head>
 <meta charset="utf-8">
-<title>东方神灵庙 th13 — 运行时骨架</title>
+<title>东方神灵庙 th13 — 运行时</title>
 <style>
   html, body { margin: 0; background: #101018; color: #ddd; font: 14px system-ui, sans-serif; }
-  canvas { display: block; margin: 0 auto; image-rendering: pixelated; }
+  canvas { display: block; margin: 0 auto; image-rendering: pixelated; outline: none; }
   #status { text-align: center; padding: 8px; }
 </style>
 </head>
 <body>
 <div id="status">加载 th13 运行时…</div>
-<canvas id="canvas"></canvas>
+<canvas id="canvas" tabindex="0"></canvas>
 <script type="module">
 const status = text => document.getElementById('status').textContent = text;
 try {
   const Module = await import('../artifacts/sdl3/th13-sdl.mjs');
+  const canvas = document.getElementById('canvas');
   const mod = await Module.default({
-    canvas: document.getElementById('canvas'),
+    canvas,
     print: t => console.log('[th13]', t),
     printErr: t => console.warn('[th13]', t),
   });
-  mod._th13Boot();  // 安装主循环后以 unwind 展开返回，成功路径见 catch
+  // 键盘事件经 SDL3 emscripten 端口进入 SDL 键位态；截获方向键/空格防滚动。
+  canvas.addEventListener('click', () => canvas.focus());
+  for (const type of ['keydown', 'keyup'])
+    canvas.addEventListener(type, e => {
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Tab'].includes(e.code))
+        e.preventDefault();
+    });
+
+  // 启动序：装载挡板（sig+ascii）→ 启动品牌动画 → 初始化七 bank + 标题 → RAF 循环。
+  if (!mod._th13_prepare_loading()) throw new Error(mod._th13_error());
+  mod._th13_draw_startup(90);
+  if (!mod._th13_initialize()) throw new Error(mod._th13_error());
+  mod._th13_loop_start();
+  const phase = () => ['标题', '对局', '暂停', '', '已退出'][mod._th13_phase()] ?? '';
+  status('th13 运行时已启动（' + phase() + '）— 点击画面聚焦后，Z/Enter 确认，Esc 暂停');
+  mod.onGameFrame = (ok) => { if (!ok) status('运行时错误：' + mod._th13_error()); };
 } catch (e) {
-  // emscripten 主循环以 unwind 展开安装调用栈——这是启动成功的路径
   if (e === 'unwind') {
-    status('th13 运行时已启动（骨架：主循环运行中）');
+    status('th13 运行时已启动');
   } else {
     const detail = e && (e.stack || e.message) || String(e);
     status('启动失败：' + detail);
