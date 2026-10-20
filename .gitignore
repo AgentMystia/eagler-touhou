@@ -33,3 +33,6 @@ score*.dat
 .npmrc
 **/__pycache__/
 *.py[cod]
+
+# ECL 单测本地构建产物
+tests/ecl/build/
