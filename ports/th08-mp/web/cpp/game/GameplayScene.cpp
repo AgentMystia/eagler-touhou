@@ -452,7 +452,8 @@ bool GameplayScene::load(const GameplayLoad& wanted,bool initialize_values){
     }
     for(u32 seat=0;seat<session.player_count;++seat){
         pilot(seat).place_multiplayer_spawn(seat,session.player_count);
-        multiplayer::begin_next_stage_life(session.pilot_resources[seat],next_stage_spirit[seat],pilot(seat).profile(false).initial_bombs);
+        const bool ghost_refill=retain_counters&&multiplayer::netherworld_stage_bonus(session.player_characters[seat]);
+        multiplayer::begin_next_stage_life(session.pilot_resources[seat],next_stage_spirit[seat],pilot(seat).profile(false).initial_bombs,ghost_refill);
     }
 #endif
     if(initialize_values){

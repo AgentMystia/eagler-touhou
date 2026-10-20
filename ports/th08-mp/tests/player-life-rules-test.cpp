@@ -95,6 +95,39 @@ static void initial_and_reset_resources(){
         if(count==2)assert(banks[2].bombs==0&&banks[2].lives==0&&banks[2].power==0);
     }
 }
+static void netherworld_stage_refill(){
+    // Only the Netherworld loadouts carry the stage bonus.
+    for(int character=0;character<12;++character)
+        assert(multiplayer::netherworld_stage_bonus(u8(character))==(character==3||character==10||character==11));
+    // The stage bonus grants exactly one bomb below three, mirroring the
+    // native stage-results rule for the Netherworld loadouts (3/10/11).
+    for(int bombs:{0,1,2}){
+        PilotResources bank{};bank.bombs=float(bombs);
+        multiplayer::begin_next_stage_life(bank,false,3,true);
+        assert(bank.bombs==float(bombs+1));
+        // A spirit return resets the stock first; the bonus then judges it.
+        multiplayer::begin_next_stage_life(bank,true,3,true);
+        assert(bank.bombs==3.f);
+    }
+    for(int bombs:{3,4,8}){
+        PilotResources bank{};bank.bombs=float(bombs);
+        multiplayer::begin_next_stage_life(bank,false,2,true);
+        assert(bank.bombs==float(bombs));
+        multiplayer::begin_next_stage_life(bank,true,2,true);
+        assert(bank.bombs==2.f); // base_life_bombs(2)=1 then the bonus grants one.
+    }
+    // Other loadouts never receive the stage bonus, whatever their stock.
+    for(int bombs:{0,1,2,3,8}){
+        PilotResources bank{};bank.bombs=float(bombs);
+        multiplayer::begin_next_stage_life(bank,false,3,false);
+        assert(bank.bombs==float(bombs));
+    }
+    // The bonus applies with the default flag as well, so a caller that
+    // ignores the argument keeps the pre-existing behavior.
+    PilotResources bank{};bank.bombs=2;
+    multiplayer::begin_next_stage_life(bank,false,3);
+    assert(bank.bombs==2);
+}
 static void challenge_deaths(){
     PlayerLifeState state{};PlayerLifeContext context{};PlayerMovementState movement{};AnmVm animation{};
     context.challenge_mode=true;context.lives=0;context.power=128;context.bombs=0;context.character=2;
@@ -127,6 +160,7 @@ static void shared_bomb_during_respawn(){
 int main(){
 #ifdef TH_ENABLE_MULTIPLAYER_GAMEPLAY
     initial_and_reset_resources();
+    netherworld_stage_refill();
     challenge_deaths();
     shared_bomb_during_respawn();
 #endif
@@ -134,7 +168,7 @@ int main(){
         for(u8 character:{u8(0),u8(2),u8(8),u8(9)})ordinary_death(initial,bombs,power,character);
     final_death();
 #ifdef TH_ENABLE_MULTIPLAYER_GAMEPLAY
-    std::puts("player-life-rules MP: PASS (144 death cases plus final death)");
+    std::puts("player-life-rules MP: PASS (144 death cases plus final death and Netherworld refill)");
 #else
     std::puts("player-life-rules SP: PASS (144 unchanged death cases plus final death)");
 #endif
