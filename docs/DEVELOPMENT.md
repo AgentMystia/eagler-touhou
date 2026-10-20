@@ -44,6 +44,7 @@ make extract   # 解包 th13ogg.7z → games/th13/，生成 SHA256 清单与版�
 ## 测试
 
 ```sh
-node --test tests/*.test.mjs   # 仓库内单元测试
+node --test tests/*.test.mjs   # 仓库内单元测试（rng / ecl / ui / anm）
+bash tests/ui/run.sh           # UI 基座六套件（输入/调度/ANM 句柄/HUD/标题/暂停/对局）单独运行
 node portable/build-harness.mjs && node --experimental-wasi-unstable-preview1 tools/run-harness.mjs   # WASI harness
 ```
