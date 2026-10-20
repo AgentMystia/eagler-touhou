@@ -17,6 +17,12 @@ const clang = resolve(wasi, 'bin', 'clang++');
 
 const sources = [
   'cpp/game/Rng.cpp',
+  'cpp/game/Interpolation.cpp',
+  'cpp/game/EclResource.cpp',
+  'cpp/game/EclContext.cpp',
+  'cpp/game/EclInterpreter.cpp',
+  'cpp/game/EclThreads.cpp',
+  'cpp/game/EclFile.cpp',
 ].map(p => resolve(root, p));
 const main = resolve(workspace, 'tests/harness/harness.cpp');
 const output = resolve(out, 'th13-harness.wasm');

@@ -21,7 +21,8 @@ constexpr AddressAnchor kAnchors[] = {
     {"rng", 0x47BBA2},    // MSVC CRT _rand()；状态在 _getptd()+0x14；oracle 序列已对齐
     {"supervisor", 0},    // 主循环
     {"anm-vm", 0},        // 动画脚本虚拟机
-    {"ecl-vm", 0},        // 敌机脚本虚拟机
+    {"ecl-vm", 0x4772A0},  // ECL 基础解释器（线程 step）；C++ 对应物 web/cpp/game EclContext::step，
+                           // 取参 0x478e60/0x478ee0 已对反汇编核对，行为规格见 docs/plans/ecl-vm.md
     {"enemy-manager", 0},
     {"bullet-manager", 0},
     {"item-manager", 0},
