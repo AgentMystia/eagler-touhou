@@ -10,11 +10,11 @@ class ApplicationHost {
 public:
     int run();  // 网页目标：安装 emscripten 主循环；原生目标：进入本地循环
 
+    void tick();
+
     uint64_t frameCount() const { return frameCount_; }
 
 private:
-    void tick();
-
     uint64_t frameCount_ = 0;
 };
 
