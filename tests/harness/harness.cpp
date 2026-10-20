@@ -6,10 +6,10 @@
 #include "game/Rng.hpp"
 
 int main() {
-    th13::Rng rng(0);
+    th13::Rng rng(1);  // MSVC CRT 默认 srand(1)
     std::printf("th13-harness rng");
     for (int i = 0; i < 8; i++) {
-        std::printf(" %08x", rng.next());
+        std::printf(" %d", rng.next());
     }
     std::printf("\n");
     return 0;
