@@ -394,12 +394,13 @@ int EclContext::step(float elapsed) {
                 case Op::SquareSum:
                 case Op::SquareSumRoot: {
                     const float x = float_arg(1), y = float_arg(2);
-                    // x87 单舍入链（oracle 实证：Phantom01 ins_86 输入
-                    // (−32.71, 2.61) → oracle=32.813961=double 链）：f32×f32
-                    // 积与和均落在 double 尾域内精确，一次舍入到 f32。
-                    const double squared = double(y) * double(y) + double(x) * double(x);
-                    store_float(0, op == Op::SquareSumRoot ? float(std::sqrt(squared))
-                                                           : float(squared));
+                    // x87「积和宽精度、和存 f32 再开方」链（三点实证 e77/e78/e80）：
+                    // s = f32(x²+y²)（积与和在 80 位精确，存和时一次舍入），
+                    // r = f32(sqrt(s))。f32 逐级舍入与全程 double 均与 oracle
+                    // 存在单 ulp 偏差，勿改。
+                    const float sum = float(double(y) * double(y) + double(x) * double(x));
+                    store_float(0, op == Op::SquareSumRoot ? float(std::sqrt(double(sum)))
+                                                           : sum);
                     adjust = true;
                     break;
                 }
