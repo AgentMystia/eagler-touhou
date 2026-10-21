@@ -11,15 +11,21 @@
 
 ## 统一容器环境
 
-全工作流在标准容器内进行（本地 podman 与 GitHub Actions 共用 `container/Dockerfile`，多阶段：base → tools → dev → ci）：
+全工作流在标准容器内进行（本地 podman 与 GitHub Actions 共用本目录 `container/Dockerfile`，多阶段：base → tools → dev → ci / shot）。Emscripten 端口缓存经 `EM_CACHE` 落工作区卷（`.cache/emscripten`），跨容器运行复用。
+
+仓库内自带 Dockerfile，克隆 monorepo 后即可直接使用（无需外部包装）：
 
 ```sh
-make image   # 构建开发镜像（Node 22 / Emscripten 6.0.9 / wasi-sdk 34 / Ghidra 12.1.3 / Temurin 21）
-make shell   # 进入开发容器（工作区挂载 /work）
-make exec CMD='node portable/build.mjs'   # 单命令执行（在 eagler-touhou/ports/th13 下）
+# 仓库根目录下：
+podman build --target dev -t th13-dev --build-arg DEV_UID=$(id -u) --build-arg DEV_GID=$(id -g) ports/th13/container
+podman run --rm --userns=keep-id -e HOME=/home/dev -it -v "$PWD:/work:Z" -w /work/eagler-touhou/ports/th13 th13-dev bash
+# 单命令（构建/测试）：
+podman run --rm --userns=keep-id -e HOME=/home/dev -v "$PWD:/work:Z" -w /work/eagler-touhou/ports/th13 th13-dev bash -lc 'node portable/build.mjs'
 ```
 
-工作区顶层的 `games/`（原版资源）与 `artifacts/`（大体积产物）不入库；thtk 以临时克隆方式构建、用后清理（`make thtk` / `make thtk-clean`）。
+工具链版本（构建时固定）：Node 22 / Emscripten 6.0.9 / wasi-sdk 34 / Ghidra 12.1.3 / Temurin JDK 21。
+
+开发工作区另有外层 `Makefile` 包装上述命令（`make image / shell / exec-port CMD='…'`），并管理原版资源与 thtk 临时构建；工作区顶层的 `games/`（原版资源）与 `artifacts/`（大体积产物、Ghidra 导出、参考视频帧）不入库。thtk 以临时克隆方式构建、用后清理。
 
 ## 原版资源准备
 
@@ -27,7 +33,7 @@ make exec CMD='node portable/build.mjs'   # 单命令执行（在 eagler-touhou/
 make extract   # 解包 th13ogg.7z → games/th13/，生成 SHA256 清单与版本判定
 ```
 
-原版目录包含 `th13.exe`、`th13.dat`、`thbgmogg.dat`（OGG 音乐版）。资源提取（ECL/ANM/STD/msg dump）由 thtk 完成，产物落 `web/reference/`，格式版本记录在 `docs/ASSETS.md`。
+原版目录包含 `th13.exe`、`th13.dat`、`thbgmogg.dat`（OGG 音乐版）。资源提取（ECL/ANM/STD/msg dump）由 thtk 完成；dump 文本属开发期对照证据，落**工作区** `artifacts/reference/dumps/`（不入库），格式版本结论记录在 `docs/ASSETS.md`。
 
 ## 行为还原节奏
 
