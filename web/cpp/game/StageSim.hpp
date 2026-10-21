@@ -128,7 +128,7 @@ private:
 class StageSim {
 public:
     // resource_dir：含 st01.ecl/default.ecl/st01bs.ecl 与 ANM 名单核验的 raw 目录。
-    bool load(const char* resource_dir, const char* event_path);
+    bool load(const char* resource_dir, const char* event_path, const char* stage = nullptr);
     // 跑 3600 帧（第 0 帧 = root 创建趟），返回 false 时 error 有值。
     bool run(u32 frames);
     const std::string& error() const { return error_; }

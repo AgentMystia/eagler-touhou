@@ -61,12 +61,13 @@ void StageEt::reset() {
     absolute[0] = absolute[1] = absolute[2] = 0;
 }
 
-bool StageSim::load(const char* resource_dir, const char* event_path) {
+bool StageSim::load(const char* resource_dir, const char* event_path, const char* stage) {
     gvars.sim = this;
     commands.sim = this;
+    const std::string stage_file = stage ? stage : "st01.ecl";
     std::vector<u8> st01;
-    if (!read_file(std::string(resource_dir) + "/st01.ecl", st01)) {
-        error_ = "cannot read st01.ecl";
+    if (!read_file(std::string(resource_dir) + "/" + stage_file, st01)) {
+        error_ = "cannot read " + stage_file;
         return false;
     }
     StageResourceProvider provider;
