@@ -31,7 +31,7 @@
 | 逻辑帧率 | 60fps；每逻辑帧 elapsed = 1.0f | |
 | 帧数 | 3600 帧（含第 0 帧，见 §3.2 帧定义） | |
 | 玩家位置 | (192.0f, 420.0f)，全程不动、不发射、不被击中 | PLAYER_X/Y、ANGLE_PLAYER、弹幕近距剔除用它 |
-| 游戏侧 RNG | GameRandom（0x472c90 映射，见 `game/Rng.hpp`），种子 **0**【待校准：原版关卡开始时的真实种子未定域】 | RAND/RANDF/RANDRAD/RANDF2/指令 93/moveRand/弹幕模式 6/7/8 共用同一序列，抽取顺序必须与原版一致 |
+| 游戏侧 RNG | GameRandom（0x472c90 映射，见 `game/Rng.hpp`），种子 **0**（全窗对拍实证：含 525 清场抽取的整条序列与 oracle 逐位一致） | RAND/RANDF/RANDRAD/RANDF2/指令 93/moveRand/弹幕模式 6/7/8 共用同一序列，抽取顺序必须与原版一致 |
 | CRT rand | 不参与 stage1 事件（0x47BBA2 与本事件集无交集） | |
 | SPELL_ID（-9907） | -1（正常通关路径，main 走 main_332 分支） | DAT_004be7d4 |
 | 弹幕近距剔除 | 不实现（0x40e840 内以玩家为圆心的距离剔除半径读自运行时对象，暂未知）【待校准】 | 敌机均在玩家远处，窗口内预期无影响 |
@@ -139,7 +139,8 @@ mgr 敌机数上限（+0xC4=99999）不构成窗口内约束。
 - 整数字段（frame/seq/enemy/op/slot/way/idx/sprite/subtype/整型 args）按十进制整数输出。
 - 三角/反三角内部以 double 计算后舍入到 f32（对齐 x87 long-double 中间精度；
   与原版可能存在 ≤1ulp 的尾差，是首轮对拍的预期噪声源，见 §6）。
-- 每帧积分后坐标按 `round(x*100)/100`（round-half-even，0x497670+0x473780 尾部）量化到 0.01。
+- 每帧积分后坐标按 `floor(x*100)/100`（向负无穷，0x497690 SSE2 主路径 + 0x473780 尾部）量化到 0.01；
+  实测 -163.783264 → -163.79。
 
 ## 6. 首轮对拍预期差异点（【待校准】汇总）
 
@@ -152,8 +153,11 @@ mgr 敌机数上限（+0xC4=99999）不构成窗口内约束。
    0x4230d4 反汇编核对权重与累加次序）。
 5. moveRand(412) 的象限选择分支与近垂直修正按 0x41cdc2 反编译推定，未经数值验证；
    moveCurve(434-439) 未实现（窗口外，命中即失败退出）。
-6. 525 enmKillAll（及 518 dialogRead 共享的清场尾块）的中断跳转语义按「已注册 514 标签
-   则主线程 restart 到该标签，否则敌机终止」近似；519 dialogWait 在无对话系统下永续让出。
+6. 525 enmKillAll（及 518 dialogRead 共享的清场尾块）：0x41ac70 的 flags 门控销毁——
+   `(bit5/7 全清 且 0x400/0x800000/0x1000000 全清) 或 bit8 置位` 者当帧 0x41aad0 销毁
+   （0x417b10 抽 1 次 GameRandom）并标 0x4000000 待摘；main/MapleEnemy/EtBreak 的
+   ins_502(32)（bit5）与 BOSS 位（512 置 0x1000000）豁免。首轮曾按「514 标签 restart」
+   近似，已被 oracle RNG 逐帧对拍推翻。
 7. 309-312（enmCreateF）仅在 BOSS 槽 0 为空时创建（0x41b2dd）；BOSS 槽管理按 512 的
    set/clear 近似（负参清除指向自身的槽）。
 

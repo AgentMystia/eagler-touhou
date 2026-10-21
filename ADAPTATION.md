@@ -26,3 +26,16 @@
   - 脚本号登记：主菜单根=title script0（dump 20 子脚本）、提示=script3、难度/角色根=script1/2（结构推断，待 supervisor 锚定回填）；暂停菜单脚本待锚定（`PauseMenu.hpp` kPauseMenuScript）；HUD 残机/灵击脚本号已对 dump 验证（interrupt 2/3/7+n，碎片阈值 5）。
   - 单元测试：容器内 g++ 七套件 34/34 通过（`tests/ui/run.sh`：输入掩码与 repeat 参数、调度器/光标、ANM 句柄合成资源、HUD 布局与格式、标题全链路、暂停覆盖层、对局场景）；`node --test tests/*.test.mjs` 4/4 通过；WASI harness 全 game 层编译通过且 RNG 序列不变。
   - 与 anm-pipeline 工作流协同：ANM 核（AnmVm/AnmManager/AnmRegistry/AnmResource/AnmVariables/GameRandom）以其 Ghidra 核对版为准，UI 侧仅消费公共面并补齐 `AnmOverlayRenderer/AnmStrip` 桥接件。
+- 2026-10-21 · 第 1-5 轮 · stage1 对拍收官（行为规格 `docs/plans/event-contract.md`）
+  - 结论：3600 帧 10187 事件（spawn 84 / move 7611 / bullet 2492）与 unicorn oracle
+    逐字节一致（`python3 -m oracle.stage1_compare` → `RESULT first_divergence_frame=none
+    window=3600 events=10187`，exit 0）；oracle 基准重跑复现。
+  - 五轮修复的主锚点：敌机链节拍（0x80000 自门/处理前取 next/构造趟后挂链/死亡摘链）、
+    建敌镜像位（0x41fcc0 param2[6]）、坐标量化 floor（0x497690）、弹 z 恒 0.1
+    （0x40e840 尾部覆写 0x3dcccccd）、弹角求值序（0x40e950-0x40e988 的 f32 中转落点）、
+    enmKillAll 的 flags 门控销毁与清场 RNG 抽取（0x41ac70/0x417b10）、-9909 取
+    trace_id、moveCircleTime 参数槽位（5 参）与插值角维恒零（0x41c627）、
+    位置插值增量经 aux 通道（0x419450:71-92）。
+  - 比对工具链：`oracle/stage1_compare.py`（--ulp 选项值解析修复）、
+    `stage1_oracle.py` 的 c_int_arg 整型直通。
+  - 单元测试：ecl 6/6、ui 3/3、anm 7/7、node 4/4 全绿；网页与 WASI 双构建通过。
