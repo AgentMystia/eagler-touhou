@@ -1,4 +1,6 @@
 #include "SceneMatrices.hpp"
+#include "AnmTransforms.hpp"
+#include "StageScript.hpp"
 
 #include <cmath>
 
@@ -53,6 +55,32 @@ Matrix4 scene_perspective(float fov, float aspect, float near_plane, float far_p
     out.m[10] = static_cast<float>(far_plane / static_cast<float>(far_plane - near_plane));
     out.m[11] = 1;
     out.m[14] = -out.m[10] * near_plane;
+    return out;
+}
+
+namespace {
+Vec3 add(Vec3 a, Vec3 b) { return {float(a.x + b.x), float(a.y + b.y), float(a.z + b.z)}; }
+Vec3 cross(Vec3 a, Vec3 b) {
+    return {float(float(a.y * b.z) - float(a.z * b.y)), float(float(a.z * b.x) - float(a.x * b.z)),
+            float(float(a.x * b.y) - float(a.y * b.x))};
+}
+}  // namespace
+
+AnmCamera stage_camera(const StageCamera& s, const GraphicsViewport& viewport) noexcept {
+    AnmCamera out;
+    out.eye = add(s.position, s.eye_offset);
+    out.view = scene_look_at(out.eye, add(out.eye, s.direction), s.up);
+    // 后端世界路径带 NDC y 翻转（Shaders.hpp gl_Position.y 取负）：STD 的
+    // +y（上方）需映到视口上缘，故取景矩阵的视线 y 基（列 1）镜像一次
+    // （golden f1242：鸟居（相机上方）位于画面上部——方向实证）。
+    for (u32 index : {1u, 5u, 9u, 13u}) out.view.m[index] = float(-out.view.m[index]);
+    out.projection =
+        scene_perspective(s.fov, float(float(viewport.width) / float(viewport.height)), 30, 8000);
+    out.reference = normalize_scene_vector(cross(s.direction, s.up));
+    out.fog_near = s.fog.near_distance;
+    out.fog_far = s.fog.far_distance;
+    out.fog_rgb = {s.fog.channels[2], s.fog.channels[1], s.fog.channels[0]};
+    out.fog_color = s.fog.color;
     return out;
 }
 
