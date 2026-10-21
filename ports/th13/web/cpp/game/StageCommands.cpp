@@ -63,11 +63,13 @@ int StageCommands::execute(EclContext& c, u16 op) {
         float values[8] = {0, 0, 0, 0, 0, 0, 0, 0};
         const u32 count = ins->parameter_count < 8 ? ins->parameter_count : 8;
         for (u32 i = 0; i < count; ++i) {
+            i32 raw = 0;
+            std::memcpy(&raw, reinterpret_cast<const u8*>(ins) + 16 + i * 4, 4);
             float literal;
-            std::memcpy(&literal, reinterpret_cast<const u8*>(ins) + 16 + i * 4, 4);
+            std::memcpy(&literal, &raw, 4);  // 同一 dword 的 float 位视图
             if (integral && integral[i]) {
                 i32 v = 0;
-                if (!c.integer(i, i32(literal), v, false) && c.error.empty()) c.error = "move arg resolve";
+                if (!c.integer(i, raw, v, false) && c.error.empty()) c.error = "move arg resolve";
                 if (!c.error.empty()) {
                     sim.error_ = c.error;
                     return false;
@@ -274,11 +276,15 @@ int StageCommands::execute(EclContext& c, u16 op) {
             return -2;
         }
         StageEnemy* target = sim.find_by_script_id(id);
-        if (!target) {
-            sim.error_ = "moveEnm target not found (original would dereference null)";
-            return -2;
-        }
         StageMover& m = (op == 432) ? e.vel : e.pos;
+        if (!target) {
+            // 0x417f40 id 0/未命中链尾：id 0 返回 null 后 0x41ccb1/0x41cce3
+            // 仍解引用（[0x1230..]——oracle bump 零页读 0），子位置清零。
+            m.pos[0] = 0.0f;
+            m.pos[1] = 0.0f;
+            m.pos[2] = 0.0f;
+            return 0;
+        }
         m.pos[0] = target->position[0];
         m.pos[1] = target->position[1];
         m.pos[2] = target->position[2];
@@ -478,9 +484,11 @@ int StageCommands::execute(EclContext& c, u16 op) {
         }
         if (slot >= 0 && slot < 3) {
             sim.boss_slot[slot] = e.script_id;
+            e.flags |= 0x1000000u;  // 0x41d3d8：BOSS 位（525 清场豁免）
         } else {
             for (i32& entry : sim.boss_slot)
                 if (entry == e.script_id) entry = -1;
+            e.flags &= ~0x1000000u;
         }
         return 0;
     }
@@ -518,18 +526,19 @@ int StageCommands::execute(EclContext& c, u16 op) {
         }
         return 0;
     }
-    case 518:   // dialogRead（0x41e3da）：对话本体缺席，但共享 525 的清场+全体中断尾块
+    case 518:   // dialogRead（0x41e3da）：对话本体缺席，共享 525 的清场尾块
     case 525: {  // enmKillAll（0x41e3fd → 0x41ac70）
+        // 0x41ac70：flags 门控销毁——(bit5/7 全清 且 bit 0x400/0x800000/0x1000000
+        // 全清) 或 bit8 置位。命中者当场走 0x41aad0（0x417b10 开头抽 1 次
+        // signed_unit；合成 ANM 态槽弹数为 0，无每弹消耗）并标 0x4000000，
+        // 摘除由 0x418e00 遍历完成（无 RNG）。main/MapleEnemy/EtBreak 的
+        // ins_502(32)（bit5）豁免清场；BOSS 位（0x1000000，512 setBoss）豁免。
         for (auto& entry : sim.enemies) {
-            if (entry.get() == &e || entry->dead) continue;
-            if (!entry->interrupt_label.empty()) {
-                const i32 index = sim.program.find_index(entry->interrupt_label.c_str());
-                if (index >= 0)
-                    entry->threads->restart(entry->interrupt_label.c_str(),
-                                            entry->threads->main.difficulty);
-                else
-                    entry->dead = true;
-            } else {
+            const u32 f = entry->flags;
+            const bool kill = (((f & 0xa0u) == 0) && ((f & 0x1800400u) == 0)) ||
+                              ((f & 0x100u) != 0);
+            if (kill) {
+                sim.random.signed_unit();
                 entry->dead = true;
             }
         }
@@ -827,62 +836,84 @@ int StageCommands::fire_et(EclContext& c, StageEnemy& e) {
     const i32 ways = et.ways;
     const i32 count = et.count;
     const i32 mode = et.aim;
-    const float two_pi = 6.2831855f;
+    // 0x40e840 角合成全程 x87 80 位（double 近似）；f32 常量提升后参与：
+    // 6.2831855f = 6.283185482025146484375、3.1415927f = 3.1415927410125732421875。
+    const double kTwoPiF = static_cast<double>(6.2831855f);
+    const double kPiF = static_cast<double>(3.1415927f);
+    const double aim_d = aim;
     for (i32 way = 0; way < ways; ++way) {
-        // 路间速率（0x40e840 开头）。
+        // 路间速率（0x40e840 开头，80 位中间 → f32 落点 node+0xb88）。
         float speed = et.speed1;
-        if (ways >= 2) speed = et.speed1 - (et.speed1 - et.speed2) * float(way) / float(ways - 1);
+        if (ways >= 2)
+            speed = static_cast<float>(et.speed1 - (et.speed1 - et.speed2) *
+                                                      static_cast<double>(way) /
+                                                      static_cast<double>(ways - 1));
         for (i32 idx = 0; idx < count; ++idx) {
-            float angle = 0;
+            double angle = 0;
             switch (mode) {
             case 0:
             case 1: {
                 if ((count & 1) == 0)
-                    angle = et.angle2 * 0.5f + float(idx / 2) * et.angle2;
+                    angle = et.angle2 * 0.5 + static_cast<double>(idx / 2) * et.angle2;
                 else
-                    angle = float((idx + 1) / 2) * et.angle2;
-                angle = angle + 0.0f;
-                if (idx & 1) angle = angle * -1.0f;
-                if (mode == 0) angle = angle + aim;
+                    angle = static_cast<double>((idx + 1) / 2) * et.angle2;
+                angle = angle + 0.0;
+                if (idx & 1) angle = angle * -1.0;
+                if (mode == 0) angle = angle + aim_d;
                 angle = et.angle1 + angle;
                 break;
             }
             case 2:
-                angle = aim;
-                angle = et.angle2 * float(way) + et.angle1 + (float(idx) * two_pi) / float(count) + angle;
-                break;
             case 3:
-                angle = et.angle2 * float(way) + et.angle1 + (float(idx) * two_pi) / float(count);
+                // 0x40e950..0x40e988 精确求值序：aim+0 落 f32 → idx*2π/count 相加后
+                // 再落 f32 → 与 80 位的 angle2*way+angle1 求和 → 尾部双重 wrap。
+                {
+                    const float base = mode == 2 ? aim : 0.0f;
+                    const double spoke = static_cast<double>(idx) * kTwoPiF /
+                                         static_cast<double>(count);
+                    const float mid = static_cast<float>(spoke + base);
+                    angle = (et.angle2 * static_cast<double>(way) + et.angle1) +
+                            static_cast<double>(mid);
+                }
                 break;
             case 4:
-                angle = aim;
-                angle = et.angle2 * float(way) + et.angle1 + (float(idx) * two_pi) / float(count) +
-                        3.1415927f / float(count) + angle;
+                angle = aim_d;
+                angle = et.angle2 * static_cast<double>(way) + et.angle1 +
+                        static_cast<double>(idx) * kTwoPiF / static_cast<double>(count) +
+                        kPiF / static_cast<double>(count) + angle;
                 break;
             case 5:
-                angle = et.angle2 * float(way) + et.angle1 + (float(idx) * two_pi) / float(count) +
-                        3.1415927f / float(count);
+                angle = et.angle2 * static_cast<double>(way) + et.angle1 +
+                        static_cast<double>(idx) * kTwoPiF / static_cast<double>(count) +
+                        kPiF / static_cast<double>(count);
                 break;
             case 6:
-                angle = et.angle2 + sim.random.unit() * (et.angle1 - et.angle2);
+                angle = et.angle2 +
+                        sim.random.unit() * static_cast<double>(et.angle1 - et.angle2);
                 break;
             case 7:
-                speed = sim.random.unit() * (et.speed1 - et.speed2) + et.speed2;
-                angle = et.angle2 * float(way) + et.angle1 + (float(idx) * two_pi) / float(count);
+                speed = static_cast<float>(sim.random.unit() *
+                                               static_cast<double>(et.speed1 - et.speed2) +
+                                           et.speed2);
+                angle = et.angle2 * static_cast<double>(way) + et.angle1 +
+                        static_cast<double>(idx) * kTwoPiF / static_cast<double>(count);
                 break;
             case 8:
-                angle = et.angle2 + sim.random.unit() * (et.angle1 - et.angle2);
-                speed = sim.random.unit() * (et.speed1 - et.speed2) + et.speed2;
+                angle = et.angle2 +
+                        sim.random.unit() * static_cast<double>(et.angle1 - et.angle2);
+                speed = static_cast<float>(sim.random.unit() *
+                                               static_cast<double>(et.speed1 - et.speed2) +
+                                           et.speed2);
                 break;
             case 9:
             case 10: {
                 if ((count & 1) == 0)
-                    angle = et.angle2 * 0.5f + float(way / 2) * et.angle2;
+                    angle = et.angle2 * 0.5 + static_cast<double>(way / 2) * et.angle2;
                 else
-                    angle = float((way + 1) / 2) * et.angle2;
-                angle = angle + (float(idx) * two_pi) / float(count);
-                if (way & 1) angle = angle * -1.0f;
-                if (mode == 9) angle = angle + aim;
+                    angle = static_cast<double>((way + 1) / 2) * et.angle2;
+                angle = angle + static_cast<double>(idx) * kTwoPiF / static_cast<double>(count);
+                if (way & 1) angle = angle * -1.0;
+                if (mode == 9) angle = angle + aim_d;
                 angle = et.angle1 + angle;
                 break;
             }
@@ -890,7 +921,8 @@ int StageCommands::fire_et(EclContext& c, StageEnemy& e) {
                 angle = et.angle1;
                 break;
             }
-            const float stored = wrap_angle(angle);
+            // 0x40e840 尾：FUN_00472e90(acc, 0)（传参落 f32）→ FUN_00472f30（再落）。
+            const float stored = wrap_angle(wrap_angle(static_cast<float>(angle)));
             float x = et.spawn[0], y = et.spawn[1];
             // z：0x40e840 写入 spawn z 后无条件覆写 0x3dcccccd（渲染层常量），
             // 事件口径恒 0.1f；spin（et[9]）只作用于 x/y（0x40e840 尾段）。
