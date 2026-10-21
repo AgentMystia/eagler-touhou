@@ -5,8 +5,10 @@
 //   th13-harness              旧有 RNG 冒烟（8 值输出）
 //   th13-harness stage1 <资源目录> <事件输出路径> [帧数] [stage.ecl]
 //     资源目录需含 st01.ecl 及其 ECLI/ANIM 依赖（artifacts/reference/raw）。
-//   th13-harness replay <rpy 路径> <资源目录> [帧数] [stage 索引]
-//     解码原版录像并把输入逐帧注入 StageBattle（0x448200 回放节奏）。
+//   th13-harness replay <rpy 路径> <资源目录> <事件输出路径> [帧数] [stage 索引]
+//     解码原版录像并把输入逐帧注入 StageBattle（0x448200 回放节奏），按
+//     event-contract.md §7 落 player/kill/boss_op 事件；窗口自定（Boss 第一
+//     非符 +300 帧或输入耗尽）。资源目录另需 pl02a.sht（移速源，§7.2）。
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -95,7 +97,8 @@ public:
     bool game_over = false;
 };
 
-int replay(const char* replay_path, const char* resource_dir, unsigned frames, unsigned stage_index) {
+int replay(const char* replay_path, const char* resource_dir, const char* event_path,
+           unsigned frames, unsigned stage_index) {
     std::vector<th13::u8> bytes;
     if (!read_whole_file(replay_path, bytes)) {
         std::printf("replay read failed: %s\n", replay_path);
@@ -130,19 +133,25 @@ int replay(const char* replay_path, const char* resource_dir, unsigned frames, u
     player.extra_lives = 99;
     char stage_file[16];
     std::snprintf(stage_file, sizeof stage_file, "st%02u.ecl", unsigned(stage.number));
+    char sht_file[16];
+    std::snprintf(sht_file, sizeof sht_file, "pl%02d%c.sht", replay_file.character,
+                  replay_file.shot_type == 0 ? 'a' : 'b');
     if (!battle.load(provider, stage_file, 1 << replay_file.rank, host, progress, player,
-                     score_state)) {
+                     score_state, event_path, sht_file)) {
         std::printf("replay battle load failed: %s\n", battle.error().c_str());
         return 1;
     }
 
     // 逐帧注入（0x448200：态 → 0x4e4c08，沿由 0x414f30 幂等重算）。
+    // 窗口：Boss 第一非符（§7.3）+300 帧、输入耗尽或显式帧数上限。
     th13::ReplayInputCursor cursor(stage);
     th13::GameInput input;
     const u32 total = frames ? th13::u32(frames) : stage.frame_count;
     u32 done = 0;
     i32 boss_frame = -1;
     bool boss_seen = false;
+    bool nonspell_seen = false;
+    u32 stop_after = 0xFFFFFFFFu;
     while (done < total && cursor.valid() && !host.game_over) {
         const th13::ReplayFrame frame = cursor.next();
         input.update(frame.state);
@@ -150,21 +159,31 @@ int replay(const char* replay_path, const char* resource_dir, unsigned frames, u
             std::printf("replay error at frame %u: %s\n", done, battle.error().c_str());
             return 1;
         }
+        ++done;
         const bool boss = battle.sim.boss() != nullptr;
         if (boss && !boss_seen) {
             boss_seen = true;
-            boss_frame = i32(done);
-            std::printf("replay boss frame=%d held=%04x\n", boss_frame, frame.state);
+            boss_frame = i32(done) - 1;  // 事件帧域：done-1 = 本步帧号
         }
+        if (battle.sim.boss_nonspell_frame >= 0 && !nonspell_seen) {
+            nonspell_seen = true;
+            stop_after = done + 300;  // 非符锚点 +300 帧
+        }
+        if (done >= stop_after) break;
         if (done % 600 == 0)
             std::printf("replay frame=%u held=%04x x=%.1f y=%.1f enemies=%u slow=%u\n", done,
                         frame.state, battle.player_x, battle.player_y,
                         unsigned(battle.sim.enemies.size()), cursor.current_slow_rate());
-        ++done;
     }
-    std::printf("replay done frames=%u/%u x=%.1f y=%.1f deaths=%d score=%d boss_frame=%d\n",
+    std::printf("replay done frames=%u/%u x=%.1f y=%.1f deaths=%d score=%d boss_frame=%d "
+                "nonspell_frame=%d\n",
                 done, unsigned(stage.frame_count), battle.player_x, battle.player_y,
-                player.deaths, score_state.score, boss_frame);
+                player.deaths, score_state.score, boss_frame,
+                battle.sim.boss_nonspell_frame);
+    std::printf("stage1-events-replay frames=%u enemies=%u events=%llu nonspell=%d ok=1\n", done,
+                battle.sim.spawn_count(),
+                static_cast<unsigned long long>(battle.sim.event_count()),
+                battle.sim.boss_nonspell_frame);
     return 0;
 }
 
@@ -175,9 +194,9 @@ int main(int argc, char** argv) {
         // stage1 <资源目录> <输出> [frames] [stage.ecl]
         return stage1(argv[2], argv[3], argc >= 5 ? unsigned(std::atoi(argv[4])) : 3600u,
                       argc >= 6 ? argv[5] : nullptr);
-    if (argc >= 4 && std::strcmp(argv[1], "replay") == 0)
-        // replay <rpy> <资源目录> [frames] [stage 索引]
-        return replay(argv[2], argv[3], argc >= 5 ? unsigned(std::atoi(argv[4])) : 0u,
-                      argc >= 6 ? unsigned(std::atoi(argv[5])) : 0u);
+    if (argc >= 5 && std::strcmp(argv[1], "replay") == 0)
+        // replay <rpy> <资源目录> <事件输出> [帧数] [stage 索引]
+        return replay(argv[2], argv[3], argv[4], argc >= 6 ? unsigned(std::atoi(argv[5])) : 0u,
+                      argc >= 7 ? unsigned(std::atoi(argv[6])) : 0u);
     return rng_smoke();
 }
