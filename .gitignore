@@ -43,5 +43,8 @@ tests/anm/build/
 # UI 单测本地构建产物
 tests/ui/build/
 
+# 录像单测本地构建产物
+tests/replay/build/
+
 # 网页运行时资源（原版权材料，prepare-assets.mjs 从 raw 解包目录拷贝）
 web/sdl-runtime/assets/
