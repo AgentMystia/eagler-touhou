@@ -492,10 +492,14 @@ int StageCommands::execute(EclContext& c, u16 op) {
     case 509:
     case 510:
         return 0;  // drop 族：无事件
-    case 511: {  // lifeSet（×4 槽）
-        float life = 0;
-        if (resolve_float(c, 0, life)) {
-            e.life = life;
+    case 511: {  // lifeSet（0x41d34c：整型解析，×3 槽 + 0x3f58=7×life）
+        i32 life = 0;
+        if (resolve_int(c, 0, life)) {
+            e.life = float(life);
+            if (sim.replay_events) {
+                const i32 args[1] = {life};
+                sim.sink.boss_op(e.serial, 511, args, 1, "");
+            }
             return 0;
         }
         sim.error_ = c.error;
@@ -515,6 +519,10 @@ int StageCommands::execute(EclContext& c, u16 op) {
                 if (entry == e.script_id) entry = -1;
             e.flags &= ~0x1000000u;
         }
+        if (sim.replay_events) {
+            const i32 args[1] = {slot};
+            sim.sink.boss_op(e.serial, 512, args, 1, "");
+        }
         return 0;
     }
     case 558: {  // 0x41e451：flags bit20（镜像）按参数异或翻转
@@ -528,10 +536,14 @@ int StageCommands::execute(EclContext& c, u16 op) {
         return 0;
     }
     case 513:
+        // Boss 第一非符锚点（§7.3）：MainBoss 创建的 "Boss" 敌机首条 513。
+        if (e.serial == sim.boss_main_serial && sim.boss_nonspell_frame < 0)
+            sim.boss_nonspell_frame = i32(sim.frame);
+        if (sim.replay_events) sim.sink.boss_op(e.serial, 513, nullptr, 0, "");
+        return 0;
     case 515:
     case 516:
     case 517:
-    case 521:
     case 523:
     case 524:
     case 527:
@@ -544,20 +556,46 @@ int StageCommands::execute(EclContext& c, u16 op) {
     case 562:
     case 638:
         return 0;  // 计时/音效/符卡/掉落等：无事件
-    case 514: {  // setInterrupt（0x41e262）：记录 id 0 标签（525 中断跳转用）
+    case 514: {  // setInterrupt（0x41e262）：{t1,t2,name} 记入 vm+0x5234+id*16
         i32 id = 0;
         if (!resolve_int(c, 0, id)) {
             sim.error_ = c.error;
             return -2;
         }
-        if (id == 0) {
-            // 名字参数（arg4 起）——按调用类尾部取字符串
-            const EclInstruction* i = c.instruction;
-            if (i->parameter_count > 3) {
-                const u32 length = u32(i->argument<i32>(3));  // {len, name} 跟在前 3 个整型后
-                const char* name = reinterpret_cast<const char*>(i) + 16 + 4 * 4;
-                e.interrupt_label.assign(name, strnlen(name, length ? length - 1 : 0));
-            }
+        i32 t1 = 0, t2 = 0;
+        resolve_int(c, 1, t1);
+        resolve_int(c, 2, t2);
+        // 名字参数（arg3 起的 {len, name} 尾串——指令名区原样）
+        std::string name;
+        const EclInstruction* i = c.instruction;
+        if (i->parameter_count > 3) {
+            const u32 length = u32(i->argument<i32>(3));
+            const char* bytes = reinterpret_cast<const char*>(i) + 16 + 4 * 4;
+            name.assign(bytes, strnlen(bytes, length ? length - 1 : 0));
+        }
+        if (id == 0) e.interrupt_label = name;  // 525 中断跳转用（id 0）
+        if (sim.replay_events) {
+            const i32 args[3] = {id, t1, t2};
+            sim.sink.boss_op(e.serial, 514, args, 3, name.c_str());
+        }
+        return 0;
+    }
+    case 521: {  // 死亡中断标签（0x41e33f：写 vm+0x5240+id*16）
+        i32 id = 0;
+        if (!resolve_int(c, 0, id)) {
+            sim.error_ = c.error;
+            return -2;
+        }
+        std::string name;
+        const EclInstruction* i = c.instruction;
+        if (i->parameter_count > 1) {
+            const u32 length = u32(i->argument<i32>(1));
+            const char* bytes = reinterpret_cast<const char*>(i) + 16 + 4 * 2;
+            name.assign(bytes, strnlen(bytes, length ? length - 1 : 0));
+        }
+        if (sim.replay_events) {
+            const i32 args[1] = {id};
+            sim.sink.boss_op(e.serial, 521, args, 1, name.c_str());
         }
         return 0;
     }
@@ -580,12 +618,14 @@ int StageCommands::execute(EclContext& c, u16 op) {
         return 0;
     }
     case 519:
-        return 1;  // dialogWait：无对话系统，让出（等待永不结束）
+        // dialogWait（0x41e407）：msgmgr+0x198 == 0 即通过。oracle 侧合成
+        // msgmgr 恒 0 → 即过；此处同判（对话系统缺席，§7.1【待校准】）。
+        return sim.boss_dialog_wait();
     case 520:  // bossWait（0x41e42e）：任一 BOSS 槽存活则让出
         return sim.boss() ? 1 : 0;
     case 535: {  // diffI（0x41d439）：dest = args[1 + DIFF]
         i32 value = 0;
-        if (!resolve_int(c, 1 + 3, value)) {
+        if (!resolve_int(c, 1 + sim.diff, value)) {
             sim.error_ = c.error;
             return -2;
         }
@@ -599,7 +639,7 @@ int StageCommands::execute(EclContext& c, u16 op) {
     }
     case 536: {
         float value = 0;
-        if (!resolve_float(c, 1 + 3, value)) {
+        if (!resolve_float(c, 1 + sim.diff, value)) {
             sim.error_ = c.error;
             return -2;
         }
@@ -613,7 +653,7 @@ int StageCommands::execute(EclContext& c, u16 op) {
     }
     case 548: {  // diffWait（0x41f2c4）：time -= args[DIFF]（0..3 四难度，无 dest）
         i32 frames = 0;
-        if (!resolve_int(c, 3, frames)) {
+        if (!resolve_int(c, sim.diff, frames)) {
             sim.error_ = c.error;
             return -2;
         }
@@ -746,7 +786,7 @@ int StageCommands::execute(EclContext& c, u16 op) {
             return -2;
         }
         float s1 = 0, s2 = 0;
-        if (!resolve_float(c, 1 + 3, s1) || !resolve_float(c, 5 + 3, s2)) {
+        if (!resolve_float(c, 1 + sim.diff, s1) || !resolve_float(c, 5 + sim.diff, s2)) {
             sim.error_ = c.error;
             return -2;
         }
@@ -761,7 +801,7 @@ int StageCommands::execute(EclContext& c, u16 op) {
             return -2;
         }
         i32 count = 0, ways = 0;
-        if (!resolve_int(c, 1 + 3, count) || !resolve_int(c, 5 + 3, ways)) {
+        if (!resolve_int(c, 1 + sim.diff, count) || !resolve_int(c, 5 + sim.diff, ways)) {
             sim.error_ = c.error;
             return -2;
         }
