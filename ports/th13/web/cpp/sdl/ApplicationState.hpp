@@ -105,6 +105,8 @@ struct ApplicationState final : TitleScenePlatform, RunSceneServices, RunPausePl
         return read(name, bytes);
     }
     bool camera(DrawCamera index, bool refresh) override { return views.camera(index, refresh); }
+    ZunGraphics& stage_graphics() override { return graphics; }
+    bool preload_scenery_animation(i32 bank, const std::string& name) override;
     // RunPausePlatform
     bool suspend_music() override;
     bool restart_run() override;

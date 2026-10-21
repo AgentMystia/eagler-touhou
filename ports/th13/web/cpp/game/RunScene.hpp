@@ -1,6 +1,7 @@
-// 对局场景（Stage1 可玩化：HUD + StageBattle/StagePresentation + 帧钟 +
-// Esc/失焦暂停请求）。ECL/ANM 数据驱动见 StageBattle/StagePresentation；
-// 状态机合同见 docs/plans/ui-base.md §四。
+// 对局场景（Stage1 可玩化：HUD + StageBattle/StagePresentation + STD 舞台背景 +
+// 帧钟 + Esc/失焦暂停请求）。ECL/ANM 数据驱动见 StageBattle/StagePresentation，
+// 背景由 stXX.std/stXXwl.anm 驱动见 StageScenery；状态机合同见
+// docs/plans/ui-base.md §四。
 #pragma once
 
 #include "GameHud.hpp"
@@ -9,8 +10,10 @@
 #include "SessionState.hpp"
 #include "StageBattle.hpp"
 #include "StagePresentation.hpp"
+#include "StageScenery.hpp"
 #include "FrameScheduler.hpp"
 #include "AnmDrawSchedule.hpp"
+#include "ScreenViews.hpp"
 
 namespace th13 {
 
@@ -19,6 +22,9 @@ struct RunSceneServices : HudDrawServices, HudFrameServices, StageBattleServices
     virtual bool request_pause() = 0;
     // 交互装载：ECL/ANM 字节（经宿主资源通道，浏览器侧 /assets）。
     virtual bool read_asset(const std::string& name, std::vector<u8>& bytes) = 0;
+    // STD 舞台背景支撑：图形设备 / 背景 ANM bank 装载（宿主侧 preload 一体）。
+    virtual ZunGraphics& stage_graphics() = 0;
+    virtual bool preload_scenery_animation(i32 bank, const std::string& name) = 0;
 };
 
 // 交互装载供给：read_asset → EclResourceProvider（ECL 递归 include + ANIM 名单）。
@@ -46,6 +52,8 @@ public:
 
 class RunScene {
     SessionState& progress;
+    AnmManager& animations;
+    AnmRenderer& scene_renderer;
     AnmEnvironment& environment;
     RunSceneServices& host;
     FrameScheduler& scheduler;
@@ -58,6 +66,12 @@ class RunScene {
         u32 pass = 0;
     };
     std::array<StageDraw, 4> stage_draws;  // 自机/自机弹/敌机/敌弹直绘
+    std::array<StageDraw, 2> scenery_draws;  // STD 背景（背景组/前景组）
+    i32 scenery_bank = -1;
+    std::string scenery_std;
+    // Boss 登场变暗：boss 槽存活期间游戏区黑幕淡入（golden 2450 实证全暗
+    // ≈0.6 α，边带不暗）；2381（MBoss spawn+setBoss 同帧）未见暗 → 30 帧 ramp。
+    i32 boss_dim = 0;
     bool fail(const std::string&);
 
 public:
@@ -66,13 +80,15 @@ public:
     GameHud hud;
     StageBattle battle;
     std::unique_ptr<StagePresentation> presentation;
+    std::unique_ptr<StageScenery> scenery;  // STD 舞台背景（stXX.std 驱动）
     std::string battle_sht;  // 移速源 .sht（回放会话注入；空 = 模型默认 pl02a 定标）
     u32 input_held = 0, input_pressed = 0, input_repeated = 0;
     Timer age{0, 0, 0, 0, 0};
     std::string error;
     RunScene(SessionState&, HudPlayerState&, HudScoreState&, AnmManager&, AnmRenderer&,
              AnmEnvironment&, RunSceneServices&, FrameScheduler&,
-             StagePresentation::Banks banks, i32 front_bank, i32 ascii_bank);
+             StagePresentation::Banks banks, i32 front_bank, i32 ascii_bank,
+             i32 scenery_bank, const std::string& std_name);
     ~RunScene();
     RunScene(const RunScene&) = delete;
     RunScene& operator=(const RunScene&) = delete;
@@ -85,6 +101,7 @@ public:
     bool update();
     bool draw();
     bool draw_stage(u32 pass);  // 战斗直绘（initialize 注册的 4 个 Draw 回调）
+    bool draw_scenery(u32 pass);  // STD 背景（层 0-7 背景组 / 8-11 前景组）
     void request_pause() { host.request_pause(); }
     void request_game_over() { host.request_game_over(); }
 };
