@@ -41,7 +41,11 @@ int AnmRenderer::shape(AnmVm& vm){
     if(vm.creation_parent&&!(v.render_flags&0x10000)){const auto& parent=*vm.creation_parent;width=float(parent.visual.scale.x*width);height=float(parent.visual.scale.y*height);angle=float(parent.variables.rotation.z+angle);}
     const u32 resolution=v.render_flags>>20&7;if(resolution==1||resolution==2){if(!vm.environment){error="Primitive animation scene scale unavailable";return -2;}const float factor=resolution==1?vm.environment->resolution_scale:float(vm.environment->resolution_scale*.5f);width=float(factor*width);height=float(factor*height);}
     flush();if(!material(vm,false))return -2;auto& state=graphics.pipeline();state.textureTransform=false;state.color.operation=state.alpha.operation=ColorOperation::First;state.color.first=state.alpha.first={ArgumentSource::Diffuse};graphics.set_layout(VertexLayout::ScreenColor);
-    if(mode==16||mode>=20){const u32 ax=v.flags>>21&3,ay=v.flags>>23&3;if(ax>2||ay>2){error="Primitive animation anchor outside range";return -2;}constexpr float xs[3][2]={{-.5f,.5f},{0,1},{-1,0}},ys[3][2]={{-.5f,.5f},{0,1},{-1,0}};const float sine=float(std::sin(double(angle))),cosine=float(std::cos(double(angle)));const u32 primary=v.color,secondary=mode==20||mode==22?v.secondary_color:v.color;
+    // th13 形态分族（0x46a700 分发表）：603/606 → 15/19 = 旋转实心矩形
+    // （0046ad00：宽高+锚点，无段数）；607/608 → 20/21 = 矩形族 0046afa0；
+    // 604/605 → 16/17 = 环/扇（0046b050/0046b3c0，段数 = vm+0x4AC）。
+    // th15 的矩形分支是 16,20-22（其 603/606-608 映射不同），不能照搬。
+    if(mode==15||mode==19||mode>=20){const u32 ax=v.flags>>21&3,ay=v.flags>>23&3;if(ax>2||ay>2){error="Primitive animation anchor outside range";return -2;}constexpr float xs[3][2]={{-.5f,.5f},{0,1},{-1,0}},ys[3][2]={{-.5f,.5f},{0,1},{-1,0}};const float sine=float(std::sin(double(angle))),cosine=float(std::cos(double(angle)));const u32 primary=v.color,secondary=mode==20||mode==22?v.secondary_color:v.color;
         const auto rectangle=[&](float w,float h,u32 a,u32 b){ColorVertex data[4];for(u32 i=0;i<4;i++){const float x=float(xs[ax][i&1]*w),y=float(ys[ay][i>>1]*h);data[i]={{float(float(float(x*cosine)-float(y*sine))+center.x),float(float(float(y*cosine)+float(x*sine))+center.y),0},1,i&1?b:a};}submit(vm,Topology::Strip,2,data,sizeof(ColorVertex));};
         if(mode==21||mode==22)rectangle(float(width+1),float(height+1),((primary>>1)&0x7f000000)|(primary&0xffffff),((secondary>>1)&0x7f000000)|(secondary&0xffffff));rectangle(width,height,primary,secondary);return 0;
     }
@@ -102,8 +106,8 @@ int AnmRenderer::draw(AnmVm& vm){
     if(vm.geometry.overlay)return overlay(vm);
     if(vm.geometry.trail)return trail(vm);
     const auto& v=vm.visual;if(vm.geometry.distortion){flush();if(!material(vm))return -2;graphics.set_depth_mask(false);graphics.set_layout(VertexLayout::ScreenColorUv);submit(vm,Topology::Fan,31,vm.geometry.distortion->vertices.data(),sizeof(AnmGeometryVertex));}
-    if((v.flags&3)!=3||(v.render_flags&0x60))return -1;const u32 mode=v.draw_mode();if(mode==8||mode==15){if(!(v.color>>24)&&!(v.secondary_color>>24))return -1;return world_quad(vm);}if(mode==24||mode==25)return mesh(vm);
-    if(graphics.pipeline().depthWrite){flush();graphics.set_depth_mask(false);}if(mode>=16&&mode<=22)return shape(vm);if(mode<=3){if(!(v.color>>24)&&!(v.secondary_color>>24))return -1;return quad(vm,mode==0);}
+    if((v.flags&3)!=3||(v.render_flags&0x60))return -1;const u32 mode=v.draw_mode();if(mode==8){if(!(v.color>>24)&&!(v.secondary_color>>24))return -1;return world_quad(vm);}if(mode==24||mode==25)return mesh(vm);
+    if(graphics.pipeline().depthWrite){flush();graphics.set_depth_mask(false);}if(mode>=15&&mode<=22)return shape(vm);if(mode<=3){if(!(v.color>>24)&&!(v.secondary_color>>24))return -1;return quad(vm,mode==0);}
     if(mode==4||mode==6){if(!(v.color>>24)&&!(v.secondary_color>>24))return -1;return projected_quad(vm,mode==6);}
     if(mode==10||mode==23||mode>25)return 0;if(mode==9||mode==11||mode==12||mode==13||mode==14){if(mode!=11&&!(v.color>>24))return -1;const i32 count=vm.variables.integers[0];if(count<2||u32(count)>vm.geometry.screen_vertices.size()/2){error="Animation strip buffer unavailable";return -2;}flush();if(!material(vm))return -2;graphics.set_layout(VertexLayout::ScreenColorUv);submit(vm,mode==11?Topology::Fan:Topology::Strip,u32(count)*2-2,vm.geometry.screen_vertices.data(),sizeof(AnmGeometryVertex));return 0;}
     error="Animation drawing mode not yet implemented: "+std::to_string(mode);return -2;
