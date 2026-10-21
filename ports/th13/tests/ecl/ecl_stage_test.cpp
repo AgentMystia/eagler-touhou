@@ -25,9 +25,10 @@ TEST(stage_math_primitives) {
     // 0x41c137 镜像：右（0）翻转成左（π），竖直（π/2）不变。
     CHECK_NEAR(th13::mirror_angle(0.0f), 3.1415927f, 1e-6);
     CHECK_NEAR(th13::mirror_angle(1.5707964f), 1.5707964f, 1e-6);
-    // 0x497670：round-half-even 量化 0.01。
-    CHECK_NEAR(th13::round001(0.125f), 0.12f, 1e-9);  // 12.5 → 12（偶）
-    CHECK_NEAR(th13::round001(0.115f), 0.12f, 1e-9);  // 11.5 → 12（偶）
+    // 0x497690：floor 量化 0.01（向负无穷；oracle 写断点实证 -163.783264 → -163.79）。
+    CHECK_NEAR(th13::round001(0.125f), 0.12f, 1e-9);   // floor(12.5)=12
+    CHECK_NEAR(th13::round001(0.119f), 0.11f, 1e-9);   // floor(11.9)=11
+    CHECK_NEAR(th13::round001(-163.783264f), -163.79f, 1e-9);
     CHECK_NEAR(th13::round001(1.0f), 1.0f, 1e-9);
     // 0x473a40：mode 0 线性、1 平方、4 ease-out 平方。
     CHECK_NEAR(th13::ease_interp(0, 1.0f, 4.0f), 0.25f, 1e-6);
