@@ -128,12 +128,6 @@ const capture = (page, frame) =>
     page.evaluate(f => window.__th13_debug.pumpTo(f), frame);
 
 const page = await openSession();
-// 画面诊断：泵到指定帧后倾倒 33 层 VM 清单（不导出帧）。
-const reportFrame = option('report-frame', null);
-if (reportFrame !== null) {
-  await capture(page, Number(reportFrame));
-  console.log(await page.evaluate('window.__th13_debug.report()'));
-}
 const firstCapture = new Map();
 const began = Date.now();
 for (const frame of wanted) {
@@ -143,6 +137,17 @@ for (const frame of wanted) {
   await writeFile(join(goldenDir, `ours-frame-${String(frame).padStart(6, '0')}.png`),
                   Buffer.from(dataUrl.slice(22), 'base64'));
   console.log(`ours frame ${frame} exported (${Math.round((Date.now() - began) / 1000)}s)`);
+}
+
+// 画面诊断：泵到指定帧后倾倒 33 层与表现层 VM 清单。置于导出循环之后——
+// 中途的 evaluate 会让 WebGL 后备缓冲被合成清空，再取像即黑帧。
+const reportFrame = option('report-frame', null);
+if (reportFrame !== null) {
+  // 只向前泵（导出循环可能已越过报告帧，此时直接读当前画面状态）。
+  const consumed = await page.evaluate('window.__th13_debug.consumed()');
+  if (Number(reportFrame) + 1 > consumed) await capture(page, Number(reportFrame));
+  console.log(await page.evaluate('window.__th13_debug.report()'));
+  console.log(await page.evaluate('window.__th13_debug.stageReport()'));
 }
 
 // 确定性自检：全新会话重泵校验帧，画面逐字节一致。

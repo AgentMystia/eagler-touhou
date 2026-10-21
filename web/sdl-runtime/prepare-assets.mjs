@@ -16,7 +16,7 @@ const files = [
   'text.anm', 'sig.anm', 'ascii.anm', 'effect.anm', 'title.anm', 'title_v.anm', 'help.anm',
   'front.anm', 'enemy.anm', 'st01enm.anm', 'bullet.anm',
   'pl00.anm', 'pl01.anm', 'pl02.anm', 'pl03.anm',
-  'st01.ecl', 'default.ecl', 'st01bs.ecl',
+  'st01.ecl', 'default.ecl', 'st01bs.ecl', 'st01.std', 'st01wl.anm',
 ];
 for (const name of files) {
   copyFileSync(resolve(raw, name), resolve(out, name));
