@@ -142,9 +142,11 @@ class StageSim {
 public:
     // resource_dir：含 st01.ecl/default.ecl/st01bs.ecl 与 ANM 名单核验的 raw 目录。
     bool load(const char* resource_dir, const char* event_path, const char* stage = nullptr);
-    // 交互模式装载：资源经 provider 供给（浏览器侧读 /assets），事件落盘关闭，
-    // 开启弹体实体。难度位 = 1 << difficulty（0x08 契约 = Lunatic）。
-    bool begin(EclResourceProvider& provider, const char* stage_file, i32 difficulty);
+    // 交互模式装载：资源经 provider 供给（浏览器侧读 /assets），难度位 =
+    // 1 << difficulty（0x08 契约 = Lunatic）。event_path 非空时开启事件落盘
+    // （回放对拍模式，event-contract.md §7）；空则保持静默（浏览器侧）。
+    bool begin(EclResourceProvider& provider, const char* stage_file, i32 difficulty,
+               const char* event_path = nullptr);
     // 跑 3600 帧（第 0 帧 = root 创建趟），返回 false 时 error 有值。
     bool run(u32 frames);
     // 交互模式逐帧步进：start() 只做第 0 帧装载趟，此后每帧一次 step_frame()。
@@ -170,15 +172,28 @@ public:
     std::string error_;
     bool interactive = false;  // 交互模式：弹体实体 + 可写玩家位置（不落事件）
     i32 difficulty_rank = 0x08;
+    i32 diff = 3;             // DIFF（DAT_004be7c4 语义：0=E 1=N 2=H 3=L）；
+                              // 535/536/548/624/625 的选参下标（begin 时取掩码尾零）
 
     StageEnemy* find_by_script_id(i32 id);  // 0x417f40（id 0 → null）
     StageEnemy* boss() const;
+    // 回放对拍：Boss（MainBoss 创建的 "Boss" 例程敌机）第一非符（首条 513）
+    // 的帧号；未到达为 -1。event-contract.md §7.3。
+    i32 boss_nonspell_frame = -1;
+    u32 boss_main_serial = 0xFFFFFFFF;
+    // 519 dialogWait（0x41e407）：msgmgr+0x198==0 即通过——oracle 合成态
+    // msgmgr 恒 0 → 原生即过，此处同判（§7.1 对话缺席【待校准】）。
+    int boss_dialog_wait() const { return 0; }
+    // §7 回放会话才落 boss_op/kill 事件（被动 stage1 窗口流保持 v1 字节不变）。
+    bool replay_events = false;
     // 建敌（enmCreate 族与 root 装载共用；含构造内首趟 0x41a8a0）。
     // mirror：0x4183f0:28 的 param2[6]（镜像位，构造趟前置入 flags bit20——
     // 构造趟内 404/405 族按镜像翻转角度）。
     StageEnemy* spawn_enemy(const char* routine, float x, float y, float life, StageEnemy* parent,
                             bool inherit_anm, bool mirror = false);
     // 交互模式伤害：扣血至 0 以下标 dead（下帧遍历摘链，与出界自杀同路）。
+    // 回放对拍模式（§7.2）额外：落 kill 事件、清 boss_slot 指向
+    // （oracle 侧同式写 mgr+0x5c 槽清零）。
     void damage(StageEnemy& enemy, float amount);
     void clear_bullets() {
         for (auto& bullet : bullets) bullet.alive = false;
