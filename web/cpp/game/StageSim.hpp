@@ -92,6 +92,10 @@ struct StageEnemy {
     float f_slots[4] = {0, 0, 0, 0};    // +0x1484..（F0-F3）
     std::unique_ptr<EclThreads> threads;
     bool dead = false;
+    // 0x418e00:19-20 的 0x80000 自门（0x41a8a0:30-31）：构造趟置位后，次帧
+    // MGR_UPDATE 到达本敌机时空转并清位——root（构造在 MGR_UPDATE 外）因此
+    // 比后续敌机多空转一个完整帧（oracle 探针实证 time 序 1,1,2,3）。
+    bool tick_gate = false;
     std::string interrupt_label;  // 514 setInterrupt（id 0）注册的标签
 };
 
@@ -148,11 +152,15 @@ public:
     StageEnemy* find_by_script_id(i32 id);  // 0x417f40（id 0 → null）
     StageEnemy* boss() const;
     // 建敌（enmCreate 族与 root 装载共用；含构造内首趟 0x41a8a0）。
+    // mirror：0x4183f0:28 的 param2[6]（镜像位，构造趟前置入 flags bit20——
+    // 构造趟内 404/405 族按镜像翻转角度）。
     StageEnemy* spawn_enemy(const char* routine, float x, float y, float life, StageEnemy* parent,
-                            bool inherit_anm);
+                            bool inherit_anm, bool mirror = false);
 
 private:
-    void tick_enemy(StageEnemy& enemy);  // 0x41a8a0：运动积分 → ECL
+    // 0x41a8a0：0x80000 门内干活（积分 → ECL），与 run() 的门/清位配合复刻
+    // 0x418e00:19-20 的逐敌机节拍。
+    void tick_enemy(StageEnemy& enemy);
     void integrate(StageEnemy& enemy);   // 0x419450 + 0x419950 子集
     bool in_bounds(StageEnemy& enemy);   // 0x419450 出界自杀
     u32 spawned_ = 0;

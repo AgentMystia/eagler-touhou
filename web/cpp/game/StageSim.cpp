@@ -264,8 +264,8 @@ StageEnemy* StageSim::boss() const {
 }
 
 StageEnemy* StageSim::spawn_enemy(const char* routine, float x, float y, float life, StageEnemy* parent,
-                                  bool inherit_anm) {
-    (void)inherit_anm;  // ANM 遗产拷贝（0x41fcc0 12 dword）不参与事件，暂略
+                                  bool inherit_anm, bool mirror) {
+    (void)inherit_anm;  // ANM 遗产拷贝（0x41fcc0:73-79 无条件 12 dword）不参与事件，暂略
     auto enemy = std::make_unique<StageEnemy>();
     enemy->serial = next_serial_++;  // mgr+0xBC 序号：root=0，此后逐次 +1
     enemy->script_id = i32(enemy->serial);
@@ -274,16 +274,25 @@ StageEnemy* StageSim::spawn_enemy(const char* routine, float x, float y, float l
     enemy->life = life;
     enemy->vel.pos[0] = x;
     enemy->vel.pos[1] = y;
+    // 0x4183f0:28：param2[6]<<20 无条件写入 flags bit20（在构造趟 :65 之前，
+    // 构造趟内 404/405 族按镜像翻转角度）。
+    enemy->flags = (enemy->flags & ~0x100000u) | (u32(mirror) << 20);
     enemy->threads = std::make_unique<EclThreads>(program, &gvars, &random);
     enemy->threads->main.commands = &commands;
     const u8 difficulty = parent ? parent->threads->main.difficulty : 0x08;  // 契约：Lunatic
     enemy->threads->start(routine, difficulty);
     StageEnemy* raw = enemy.get();
-    enemies.push_back(std::move(enemy));
-    ++spawned_;
     // 合同 §3.1：root（parent 为空）不由事件产生；enmCreate 族才发 enemy_spawn。
+    // 事件在构造趟之前（0x4183f0 入口即探参观察点）。
     if (parent) sink.enemy_spawn(raw->serial, routine, x, y, 0.0f, life, parent->serial);
     tick_enemy(*raw);  // 0x4183f0:65 构造内直调 0x41a8a0（首趟，计入当前帧）
+    raw->tick_gate = true;  // 0x41a8a0:31 干活后置 0x80000；待 MGR_UPDATE 到达时清
+    // 0x4183f0:106-124 挂链在构造趟之后——构造趟内 enmCreate 的后代先入链，
+    // 宿主随后尾插（vector 序 = 链序）。这决定「创建者是否链尾」，进而决定
+    // 新敌机创建帧是否被遍历到达（oracle 探针实证：root 构造趟先建 Maple，
+    // 链序 [Maple, root]；root 为尾时其新敌机次帧空转、次次帧才干活）。
+    enemies.push_back(std::move(enemy));
+    ++spawned_;
     return raw;
 }
 
@@ -318,14 +327,32 @@ bool StageSim::run(u32 frames) {
     spawn_enemy("main", 0.0f, 0.0f, 0.0f, nullptr, false);
     for (frame = 1; frame < frames && error_.empty(); ++frame) {
         sink.set_frame(frame);
-        std::vector<StageEnemy*> alive;
-        alive.reserve(enemies.size());
-        for (auto& entry : enemies)
-            if (!entry->dead) alive.push_back(entry.get());
-        for (StageEnemy* entry : alive) {
-            if (entry->dead) continue;
-            tick_enemy(*entry);
+        // 0x418e00:16-30：游标在每个敌机处理前取其实时 next；0x41a8a0 返回
+        // -1（死亡）当场摘链——已死敌机不占链位，链尾创建者的新敌机是否被
+        // 本帧遍历到达取决于创建时游标位置（vector 插入序 = 链序）。
+        u32 i = 0;
+        while (true) {
+            StageEnemy* entry = enemies[i].get();
+            const u32 next = i + 1;
+            const bool has_next = next < enemies.size();
+            bool remove = entry->dead;
+            if (!entry->dead) {
+                // 0x41a8a0:30-31：0x80000 位已置则本帧空转；0x418e00:20 返回 0 后清位。
+                if (!entry->tick_gate) {
+                    tick_enemy(*entry);
+                    entry->tick_gate = true;
+                }
+                if (entry->dead) remove = true;
+                else entry->tick_gate = false;
+            }
+            if (remove) {
+                enemies.erase(enemies.begin() + i);  // 0x418e00 else：当场摘链销毁
+                if (i >= enemies.size()) break;
+                continue;  // 游标走处理前记下的 next（摘除后恰为当前位置）
+            }
             if (!error_.empty()) break;
+            if (!has_next) break;
+            i = next;
         }
     }
     sink.close();  // 落盘（读回/比对前保证缓冲清净）
