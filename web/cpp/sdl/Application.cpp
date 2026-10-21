@@ -18,6 +18,9 @@ constexpr std::pair<const char*, i32> kBanks[7] = {
 };
 // front 面板在 begin_run 时由场景资产登记（残机/灵击脚本 30–45 已验证）。
 constexpr i32 kFrontBank = 3;
+// Stage1 战斗资产 bank：stage = ANIM 名单顺序合并（脚本号全局连续，ECL 302/303
+// 引用即此序）、bullet = 弹幕外观表脚本、player = plXX.anm（选人定档）。
+constexpr i32 kStageBank = 4, kBulletBank = 5, kPlayerBank = 6;
 }  // namespace
 
 Application::Application() : state(std::make_unique<ApplicationState>()) {}
@@ -104,7 +107,7 @@ bool ApplicationState::render_loading() {
     ScreenViews loading_views{renderer, loading_environment};
     if (!loading_views.camera(DrawCamera::Fullscreen, false)) return fail("Loading camera unavailable");
     const auto* credit = loading_animations.registry.find(loading_signature);
-    for (u32 layer = 0; layer < 42; ++layer) {
+    for (u32 layer = 0; layer < 33; ++layer) {  // th13 层域：主链 0-30 + 副链 31/32
         if (!renderer.draw_layer(loading_animations.registry.layer(layer))) return fail(renderer.error);
         if (credit && layer == u32(credit->visual.layer)) {
             renderer.flush();
@@ -184,8 +187,12 @@ ApplicationState::~ApplicationState() {
 void ApplicationState::release_run() {
     graphics.presentation.reset();
     pause.reset();
-    run.reset();
-    for (const auto bank : {kFrontBank, 0, 2, 8}) animations.retire_resource(bank);
+    run.reset();  // ~RunScene 先释放战斗 ANM 子树（外部 VM 归还 registry）
+    // 对局 bank 卸载（unload 从 banks 摘除并落 retired 队列，供重开再装载）；
+    // 常驻 bank（text/ascii/effect）只 retire 活动 VM，资源本体跨场景常驻。
+    for (const auto bank : {kFrontBank, kStageBank, kBulletBank, kPlayerBank})
+        animations.unload(bank);
+    for (const auto bank : {0, 2, 8}) animations.retire_resource(bank);
     animations.collect_resources();
     for (auto& callback : animation_updates) callback.enabled = true;
     environment.paused = false;
@@ -215,6 +222,7 @@ bool ApplicationState::begin_run() {
     for (auto& callback : animation_updates) callback.enabled = false;
     progress.stage = selected_stage;
     progress.starting_stage = selected_stage;
+    progress.stage_frame = 0;  // 重开归零（原版 supervisor 重建对局状态）
     progress.scene_flags = 0;
     progress.rate = 1;
     progress.new_run = true;
@@ -224,8 +232,37 @@ bool ApplicationState::begin_run() {
          !animations.load(kFrontBank, bytes.data(), u32(bytes.size())) ||
          !graphics.preload(*animations.resource(kFrontBank))))
         return fail("Run front asset: " + animations.error + graphics.error);
+    // Stage1 场景资产（Stage2+ 分期）：ANIM 名单顺序合并成单一 bank——
+    // ECL 302/303/306 的脚本号即该合并表的全局序号（0x46e0b0/0x46e230 语义）。
+    const char* stage_ecl = selected_stage == 1 ? "st01.ecl" : "st01.ecl";
+    std::vector<u8> ecl;
+    if (!read(stage_ecl, ecl)) return fail(std::string("Stage ECL missing: ") + stage_ecl);
+    EclResource head;
+    if (!head.open(ecl.data(), u32(ecl.size())) || head.animations.empty())
+        return fail("Stage ECL ANIM list unavailable");
+    AnmResource stage;
+    for (const auto& name : head.animations) {
+        if (!read(name, bytes)) return fail("Stage ANM missing: " + name);
+        if (!stage.append(bytes.data(), u32(bytes.size())))
+            return fail("Stage ANM invalid: " + name);
+    }
+    if (!animations.adopt(kStageBank, std::move(stage)) ||
+        !graphics.preload(*animations.resource(kStageBank)))
+        return fail("Stage ANM bank: " + animations.error + graphics.error);
+    if (!read("bullet.anm", bytes) ||
+        !animations.load(kBulletBank, bytes.data(), u32(bytes.size())) ||
+        !graphics.preload(*animations.resource(kBulletBank)))
+        return fail("Bullet ANM bank: " + animations.error + graphics.error);
+    const char* player_files[4] = {"pl00.anm", "pl01.anm", "pl02.anm", "pl03.anm"};
+    const i32 character = progress.character & 3;
+    if (!read(player_files[character], bytes) ||
+        !animations.load(kPlayerBank, bytes.data(), u32(bytes.size())) ||
+        !graphics.preload(*animations.resource(kPlayerBank)))
+        return fail("Player ANM bank: " + animations.error + graphics.error);
+    StagePresentation::Banks banks{kStageBank, kBulletBank, kPlayerBank};
     run = std::make_unique<RunScene>(progress, selection_player, selection_score, animations,
-                                     environment, *this, scheduler, kFrontBank, 2);
+                                     renderer, environment, *this, scheduler, banks, kFrontBank,
+                                     2);
     if (!run->initialize()) return fail(run->error);
     pause = std::make_unique<RunPause>(progress, animations, environment, *this, scheduler, kFrontBank);
     if (!pause->prepare()) return fail(pause->error);
@@ -282,6 +319,7 @@ bool ApplicationState::step(u32 held, u32 pressed, u32 repeated, float fps, bool
                 if (!pause->open(PauseEntrance::Pause)) return fail(pause->error);
             }
         }
+        run->controls(held, pressed, repeated);  // 战斗输入（Z 射击/X 炸弹/方向）
         if (scheduler.update() < 0)
             return fail(run->error.empty() ? animations.error : run->error);
     } else {

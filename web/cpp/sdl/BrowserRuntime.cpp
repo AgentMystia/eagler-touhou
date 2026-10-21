@@ -70,6 +70,38 @@ bool sample_and_tick() {
     lost_focus = false;
     return app->step(controls.held, controls.pressed, controls.repeated, 60.f, focus);
 }
+
+// 单帧驱动（rAF 回调与 th13_frame_tick 手动泵共用）：装载挡板 → 帧钟 → 提交。
+bool drive_one_frame(double delta) {
+    const double begin = emscripten_get_now();
+    if (suspended) {
+        cadence.reset();
+        return true;
+    }
+    if (app->loading_waiting()) {
+        cadence.reset();
+        if (!(app->loading_startup ? app->advance_loading(delta) : app->complete_loading())) {
+            running = false;
+            th13_browser_frame(0, emscripten_get_now() - begin, 0);
+            return false;
+        }
+        app->audio_device.pump();
+        return true;
+    }
+    const auto ticks = cadence.advance(delta);
+    bool ok = true;
+    app->graphics.backend.defer = true;
+    for (unsigned i = 0; i < ticks && ok; i++) {
+        ok = sample_and_tick();
+        if (app->exiting || app->pending_load) break;
+    }
+    app->graphics.backend.commit();
+    app->graphics.backend.defer = false;
+    app->audio_device.pump();
+    th13_browser_frame(ok ? 1 : 0, emscripten_get_now() - begin, ticks);
+    if (!ok) running = false;
+    return running;
+}
 }  // namespace
 }  // namespace th13::sdl
 
@@ -178,37 +210,18 @@ EMSCRIPTEN_KEEPALIVE void th13_loop_start() {
     emscripten_request_animation_frame_loop(
         [](double time, void* epoch) -> EM_BOOL {
             if (!running || uintptr_t(epoch) != loop_epoch) return EM_FALSE;
-            const double begin = emscripten_get_now();
             const double delta = previous_frame < 0 ? 0 : (time - previous_frame) / 1000.;
             previous_frame = time;
-            if (suspended) {
-                cadence.reset();
-                return EM_TRUE;
-            }
-            if (app->loading_waiting()) {
-                cadence.reset();
-                if (!(app->loading_startup ? app->advance_loading(delta) : app->complete_loading())) {
-                    running = false;
-                    th13_browser_frame(0, emscripten_get_now() - begin, 0);
-                    return EM_FALSE;
-                }
-                app->audio_device.pump();
-                return EM_TRUE;
-            }
-            const auto ticks = cadence.advance(delta);
-            bool ok = true;
-            app->graphics.backend.defer = true;
-            for (unsigned i = 0; i < ticks && ok; i++) {
-                ok = sample_and_tick();
-                if (app->exiting || app->pending_load) break;
-            }
-            app->graphics.backend.commit();
-            app->graphics.backend.defer = false;
-            app->audio_device.pump();
-            th13_browser_frame(ok ? 1 : 0, emscripten_get_now() - begin, ticks);
-            if (!ok) running = false;
-            return running ? EM_TRUE : EM_FALSE;
+            return drive_one_frame(delta) ? EM_TRUE : EM_FALSE;
         },
         reinterpret_cast<void*>(uintptr_t(++loop_epoch)));
+}
+
+// 手动帧泵：宿主页面在 requestAnimationFrame 停摆的环境（如嵌入式 webview 的
+// 后台页）经 th13_frame_tick 以 setTimeout 节奏驱动同一帧体（html 内看门狗）。
+EMSCRIPTEN_KEEPALIVE int th13_frame_tick(double delta_milliseconds) {
+    using namespace th13::sdl;
+    if (!running) return -1;  // 循环未开/已停：不泵
+    return drive_one_frame(delta_milliseconds < 0 ? 0 : delta_milliseconds / 1000.) ? 1 : 0;
 }
 }  // extern "C"
