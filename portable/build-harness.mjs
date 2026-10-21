@@ -1,6 +1,8 @@
 // th13 双目标构建之一：wasi-sdk 无头 harness（oracle 对照专用）。
 // 用法：WASI_SDK_PATH=/opt/wasi-sdk node portable/build-harness.mjs
 // 产物：web/artifacts/wasi/th13-harness.wasm（运行方式见 tests/harness/README）
+// TH13_DRAW_CAPTURE：语义绘制清单导出开关（draws/draws-replay 模式，
+// draw-contract.md v1；web 构建不带此定义，AnmRenderer 钩子编译出局）
 import {mkdirSync, readdirSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -23,7 +25,7 @@ const output = resolve(out, 'th13-harness.wasm');
 
 const args = [
   '--target=wasm32-wasip1', '-O2', '-std=c++17', '-fno-exceptions', '-fno-rtti',
-  '-ffp-contract=off', '-DTH13_WASI_HARNESS=1',
+  '-ffp-contract=off', '-DTH13_WASI_HARNESS=1', '-DTH13_DRAW_CAPTURE=1',
   '-I' + resolve(root, 'cpp'),
   ...sources, main, '-o', output,
 ];
