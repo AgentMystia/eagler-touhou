@@ -273,7 +273,8 @@ bool ApplicationState::begin_run() {
         !animations.load(kPlayerBank, bytes.data(), u32(bytes.size())) ||
         !graphics.preload(*animations.resource(kPlayerBank)))
         return fail("Player ANM bank: " + animations.error + graphics.error);
-    StagePresentation::Banks banks{kStageBank, kBulletBank, kPlayerBank};
+    // 第 4 员 effect=8（kBanks 表 effect.anm 同值）：ECL 307/308 特效 VM 创建源。
+    StagePresentation::Banks banks{kStageBank, kBulletBank, kPlayerBank, 8};
     // STD 舞台背景资产名（Stage2+ 分期；Stage1 = st01.std → st01wl.anm）。
     const char* stage_std = selected_stage == 1 ? "st01.std" : "st01.std";
     run = std::make_unique<RunScene>(progress, selection_player, selection_score, animations,

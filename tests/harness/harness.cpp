@@ -54,6 +54,7 @@ int rng_smoke() {
 int stage1(const char* resource_dir, const char* event_path, unsigned frames,
            const char* stage) {
     th13::StageSim sim;
+    sim.anm_effects_noop = true;  // 事件契约：307/308 与 stage1 oracle NOOP 同源
     if (!sim.load(resource_dir, event_path, stage)) {
         std::printf("stage1 load failed: %s\n", sim.error().c_str());
         return 1;
@@ -151,6 +152,7 @@ int replay(const char* replay_path, const char* resource_dir, const char* event_
     char sht_file[16];
     std::snprintf(sht_file, sizeof sht_file, "pl%02d%c.sht", replay_file.character,
                   replay_file.shot_type == 0 ? 'a' : 'b');
+    battle.sim.anm_effects_noop = true;  // 事件契约：307/308 与 stage1 oracle NOOP 同源
     if (!battle.load(provider, stage_file, 1 << replay_file.rank, host, progress, player,
                      score_state, event_path, sht_file)) {
         std::printf("replay battle load failed: %s\n", battle.error().c_str());
@@ -377,7 +379,7 @@ int run_draws(const char* resource_dir, const char* draws_path, unsigned frames,
     session.presentation = std::make_unique<th13::StagePresentation>(
         session.animations, session.renderer, th13::StagePresentation::Banks{
                                                    kDrawsStageBank, kDrawsBulletBank,
-                                                   kDrawsPlayerBank},
+                                                   kDrawsPlayerBank, kDrawsEffectBank},
         31);
     th13::StagePresentation::debug_pass_mask = 4;  // 仅敌机（oracle 窗口径）
     // 无输入窗玩家口径：静态 (192,420)（oracle stage1 env 契约常量；不走
@@ -471,7 +473,7 @@ int run_draws_replay(const char* replay_path, const char* resource_dir, const ch
     session.presentation = std::make_unique<th13::StagePresentation>(
         session.animations, session.renderer, th13::StagePresentation::Banks{
                                                    kDrawsStageBank, kDrawsBulletBank,
-                                                   kDrawsPlayerBank},
+                                                   kDrawsPlayerBank, kDrawsEffectBank},
         31);
     th13::StagePresentation::debug_pass_mask = 4;
     if (!session.capture.open_output(draws_path)) {

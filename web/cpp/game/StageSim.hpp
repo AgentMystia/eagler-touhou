@@ -60,6 +60,16 @@ struct StageMover {
     StagePosItp postime;           // 位置插值（活动期间覆写 pos）
 };
 
+// ECL 307/308 特效 VM 创建请求（0x41b260 分发 case4/case5 → 0x4243e0：
+// 拷脚本模板 → 立即 tick → 主池头入链 0x46f4a0）。file = ECL 文件索引
+// （ctl+0x80 表：0=bullet.anm、1=effect.anm、2..=st01 ANIM 名单），script =
+// 文件内脚本号；308 位置清零（0x4243e0:22-24）、307 传敌机 xyz（case4:
+// param_1+0x11 起）。表现层（StagePresentation::sync）每帧排空。
+struct AnmEffectRequest {
+    i32 file = 0, script = 0;
+    float x = 0, y = 0, z = 0;
+};
+
 // et 发射器槽（0xE0 float 状态的行为子集，事件相关的字段）。
 struct StageEt {
     u32 sprite = 0, subtype = 0;       // et[0]/et[1]（602 etSprite）
@@ -169,6 +179,12 @@ public:
     float player_x = 192.0f, player_y = 420.0f;  // 契约常量（交互模式每帧覆写）
     i32 boss_slot[3] = {-1, -1, -1};             // mgr+0x5C 起 3 槽（script_id 寻址）
     std::vector<std::string> anim_list;          // st01 的 ANIM 依赖清单（装载核验）
+    // ECL 307/308 特效 VM 创建请求（AnmEffectRequest；sync 每帧排空后清）。
+    std::vector<AnmEffectRequest> anm_effects;
+    // 事件契约模式（stage1/replay 落盘）置 true：307/308 与 stage1 oracle 的
+    // NOOP_OPS 同源不解析参数（参数解析对带掩码实参有 RNG 副作用，会移动
+    // 事件时间线——replay 事件窗 frame124 分歧实证）；渲染/交互模式保持真实语义。
+    bool anm_effects_noop = false;
     std::string error_;
     bool interactive = false;  // 交互模式：弹体实体 + 可写玩家位置（不落事件）
     i32 difficulty_rank = 0x08;

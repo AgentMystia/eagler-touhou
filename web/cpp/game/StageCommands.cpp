@@ -108,8 +108,18 @@ int StageCommands::execute(EclContext& c, u16 op) {
             e.anm_script[slot] = script;  // script < 0 = 清槽（0x41fe80）
         return 0;
     }
-    case 307:
-    case 308:
+    case 307:   // anmAt（case4：file=arg0、script=arg1、位置=敌机 xyz、主池头入链）
+    case 308: {  // anmVm（case5 → 0x4243e0：同上但位置清零 0x4243e0:22-24）
+        if (sim.anm_effects_noop) return 0;  // 事件契约：stage1 oracle NOOP 同源
+        i32 file = 0, script = 0;
+        if (!resolve_int(c, 0, file) || !resolve_int(c, 1, script)) return -2;
+        if (op == 308)
+            sim.anm_effects.push_back({file, script, 0, 0, 0});
+        else
+            sim.anm_effects.push_back(
+                {file, script, e.position[0], e.position[1], e.position[2]});
+        return 0;
+    }
     case 313:
     case 316:
     case 319:
