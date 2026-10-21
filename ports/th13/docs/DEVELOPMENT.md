@@ -47,6 +47,17 @@ make extract   # 解包 th13ogg.7z → games/th13/，生成 SHA256 清单与版�
 6. th13 特有：神灵收集、灵界 Trance、Overdrive
 7. Boss / 符卡 / 全 Stage 通关
 
+### 数值语义纪律（继承参考工作流 machine.hpp + softfloat 的教训）
+
+原版以 MSVC x87 80 位中间量运算，移植侧 SSE2 语义默认不一致。已发生的修正（wrap_angle 每步落 f32、SquareSumRoot 单舍入链、圆周模式插值角维、floor 量化）全部属于此类。规则：
+
+- 新子系统凡涉及**双精度链、超越函数、连加累乘后单次取整**的路径，先写 oracle 用例锁定原版结果，再落 C++；必要时引入 x87 语义助手（参照 ports/th10 的 `web/cpp/rebuild/machine.hpp` + softfloat extF80 子集），不逐例手修散落各处
+- 遇到「分歧在数值第 N 位小数」类对齐失败，优先怀疑 x87/SSE 差异，其次才是逻辑错误
+
+### 与静态重编译路线的关系（混合升级预案）
+
+参考工作流（th10）采用机械静态重编译 + 渐进类型化替换的双层形态（`rebuild/` 与 `game/` 并存）。本项目当前为 clean-room + oracle 验收路线，Stage 1 事件流已逐字节对齐证明可行；若后续关卡/Boss 重符卡段频繁卡在浮点或边界语义，启动最小转译层（页级翻译仅覆盖卡住的函数，与 `game/` 并存），向参考工作流的混合形态收敛。
+
 ## 测试
 
 ```sh
