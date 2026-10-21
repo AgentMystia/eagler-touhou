@@ -510,6 +510,16 @@ int StageCommands::execute(EclContext& c, u16 op) {
         }
         return 0;
     }
+    case 558: {  // 0x41e451：flags bit20（镜像）按参数异或翻转
+        i32 value = 0;
+        if (!resolve_int(c, 0, value)) {
+            sim.error_ = c.error;
+            return -2;
+        }
+        e.flags = (e.flags & ~0x100000u) |
+                  ((e.flags ^ (u32(value) << 20)) & 0x100000u);
+        return 0;
+    }
     case 513:
     case 515:
     case 516:
@@ -782,7 +792,7 @@ int StageCommands::execute(EclContext& c, u16 op) {
         return 0;
 
     default:
-        sim.error_ = "unimplemented game opcode";
+        sim.error_ = "unimplemented game opcode " + std::to_string(op);
         return -2;
     }
 }

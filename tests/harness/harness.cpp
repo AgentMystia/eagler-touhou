@@ -24,9 +24,10 @@ int rng_smoke() {
     return 0;
 }
 
-int stage1(const char* resource_dir, const char* event_path, unsigned frames) {
+int stage1(const char* resource_dir, const char* event_path, unsigned frames,
+           const char* stage) {
     th13::StageSim sim;
-    if (!sim.load(resource_dir, event_path)) {
+    if (!sim.load(resource_dir, event_path, stage)) {
         std::printf("stage1 load failed: %s\n", sim.error().c_str());
         return 1;
     }
@@ -44,6 +45,8 @@ int stage1(const char* resource_dir, const char* event_path, unsigned frames) {
 
 int main(int argc, char** argv) {
     if (argc >= 4 && std::strcmp(argv[1], "stage1") == 0)
-        return stage1(argv[2], argv[3], argc >= 5 ? unsigned(std::atoi(argv[4])) : 3600u);
+        // stage1 <资源目录> <输出> [frames] [stage.ecl]
+        return stage1(argv[2], argv[3], argc >= 5 ? unsigned(std::atoi(argv[4])) : 3600u,
+                      argc >= 6 ? argv[5] : nullptr);
     return rng_smoke();
 }
