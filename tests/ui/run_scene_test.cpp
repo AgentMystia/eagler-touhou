@@ -7,6 +7,7 @@
 #include "game/RunScene.hpp"
 #include "game/FrameScheduler.hpp"
 
+#include <cstring>
 #include <map>
 
 using namespace th13;
@@ -22,8 +23,47 @@ std::vector<u8> synthetic_stage_ecl() {
     return th13test::build_scpt({{"main", main}}, {"stage_a.anm", "stage_b.anm"});
 }
 
+// 合成 st01.std：1 对象（层 0）/1 图元（脚本 0）+ 1 实例 + 相机脚本
+// （t=0 位置设置 + stop）——字段布局走查见 game/StageResource.hpp 文件头。
+std::vector<u8> synthetic_std() {
+    std::vector<u8> out(0x110, 0);
+    auto put16 = [&](u32 at, u16 v) { std::memcpy(out.data() + at, &v, 2); };
+    auto put32 = [&](u32 at, u32 v) { std::memcpy(out.data() + at, &v, 4); };
+    auto putf = [&](u32 at, float v) { std::memcpy(out.data() + at, &v, 4); };
+    put16(0, 1);   // 对象数
+    put16(2, 1);   // 图元数
+    put32(4, 0xd0);  // 实例区
+    put32(8, 0xe4);  // 脚本区
+    const char* name = "scenery.anm";
+    std::memcpy(out.data() + 0x10, name, std::strlen(name));
+    put32(0x90, 0x94);  // 对象目录
+    // 对象头：id=0/layer=0/flags=1 + 位置 + 尺寸（28 字节）。
+    put32(0x94, 0x00010000);
+    putf(0x98, 0.f); putf(0x9c, 0.f); putf(0xa0, 0.f);
+    putf(0xa4, 64.f); putf(0xa8, 64.f); putf(0xac, 64.f);
+    // 图元：type=0/length=28/script=0/pad + 位置 + 宽高。
+    put16(0xb0, 0);
+    put16(0xb2, 28);
+    put16(0xb4, 0);
+    put16(0xb6, 0);
+    putf(0xb8, 0.f); putf(0xbc, 0.f); putf(0xc0, 0.f);
+    putf(0xc4, 64.f); putf(0xc8, 64.f);
+    put32(0xcc, 0x0004ffff);  // 图元终止符
+    // 实例：object=0/flags=0 + 位置；终止符。
+    put32(0xd0, 0);
+    putf(0xd4, 0.f); putf(0xd8, 0.f); putf(0xdc, 0.f);
+    put32(0xe0, 0xffffffff);
+    // 脚本：t=0 ins_2 位置设置（3 参）→ t=0 ins_0 stop → 0xffffffff 终止。
+    put32(0xe4, 0); put16(0xe8, 2); put16(0xea, 20);
+    putf(0xec, 10.f); putf(0xf0, 20.f); putf(0xf4, 30.f);
+    put32(0xf8, 0); put16(0xfc, 0); put16(0xfe, 8);
+    for (u32 at = 0x100; at < 0x110; at += 4) put32(at, 0xffffffff);
+    return out;
+}
+
 struct RunHost final : RunSceneServices {
     AnmManager& manager;
+    ZunGraphics* graphics = nullptr;
     int pauses = 0, game_overs = 0;
     std::vector<std::string> lines;
     std::map<std::string, std::vector<u8>> assets;
@@ -51,6 +91,12 @@ struct RunHost final : RunSceneServices {
         if (found == assets.end()) return false;
         bytes = found->second;
         return true;
+    }
+    ZunGraphics& stage_graphics() override { return *graphics; }
+    bool preload_scenery_animation(i32 bank, const std::string& name) override {
+        if (manager.resource(bank)) return true;
+        std::vector<u8> bytes;
+        return read_asset(name, bytes) && manager.load(bank, bytes.data(), u32(bytes.size()));
     }
 };
 
@@ -92,9 +138,13 @@ struct RunHarness {
         CHECK(load_bank(manager, 6, synthetic_anm(64, trivial_scripts(3))));  // player 0..2
         host.assets["stage_a.anm"] = synthetic_anm(8, trivial_scripts(1));
         host.assets["stage_b.anm"] = synthetic_anm(8, trivial_scripts(1));
+        host.assets["st01.std"] = synthetic_std();
+        host.assets["scenery.anm"] = synthetic_anm(8, trivial_scripts(1));  // STD 引用 ANM
+        host.graphics = &graphics;
         StagePresentation::Banks banks{4, 5, 6};
         scene = std::make_unique<RunScene>(progress, player, score, manager, renderer,
-                                           environment, host, scheduler, banks, 3, 2);
+                                           environment, host, scheduler, banks, 3, 2, 7,
+                                           "st01.std");
         CHECK(scene->initialize());
     }
 };

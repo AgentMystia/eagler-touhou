@@ -20,8 +20,9 @@ constexpr std::pair<const char*, i32> kBanks[7] = {
 // front 面板在 begin_run 时由场景资产登记（残机/灵击脚本 30–45 已验证）。
 constexpr i32 kFrontBank = 3;
 // Stage1 战斗资产 bank：stage = ANIM 名单顺序合并（脚本号全局连续，ECL 302/303
-// 引用即此序）、bullet = 弹幕外观表脚本、player = plXX.anm（选人定档）。
-constexpr i32 kStageBank = 4, kBulletBank = 5, kPlayerBank = 6;
+// 引用即此序）、bullet = 弹幕外观表脚本、player = plXX.anm（选人定档）、
+// scenery = STD 引用 ANM（st01.std → st01wl.anm）。
+constexpr i32 kStageBank = 4, kBulletBank = 5, kPlayerBank = 6, kSceneryBank = 7;
 }  // namespace
 
 Application::Application() : state(std::make_unique<ApplicationState>()) {}
@@ -191,7 +192,7 @@ void ApplicationState::release_run() {
     run.reset();  // ~RunScene 先释放战斗 ANM 子树（外部 VM 归还 registry）
     // 对局 bank 卸载（unload 从 banks 摘除并落 retired 队列，供重开再装载）；
     // 常驻 bank（text/ascii/effect）只 retire 活动 VM，资源本体跨场景常驻。
-    for (const auto bank : {kFrontBank, kStageBank, kBulletBank, kPlayerBank})
+    for (const auto bank : {kFrontBank, kStageBank, kBulletBank, kPlayerBank, kSceneryBank})
         animations.unload(bank);
     for (const auto bank : {0, 2, 8}) animations.retire_resource(bank);
     animations.collect_resources();
@@ -207,8 +208,19 @@ void ApplicationState::release_run() {
     if (display) display->detach();
 }
 
-bool ApplicationState::begin_title(i32 reason) {
-    title.reset();
+bool ApplicationState::preload_scenery_animation(i32 bank, const std::string& name) {
+    // STD 引用 ANM 装载（begin_run 场景期专用；release_run 随对局 bank 卸载）。
+    std::vector<u8> bytes;
+    if (animations.resource(bank)) return true;
+    if (!read(name, bytes) || !animations.load(bank, bytes.data(), u32(bytes.size())))
+        return fail("Scenery ANM load: " + name + ": " + animations.error);
+    animations.name_resource(bank, name);
+    if (!graphics.preload(*animations.resource(bank)))
+        return fail("Scenery ANM preload: " + name + ": " + graphics.error);
+    return true;
+}
+
+bool ApplicationState::begin_title(i32 reason) {    title.reset();
     release_run();
     current_destination = i32(Destination::Title);
     title = std::make_unique<TitleScene>(progress, selection, animations, *this, scheduler,
@@ -262,9 +274,11 @@ bool ApplicationState::begin_run() {
         !graphics.preload(*animations.resource(kPlayerBank)))
         return fail("Player ANM bank: " + animations.error + graphics.error);
     StagePresentation::Banks banks{kStageBank, kBulletBank, kPlayerBank};
+    // STD 舞台背景资产名（Stage2+ 分期；Stage1 = st01.std → st01wl.anm）。
+    const char* stage_std = selected_stage == 1 ? "st01.std" : "st01.std";
     run = std::make_unique<RunScene>(progress, selection_player, selection_score, animations,
                                      renderer, environment, *this, scheduler, banks, kFrontBank,
-                                     2);
+                                     2, kSceneryBank, stage_std);
     if (!replay_sht.empty()) run->battle_sht = replay_sht;  // 回放会话移速源（§7.2）
     if (!run->initialize()) return fail(run->error);
     pause = std::make_unique<RunPause>(progress, animations, environment, *this, scheduler, kFrontBank);
