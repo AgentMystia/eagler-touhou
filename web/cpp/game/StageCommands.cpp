@@ -781,16 +781,20 @@ int StageCommands::create_enemy(EclContext& c, u16 op) {
         return -2;
     }
     const bool relative = op == 300 || op == 309 || op == 321 || op == 311 || op == 304;
-    const bool inherit = op == 311 || op == 304 || op == 312 || op == 305;
+    // 0x41fcc0:60-62：311/304/312/305（0x137/0x130/0x138/0x131）产 param2[6]=1
+    // ——镜像位源；0x41fcc0:63-66 创建者已镜像时翻转该位并 x 取负；
+    // 0x4183f0:28 以 xor-and 把 param2[6]<<20 无条件写入新敌机 flags bit20。
+    bool mirror = op == 311 || op == 304 || op == 312 || op == 305;
     if (relative) {
         x = x + e.position[0];
         y = y + e.position[1];
     }
-    (void)inherit;  // ANM 遗产标志只影响视觉继承
     if (e.flags & 0x100000u) {
+        mirror = !mirror;
         x = x * -1.0f;
     }
-    sim.spawn_enemy(routine.c_str(), x, y, float(life), &e, inherit);
+    StageEnemy* created = sim.spawn_enemy(routine.c_str(), x, y, float(life), &e, false,
+                                          mirror);
     return 0;
 }
 
@@ -887,7 +891,10 @@ int StageCommands::fire_et(EclContext& c, StageEnemy& e) {
                 break;
             }
             const float stored = wrap_angle(angle);
-            float x = et.spawn[0], y = et.spawn[1], z = et.spawn[2];
+            float x = et.spawn[0], y = et.spawn[1];
+            // z：0x40e840 写入 spawn z 后无条件覆写 0x3dcccccd（渲染层常量），
+            // 事件口径恒 0.1f；spin（et[9]）只作用于 x/y（0x40e840 尾段）。
+            const float z = 0.1f;
             if (et.spin != 0.0f) {
                 float ox = 0, oy = 0;
                 polar_xy(stored, et.spin, ox, oy);
