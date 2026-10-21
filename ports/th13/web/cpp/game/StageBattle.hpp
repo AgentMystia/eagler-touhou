@@ -15,6 +15,8 @@
 #include "SessionState.hpp"
 #include "StageSim.hpp"
 
+#include <array>
+
 namespace th13 {
 
 struct StageBattleServices {
@@ -28,7 +30,19 @@ struct StageBattleServices {
 // 自机弹（垂直直进模型弹；x/y 整值浮点精确步进）。
 struct PlayerShot {
     float x = 0, y = 0, damage = 0;
+    float angle = -1.5707964f;  // 弹向（渲染旋转用；主弹恒 -π/2 直上）
+    i32 script = -1;            // plXX.anm 弹型脚本（.sht 记录；-1 = 精灵直贴回退）
     bool alive = false;
+};
+
+// .sht 弹型记录（0x443e40 装载解析：+0xc8 指针表 → +0xf4 基准块，记录
+// 步长 0x38、首字节 <0 终止）。字段序 = 文件布局：类别 u16、脚本 u16、
+// {x, y} 出膛偏移、角度（-π/2 直上）。
+struct ShtShotRecord {
+    i32 kind = 0;    // 3 = 主弹；8 = 附属弹（Option 卫星，分期未接）
+    i32 script = 0;  // plXX.anm 脚本号
+    float x = 0, y = 0;
+    float angle = 0;
 };
 
 class StageBattle {
@@ -47,13 +61,13 @@ public:
     i32 speed_orth_focus = 256, speed_diag_focus = 181;
     u32 input_state = 0;                         // 当帧回放输入（player 事件用）
 
-    // 定标常量（弹型表接入前的可玩/对拍子集，§7.2【待校准】）。
+    // 定标常量（弹型表主弹列以外的域：碰撞/无敌等，§7.2【待校准】）。
     static constexpr i32 kFireInterval = 4;      // 射击间隔帧
-    static constexpr float kShotDamage = 12.0f;  // 单发伤害（整值）
+    static constexpr float kShotDamage = 12.0f;  // 单发伤害（整值；.sht 接入后按列数均摊）
     static constexpr float kShotSpeed = 12.0f;   // 垂直弹速（整值）
     static constexpr float kShotHalf = 4.0f;     // 弹体半宽高
-    static constexpr float kShotOffsetX = 8.0f;  // 三发 x 偏移
-    static constexpr float kShotOffsetY = 12.0f; // 出膛 y 偏移
+    static constexpr float kShotOffsetX = 8.0f;  // 无 .sht 回退：三发 x 偏移
+    static constexpr float kShotOffsetY = 12.0f; // 无 .sht 回退：出膛 y 偏移
     static constexpr float kPlayerHitRadius = 3.0f;
     static constexpr float kBulletHitRadius = 4.0f;
     static constexpr float kEnemyBodyRadius = 20.0f;
@@ -63,7 +77,7 @@ public:
     static constexpr i32 kKillScore = 5000;
     static constexpr i32 kKillPower = 8;
 
-    // sht_name：移速来源（回放对拍 = pl02a.sht；缺文件时失败）。
+    // sht_name：移速 + 弹型来源（回放对拍 = plXXa/b.sht；缺文件时失败）。
     bool load(EclResourceProvider& provider, const char* stage_file, i32 difficulty_rank,
               StageBattleServices& host, SessionState& progress, HudPlayerState& player,
               HudScoreState& score, const char* event_path = nullptr,
@@ -74,6 +88,12 @@ public:
     bool step(const GameInput& input);
     void on_bomb_key();  // X 边沿（经 step 内部处理，这里供测试直调）
     const std::string& error() const { return error_; }
+
+    // .sht 弹型域：5 能量档非聚焦（块 0-4）+ 5 能量档聚焦（块 5-9）+
+    // 特殊块 10（类别 2，未接入）。
+    static constexpr u32 kShtBlocks = 11;
+    std::array<std::vector<ShtShotRecord>, kShtBlocks> sht_shots;
+    bool sht_shots_loaded = false;
 
 private:
     void move_player(u32 held);

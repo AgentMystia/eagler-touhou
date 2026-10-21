@@ -115,8 +115,9 @@ int replay(const char* replay_path, const char* resource_dir, const char* event_
         return 1;
     }
     const th13::ReplayStage& stage = replay_file.stages[stage_index];
-    std::printf("replay name=%s rank=%d chara=%d score=%d stages=%u\n",
+    std::printf("replay name=%s rank=%d chara=%d shot=%d score=%d stages=%u\n",
                 replay_file.player_name.c_str(), replay_file.rank, replay_file.character,
+                replay_file.shot_type,
                 replay_file.score, unsigned(replay_file.stages.size()));
     std::printf("replay stage=%u frames=%u events=%u score=%d\n", unsigned(stage.number),
                 unsigned(stage.frame_count), unsigned(stage.events.size()), stage.score);
