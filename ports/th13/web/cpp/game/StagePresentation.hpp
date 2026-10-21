@@ -1,0 +1,70 @@
+// Stage1 战斗表现层：把 StageSim/StageBattle 的状态同步为 ANM VM 并直绘。
+// 敌机 = ECL 302/303/306 记录的脚本（stage ANM 合并表全局序号）；
+// 敌弹 = bullet.anm 脚本 + 0x4120b0 精灵解析（BulletAppearance 表）；
+// 自机/自机弹 = plXX.anm（脚本 0/1/2 姿态；弹为精灵直贴）。
+// VM 不入 registry（除脚本自派的子体经 object_host 入链），绘制直调
+// AnmRenderer（th15 PlayerDraw/GameDraw 同式），由 RunScene 注册分层回调。
+#pragma once
+
+#include "AnmManager.hpp"
+#include "AnmRenderer.hpp"
+#include "BulletAppearance.hpp"
+#include "GameRandom.hpp"
+#include "StageBattle.hpp"
+
+#include <memory>
+#include <vector>
+
+namespace th13 {
+
+class StagePresentation {
+public:
+    struct Banks {
+        i32 stage = 0, bullet = 0, player = 0;
+    };
+    // player_sprite：自机弹精灵（plXX.anm 内；弹型表接入前的可玩化近似）。
+    StagePresentation(AnmManager& animations, AnmRenderer& renderer, Banks banks,
+                      i32 player_shot_sprite);
+    // 帧同步（Update pass 内调用）：敌机脚本接线、弹体/自机弹/自机姿态。
+    bool sync(StageBattle& battle, u32 held);
+    // 直绘 pass：0=自机弹 1=自机 2=敌机 3=敌弹（调用方保证 Fullscreen 相机）。
+    bool draw(u32 pass);
+    void release();  // 场景卸载：销毁敌机子树（外部 VM 归还 registry 外部表）
+    const std::string& error() const { return error_; }
+
+private:
+    struct EnemyVisual {
+        u32 serial = 0;
+        i32 script = -1;
+        std::unique_ptr<AnmVm> vm;
+    };
+    struct BulletSlot {
+        std::unique_ptr<AnmVm> vm;
+        i32 script = -1;
+        bool active = false;
+        // 0x4120b0 精灵解析源：参数 → 表[类型].色[颜色]
+        struct Source final : AnmSpriteSource {
+            i32 type = 0, color = 0;
+            i32 sprite_index(i32 parameter) const noexcept override {
+                return bullet_animation_parameter(type, color, parameter);
+            }
+        } source;
+    };
+    AnmManager& animations;
+    AnmRenderer& renderer;
+    Banks banks;
+    GameRandom random{1};
+    std::vector<EnemyVisual> enemies_;
+    std::vector<BulletSlot> bullets_;
+    std::vector<std::unique_ptr<AnmVm>> shots_;
+    std::unique_ptr<AnmVm> player_;
+    i32 player_script_ = -1, player_tilt_ = 0;
+    i32 player_shot_sprite_;
+    std::string error_;
+    bool fail(const std::string& why) {
+        if (error_.empty()) error_ = why;
+        return false;
+    }
+};
+
+}  // namespace th13
