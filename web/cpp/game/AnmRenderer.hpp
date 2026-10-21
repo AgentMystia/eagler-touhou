@@ -4,6 +4,17 @@
 #include "AnmTransforms.hpp"
 #include "AnmCamera.hpp"
 namespace th13 {
+// 调试探针：draw()/draw_glyph() 调用计量（按精灵聚合；单线程 wasm，无锁）。
+struct AnmDrawProbe {
+    u32 calls = 0, quads = 0, shapes_drawn = 0, strips = 0, glyphs = 0, other = 0;
+    static constexpr u32 kSlots = 96;
+    i32 sprite_ids[kSlots]{};
+    u32 sprite_counts[kSlots]{};
+    u32 sprite_sizes[kSlots][2]{};
+    bool enabled = false;
+    void reset() noexcept { *this = AnmDrawProbe{}; }
+};
+extern AnmDrawProbe anm_draw_probe;
 class AnmRenderer {
     ZunGraphics& graphics;std::vector<AnmGeometryVertex> vertices;u32 bound_texture=~0u;
     struct ColorVertex {Vec3 position;float reciprocal_w;u32 color;};std::vector<ColorVertex> shapes;

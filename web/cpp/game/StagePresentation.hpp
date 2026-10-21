@@ -22,7 +22,7 @@ public:
     struct Banks {
         i32 stage = 0, bullet = 0, player = 0;
     };
-    // player_sprite：自机弹精灵（plXX.anm 内；弹型表接入前的可玩化近似）。
+    // player_shot_sprite：无 .sht 会话的自机弹回退精灵（plXX.anm 内）。
     StagePresentation(AnmManager& animations, AnmRenderer& renderer, Banks banks,
                       i32 player_shot_sprite);
     // 帧同步（Update pass 内调用）：敌机脚本接线、弹体/自机弹/自机姿态。
@@ -31,6 +31,10 @@ public:
     bool draw(u32 pass);
     void release();  // 场景卸载：销毁敌机子树（外部 VM 归还 registry 外部表）
     const std::string& error() const { return error_; }
+    // 画面诊断：敌机/敌弹/自机弹/自机 VM 清单（脚本/精灵/尺寸/缩放/位置）。
+    std::string debug_report() const;
+    // 调试直绘过滤：bit0..3 = 自机弹/自机/敌机/敌弹；默认全开。
+    static u32 debug_pass_mask;
 
 private:
     struct EnemyVisual {
@@ -41,6 +45,7 @@ private:
     struct BulletSlot {
         std::unique_ptr<AnmVm> vm;
         i32 script = -1;
+        i32 color = -1;  // 槽位当前弹色（变色即重绑 → 出生中断重放）
         bool active = false;
         // 0x4120b0 精灵解析源：参数 → 表[类型].色[颜色]
         struct Source final : AnmSpriteSource {
