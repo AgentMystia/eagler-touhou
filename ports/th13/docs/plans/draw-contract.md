@@ -88,8 +88,12 @@ ECL no-op 跳表改写 = stage1 `NOOP_OPS` 剔除 ANM 指令族
 ## 3. 数值与比对规则
 
 - 全部 float 以 `%.9g` 序列化（与 event-contract §5 相同，binary32 往返无损）；
-  NaN 序列化为 `"nan"`（原版侧精灵角度未初始化 pattern 0xfff0bdc1 的真实值，
-  两侧按字符串相等处理）。
+  NaN 序列化为 `"nan"`，两侧按「任一 NaN == 任一 NaN」处理（cmp_float 语义）。
+  【2026-10 对齐轮勘误】v1 基线里 world/texmat 的 NaN 并非「角度未初始化
+  pattern 0xfff0bdc1」，而是 oracle 假设备三处缺陷的产物（GetLevelDesc 误以
+  ECX 取 this、D3DSURFACE_DESC 多写一个幻影 Size 字段致 Width 错位到 0、
+  D3DXCreateTexture 的 cdecl 栈参偏移整体错 8 字节使纹理登记宽高失真）→
+  精灵记录 X 维 0/0=NaN。三缺陷修复后重导出的基线不再含此类 NaN。
 - `draw_compare.py`：逐帧逐 op 逐字段；浮点按 **ULP 容差**（默认 4 ULP，
   `--ulp N` 可调；位级相同直接通过）；整数字段（prim/anchor/count/tex 槽/
   entry/layer/blend/tfactor/fvf/argb）精确相等。
@@ -117,28 +121,48 @@ ECL no-op 跳表改写 = stage1 `NOOP_OPS` 剔除 ANM 指令族
 同参数连跑两次输出**逐字节一致**；每帧绘制数 > 0；窗口帧数与事件流基线一致。
 `RESULT` 行是比对唯一裁决。
 
-原版侧实测（容器内实际执行，2026-10）：
+原版侧实测（容器内实际执行，2026-10 v1；**2026-10 对齐轮重导出**＝假设备
+三缺陷修复后，见 §3 勘误）：
 
 | 窗口 | 行数 | ops | quad | up | 零绘制帧 | 两次连跑 |
 |---|---|---|---|---|---|---|
-| 无输入 st01-draws.jsonl | 3600 | 301983 | 289456 | 12527 | 0 | cmp 逐字节一致 |
-| 回放 st01-draws-replay.jsonl | 10663 | 774756 | 711279 | 63477 | 0 | cmp 逐字节一致 |
+| 无输入 st01-draws.jsonl（v1） | 3600 | 301983 | 289456 | 12527 | 0 | cmp 逐字节一致 |
+| 回放 st01-draws-replay.jsonl（v1） | 10663 | 774756 | 711279 | 63477 | 0 | cmp 逐字节一致 |
+| 无输入 st01-draws.jsonl（重导出） | 3600 | 289456 | 289456 | 0 | 0 | cmp 逐字节一致 |
+| 回放 st01-draws-replay.jsonl（重导出） | 11065 | 735235 | 735157 | 78 | 0 | cmp 逐字节一致 |
+
+重导出后 up 归零/骤减的原因：极小环境下敌机 ANM 的出生位置来自随机/环境
+变量（观察值 y≈-5745 恒在屏外），v1 基线里它们因记录宽高 NaN 使 0x467350
+的视口裁剪比较恒假而**误画**；记录修好后被正确裁剪。敌机 up 的语义对齐
+（位置种子链）与 stage1 事件窗 §4.4 的 RNG 消费差异同属后续工作面。
 
 移植侧实测（容器内实际执行，2026-10；`tools/run-harness.mjs draws` /
 `draws-replay`，WASI 无头链路——确定性最强：无浏览器/rAF/GL 时序）：
 
 | 窗口 | 行数（帧号） | ops | quad | up | 零绘制帧 | 两次连跑 |
 |---|---|---|---|---|---|---|
-| 无输入 port-draws.jsonl | 3600（0..3599） | 4623 | 0 | 4623 | 119 | cmp 逐字节一致 |
-| 回放 port-draws-replay.jsonl | 10663（0..10662） | 17989 | 0 | 17989 | 1894 | cmp 逐字节一致 |
+| 无输入 port-draws.jsonl | 3600（0..3599） | 294076 | 289456 | 4620 | 0 | cmp 逐字节一致 |
+| 回放 port-draws-replay.jsonl | 11065（0..11064） | 751202 | 732818 | 18384 | 0 | cmp 逐字节一致 |
 
-移植侧浮点串全量 corpus（3855330 个）与 Python `%.9g` 重排 0 差异。
-`draw_compare.py` 当前裁决：两窗 `first_divergence_frame=0`（帧 0 移植
-0 ops vs 原版 1 ops）——ANM 装载预置精灵（effect.anm 预置神灵）在移植侧
-`AnmManager::adopt_bank` 只建模板不建活动 VM，帧 0-60 无精灵；敌机族自
-frame 61 起两侧同帧出现（tex 10:0 `enemy/enemy.png`）。其余已知结构性
-差异（up 批 layer 口径：移植=VM 层 8 / 原版=UP flush 时 stale watch 56；
-混合表/视投矩阵口径）由比对逐字段暴露，属后续渲染语义对齐轮的工作面。
+`draw_compare.py` 当前裁决（2026-10 对齐轮后）：两窗 `first_divergence_
+frame=0`，分歧字段 `op[0].world[0]`（神灵四边形旋转成分，无输入窗
+`0.0448210835` vs `0.0447573513`——第 4 位小数）；op[0] 的其余字段
+（prim/anchor/count/tex/layer/blend/tfactor/fvf/texmat/view/proj）已逐字段
+一致。神灵链已通：ECL `MapleEnemy` 的 `ins_308(1,91)`（0x41b260 case5 →
+0x4243e0）→ 移植侧 `StageCommands` 307/308 真实现 + `StagePresentation`
+排空创建（主池头入链），移植 quad 总数 289456 与原版**完全相等**。
+
+剩余首分歧根因（下一轮工作面）：ANM 随机变量 10010-10012（角速度种子，
+`ins_415`）在原版经 0x4621b0/0x472c90 抽**全局 _rand()**，与 ECL 同流；
+移植侧 AnmManager 用独立 visual GameRandom → 神灵旋转不同。需共享 RNG
+流并对齐装载序（原版 bullet→effect→stage anims；移植 ascii→effect→
+stage→bullet→player）与模板 tick 的 RNG 消费点。次级工作面：敌机 up
+（上表）、ECL 313/316（MBoss2 阶段 case7/10）未实现。
+
+【事件窗回归注】replay 事件窗（vs stage1-oracle-replay.jsonl 48406 事件）
+在 50433ebc（本轮改动之前）即已分歧于 frame 124（54816 事件；stash 本轮
+改动后原样复现，非本轮引入）；stage1 无输入事件窗 10187 事件仍逐字节一致
+（本轮实证）。
 
 主要纹理（槽:entry:名）：8:2 `effect/eff_base.png`（神灵粒子）、
 10:2 `enemy/enemy_aura.png`、10:1 `enemy/enemy2.png`、10:0 `enemy/enemy.png`
