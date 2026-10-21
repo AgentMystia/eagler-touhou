@@ -22,7 +22,10 @@ bool ApplicationState::request_pause() {
     return pause && pause->open(PauseEntrance::Pause) || fail(pause ? pause->error : "Pause has no owner");
 }
 
-bool ApplicationState::request_game_over() { return game_over(); }
+bool ApplicationState::request_game_over() {
+    if (replay_active) return true;  // 回放会话：终局记账不打扰（harness ReplayHost 同款）
+    return game_over();
+}
 
 bool ApplicationState::hud_sound(i32 id) { return sound(id); }
 

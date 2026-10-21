@@ -66,6 +66,7 @@ public:
     GameHud hud;
     StageBattle battle;
     std::unique_ptr<StagePresentation> presentation;
+    std::string battle_sht;  // 移速源 .sht（回放会话注入；空 = 模型默认 pl02a 定标）
     u32 input_held = 0, input_pressed = 0, input_repeated = 0;
     Timer age{0, 0, 0, 0, 0};
     std::string error;

@@ -62,7 +62,8 @@ bool RunScene::initialize() {
     provider.sim = &battle.sim;
     provider.anim_list = &battle.sim.anim_list;
     if (!battle.load(provider, "st01.ecl", 1 << (progress.difficulty & 3), host, progress,
-                     player_state, score_state))
+                     player_state, score_state, nullptr,
+                     battle_sht.empty() ? nullptr : battle_sht.c_str()))
         return fail(battle.error().empty() ? "Stage battle load failed" : battle.error());
     for (u32 index = 0; index < stage_draws.size(); index++) {
         auto& draw = stage_draws[index];
