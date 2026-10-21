@@ -229,24 +229,41 @@ int StageCommands::execute(EclContext& c, u16 op) {
         if (kKeep < a2) m.radius = a2;
         if (kKeep < a3) m.growth = a3;
         m.mode = (m.mode & 0xFFFFFFF2u) | 2u;
+        // 0x41c56b→0x473a10：mode4 时 pos[3..5]=pos[0..2]，随即 0x473780
+        // 累加一次（mode2 子位置 = 圆心 + polar(angle, radius) + 量化）；
+        // 0x41c572→0x419950：主位置立即同步（指令内生效，不等下帧积分）。
+        {
+            float ox = 0, oy = 0;
+            polar_xy(m.angle, m.radius, ox, oy);
+            m.pos[0] = m.aux[0] + ox;
+            m.pos[1] = m.aux[1] + oy;
+            m.pos[2] = m.aux[2] + 0.0f;
+            m.pos[0] = round001(m.pos[0]);
+            m.pos[1] = round001(m.pos[1]);
+            for (int k = 0; k < 3; ++k) {
+                const float delta = (e.vel.pos[k] + e.pos.pos[k]) - e.position[k];
+                e.position[k] = e.position[k] + delta;
+            }
+            e.position[0] = round001(e.position[0]);
+            e.position[1] = round001(e.position[1]);
+        }
         return 0;
     }
     case 409:
-    case 411: {  // moveCircleTime（0x41c57c）
-        const u32 integral[6] = {1, 1, 0, 0, 0, 0};
+    case 411: {  // moveCircleTime（0x41c57c）：(dur, mode, speed_to, radius, growth)
+        // 0x41c5b2..0x41c77d：5 参——speed 插值 from=当前值 to=参数 2；
+        // radius（参数 3）/growth（参数 4）keep 语义直设；不设圆心 aux（408 已设）。
+        // 行为实证（oracle 逐帧）：v.s 每帧向参数 2 线性逼近、v.r 恒为参数 3。
+        const u32 integral[5] = {1, 1, 0, 0, 0};
         if (!emit_move(integral)) return -2;
         StageMover& m = (op == 409) ? e.vel : e.pos;
         i32 dur = 0, mode = 0;
-        float a0 = 0, a1 = 0, a2 = 0, a3 = 0;
-        if (!resolve_int(c, 0, dur) || !resolve_int(c, 1, mode) || !resolve_float(c, 2, a0) ||
-            !resolve_float(c, 3, a1) || !resolve_float(c, 4, a2) || !resolve_float(c, 5, a3)) {
+        float speed_to = 0, radius = 0, growth = 0;
+        if (!resolve_int(c, 0, dur) || !resolve_int(c, 1, mode) ||
+            !resolve_float(c, 2, speed_to) || !resolve_float(c, 3, radius) ||
+            !resolve_float(c, 4, growth)) {
             sim.error_ = c.error;
             return -2;
-        }
-        if ((m.mode & 0xFu) != 2) {
-            m.aux[0] = m.pos[0];
-            m.aux[1] = m.pos[1];
-            m.aux[2] = m.pos[2];
         }
         if (dur < 1) {
             m.polar.duration = 0;
@@ -255,14 +272,13 @@ int StageCommands::execute(EclContext& c, u16 op) {
                 sim.error_ = "moveCircleTime interpolation mode not implemented";
                 return -2;
             }
-            float from_a = m.angle, from_b = m.speed;
-            float to_a = kKeep < a0 ? a0 : m.angle;
-            const float to_b = kKeep < a1 ? a1 : m.speed;
-            shortest_arc(from_a, to_a);
-            m.polar.setup(float(dur), mode, from_a, from_b, to_a, to_b);
+            // 角维不动（0x4238a0 结构 a 维 from=to=0），仅 speed 维插值。
+            const float from_b = m.speed;
+            const float to_b = kKeep < speed_to ? speed_to : m.speed;
+            m.polar.setup(float(dur), mode, m.angle, from_b, m.angle, to_b);
         }
-        if (kKeep < a2) m.radius = a2;
-        if (kKeep < a3) m.growth = a3;
+        if (kKeep < radius) m.radius = radius;
+        if (kKeep < growth) m.growth = growth;
         m.mode = (m.mode & 0xFFFFFFF2u) | 2u;
         return 0;
     }
