@@ -50,3 +50,16 @@ node portable/build-harness.mjs && node --experimental-wasi-unstable-preview1 to
 node --experimental-wasi-unstable-preview1 tools/run-harness.mjs stage1   # stage1：st01 跑 3600 帧，事件流落 web/artifacts/wasi/stage1-events.jsonl（契约见 docs/plans/event-contract.md）
 node --experimental-wasi-unstable-preview1 tools/run-harness.mjs replay games/replays/th13_udSr01.rpy   # 录像解码 + 逐帧输入注入（格式见 docs/plans/replay.md）
 ```
+
+## 同帧取像（golden 对拍）
+
+```sh
+# 工作区根：th13-shot 镜像内驱动（先 node portable/build.mjs 出产物）
+make shot CMD='node eagler-touhou/ports/th13/tools/shot-frames.mjs'
+```
+
+链路：th13-debug.html 回放会话直入对局 → `th13_debug_frame` 固定 1/60 确定性帧泵 →
+按 golden 游戏帧号跳帧导出 `artifacts/reference/golden/ours-frame-*.png` →
+双会话确定性自检 → 合成 `side-by-side.png`。量测与阈值判定：
+`python3 scripts/visual_diff.py --golden artifacts/reference/golden --ours <移植帧目录>`
+（帧文件需按 `frame_%06d.png` 命名，驱动产物改名复制即可）。
