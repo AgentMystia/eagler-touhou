@@ -104,12 +104,12 @@ void step_polar_itp(StagePolarItp& itp, float& out_a, float& out_b) {
     out_b = itp.from_b + t * (itp.to_b - itp.from_b);
 }
 
-void step_pos_itp(StagePosItp& itp, float* sub) {
+void step_pos_itp(StagePosItp& itp, float* out) {
     ++itp.elapsed;
     if (itp.elapsed >= i32(itp.duration)) {
-        sub[0] = itp.target[0];
-        sub[1] = itp.target[1];
-        sub[2] = itp.target[2];
+        out[0] = itp.target[0];
+        out[1] = itp.target[1];
+        out[2] = itp.target[2];
         itp.duration = 0;
         return;
     }
@@ -126,14 +126,14 @@ void step_pos_itp(StagePosItp& itp, float* sub) {
             const float b = itp.target[i] * w_target;
             const float c = itp.p1[i] * w_p1;
             const float d = itp.p2[i] * w_p2;
-            sub[i] = ((a + b) + c) + d;
+            out[i] = ((a + b) + c) + d;
         }
         return;
     }
     const float t = ease_interp(itp.mode, float(itp.elapsed), itp.duration);
-    sub[0] = itp.start[0] + t * (itp.target[0] - itp.start[0]);
-    sub[1] = itp.start[1] + t * (itp.target[1] - itp.start[1]);
-    sub[2] = itp.start[2] + t * (itp.target[2] - itp.start[2]);
+    out[0] = itp.start[0] + t * (itp.target[0] - itp.start[0]);
+    out[1] = itp.start[1] + t * (itp.target[1] - itp.start[1]);
+    out[2] = itp.start[2] + t * (itp.target[2] - itp.start[2]);
 }
 
 // 0x4736a0：mode0 产极坐标位移写入 aux[0..1]；mode2/3 圆周推进角与半径。
@@ -195,15 +195,29 @@ void StageSim::integrate(StageEnemy& e) {
         e.pos.angle = a;
         e.pos.speed = b;
     }
-    if (e.vel.postime.active())
-        step_pos_itp(e.vel.postime, e.vel.pos);
-    else
+    if (e.vel.postime.active()) {
+        float out[3];
+        step_pos_itp(e.vel.postime, out);
+        // 0x419450:71-79：插值增量写 vel mover 的 aux（vm+0xbc），
+        // 由 0x473780 case0 累加（pos += aux），不直接写子位置。
+        e.vel.aux[0] = out[0] - e.vel.pos[0];
+        e.vel.aux[1] = out[1] - e.vel.pos[1];
+        e.vel.aux[2] = out[2] - e.vel.pos[2];
+    } else {
         step_mover_delta(e.vel);
-    if (e.pos.postime.active())
-        step_pos_itp(e.pos.postime, e.pos.pos);
-    else
+    }
+    if (e.pos.postime.active()) {
+        float out[3];
+        step_pos_itp(e.pos.postime, out);
+        e.pos.aux[0] = out[0] - e.pos.pos[0];
+        e.pos.aux[1] = out[1] - e.pos.pos[1];
+        e.pos.aux[2] = out[2] - e.pos.pos[2];
+    } else {
         step_mover_delta(e.pos);
+    }
+
     accumulate_mover(e.vel);
+
     accumulate_mover(e.pos);
 
     // 0x419950：主位置 += (vel.pos + pos.pos) − 主位置，再量化；活动界限时钳制并回写 vel 子位置。
