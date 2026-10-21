@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 namespace th13 {
 
@@ -89,11 +90,17 @@ bool StageSim::load(const char* resource_dir, const char* event_path, const char
     return true;
 }
 
-bool StageSim::begin(EclResourceProvider& provider, const char* stage_file, i32 difficulty) {
+bool StageSim::begin(EclResourceProvider& provider, const char* stage_file, i32 difficulty,
+                     const char* event_path) {
     gvars.sim = this;
     commands.sim = this;
     interactive = true;
     difficulty_rank = difficulty;
+    diff = 0;  // begin 的入参是掩码（1 << DIFF），取尾零还原 DIFF
+    while (difficulty > 1) {
+        difficulty >>= 1;
+        ++diff;
+    }
     std::vector<u8> stage;
     if (!provider.read(stage_file, stage)) {
         error_ = std::string("cannot read ") + stage_file;
@@ -107,7 +114,12 @@ bool StageSim::begin(EclResourceProvider& provider, const char* stage_file, i32 
         error_ = "stage ANIM list incomplete";
         return false;
     }
-    // 交互模式不落事件（sink 未 open 即静默）。
+    // 回放对拍模式：事件落盘开启（§7）；浏览器侧保持静默。
+    if (event_path && !sink.open(event_path)) {
+        error_ = "cannot open event output";
+        return false;
+    }
+    replay_events = event_path != nullptr;
     return true;
 }
 
@@ -321,6 +333,7 @@ StageEnemy* StageSim::spawn_enemy(const char* routine, float x, float y, float l
                                  : u8(interactive ? difficulty_rank : 0x08);  // 契约：Lunatic
     enemy->threads->start(routine, difficulty);
     StageEnemy* raw = enemy.get();
+    if (std::strcmp(routine, "Boss") == 0) boss_main_serial = raw->serial;
     // 合同 §3.1：root（parent 为空）不由事件产生；enmCreate 族才发 enemy_spawn。
     // 事件在构造趟之前（0x4183f0 入口即探参观察点）。
     if (parent) sink.enemy_spawn(raw->serial, routine, x, y, 0.0f, life, parent->serial);
@@ -438,7 +451,15 @@ void StageSim::advance_bullets() {
 void StageSim::damage(StageEnemy& enemy, float amount) {
     if (enemy.dead || amount <= 0) return;
     enemy.life -= amount;
-    if (enemy.life <= 0.0f) enemy.dead = true;  // 与出界自杀同路：下帧遍历摘链
+    if (enemy.life <= 0.0f) {
+        // 与出界自杀同路：下帧遍历摘链。Boss 槽指向一并清除
+        // （oracle 侧同式写 mgr+0x5c[slot]=0，§7.2）。
+        for (i32& slot : boss_slot)
+            if (slot == enemy.script_id) slot = -1;
+        enemy.dead = true;
+        if (replay_events)  // §7.3：kill 事件（回放会话）
+            sink.kill(enemy.serial, enemy.position[0], enemy.position[1]);
+    }
 }
 
 }  // namespace th13

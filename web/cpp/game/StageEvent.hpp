@@ -22,6 +22,10 @@ public:
     void enemy_move(u32 enemy, u16 op, const u32* integral, const float* values, u32 count);
     void bullet_spawn(u32 enemy, u32 slot, u32 way, u32 idx, float x, float y, float z, float angle,
                       float speed, u32 sprite, u32 subtype);
+    // 回放会话扩展（event-contract.md §7.3）。
+    void player(float x, float y, u32 state);
+    void kill(u32 enemy, float x, float y);
+    void boss_op(u32 enemy, u16 op, const i32* args, u32 count, const char* name);
 
 private:
     void raw(const char* text) { if (std::fputs(text, out_) < 0) failed_ = true; }
