@@ -456,12 +456,17 @@ int EclContext::step(float elapsed) {
                     break;
                 }
                 default:
-                    // 游戏指令（>93）：0 前移 / 1 让出重取 / -1 终止 / -2 错误。
+                    // 游戏指令（>93）：0 前移 / 1 让出本帧 / -1 终止 / -2 错误。
+                    // 0x4772a0 caseD：result==1 → LAB_00477383 跳出执行循环，
+                    // time += elapsed、步进插值通道后返回——Q 不前移，下帧重取。
                     if (commands) {
                         const int result = commands->execute(*this, u16(op));
                         if (result == -2) return result;
                         if (result == -1) return finish(elapsed);
-                        if (result == 1) continue;
+                        if (result == 1) {
+                            time = float(time + elapsed);
+                            return finish(elapsed);
+                        }
                         adjust = true;
                     } else {
                         error = "Unimplemented ECL opcode " + std::to_string(u16(op));
