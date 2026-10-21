@@ -1,6 +1,9 @@
 <!doctype html>
-<!-- th13 神灵庙网页运行时：加载 sdl3 构建产物，走 装载挡板 → 初始化 → RAF 主循环。
-     资源来自 /assets（text/sig/ascii/effect/title/title_v/help/front.anm 等）。 -->
+<!-- th13 神灵庙网页运行时：装载挡板 → 初始化 → RAF 主循环。
+     资源经 fetch 进 MEMFS /assets（七个常驻 bank + front + Stage1 的
+     enemy/st01enm/bullet/pl0X 与 st01.ecl/default.ecl/st01bs.ecl，
+     由 prepare-assets.mjs 从 raw 解包目录拷贝到 ./assets）。
+     输入：SDL3 emscripten 端口收键盘（Z 射击/X 炸弹/Shift 低速/方向/Esc 暂停）。 -->
 <html lang="zh">
 <head>
 <meta charset="utf-8">
@@ -16,14 +19,32 @@
 <canvas id="canvas" tabindex="0"></canvas>
 <script type="module">
 const status = text => document.getElementById('status').textContent = text;
+window.__th13_log = [];
+const note = (kind, text) => { window.__th13_log.push(kind + ' ' + text); };
 try {
   const Module = await import('../artifacts/sdl3/th13-sdl.mjs');
   const canvas = document.getElementById('canvas');
   const mod = await Module.default({
     canvas,
-    print: t => console.log('[th13]', t),
-    printErr: t => console.warn('[th13]', t),
+    print: t => { console.log('[th13]', t); note('out', t); },
+    printErr: t => { console.warn('[th13]', t); note('err', t); },
   });
+  window.mod = mod;  // 调试面：控制台可直查运行时状态
+  // ---- 资源进 MEMFS /assets（缺件即启动失败，不静默降级）----
+  const assets = [
+    'text.anm', 'sig.anm', 'ascii.anm', 'effect.anm', 'title.anm', 'title_v.anm', 'help.anm',
+    'front.anm', 'enemy.anm', 'st01enm.anm', 'bullet.anm',
+    'pl00.anm', 'pl01.anm', 'pl02.anm', 'pl03.anm',
+    'st01.ecl', 'default.ecl', 'st01bs.ecl',
+  ];
+  mod.FS.mkdirTree('/assets');
+  for (const name of assets) {
+    const response = await fetch('assets/' + name);
+    if (!response.ok) throw new Error('资源缺失：assets/' + name + '（先跑 prepare-assets.mjs）');
+    mod.FS.writeFile('/assets/' + name, new Uint8Array(await response.arrayBuffer()));
+    status('th13 资源装载中… ' + name);
+  }
+
   // 键盘事件经 SDL3 emscripten 端口进入 SDL 键位态；截获方向键/空格防滚动。
   canvas.addEventListener('click', () => canvas.focus());
   for (const type of ['keydown', 'keyup'])
@@ -33,13 +54,32 @@ try {
     });
 
   // 启动序：装载挡板（sig+ascii）→ 启动品牌动画 → 初始化七 bank + 标题 → RAF 循环。
-  if (!mod._th13_prepare_loading()) throw new Error(mod._th13_error());
+  const runtime_error = () => mod.UTF8ToString ? mod.UTF8ToString(mod._th13_error()) : String(mod._th13_error());
+  if (!mod._th13_prepare_loading()) throw new Error(runtime_error());
   mod._th13_draw_startup(90);
-  if (!mod._th13_initialize()) throw new Error(mod._th13_error());
+  if (!mod._th13_initialize()) throw new Error(runtime_error());
   mod._th13_loop_start();
   const phase = () => ['标题', '对局', '暂停', '', '已退出'][mod._th13_phase()] ?? '';
-  status('th13 运行时已启动（' + phase() + '）— 点击画面聚焦后，Z/Enter 确认，Esc 暂停');
-  mod.onGameFrame = (ok) => { if (!ok) status('运行时错误：' + mod._th13_error()); };
+  status('th13 运行时已启动（' + phase() + '）— 点击画面聚焦后，Z/Enter 确认，方向键移动，Z 射击，X 炸弹，Shift 低速，Esc 暂停');
+  mod.onGameFrame = (ok) => { if (!ok) status('运行时错误：' + runtime_error()); };
+  // 帧泵看门狗：requestAnimationFrame 停摆的宿主（后台/嵌入式 webview）经
+  // setTimeout 以 60fps 节奏持续驱动 th13_frame_tick；rAF 心跳恢复即让位。
+  let lastFrame = -1, rafAlive = false, pumping = false;
+  const rafHeartbeat = () => { rafAlive = true; requestAnimationFrame(rafHeartbeat); };
+  requestAnimationFrame(rafHeartbeat);
+  setInterval(() => {
+    if (rafAlive) { rafAlive = false; pumping = false; lastFrame = mod._th13_frame(); return; }
+    const frame = mod._th13_frame();
+    if (frame !== lastFrame) { lastFrame = frame; return; }  // rAF 在跑
+    if (pumping) return;
+    pumping = true;
+    const pump = () => {
+      if (!pumping) return;
+      if (mod._th13_frame_tick(16.6667) === 0) { pumping = false; return; }
+      setTimeout(pump, 16);
+    };
+    pump();
+  }, 300);
 } catch (e) {
   if (e === 'unwind') {
     status('th13 运行时已启动');
