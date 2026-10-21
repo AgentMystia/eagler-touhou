@@ -19,8 +19,15 @@ jobs:
           sparse-checkout: |
             ports/th13
             tools/build
-      - name: 构建 th13 ci 镜像（与本地 podman 共用 Dockerfile）
-        run: docker build --target ci -t th13-ci ports/th13/container
+      - name: 构建 th13 ci 镜像（与本地 podman 共用 Dockerfile，gha 层缓存）
+        uses: docker/build-push-action@v6
+        with:
+          context: ports/th13/container
+          target: ci
+          load: true
+          tags: th13-ci:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       - name: WASI harness 构建 + 单元测试
         run: >-
           docker run --rm -v "$PWD/ports/th13:/work:Z" -w /work th13-ci
