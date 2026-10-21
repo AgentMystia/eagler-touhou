@@ -367,7 +367,7 @@ st01.ecl 使用集（86 op）、default.ecl（17）、st01bs.ecl（65）已列�
 | 405/407/429/431 | moveVelTime ★ | 0x41c21f：{时长,模式,角度,速率} 插值；429/431 = NM（No-Mirror，不受镜像位改写角度——处理块内 0x194/0x196 比较分支） |
 | 408/410 | moveCircle ★ | 0x41c471：角速度圆周（记录旧坐标、置 mover 模式 2） |
 | 409/411 | moveCircleTime ★ | 0x41c57c：定时圆弧插值 |
-| 412/413 | moveRand(Rel) ★ | 0x41cdc2：按与玩家相对象限随机方向移动（内部 0x472c20/0x472e10 取随机） |
+| 412/413 | moveRand(Rel) ★ | 0x41cdc2：按移动界限三带选随机方向（左/右缘 120° 扇、中带 90° 扇按玩家侧加 π 门），尾块 from=(angle,speed)→to=(angle,0) 直冲减速到停（0x41d0b9 清模式低 4 位）；逐块实证见 event-contract.md §7.5 |
 | 414/415 | moveBoss(Rel) ★ | 0x41cca8/0x41ccda：坐标 = BOSS 槽敌人 +0x1230 位置 |
 | 416/417 | movePos3d(Rel) ★ | 0x41bbce：位置 +=（含 z） |
 | 418/419 | move419 ★ | 0x41c791：速度 {x,y,(z)} 直设 |
