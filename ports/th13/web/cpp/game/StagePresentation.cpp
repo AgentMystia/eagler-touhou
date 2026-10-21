@@ -39,6 +39,19 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
     if (!stage_resource || !bullet_resource || !player_resource)
         return fail("Stage presentation banks unavailable");
 
+    // ---- ECL 307/308 特效 VM（0x4243e0：模板拷贝→立即 tick→主池头入链；
+    // layer=-1（脚本自定层，如神灵 script91 ins_304(2)）、anmArg=0、
+    // 308 位置清零 / 307 敌机位。文件索引：0=bullet、1=effect、2..=stage 合并表）
+    for (const auto& request : battle.sim.anm_effects) {
+        const i32 bank = request.file == 0   ? banks.bullet
+                         : request.file == 1 ? banks.effect
+                                             : banks.stage;
+        if (!animations.create(bank, request.script, -1, 2,
+                               {request.x, request.y, request.z}, 0, false))
+            return fail("Effect animation creation failed: " + animations.error);
+    }
+    battle.sim.anm_effects.clear();
+
     // ---- 敌机：ECL 记录的槽 0 脚本（全局序号），位置逐帧跟随 ----
     std::vector<u32> alive;
     for (auto& enemy : battle.sim.enemies) {

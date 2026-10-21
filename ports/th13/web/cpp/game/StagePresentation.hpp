@@ -21,6 +21,7 @@ class StagePresentation {
 public:
     struct Banks {
         i32 stage = 0, bullet = 0, player = 0;
+        i32 effect = 8;  // effect.anm（mgr 槽 8；ECL 文件索引 1 的特效创建源）
     };
     // player_shot_sprite：无 .sht 会话的自机弹回退精灵（plXX.anm 内）。
     StagePresentation(AnmManager& animations, AnmRenderer& renderer, Banks banks,
