@@ -128,7 +128,7 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
             }
             const auto& shot = battle.shots[i];
             vm.visual.translation = {shot.x + kGameToScreenX, shot.y + kGameToScreenY, 0.0f};
-            vm.variables.rotation.z = shot.angle + 1.5707964f;  // 贴图朝上
+            vm.variables.rotation.z = 0.0f;  // 垂直直进模型弹（贴图朝上）
         } else {
             vm.visible = false;
         }
