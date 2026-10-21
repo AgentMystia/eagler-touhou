@@ -1,0 +1,105 @@
+<!doctype html>
+<!-- th13 回放调试宿主页：确定性取帧（与 th13.html 的交互运行时互斥使用）。
+     启动序同 th13.html（装载挡板 → 启动品牌 → 初始化），但不启动 rAF 主循环；
+     会话由 th13_debug_replay 直入对局（录像头决定难度/角色/关卡），此后每调用
+     一次 th13_debug_frame 恰推进一个游戏帧（固定 1/60 步长，不经帧钟）。
+     资源供给（除 th13.html 同款 18 件外）：
+       assets/<sht>   移速源 plXXa/b.sht（名字与 C++ 侧录像头推导规则一致）
+       replays/<rpy>  原版录像本体（FS 写入 /assets 后交 th13_debug_replay）
+     画面经 canvas.toDataURL 导出 PNG（同一 JS 任务内取像，WebGL 后备缓冲未合成
+     前内容完整）。驱动：tools/shot-frames.mjs（th13-shot 镜像 chromium+playwright）。
+     查询参数：?replay=th13_01.rpy&sht=pl00a.sht&stage=0 -->
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>东方神灵庙 th13 — 回放取帧</title>
+<style>
+  html, body { margin: 0; background: #101018; color: #ddd; font: 14px system-ui, sans-serif; }
+  canvas { display: block; margin: 0 auto; image-rendering: pixelated; outline: none; }
+  #status { text-align: center; padding: 8px; }
+</style>
+</head>
+<body>
+<div id="status">加载 th13 回放取帧…</div>
+<canvas id="canvas" tabindex="0"></canvas>
+<script type="module">
+const status = text => document.getElementById('status').textContent = text;
+window.__th13_log = [];
+const note = (kind, text) => { window.__th13_log.push(kind + ' ' + text); };
+const params = new URLSearchParams(location.search);
+const replayName = params.get('replay') ?? 'th13_01.rpy';
+const shtName = params.get('sht') ?? 'pl00a.sht';
+const stageIndex = Number(params.get('stage') ?? '0');
+const fetchBytes = async path => {
+  const response = await fetch(path);
+  if (!response.ok) throw new Error('资源缺失：' + path);
+  return new Uint8Array(await response.arrayBuffer());
+};
+try {
+  const Module = await import('../artifacts/sdl3/th13-sdl.mjs');
+  const canvas = document.getElementById('canvas');
+  // WebGL2 可用性探针用离屏 canvas：真 canvas 的首个 getContext 属于 SDL3 运行时
+  // （先占会冻结创建属性）。
+  if (!document.createElement('canvas').getContext('webgl2'))
+    throw new Error('WebGL2 不可用（无头驱动需 SwiftShader）');
+  const mod = await Module.default({
+    canvas,
+    print: t => { console.log('[th13]', t); note('out', t); },
+    printErr: t => { console.warn('[th13]', t); note('err', t); },
+  });
+  window.mod = mod;
+  const assets = [
+    'text.anm', 'sig.anm', 'ascii.anm', 'effect.anm', 'title.anm', 'title_v.anm', 'help.anm',
+    'front.anm', 'enemy.anm', 'st01enm.anm', 'bullet.anm',
+    'pl00.anm', 'pl01.anm', 'pl02.anm', 'pl03.anm',
+    'st01.ecl', 'default.ecl', 'st01bs.ecl',
+  ];
+  mod.FS.mkdirTree('/assets');
+  for (const name of [...assets, shtName]) {
+    mod.FS.writeFile('/assets/' + name, await fetchBytes('assets/' + name));
+    status('th13 资源装载中… ' + name);
+  }
+  mod.FS.writeFile('/assets/' + replayName, await fetchBytes('replays/' + replayName));
+
+  const runtime_error = () => mod.UTF8ToString(mod._th13_error());
+  if (!mod._th13_prepare_loading()) throw new Error(runtime_error());
+  mod._th13_draw_startup(90);
+  if (!mod._th13_initialize()) throw new Error(runtime_error());
+  // 回放会话直入：解码录像、按录像头配置对局；rAF 主循环不启动。
+  const name_ptr = mod.allocateUTF8(replayName);
+  const total = mod._th13_debug_replay(name_ptr, stageIndex);
+  if (!total) throw new Error('回放会话建立失败：' + runtime_error());
+  status('回放会话就绪：' + replayName + ' stage ' + stageIndex + ' 共 ' + total + ' 帧');
+
+  // 确定性取帧 API：pumpTo(游戏帧号 F) —— 恰推进到「已消费 F+1 帧输入」的画面
+  // （golden 游戏帧 F = 第 F+1 次泵后的画面，见 golden README 时间轴对齐），
+  // 同一 JS 任务内返回 PNG dataURL。重复调用按需续泵。
+  window.__th13_debug = {
+    total,
+    consumed: () => mod._th13_debug_replay_frame(),
+    stageFrame: () => mod._th13_debug_stage_frame(),
+    report: () => mod.UTF8ToString(mod._th13_debug_layer_report()),
+    pumpTo(frame) {
+      const want = frame + 1;
+      while (mod._th13_debug_replay_frame() < want) {
+        const stageBefore = mod._th13_debug_stage_frame();
+        if (!mod._th13_debug_frame())
+          throw new Error('帧泵失败@' + mod._th13_debug_replay_frame() + '：' + runtime_error());
+        if (mod._th13_debug_stage_frame() === stageBefore)
+          throw new Error('场景冻结@' + stageBefore + '（输入流耗尽或场景停滞）');
+      }
+      if (mod._th13_debug_stage_frame() !== want)
+        throw new Error('帧号失同步：consumed=' + mod._th13_debug_replay_frame() +
+                        ' stage=' + mod._th13_debug_stage_frame() + ' want=' + want);
+      return canvas.toDataURL('image/png');
+    },
+  };
+} catch (e) {
+  const detail = e && (e.stack || e.message) || String(e);
+  status('启动失败：' + detail);
+  console.error(e);
+  window.__th13_debug_failed = detail;
+}
+</script>
+</body>
+</html>
