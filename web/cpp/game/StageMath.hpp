@@ -10,7 +10,8 @@
 namespace th13 {
 
 // 0x472f30/0x472e90：角度归一到 [-π, π]。原版为逐次 ±2π 的浮点循环（上限 0x20 次），
-// 常量取 float π 的 double 视图（3.1415927410125732 / 6.2831854820251465）。
+// 常量取 float π 的 double 视图（3.1415927410125732 / 6.2831854820251465）；
+// 每步减/加 2π 后落 f32 再继续（x87 (float) 舍入——逐帧对拍实证必需）。
 inline float wrap_angle(float value) {
     const double kPi = 3.1415927410125732;
     const double kTwoPi = 6.2831854820251465;
@@ -18,13 +19,13 @@ inline float wrap_angle(float value) {
     int up = 0;
     while (kPi < v) {
         if (0x20 < up) break;
-        v -= kTwoPi;
+        v = static_cast<float>(v - kTwoPi);
         ++up;
     }
     if (-kPi <= v) return static_cast<float>(v);
     int down = 0;
     do {
-        v += kTwoPi;
+        v = static_cast<float>(v + kTwoPi);
         if (0x20 < down) return static_cast<float>(v);
         ++down;
     } while (v < -kPi);
