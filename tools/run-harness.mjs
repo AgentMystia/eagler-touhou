@@ -17,6 +17,7 @@ const args = ['th13-harness', ...process.argv.slice(2)];
 if (args[1] === 'stage1') {
   if (!args[2]) args[2] = '/artifacts/reference/raw';
   if (!args[3]) args[3] = '/eagler-touhou/ports/th13/web/artifacts/wasi/stage1-events.jsonl';
+  // 帧数参数（第 4 位）透传：stage1 <资源目录> <输出> [frames]
 }
 const wasi = new WASI({version: 'preview1', args, env: {}, preopens: {'/': workspace}});
 const module = await WebAssembly.compile(bytes);
