@@ -203,9 +203,11 @@ void DrawCapture::append_tex(const Identity& identity) {
 void DrawCapture::append_blend() {
     const auto& pipeline = this->pipeline();
     line_ += "[";
-    append_int(line_, i64(pipeline.sourceBlend));
+    // D3DBLEND_* 从 1 起（ZERO=1、ONE=2、SRCCOLOR=3、INVSRCCOLOR=4、SRCALPHA=5
+    // …）；port BlendFactor 枚举恰为 D3D 值 - 1（GraphicsState.hpp 序实证）。
+    append_int(line_, i64(pipeline.sourceBlend) + 1);
     line_ += ",";
-    append_int(line_, i64(pipeline.destinationBlend));
+    append_int(line_, i64(pipeline.destinationBlend) + 1);
     line_ += ",";  // D3DBLENDOP 从 1 起（ADD=1）；port BlendEquation 从 0 起
     append_int(line_, i64(pipeline.blendEquation) + 1);
     line_ += "]";
