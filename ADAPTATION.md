@@ -97,3 +97,29 @@
     色幕）与边带亮度（front.anm 框架未接入）待后续轮。
   - 验收：anm 4/4（新增 STD 套件：golden 逐字段+运行时闭环+非法输入）、
     ecl 4/4、replay 1/1、ui 7/7、node 5/5 全绿；网页与 WASI 双构建通过。
+
+- 2026-10-22 · 第 9 轮 · 移植侧语义绘制清单导出（draw-contract v1 同构导出器）
+  - 模块：`DrawCapture`（game 层无头 ZunGraphics：矩阵/管线混合/TFACTOR/
+    顶点布局/视口/纹理身份影子 + 批提交落 op；JSONL 键序与 %.9g 口径和
+    oracle/render_oracle.py 逐字段对齐，viewport X/Y/W/H 按原版 D3DVIEWPORT9
+    DWORD 位型直读）；`AnmRenderer` 提交钩子（TH13_DRAW_CAPTURE 编译开关：
+    draw/draw_glyph/draw_screen_strip 入口登记层号 + 九宫格锚点组，web 构建
+    编译出局）。
+  - 驱动：harness `draws`/`draws-replay` 两模式（帧序镜像 web 调度：副池
+    步进 → ECL/battle → 表现层 sync → 主池步进 → 逐层 0..32 + 战斗直绘
+    4 pass（mask=4 仅敌机，对齐 oracle 窗口径）；帧 0=装载趟渲染不步进，
+    帧号与 oracle 同窗）。bank 面：ascii=2（兜底精灵源）、stage 合并=4
+    （名单序槽 10/11）、bullet=5（槽 7）、player=6、effect=8；纹理身份
+    (槽,entry,名) 供 tex 字段。选 WASI 无头链路（无浏览器/rAF/GL 时序，
+    确定性最强），经 `tools/run-harness.mjs draws [..]` 透传。
+  - 实测（容器内）：无输入窗 3600 行（0..3599）4623 op、回放窗 10663 行
+    （0..10662，th13_udSr01 stage0）17989 op，全为 up（quad 路径精灵未达
+    ——预置神灵缺失所致）；两窗连跑两次 cmp 逐字节一致；浮点串全量
+    corpus 3855330 个与 Python %.9g 重排 0 差异；`draw_compare.py` 裁决
+    两窗 first_divergence_frame=0（帧 0 移植 0 ops vs 原版 1 op：effect.anm
+    装载预置精灵——`adopt_bank` 只建模板不建活动 VM，帧 0-60 无精灵；敌机
+    族 frame 61 起两侧同帧同纹理 10:0 enemy/enemy.png）。
+  - 回归：stage1 事件流 3600 帧 10187 事件逐字节不变；replay 路径与改动前
+    构建输出逐字节一致（库存 stage1-events-replay.jsonl 基线 48406 事件较
+    HEAD 已陈旧——.sht 弹型域轮次改变出弹列，与本次无关）；web/harness
+    双构建容器内通过。

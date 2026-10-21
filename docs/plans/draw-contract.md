@@ -124,6 +124,22 @@ ECL no-op 跳表改写 = stage1 `NOOP_OPS` 剔除 ANM 指令族
 | 无输入 st01-draws.jsonl | 3600 | 301983 | 289456 | 12527 | 0 | cmp 逐字节一致 |
 | 回放 st01-draws-replay.jsonl | 10663 | 774756 | 711279 | 63477 | 0 | cmp 逐字节一致 |
 
+移植侧实测（容器内实际执行，2026-10；`tools/run-harness.mjs draws` /
+`draws-replay`，WASI 无头链路——确定性最强：无浏览器/rAF/GL 时序）：
+
+| 窗口 | 行数（帧号） | ops | quad | up | 零绘制帧 | 两次连跑 |
+|---|---|---|---|---|---|---|
+| 无输入 port-draws.jsonl | 3600（0..3599） | 4623 | 0 | 4623 | 119 | cmp 逐字节一致 |
+| 回放 port-draws-replay.jsonl | 10663（0..10662） | 17989 | 0 | 17989 | 1894 | cmp 逐字节一致 |
+
+移植侧浮点串全量 corpus（3855330 个）与 Python `%.9g` 重排 0 差异。
+`draw_compare.py` 当前裁决：两窗 `first_divergence_frame=0`（帧 0 移植
+0 ops vs 原版 1 ops）——ANM 装载预置精灵（effect.anm 预置神灵）在移植侧
+`AnmManager::adopt_bank` 只建模板不建活动 VM，帧 0-60 无精灵；敌机族自
+frame 61 起两侧同帧出现（tex 10:0 `enemy/enemy.png`）。其余已知结构性
+差异（up 批 layer 口径：移植=VM 层 8 / 原版=UP flush 时 stale watch 56；
+混合表/视投矩阵口径）由比对逐字段暴露，属后续渲染语义对齐轮的工作面。
+
 主要纹理（槽:entry:名）：8:2 `effect/eff_base.png`（神灵粒子）、
 10:2 `enemy/enemy_aura.png`、10:1 `enemy/enemy2.png`、10:0 `enemy/enemy.png`
 （杂兵族）、回放窗另见 11:0 `stgenm/stage01/enm1.png`、8:3 `effect/eff_aura.png`。
