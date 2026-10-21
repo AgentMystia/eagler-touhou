@@ -320,4 +320,45 @@ EMSCRIPTEN_KEEPALIVE const char* th13_debug_layer_report() {
     }
     return report.c_str();
 }
+
+// 对局表现层诊断：敌机/敌弹/自机弹/自机直绘 VM 清单（弹型定位用）。
+EMSCRIPTEN_KEEPALIVE const char* th13_debug_stage_report() {
+    using namespace th13::sdl;
+    static std::string report;
+    if (!app || !app->run || !app->run->presentation) return "";
+    report = app->run->presentation->debug_report();
+    return report.c_str();
+}
+
+// 调试直绘过滤：mask bit0..3 = 自机弹/自机/敌机/敌弹（0 = 全关，仅查看）。
+EMSCRIPTEN_KEEPALIVE void th13_debug_stage_pass(unsigned mask) {
+    th13::StagePresentation::debug_pass_mask = mask;
+}
+
+// 调试探针：renderer.draw 计量开关（1 开 0 关；开则从零累计）。
+EMSCRIPTEN_KEEPALIVE void th13_debug_draw_probe(int enable) {
+    th13::anm_draw_probe.reset();
+    th13::anm_draw_probe.enabled = enable != 0;
+}
+
+// 探针读数：calls/quads/shapes/strips/glyphs + 按精灵聚合表。
+EMSCRIPTEN_KEEPALIVE const char* th13_debug_draw_report() {
+    using namespace th13::sdl;
+    static std::string report;
+    const auto& probe = th13::anm_draw_probe;
+    report.clear();
+    char line[128];
+    std::snprintf(line, sizeof line,
+                  "calls=%u quads=%u shapes=%u strips=%u glyphs=%u other=%u\n", probe.calls,
+                  probe.quads, probe.shapes_drawn, probe.strips, probe.glyphs, probe.other);
+    report += line;
+    for (th13::u32 i = 0; i < th13::AnmDrawProbe::kSlots; i++) {
+        if (!probe.sprite_counts[i]) break;
+        std::snprintf(line, sizeof line, "  sprite=%d count=%u size=%ux%u\n",
+                      probe.sprite_ids[i], probe.sprite_counts[i], probe.sprite_sizes[i][0],
+                      probe.sprite_sizes[i][1]);
+        report += line;
+    }
+    return report.c_str();
+}
 }  // extern "C"

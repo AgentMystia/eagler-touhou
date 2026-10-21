@@ -2,9 +2,14 @@
 // BulletAppearance.hpp（0x4120b0 / 0x4bbe30 表）。
 #include "StagePresentation.hpp"
 
+#include <algorithm>
+#include <cstdio>
 #include <cmath>
 
 namespace th13 {
+
+// 调试直绘过滤（默认 4 pass 全开）。
+u32 StagePresentation::debug_pass_mask = 0xf;
 
 namespace {
 // 游戏坐标 → ANM 屏幕 coordinates（0x46f820 的 bit0 平移：+320/+16）。
@@ -94,7 +99,8 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
         const i32 script = appearance ? appearance->script : -1;
         if (script < 0) continue;  // 未入表的弹型：无视觉（碰撞仍生效）
         if (!slot.vm) slot.vm = std::make_unique<AnmVm>();
-        if (!slot.vm->resource || slot.script != script) {
+        // 槽位复用（池按下标分配）：弹色变化 = 不同弹体，重绑并重放出生中断。
+        if (!slot.vm->resource || slot.script != script || slot.color != i32(bullet.subtype)) {
             slot.vm->environment = &animations.scene_environment();
             slot.vm->object_host = &animations;
             if (!slot.vm->bind(*bullet_resource, u32(script)))
@@ -102,6 +108,7 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
             slot.vm->sprite_source = &slot.source;
             slot.vm->pending_interrupt = 2;  // 出生（0x40e840：vm+0x4c8 = 2）
             slot.script = script;
+            slot.color = i32(bullet.subtype);
         }
         slot.vm->visual.translation = {bullet.x + kGameToScreenX, bullet.y + kGameToScreenY,
                                        bullet.z};
@@ -110,13 +117,21 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
     }
     for (size_t i = used; i < bullets_.size(); ++i) bullets_[i].active = false;
 
-    // ---- 自机弹：精灵直贴（弹型/.sht 分期前的可玩近似）----
+    // ---- 自机弹：.sht 弹型脚本（plXX.anm，旋转模式 1 随弹向）；无 .sht
+    // 会话回退精灵直贴（player_shot_sprite_） ----
     if (shots_.size() < battle.shots.size())
         while (shots_.size() < battle.shots.size()) shots_.push_back(std::make_unique<AnmVm>());
     for (size_t i = 0; i < shots_.size(); ++i) {
         AnmVm& vm = *shots_[i];
         if (i < battle.shots.size() && battle.shots[i].alive) {
-            if (!vm.resource) {
+            const auto& shot = battle.shots[i];
+            const i32 script = shot.script;
+            if (script >= 0 && vm.source_script != script) {
+                vm.environment = &animations.scene_environment();
+                vm.object_host = &animations;  // 弹型脚本可 spawn 附属弹子 VM
+                if (!vm.bind(*player_resource, u32(script)))
+                    return fail("Player shot animation binding failed: " + vm.error);
+            } else if (script < 0 && (!vm.resource || vm.source_script >= 0)) {
                 vm.environment = &animations.scene_environment();
                 vm.initialize_unbound();
                 vm.resource = player_resource;
@@ -126,9 +141,10 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
                 vm.visual.flags |= 1;
                 vm.visual.render_flags |= 0x200;
             }
-            const auto& shot = battle.shots[i];
             vm.visual.translation = {shot.x + kGameToScreenX, shot.y + kGameToScreenY, 0.0f};
-            vm.variables.rotation.z = 0.0f;  // 垂直直进模型弹（贴图朝上）
+            vm.variables.rotation.z = shot.angle;  // 脚本旋转模式 1：贴图随弹向
+            if (script >= 0 && vm.resource && vm.tick(random, 1) < 0)
+                return fail("Player shot animation: " + vm.error);
         } else {
             vm.visible = false;
         }
@@ -156,8 +172,48 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
     return true;
 }
 
+std::string StagePresentation::debug_report() const {
+    std::string report;
+    char line[256];
+    std::snprintf(line, sizeof line, "enemies=%zu bullets=%zu shots=%zu player=%d\n",
+                  enemies_.size(),
+                  bullets_.empty() ? 0 : std::count_if(bullets_.begin(), bullets_.end(),
+                                                       [](const BulletSlot& slot) {
+                                                           return slot.active && slot.vm;
+                                                       }),
+                  shots_.size(), player_ ? 1 : 0);
+    report += line;
+    auto describe = [&](const char* kind, const AnmVm& vm, i32 type, i32 color) {
+        const auto* source = vm.sprite_resource ? vm.sprite_resource : vm.resource;
+        std::snprintf(line, sizeof line,
+                      "  %s script=%d sprite=%d size=%.0fx%.0f scale=%.2fx%.2f "
+                      "pos=(%.0f,%.0f) rot=%.2f mode=%u blend=%u type=%d color=%d\n",
+                      kind, vm.source_script, vm.visual.sprite,
+                      double(vm.visual.sprite_size.x), double(vm.visual.sprite_size.y),
+                      double(vm.visual.scale.x), double(vm.visual.scale.y),
+                      double(vm.visual.translation.x), double(vm.visual.translation.y),
+                      double(vm.variables.rotation.z), unsigned(vm.visual.draw_mode()),
+                      unsigned(vm.visual.blend_mode()), type, color);
+        report += line;
+        (void)source;
+    };
+    for (const auto& enemy : enemies_)
+        if (enemy.vm) describe("enemy", *enemy.vm, enemy.script, -1);
+    u32 shown = 0;
+    for (const auto& slot : bullets_) {
+        if (!slot.active || !slot.vm || shown >= 40) continue;
+        describe("bullet", *slot.vm, slot.source.type, slot.source.color);
+        ++shown;
+    }
+    if (!shots_.empty() && shots_[0])
+        describe("shot", *shots_[0], player_shot_sprite_, -1);
+    if (player_) describe("player", *player_, player_script_, player_tilt_);
+    return report;
+}
+
 bool StagePresentation::draw(u32 pass) {
     if (!error_.empty()) return false;
+    if (!(debug_pass_mask >> pass & 1u)) return true;  // 调试过滤
     const auto one = [&](AnmVm& vm) {
         if (!vm.visible) return true;
         return renderer.draw(vm) != -2 || fail(renderer.error.empty() ? "Stage draw failed"

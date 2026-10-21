@@ -4,6 +4,7 @@
 #include <cmath>
 namespace th13 {
 using namespace touhou::graphics;
+AnmDrawProbe anm_draw_probe;
 namespace {u32 multiply_color(u32 a,u32 b){u32 out=0;for(u32 shift=0;shift<32;shift+=8)out|=std::min(255u,(((a>>shift)&255)*((b>>shift)&255))>>7)<<shift;return out;}}
 void AnmRenderer::flush(){if(vertices.empty())return;graphics.set_layout(VertexLayout::ScreenColorUv);graphics.triangles(vertices.size()/3,vertices.data(),sizeof(AnmGeometryVertex));vertices.clear();}
 void AnmRenderer::invalidate(){flush();bound_texture=~0u;}
@@ -54,6 +55,7 @@ int AnmRenderer::shape(AnmVm& vm){
     if(mode==17){state.cull=Cull::None;submit(vm,Topology::Fan,count,shapes.data(),sizeof(ColorVertex));}else if(mode==18)submit(vm,Topology::LineStrip,count,shapes.data(),sizeof(ColorVertex));else submit(vm,Topology::Strip,count*2,shapes.data(),sizeof(ColorVertex));return 0;
 }
 int AnmRenderer::draw_glyph(AnmVm& vm){
+    if(anm_draw_probe.enabled)++anm_draw_probe.glyphs;
     // Preserve original atlas glyphs. At integer high-resolution scale, sample
     // their texels directly rather than blurring them a second time.
     const u32 flags=vm.visual.render_flags;
@@ -103,6 +105,19 @@ int AnmRenderer::trail(AnmVm& vm){
     flush();if(!material(vm,false))return -2;graphics.set_depth_mask(false);auto& state=graphics.pipeline();state.color.operation=state.alpha.operation=ColorOperation::First;state.color.first=state.alpha.first={ArgumentSource::Diffuse};shapes.clear();for(i32 i=0;i<count;i++)shapes.push_back({{float(center.x+data.points[u32(i)].x),float(center.y+data.points[u32(i)].y),0},1,data.colors[u32(i)]});graphics.set_layout(VertexLayout::ScreenColor);submit(vm,Topology::LineStrip,u32(count-1),shapes.data(),sizeof(ColorVertex));return 0;
 }
 int AnmRenderer::draw(AnmVm& vm){
+    if(anm_draw_probe.enabled){
+        ++anm_draw_probe.calls;
+        const auto& v0=vm.visual;
+        if(v0.draw_mode()<=3)++anm_draw_probe.quads;else if(v0.draw_mode()>=15&&v0.draw_mode()<=22)++anm_draw_probe.shapes_drawn;else ++anm_draw_probe.other;
+        for(u32 i=0;i<AnmDrawProbe::kSlots;i++){
+            auto& probe=anm_draw_probe;
+            if(probe.sprite_ids[i]==v0.sprite||probe.sprite_counts[i]==0){
+                probe.sprite_ids[i]=v0.sprite;++probe.sprite_counts[i];
+                probe.sprite_sizes[i][0]=u32(v0.sprite_size.x);probe.sprite_sizes[i][1]=u32(v0.sprite_size.y);
+                break;
+            }
+        }
+    }
     if(vm.geometry.overlay)return overlay(vm);
     if(vm.geometry.trail)return trail(vm);
     const auto& v=vm.visual;if(vm.geometry.distortion){flush();if(!material(vm))return -2;graphics.set_depth_mask(false);graphics.set_layout(VertexLayout::ScreenColorUv);submit(vm,Topology::Fan,31,vm.geometry.distortion->vertices.data(),sizeof(AnmGeometryVertex));}
@@ -114,6 +129,7 @@ int AnmRenderer::draw(AnmVm& vm){
 }
 bool AnmRenderer::draw_layer(const std::vector<AnmVm*>& layer){for(auto* vm:layer)if(draw(*vm)==-2)return false;return true;}
 int AnmRenderer::draw_screen_strip(AnmVm& vm,const AnmGeometryVertex* data,u32 count){
+    if(anm_draw_probe.enabled)++anm_draw_probe.strips;
     if((vm.visual.flags&3)!=3||!vm.sprite)return -1;if(count<3)return 0;if(!data||count>0x200000){error="Screen strip vertex range invalid";return -2;}if(!material(vm))return -2;
     if(count<18){if(vertices.size()+(count-2)*3>6144)flush();graphics.presentation_offset({});graphics.presentation_range(vm,vertices.size(),(count-2)*3,presentation_instance);for(u32 i=0;i+2<count;i++){const u32 order[3]={i+(i&1),i+((i&1)^1u),i+2};for(u32 j:order)vertices.push_back(data[j]);if(vertices.size()>=6144)flush();}return 0;}
     // Curved lasers already own their complete strip. Submit it to the shared
