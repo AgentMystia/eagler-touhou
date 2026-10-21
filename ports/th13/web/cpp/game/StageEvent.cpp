@@ -128,4 +128,62 @@ void StageEventSink::bullet_spawn(u32 enemy, u32 slot, u32 way, u32 idx, float x
     raw("}\n");
 }
 
+void StageEventSink::player(float x, float y, u32 state) {
+    if (!out_) return;
+    ++emitted_;
+    char head[80];
+    std::snprintf(head, sizeof head,
+                  "{\"frame\":%u,\"seq\":%u,\"type\":\"player\",\"x\":", frame_, seq_++);
+    raw(head);
+    num(x);
+    key("\"y\"");
+    num(y);
+    key("\"state\"");
+    unum(state);
+    raw("}\n");
+}
+
+void StageEventSink::kill(u32 enemy, float x, float y) {
+    if (!out_) return;
+    ++emitted_;
+    char head[96];
+    std::snprintf(head, sizeof head,
+                  "{\"frame\":%u,\"seq\":%u,\"type\":\"kill\",\"enemy\":%u,\"x\":", frame_, seq_++,
+                  enemy);
+    raw(head);
+    num(x);
+    key("\"y\"");
+    num(y);
+    raw("}\n");
+}
+
+void StageEventSink::boss_op(u32 enemy, u16 op, const i32* args, u32 count, const char* name) {
+    if (!out_) return;
+    ++emitted_;
+    char head[96];
+    std::snprintf(head, sizeof head,
+                  "{\"frame\":%u,\"seq\":%u,\"type\":\"boss_op\",\"enemy\":%u,\"op\":%u,\"args\":[",
+                  frame_, seq_++, enemy, op);
+    raw(head);
+    for (u32 i = 0; i < count; ++i) {
+        if (i) raw(",");
+        char buffer[16];
+        std::snprintf(buffer, sizeof buffer, "%d", args[i]);
+        raw(buffer);
+    }
+    raw("],\"name\":\"");
+    for (const char* p = name; p && *p; ++p) {
+        if (*p == '"' || *p == '\\' || static_cast<unsigned char>(*p) < 0x20) {
+            char escape[8];
+            std::snprintf(escape, sizeof escape, "\\u%04x",
+                          static_cast<unsigned char>(*p));
+            raw(escape);
+        } else {
+            const char single[2] = {*p, 0};
+            raw(single);
+        }
+    }
+    raw("\"}\n");
+}
+
 }  // namespace th13
