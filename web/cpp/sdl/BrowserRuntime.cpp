@@ -64,9 +64,16 @@ bool sample_and_tick() {
             if (key.scan == 28 || key.scan == 156) keys[13] = true;                    // Enter
         }
     }
-    const u32 held = keyboard_keys(keys);
+    u32 held = keyboard_keys(keys);
+    if (app->replay_active) {
+        // 回放会话：输入流接管键盘采样（位布局与 keyboard_keys 同源：
+        // 0x01 Z /0x02 X /0x08 Shift /0x10-0x80 方向/0x200 快进）。游标在此
+        // 恰推进一次 = 一个游戏帧。
+        held = app->replay_take_input();
+    }
     controls.update(held);
-    const bool focus = lost_focus;
+    // 回放不受失焦暂停（无头驱动的窗口焦点不参与回放时间线）。
+    const bool focus = app->replay_active ? false : lost_focus;
     lost_focus = false;
     return app->step(controls.held, controls.pressed, controls.repeated, 60.f, focus);
 }
@@ -223,5 +230,94 @@ EMSCRIPTEN_KEEPALIVE int th13_frame_tick(double delta_milliseconds) {
     using namespace th13::sdl;
     if (!running) return -1;  // 循环未开/已停：不泵
     return drive_one_frame(delta_milliseconds < 0 ? 0 : delta_milliseconds / 1000.) ? 1 : 0;
+}
+
+// ---- 回放调试会话（th13-debug.html 无头取帧专用）----
+// th13_debug_replay：<name> 须已备入 /assets（rpy 本体 + 由录像头推导的
+// plXXa/b.sht）；解码后直入对局，返回 stage 总帧数，0 = 失败。
+EMSCRIPTEN_KEEPALIVE unsigned th13_debug_replay(const char* name, unsigned stage_index) {
+    using namespace th13::sdl;
+    if (running || !app || !app->initialized || !name) return 0;
+    std::vector<th13::u8> bytes;
+    if (!app->read(name, bytes)) {
+        last_error = app->failure;
+        return 0;
+    }
+    if (!app->begin_replay_run(bytes.data(), bytes.size(), stage_index)) {
+        last_error = app->failure;
+        return 0;
+    }
+    clear_inputs();
+    cadence.reset();
+    return app->replay_cursor ? app->replay_cursor->stage()
+                                  ? app->replay_cursor->stage()->frame_count
+                                  : 0
+                              : 0;
+}
+
+// 确定性单帧泵：固定 1/60 步长、恰一逻辑帧 + 绘制提交，不经过 rAF 帧钟与
+// FrameCadence。装载挡板（正常启动序）按同一步长推进。1 = ok，0 = 失败。
+EMSCRIPTEN_KEEPALIVE int th13_debug_frame() {
+    using namespace th13::sdl;
+    if (!app) return 0;
+    if (!app->failure.empty()) return 0;
+    if (app->loading_waiting()) {
+        if (!(app->loading_startup ? app->advance_loading(1. / 60.) : app->complete_loading()))
+            return 0;
+        return 1;
+    }
+    const double begin = emscripten_get_now();
+    app->graphics.backend.defer = true;
+    const bool ok = sample_and_tick();
+    app->graphics.backend.commit();
+    app->graphics.backend.defer = false;
+    app->audio_device.pump();
+    th13_browser_frame(ok ? 1 : 0, emscripten_get_now() - begin, 1);
+    return ok ? 1 : 0;
+}
+
+// 回放会话帧号（已消费输入帧数；golden 游戏帧 F ↔ 消费 F+1 后的画面）。
+EMSCRIPTEN_KEEPALIVE unsigned th13_debug_replay_frame() {
+    return th13::sdl::app ? th13::sdl::app->replay_consumed : 0;
+}
+
+// 对局场景帧（RunScene::update 计数）：与 replay_frame 同步为帧泵对齐自检。
+EMSCRIPTEN_KEEPALIVE unsigned th13_debug_stage_frame() {
+    return th13::sdl::app && th13::sdl::app->run ? unsigned(th13::sdl::app->progress.stage_frame) : 0;
+}
+
+// 画面诊断：33 层逐 VM 清单（脚本/精灵/位置/纹理源），帧定位问题定位用。
+EMSCRIPTEN_KEEPALIVE const char* th13_debug_layer_report() {
+    using namespace th13::sdl;
+    static std::string report;
+    if (!app) return "";
+    report.clear();
+    char line[256];
+    std::snprintf(line, sizeof line, "registry vms=%u\n", app->animations.registry.count());
+    report += line;
+    for (th13::u32 layer = 0; layer < 33; layer++) {
+        const auto& vms = app->animations.registry.layer(layer);
+        if (vms.empty()) continue;
+        std::snprintf(line, sizeof line, "layer %u: %zu vm(s)\n", layer, vms.size());
+        report += line;
+        for (const auto* vm : vms) {
+            if (!vm) continue;
+            const auto* source = vm->sprite_resource ? vm->sprite_resource : vm->resource;
+            const char* texture =
+                source && !source->textures.empty() ? source->textures[0].name.c_str() : "?";
+            const th13::i32 sprite = vm->visual.sprite;
+            const char* sprite_texture =
+                source && sprite >= 0 && th13::u32(sprite) < source->sprites.size()
+                    ? source->textures[source->sprites[th13::u32(sprite)].texture].name.c_str()
+                    : "-";
+            std::snprintf(line, sizeof line,
+                          "  script=%d sprite=%d pos=(%.0f,%.0f) scale=%.2fx%.2f tex=%s/%s\n",
+                          vm->source_script, sprite, vm->visual.translation.x,
+                          vm->visual.translation.y, vm->visual.scale.x, vm->visual.scale.y,
+                          texture, sprite_texture);
+            report += line;
+        }
+    }
+    return report.c_str();
 }
 }  // extern "C"
