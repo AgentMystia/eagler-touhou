@@ -6,6 +6,7 @@
 //   th13-harness stage1 <资源目录> <事件输出路径>
 //     资源目录需含 st01.ecl 及其 ECLI/ANIM 依赖（artifacts/reference/raw）。
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "game/Rng.hpp"
@@ -23,14 +24,14 @@ int rng_smoke() {
     return 0;
 }
 
-int stage1(const char* resource_dir, const char* event_path) {
+int stage1(const char* resource_dir, const char* event_path, unsigned frames) {
     th13::StageSim sim;
     if (!sim.load(resource_dir, event_path)) {
         std::printf("stage1 load failed: %s\n", sim.error().c_str());
         return 1;
     }
-    const bool ok = sim.run(3600);
-    std::printf("stage1 frames=3600 enemies=%u events=%llu ok=%d\n", sim.spawn_count(),
+    const bool ok = sim.run(frames);
+    std::printf("stage1 frames=%u enemies=%u events=%llu ok=%d\n", frames, sim.spawn_count(),
                 static_cast<unsigned long long>(sim.event_count()), ok ? 1 : 0);
     if (!ok) {
         std::printf("stage1 error: %s\n", sim.error().empty() ? "event sink failure" : sim.error().c_str());
@@ -42,6 +43,7 @@ int stage1(const char* resource_dir, const char* event_path) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc >= 4 && std::strcmp(argv[1], "stage1") == 0) return stage1(argv[2], argv[3]);
+    if (argc >= 4 && std::strcmp(argv[1], "stage1") == 0)
+        return stage1(argv[2], argv[3], argc >= 5 ? unsigned(std::atoi(argv[4])) : 3600u);
     return rng_smoke();
 }
