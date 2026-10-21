@@ -53,25 +53,45 @@ private:
 
 // ---------- SCPT 容器构造（对齐 §1.1 布局，供合成脚本用） ----------
 
-inline std::vector<u8> build_scpt(const std::vector<std::pair<std::string, std::vector<u8>>>& scripts) {
+inline std::vector<u8> build_scpt(const std::vector<std::pair<std::string, std::vector<u8>>>& scripts,
+                                  const std::vector<std::string>& animations = {}) {
     std::string names;
     for (const auto& script : scripts) {
         names += script.first;
         names += '\0';
     }
     const u32 count = u32(scripts.size());
-    u32 start = 36 + count * 4 + u32(names.size());
+    // ANIM/ECLI 名单区（§1.1：36 起 "ANIM"+count+名字，4 对齐，"ECLI"+0）。
+    std::vector<u8> includes;
+    if (!animations.empty()) {
+        const char tag[4] = {'A', 'N', 'I', 'M'};
+        includes.insert(includes.end(), tag, tag + 4);
+        const u32 anim_count = u32(animations.size());
+        includes.insert(includes.end(), reinterpret_cast<const u8*>(&anim_count),
+                        reinterpret_cast<const u8*>(&anim_count) + 4);
+        for (const auto& name : animations) {
+            includes.insert(includes.end(), name.begin(), name.end());
+            includes.push_back(0);
+        }
+        while (includes.size() % 4) includes.push_back(0);
+        const char ecli[8] = {'E', 'C', 'L', 'I', 0, 0, 0, 0};
+        includes.insert(includes.end(), ecli, ecli + 8);
+    }
+    u32 start = 36 + u32(includes.size()) + count * 4 + u32(names.size());
     start = (start + 3) & ~3u;
     std::vector<u8> out(start, 0);
     std::memcpy(out.data(), "SCPT", 4);
     u16 version = 1;
     std::memcpy(out.data() + 4, &version, 2);
+    const u16 include_length = u16(includes.size());
+    std::memcpy(out.data() + 6, &include_length, 2);
     std::memcpy(out.data() + 16, &count, 2);
-    std::memcpy(out.data() + 36 + count * 4, names.data(), names.size());
+    if (!includes.empty()) std::memcpy(out.data() + 36, includes.data(), includes.size());
+    std::memcpy(out.data() + 36 + includes.size() + count * 4, names.data(), names.size());
     u32 offset = start;
     std::vector<u8> blocks;
     for (u32 i = 0; i < count; ++i) {
-        std::memcpy(out.data() + 36 + i * 4, &offset, 4);
+        std::memcpy(out.data() + 36 + includes.size() + i * 4, &offset, 4);
         const char header[16] = {'E', 'C', 'L', 'H', 0x10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
         blocks.insert(blocks.end(), header, header + 16);
         blocks.insert(blocks.end(), scripts[i].second.begin(), scripts[i].second.end());
