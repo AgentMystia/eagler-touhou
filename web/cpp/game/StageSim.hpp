@@ -97,6 +97,19 @@ struct StageEnemy {
     // 比后续敌机多空转一个完整帧（oracle 探针实证 time 序 1,1,2,3）。
     bool tick_gate = false;
     std::string interrupt_label;  // 514 setInterrupt（id 0）注册的标签
+    // ---- 交互模式的 ANM 接线记录（无头 oracle 契约不读这些字段）----
+    // 302 anmSelect：敌机当前 ANM 文件槽（st01：2=enemy.anm、3=st01enm.anm）。
+    i32 anm_file = 0;
+    // 303 anmScript / 306 anmRun：槽位脚本（vm+0x120 起槽数组；槽 0 = 本体，
+    // 记录 -1 表示清槽）。脚本号是 stage ANM 合并表的全局序号。
+    i32 anm_script[4] = {-1, -1, -1, -1};
+};
+
+// 交互模式的弹体实体（fire_et 事件同源的直进弹；无头路径不产实体）。
+struct StageBullet {
+    float x = 0, y = 0, z = 0, angle = 0, speed = 0;
+    u32 sprite = 0, subtype = 0;  // etSprite 的 (类型, 颜色)
+    bool alive = true;
 };
 
 class StageSim;
@@ -129,8 +142,14 @@ class StageSim {
 public:
     // resource_dir：含 st01.ecl/default.ecl/st01bs.ecl 与 ANM 名单核验的 raw 目录。
     bool load(const char* resource_dir, const char* event_path, const char* stage = nullptr);
+    // 交互模式装载：资源经 provider 供给（浏览器侧读 /assets），事件落盘关闭，
+    // 开启弹体实体。难度位 = 1 << difficulty（0x08 契约 = Lunatic）。
+    bool begin(EclResourceProvider& provider, const char* stage_file, i32 difficulty);
     // 跑 3600 帧（第 0 帧 = root 创建趟），返回 false 时 error 有值。
     bool run(u32 frames);
+    // 交互模式逐帧步进：start() 只做第 0 帧装载趟，此后每帧一次 step_frame()。
+    bool start();
+    bool step_frame();
     const std::string& error() const { return error_; }
     u32 spawn_count() const { return spawned_; }
     u64 event_count() const { return sink.emitted(); }
@@ -142,12 +161,15 @@ public:
     StageCommands commands;
     StageEventSink sink;
     std::vector<std::unique_ptr<StageEnemy>> enemies;
+    std::vector<StageBullet> bullets;  // 交互模式弹体（直进；无头路径恒空）
     StageEnemy* current = nullptr;  // 正在步进的敌机（gvars/commands 用）
     u32 frame = 0;
-    float player_x = 192.0f, player_y = 420.0f;  // 契约常量
+    float player_x = 192.0f, player_y = 420.0f;  // 契约常量（交互模式每帧覆写）
     i32 boss_slot[3] = {-1, -1, -1};             // mgr+0x5C 起 3 槽（script_id 寻址）
     std::vector<std::string> anim_list;          // st01 的 ANIM 依赖清单（装载核验）
     std::string error_;
+    bool interactive = false;  // 交互模式：弹体实体 + 可写玩家位置（不落事件）
+    i32 difficulty_rank = 0x08;
 
     StageEnemy* find_by_script_id(i32 id);  // 0x417f40（id 0 → null）
     StageEnemy* boss() const;
@@ -156,6 +178,11 @@ public:
     // 构造趟内 404/405 族按镜像翻转角度）。
     StageEnemy* spawn_enemy(const char* routine, float x, float y, float life, StageEnemy* parent,
                             bool inherit_anm, bool mirror = false);
+    // 交互模式伤害：扣血至 0 以下标 dead（下帧遍历摘链，与出界自杀同路）。
+    void damage(StageEnemy& enemy, float amount);
+    void clear_bullets() {
+        for (auto& bullet : bullets) bullet.alive = false;
+    }
 
 private:
     // 0x41a8a0：0x80000 门内干活（积分 → ECL），与 run() 的门/清位配合复刻
@@ -163,6 +190,7 @@ private:
     void tick_enemy(StageEnemy& enemy);
     void integrate(StageEnemy& enemy);   // 0x419450 + 0x419950 子集
     bool in_bounds(StageEnemy& enemy);   // 0x419450 出界自杀
+    void advance_bullets();              // 交互模式直进弹步进 + 出界回收
     u32 spawned_ = 0;
     u32 next_serial_ = 0;
 };

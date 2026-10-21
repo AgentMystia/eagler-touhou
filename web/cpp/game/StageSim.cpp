@@ -89,6 +89,28 @@ bool StageSim::load(const char* resource_dir, const char* event_path, const char
     return true;
 }
 
+bool StageSim::begin(EclResourceProvider& provider, const char* stage_file, i32 difficulty) {
+    gvars.sim = this;
+    commands.sim = this;
+    interactive = true;
+    difficulty_rank = difficulty;
+    std::vector<u8> stage;
+    if (!provider.read(stage_file, stage)) {
+        error_ = std::string("cannot read ") + stage_file;
+        return false;
+    }
+    if (program.attach(stage.data(), u32(stage.size()), &provider) != 0 || !program.error.empty()) {
+        error_ = program.error.empty() ? "stage attach failed" : program.error;
+        return false;
+    }
+    if (anim_list.size() < 2) {
+        error_ = "stage ANIM list incomplete";
+        return false;
+    }
+    // 交互模式不落事件（sink 未 open 即静默）。
+    return true;
+}
+
 // 0x4234b0/0x422f80 共用的推进：elapsed+1；到终点写终值并失活（duration 清 0），
 // 否则按缓动模式线性插值。特殊模式 7/17/8 在 setup 处拒绝（st01 窗口外）。
 namespace {
@@ -295,7 +317,8 @@ StageEnemy* StageSim::spawn_enemy(const char* routine, float x, float y, float l
     enemy->flags = (enemy->flags & ~0x100000u) | (u32(mirror) << 20);
     enemy->threads = std::make_unique<EclThreads>(program, &gvars, &random);
     enemy->threads->main.commands = &commands;
-    const u8 difficulty = parent ? parent->threads->main.difficulty : 0x08;  // 契约：Lunatic
+    const u8 difficulty = parent ? parent->threads->main.difficulty
+                                 : u8(interactive ? difficulty_rank : 0x08);  // 契约：Lunatic
     enemy->threads->start(routine, difficulty);
     StageEnemy* raw = enemy.get();
     // 合同 §3.1：root（parent 为空）不由事件产生；enmCreate 族才发 enemy_spawn。
@@ -337,42 +360,85 @@ void StageSim::tick_enemy(StageEnemy& e) {
 
 bool StageSim::run(u32 frames) {
     if (!error_.empty()) return false;
+    if (!start()) return false;
+    for (frame = 1; frame < frames && error_.empty(); ++frame) {
+        sink.set_frame(frame);
+        if (!step_frame()) break;
+    }
+    sink.close();  // 落盘（读回/比对前保证缓冲清净）
+    return error_.empty() && sink.ok();
+}
+
+bool StageSim::start() {
+    if (!error_.empty()) return false;
     // 第 0 帧 = stage 装载趟：root（serial 0，承载 main）创建并跑构造内首趟。
     frame = 0;
     sink.set_frame(0);
     spawn_enemy("main", 0.0f, 0.0f, 0.0f, nullptr, false);
-    for (frame = 1; frame < frames && error_.empty(); ++frame) {
-        sink.set_frame(frame);
-        // 0x418e00:16-30：游标在每个敌机处理前取其实时 next；0x41a8a0 返回
-        // -1（死亡）当场摘链——已死敌机不占链位，链尾创建者的新敌机是否被
-        // 本帧遍历到达取决于创建时游标位置（vector 插入序 = 链序）。
-        u32 i = 0;
-        while (true) {
-            StageEnemy* entry = enemies[i].get();
-            const u32 next = i + 1;
-            const bool has_next = next < enemies.size();
-            bool remove = entry->dead;
-            if (!entry->dead) {
-                // 0x41a8a0:30-31：0x80000 位已置则本帧空转；0x418e00:20 返回 0 后清位。
-                if (!entry->tick_gate) {
-                    tick_enemy(*entry);
-                    entry->tick_gate = true;
-                }
-                if (entry->dead) remove = true;
-                else entry->tick_gate = false;
-            }
-            if (remove) {
-                enemies.erase(enemies.begin() + i);  // 0x418e00 else：当场摘链（无 RNG）
-                if (i >= enemies.size()) break;
-                continue;  // 游标走处理前记下的 next（摘除后恰为当前位置）
-            }
-            if (!error_.empty()) break;
-            if (!has_next) break;
-            i = next;
-        }
+    return error_.empty();
+}
+
+bool StageSim::step_frame() {
+    if (!error_.empty()) return false;
+    // 敌链清空（root 结束且无存活者）：无头窗口内不会到达（root 常驻），
+    // 交互模式可能到达（合成脚本/全灭）——空转保步进可用。
+    if (enemies.empty()) {
+        if (interactive) advance_bullets();
+        return true;
     }
-    sink.close();  // 落盘（读回/比对前保证缓冲清净）
-    return error_.empty() && sink.ok();
+    // 0x418e00:16-30：游标在每个敌机处理前取其实时 next；0x41a8a0 返回
+    // -1（死亡）当场摘链——已死敌机不占链位，链尾创建者的新敌机是否被
+    // 本帧遍历到达取决于创建时游标位置（vector 插入序 = 链序）。
+    u32 i = 0;
+    while (true) {
+        StageEnemy* entry = enemies[i].get();
+        const u32 next = i + 1;
+        const bool has_next = next < enemies.size();
+        bool remove = entry->dead;
+        if (!entry->dead) {
+            // 0x41a8a0:30-31：0x80000 位已置则本帧空转；0x418e00:20 返回 0 后清位。
+            if (!entry->tick_gate) {
+                tick_enemy(*entry);
+                entry->tick_gate = true;
+            }
+            if (entry->dead) remove = true;
+            else entry->tick_gate = false;
+        }
+        if (remove) {
+            enemies.erase(enemies.begin() + i);  // 0x418e00 else：当场摘链（无 RNG）
+            if (i >= enemies.size()) break;
+            continue;  // 游标走处理前记下的 next（摘除后恰为当前位置）
+        }
+        if (!error_.empty()) break;
+        if (!has_next) break;
+        i = next;
+    }
+    if (interactive) advance_bullets();
+    return error_.empty();
+}
+
+void StageSim::advance_bullets() {
+    // 直进弹：出生角恒定（原版弹体的加速/自旋/反射分期接入；实体仅交互模式）。
+    for (auto& bullet : bullets) {
+        if (!bullet.alive) continue;
+        bullet.x += bullet.speed * std::cos(bullet.angle);
+        bullet.y += bullet.speed * std::sin(bullet.angle);
+        // 出界回收：游戏区外扩 64px（弹幕常规缓冲带）。
+        if (bullet.x < -256.0f || bullet.x > 256.0f || bullet.y < -64.0f || bullet.y > 512.0f)
+            bullet.alive = false;
+    }
+    // 尾部压缩：存活弹前移（稳定序，逐帧 O(n)）。
+    size_t keep = 0;
+    for (size_t i = 0; i < bullets.size(); ++i) {
+        if (bullets[i].alive) bullets[keep++] = bullets[i];
+    }
+    bullets.resize(keep);
+}
+
+void StageSim::damage(StageEnemy& enemy, float amount) {
+    if (enemy.dead || amount <= 0) return;
+    enemy.life -= amount;
+    if (enemy.life <= 0.0f) enemy.dead = true;  // 与出界自杀同路：下帧遍历摘链
 }
 
 }  // namespace th13

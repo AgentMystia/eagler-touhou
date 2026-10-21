@@ -97,17 +97,24 @@ int StageCommands::execute(EclContext& c, u16 op) {
     case 321:
         return create_enemy(c, op);
     case 302: {  // anmSelect（vm+0x98 文件槽）——事件无涉
+        i32 file = 0;
+        if (resolve_int(c, 0, file)) e.anm_file = file;
         return 0;
     }
-    case 303:
-    case 306:
+    case 303:   // anmScript（槽位脚本，vm+0x120 起槽数组；槽 0 = 本体）
+    case 306: {  // anmRun（同槽数组，创建即跑）
+        i32 slot = 0, script = 0;
+        if (resolve_int(c, 0, slot) && resolve_int(c, 1, script) && slot >= 0 && slot < 4)
+            e.anm_script[slot] = script;  // script < 0 = 清槽（0x41fe80）
+        return 0;
+    }
     case 307:
     case 308:
     case 313:
     case 316:
     case 319:
     case 554:
-        return 0;  // ANM/演出族：无事件
+        return 0;  // ANM/演出族：一次性特效/镜位翻转，视觉分期接入，无事件
 
     // ---------- 400 族：运动 ----------
     case 400:
@@ -963,6 +970,18 @@ int StageCommands::fire_et(EclContext& c, StageEnemy& e) {
             }
             sim.sink.bullet_spawn(e.serial, u32(slot), u32(way), u32(idx), x, y, z, stored, speed,
                                   et.sprite, et.subtype);
+            if (sim.interactive) {
+                // 交互模式同源产弹体实体（直进；无 RNG、无事件，契约不受影响）。
+                StageBullet bullet;
+                bullet.x = x;
+                bullet.y = y;
+                bullet.z = z;
+                bullet.angle = stored;
+                bullet.speed = speed;
+                bullet.sprite = et.sprite;
+                bullet.subtype = et.subtype;
+                sim.bullets.push_back(bullet);
+            }
         }
     }
     return 0;
