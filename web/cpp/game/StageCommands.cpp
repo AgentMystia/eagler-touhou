@@ -272,10 +272,12 @@ int StageCommands::execute(EclContext& c, u16 op) {
                 sim.error_ = "moveCircleTime interpolation mode not implemented";
                 return -2;
             }
-            // 角维不动（0x4238a0 结构 a 维 from=to=0），仅 speed 维插值。
+            // 0x41c627 fldz：角维 from=to=0.0（恒零）——0x425 尾清 mover mode 后
+            // 0x419450 每帧把插值角维（0）写回 vel.angle（实测 MBoss 归零）。
+            // speed 维 from=当前值，to=参数 2。
             const float from_b = m.speed;
             const float to_b = kKeep < speed_to ? speed_to : m.speed;
-            m.polar.setup(float(dur), mode, m.angle, from_b, m.angle, to_b);
+            m.polar.setup(float(dur), mode, 0.0f, from_b, 0.0f, to_b);
         }
         if (kKeep < radius) m.radius = radius;
         if (kKeep < growth) m.growth = growth;
