@@ -90,13 +90,17 @@ struct ApplicationState final : TitleScenePlatform, RunSceneServices, RunPausePl
     bool request_pause() override;
     bool request_game_over() override;
     bool hud_sound(i32) override;
+    bool read_asset(const std::string& name, std::vector<u8>& bytes) override {
+        return read(name, bytes);
+    }
+    bool camera(DrawCamera index, bool refresh) override { return views.camera(index, refresh); }
     // RunPausePlatform
     bool suspend_music() override;
     bool restart_run() override;
     bool return_to_title() override;
-    // 对局期平台服务（battle 分期前的 HUD 直通）
-    bool life_hud(i32, i32);
-    bool bomb_hud(i32, i32);
+    // 对局期平台服务（battle 分期前的 HUD 直通；StageBattleServices 直通面）
+    bool life_hud(i32, i32) override;
+    bool bomb_hud(i32, i32) override;
     bool game_over();
 };
 
