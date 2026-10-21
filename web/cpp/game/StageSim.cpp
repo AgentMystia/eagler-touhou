@@ -346,7 +346,7 @@ bool StageSim::run(u32 frames) {
                 else entry->tick_gate = false;
             }
             if (remove) {
-                enemies.erase(enemies.begin() + i);  // 0x418e00 else：当场摘链销毁
+                enemies.erase(enemies.begin() + i);  // 0x418e00 else：当场摘链（无 RNG）
                 if (i >= enemies.size()) break;
                 continue;  // 游标走处理前记下的 next（摘除后恰为当前位置）
             }

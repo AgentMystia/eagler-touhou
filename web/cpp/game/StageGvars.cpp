@@ -65,7 +65,9 @@ bool StageGvars::integer(i32 id, i32& value) {
         value = i32(std::count_if(sim.enemies.begin(), sim.enemies.end(),
                                   [](const std::unique_ptr<StageEnemy>& entry) { return !entry->dead; }));
         return true;
-    case -9909:  // UNKNOWN9（自身 +0x11E8 = 创建者 id）
+    case -9909:  // 0x420380 case 0xffffd94b：+0x11E8（trace_id，0x4183f0:61 的
+        // param2[0x14]）。oracle 实测 Phantom01（MBoss1_at 子线程创建）求值
+        // 得 75 = MBoss id（433 的 moveEnm 目标）。
         value = e ? e->trace_id : 0;
         return true;
     case -9908:  // ENM_CNT（FUN_00417e90，未定域）
