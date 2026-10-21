@@ -61,9 +61,13 @@ bool StageGvars::integer(i32 id, i32& value) {
     case -9957:
         value = 1;
         return true;
-    case -9946:  // ENM_CNT_REAL（mgr+0xB8 存活计数，含 root）
-        value = i32(std::count_if(sim.enemies.begin(), sim.enemies.end(),
-                                  [](const std::unique_ptr<StageEnemy>& entry) { return !entry->dead; }));
+    case -9946:
+        // ENM_CNT_REAL（mgr+0xB8）：0x420638 直读计数器，计数在链表摘除时
+        // 才减——遍历中途读取时，已标 dead 但未被本趟游标到达的敌机仍在列。
+        // 移植侧 vector 摘除同拍（step_frame 游标到达时擦除），故计数 =
+        // 当前 vector 大小（含 root；勿用 !dead 过滤——会把已标未摘者漏计，
+        // 回放实测 frame 3252 由此少 1 导致 Phantom01 生成门 [-9946]<11 误开）。
+        value = i32(sim.enemies.size());
         return true;
     case -9909:  // 0x420380 case 0xffffd94b：+0x11E8（trace_id，0x4183f0:61 的
         // param2[0x14]）。oracle 实测 Phantom01（MBoss1_at 子线程创建）求值
