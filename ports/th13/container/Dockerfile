@@ -1,5 +1,5 @@
 # th13 神灵庙移植统一开发环境
-# 多阶段：base → 各工具层 → dev（全功能）/ ci（精简）
+# 多阶段：base → 各工具层 → dev（全功能）/ ci（精简）/ shot（无头取帧）
 # 本地 podman 与 GitHub Actions 共用此文件。
 
 ARG DEBIAN_TAG=bookworm-slim
@@ -95,5 +95,26 @@ FROM base AS ci
         EMSDK=/opt/emsdk \
         WASI_SDK_PATH=/opt/wasi-sdk
     RUN echo 'export PATH=/opt/node/bin:/opt/venv/bin:/opt/emsdk:/opt/emsdk/upstream/emscripten:$PATH' > /etc/profile.d/th13-path.sh
+    WORKDIR /work
+    CMD ["bash"]
+
+# ---------- shot：移植侧无头取帧（chromium + playwright-core，无 X 依赖） ----------
+# 供网页构建（portable/build.mjs 产物）以 requestFrame 快照方式产出 ours 帧，
+# 与 artifacts/reference/golden 的 640×480 参考帧对拍（scripts/visual_diff.py）。
+# 只装 chromium 与 CJK 字体；playwright-core 不捆绑浏览器，用系统 chromium
+# （launch 时 executablePath 指向 $CHROMIUM_PATH）。
+FROM base AS shot
+    COPY --from=node /opt/node /opt/node
+    ENV PATH=/opt/node/bin:$PATH
+    RUN echo 'export PATH=/opt/node/bin:$PATH' > /etc/profile.d/th13-shot-path.sh \
+        && apt-get update && apt-get install -y --no-install-recommends \
+            chromium fonts-noto-cjk \
+        && rm -rf /var/lib/apt/lists/* \
+        && mkdir -p /opt/shot && cd /opt/shot \
+        && npm install --omit=dev playwright-core@1.64.1 \
+        && rm -rf /root/.npm
+    ENV NODE_PATH=/opt/shot/node_modules
+    ENV CHROMIUM_PATH=/usr/bin/chromium \
+        PLAYWRIGHT_BROWSERS_PATH=0
     WORKDIR /work
     CMD ["bash"]
