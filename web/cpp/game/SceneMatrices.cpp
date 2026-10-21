@@ -54,7 +54,10 @@ Matrix4 scene_perspective(float fov, float aspect, float near_plane, float far_p
     out.m[5] = cot;
     out.m[10] = static_cast<float>(far_plane / static_cast<float>(far_plane - near_plane));
     out.m[11] = 1;
-    out.m[14] = -out.m[10] * near_plane;
+    // D3DXMatrixPerspectiveFovLH 原式 m34 = -zn*zf/(zf-zn)（oracle 桩同式）；
+    // 经 -m22*zn 换算会差 1 ULP（frame-0 proj[14] 对拍实证）。
+    out.m[14] = -static_cast<float>(near_plane * far_plane /
+                                    static_cast<float>(far_plane - near_plane));
     return out;
 }
 
