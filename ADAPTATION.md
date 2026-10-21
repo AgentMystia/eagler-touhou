@@ -52,3 +52,23 @@
   - 单元测试：replay 套件 8/8（XOR 双向、LZ77 字面量/重叠拷贝、合成 rpy 全链路往返、
     真机头/stage 链、首帧/Boss 前关键帧 2379/末帧、沿一致性、游标节拍）；
     `node --test tests/*.test.mjs` 5/5；网页与 WASI 双构建通过。
+- 2026-10-22 · 第 7 轮 · 弹幕/自机弹渲染差距修复（弹型域数据驱动）
+  - .sht 弹型域接入（StageBattle）：装载器语义取自原版 0x443e40 直读——+2 u16 块数、
+    +0xc8 u32 指针表（+0xf4 基准）、记录步长 0x38、首字节 i8<0 终止；11 块 =
+    5 能量档非聚焦（0-4）+ 5 档聚焦（5-9）+ 特殊块 10（类别 2，未接入）。pl00a.sht
+    实测：主弹（类别 3）±10/−8 出膛、pl00.anm 脚本 14/15/16、附属弹（类别 8 =
+    Option 卫星锚定）分期。射击按当前能量档 + 焦点态选块取主弹列；每轮总伤恒为
+    3×kShotDamage 按列均摊（oracle 对拍孪生口径不变）。能量经济（kKillPower）仍为
+    定标值——块档位随 power 偏高推进，原版道具拾取经济接入前为已知偏差。
+  - 敌弹槽位复用换色修复（StagePresentation）：弹色变化即重绑 VM 并重放出生中断 2
+    （旧实现同脚本复用槽位沿用前任弹色精灵，Boss 段实测 type5 弹显示 color2 精灵）。
+  - 自机弹脚本化（StagePresentation）：.sht 记录的脚本号绑定 plXX.anm 弹型脚本
+    （旋转模式 1 随弹向；焦点块含 ±5 副列），无 .sht 会话回退精灵直贴。
+  - 取帧/诊断链路：shot-frames 报告后置（evaluate 间隔会令 WebGL 后备缓冲合成清空
+    → 黑帧）+ 仅前向泵；th13-debug/th13_debug_* 增表现层 VM 清单、直绘过滤与
+    renderer 探针导出；资产清单补 st01.std/st01wl.anm（STD 舞台链路装载依赖）。
+  - 验收：`python3 -m oracle.stage1_compare` 重跑 3600 帧 10187 事件逐字段一致
+    （first_divergence_frame=none）；ecl 6/6、anm 4/4、ui 3/3、replay 8/8、node 5/5
+    全绿；回放 2500 帧注入跑通；th13-shot 取帧确定性自检通过（1242/2381 帧自机弹
+    两列 ±10px 与原版一致、敌弹精灵随色匹配）。
+
