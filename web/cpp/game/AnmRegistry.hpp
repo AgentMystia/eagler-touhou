@@ -52,7 +52,7 @@ public:
     bool pause_tree(AnmVm&,bool paused);
     // 中断向子树传播并对每个 VM 立即 tick（0x46fca0）。
     bool interrupt(AnmVm&,i32 label,GameRandom&,float rate,bool immediate);
-    const std::vector<AnmVm*>& layer(u32 index)const noexcept{return layers[index];}
+    const std::vector<AnmVm*>& layer(u32 index)const noexcept{static const std::vector<AnmVm*> empty;return index<layers.size()?layers[index]:empty;}
     u32 count()const noexcept{return active_count;}
     u32 handle(const AnmVm&)const noexcept;
     u32 slot(const AnmVm&)const noexcept;

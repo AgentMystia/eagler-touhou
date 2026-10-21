@@ -7,10 +7,12 @@ template<class T> T read(const u8* p){T v;std::memcpy(&v,p,sizeof v);return v;}
 bool span(u32 offset,u32 length,u32 size){return offset<=size&&length<=size-offset;}
 u32 pixel_size(u16 f){return f==1?4:f==2||f==3||f==5||f==6?2:f==4?3:f==7?1:0;}
 }
-bool AnmResource::open(const u8* data,u32 size){
-    textures.clear();sprites.clear();scripts.clear();
+namespace {
+// 单文件 entry 链解析（open 与 append 共用）：内容追加到 target，
+// sprite 的纹理索引加 texture_base。返回 false 即整体无效。
+bool parse_entries(const u8* data,u32 size,AnmResource& target){
     if(!data)return false;
-    AnmResource next;u32 base=0;
+    u32 base=0;
     do {
         if(!span(base,64,size))return false;
         const u8* h=data+base;if(read<u32>(h)!=8)return false;
@@ -36,7 +38,7 @@ bool AnmResource::open(const u8* data,u32 size){
         }else if(texture.name=="@R")texture.kind=AnmTexture::Kind::RenderTarget;
         else if(!texture.name.empty()&&texture.name[0]=='@')texture.kind=AnmTexture::Kind::Blank;
         else texture.kind=AnmTexture::Kind::External;
-        const u32 texture_index=next.textures.size();
+        const u32 texture_index=target.textures.size();
         for(u32 i=0;i<ns;++i){
             const u32 off=read<u32>(h+64+i*4);if(off<table_end||!span(off,20,chunk_size))return false;
             AnmSprite sprite;sprite.source_id=read<u32>(h+off);sprite.texture=texture_index;
@@ -45,7 +47,7 @@ bool AnmResource::open(const u8* data,u32 size){
             sprite.u0=float(double(sprite.x)/texture.width);sprite.v0=float(double(sprite.y)/texture.height);
             const float right=float(double(sprite.x)+sprite.width),bottom=float(double(sprite.y)+sprite.height);
             sprite.u1=float(double(right)/texture.width);sprite.v1=float(double(bottom)/texture.height);
-            next.sprites.push_back(sprite);
+            target.sprites.push_back(sprite);
         }
         for(u32 i=0;i<nc;++i){
             const u32 entry=64+ns*4+i*8,off=read<u32>(h+entry+4);
@@ -59,12 +61,26 @@ bool AnmResource::open(const u8* data,u32 size){
             }
             if(!terminated)return false;
             AnmScript script;script.source_id=read<i32>(h+entry);script.file_offset=base+off;
-            script.bytes.assign(h+off,h+cursor);next.scripts.push_back(std::move(script));
+            script.bytes.assign(h+off,h+cursor);target.scripts.push_back(std::move(script));
         }
-        next.textures.push_back(std::move(texture));
+        target.textures.push_back(std::move(texture));
         if(!stride)break;base+=stride;
     }while(true);
+    return true;
+}
+}
+
+bool AnmResource::open(const u8* data,u32 size){
+    textures.clear();sprites.clear();scripts.clear();
+    AnmResource next;
+    if(!parse_entries(data,size,next))return false;
     *this=std::move(next);return true;
+}
+
+bool AnmResource::append(const u8* data,u32 size){
+    if(textures.empty()&&sprites.empty()&&scripts.empty())return open(data,size);
+    if(!parse_entries(data,size,*this))return false;
+    return true;
 }
 bool AnmTexture::rgba(std::vector<u8>& out) const {
     out.clear();if(kind!=Kind::Embedded)return false;

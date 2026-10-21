@@ -18,6 +18,7 @@ class AnmManager final:public AnmObjectHost {
     GameRandom& random;AnmEnvironment& environment;
     AnmVm* instantiate(AnmResource&,i32);
     bool initial_tick(AnmVm&);
+    bool adopt_bank(i32,std::unique_ptr<Bank>);
 public:
     AnmRegistry registry;std::string error;float rate=1;
     std::unordered_map<i32,std::string> resource_names;
@@ -29,6 +30,8 @@ public:
     AnmEnvironment& scene_environment()noexcept{return environment;}
     void set_paused(bool paused)noexcept{environment.paused=paused;}
     bool load(i32 id,const u8*,u32 size);
+    // 收编已打开的资源（多文件合并的全局脚本表，见 AnmResource::append）。
+    bool adopt(i32 id,AnmResource&& data);
     void unload(i32 id);void collect_resources();
     u32 resource_count()const noexcept{return banks.size();}
     u32 retired_resource_count()const noexcept{return retired_banks.size();}

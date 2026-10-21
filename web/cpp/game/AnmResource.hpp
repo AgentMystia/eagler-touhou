@@ -44,5 +44,9 @@ public:
     std::vector<AnmSprite> sprites;
     std::vector<AnmScript> scripts;
     bool open(const u8* bytes,u32 size);
+    // 追加另一 ANM 归档（0x46e0b0/0x46e230 全局表语义：sprite/script 按表序
+    // 连续编号，跨文件的脚本号 = 前文件脚本数起算——ECL 302/303/306 引用的
+    // 即该全局序号）。sprite 的纹理索引按已有纹理数偏移。
+    bool append(const u8* bytes,u32 size);
 };
 }
