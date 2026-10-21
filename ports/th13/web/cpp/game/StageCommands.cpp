@@ -367,37 +367,39 @@ int StageCommands::execute(EclContext& c, u16 op) {
             sim.error_ = c.error;
             return -2;
         }
+        // 0x41cdc2 逐块反汇编（fcompp 弹栈重序后的语义）：
+        //   左缘 x≤cx−q：向右 1/3 扇 angle=f32(f32(uπ)/3)；
+        //   右缘 x>cx+q：向左 wrap(f32(π+f32(uπ)/3))；
+        //   中带：u2π×1/4，x≤px 时 r16%3==0 加 π、x>px 时 r16%3!=0 加 π。
+        //   Y 翻转：y≤cy−q 取 +|a|（向下），y≥cy+q 取 −|a|（向上），中带不变。
+        //   近垂直：|a+π/2|<0.05 → a≥−π/2?−1.5207964:−1.6207963；
+        //           |a−π/2|<0.05 → a>π/2?1.6207963:1.5207964（严格大于）。
+        //   尾块（0x41d01c）：from=(angle, speed) → to=(angle, 0)——随机角直冲
+        //   减速到停；mover 模式低 4 位清 0（0x41d0b9 and 0xF0，非 405 的 0xF2）。
+        const float pi = 3.1415927410125732f;
         const float qx = e.limit_half[0] * 0.25f;
         const float qy = e.limit_half[1] * 0.25f;
-        float angle = 0;
-        if (e.position[0] >= e.limit_center[0] - qx) {
-            if (e.position[0] > e.limit_center[0] + qx) {
-                // 右缘：向左 120° 扇
-                angle = wrap_angle(float(sim.random.signed_unit() * 3.1415927410125732 / 3.0 +
-                                         3.1415927410125732));
-            } else {
-                const float base = float(sim.random.signed_unit() * 3.1415927410125732);
-                const float quarter = base * 0.25f;
-                const bool flip = (u32(sim.random.step16()) % 3u) != 0;
-                const bool right_of_player = sim.player_x <= e.position[0];
-                angle = (flip == right_of_player) ? quarter + 3.1415927f : quarter;
-            }
+        const float cx = e.limit_center[0], cy = e.limit_center[1];
+        float angle;
+        if (e.position[0] <= cx - qx) {
+            angle = float(float(sim.random.signed_unit() * pi) / 3.0);
+        } else if (e.position[0] > cx + qx) {
+            angle = wrap_angle(float(pi + float(sim.random.signed_unit() * pi) / 3.0));
         } else {
-            // 左缘：向右 120° 扇
-            angle = float(sim.random.signed_unit() * 3.1415927410125732 / 3.0);
+            const float quarter = float(float(sim.random.signed_unit() * pi) * 0.25);
+            const bool third = (u32(sim.random.step16()) % 3u) == 0;
+            const bool left_of_player = sim.player_x >= e.position[0];
+            angle = (left_of_player ? third : !third) ? float(quarter + pi) : quarter;
         }
-        // 上下缘翻转与近垂直修正（0x41cdc2 后半）
-        if (e.position[1] >= e.limit_center[1] - qy) {
-            if (e.position[1] > e.limit_center[1] + qy)
-                angle = angle < 0 ? angle : -angle;
-        } else {
-            angle = angle < 0 ? -angle : angle;
+        if (e.position[1] <= cy - qy) {
+            angle = angle < 0 ? -angle : angle;      // 顶带：+|a|（向下）
+        } else if (e.position[1] >= cy + qy) {
+            angle = angle < 0 ? angle : -angle;      // 底带：−|a|（向上）
         }
-        // 近垂直修正（先查 -π/2 正上，再查 +π/2 正下；常量为原版字面）
         if (std::fabs(angle + 1.5707964f) < 0.05f) {
             angle = angle >= -1.5707964f ? -1.5207964f : -1.6207963f;
         } else if (std::fabs(angle - 1.5707964f) < 0.05f) {
-            angle = angle >= 1.5707964f ? 1.6207963f : 1.5207964f;
+            angle = angle > 1.5707964f ? 1.6207963f : 1.5207964f;
         }
         StageMover& m = e.vel;
         if (dur < 1) {
@@ -408,11 +410,8 @@ int StageCommands::execute(EclContext& c, u16 op) {
             sim.error_ = "moveRand interpolation mode not implemented";
             return -2;
         }
-        float from_a = m.angle, from_b = m.speed;
-        float to_a = angle, to_b = speed;
-        shortest_arc(from_a, to_a);
-        m.polar.setup(float(dur), mode, from_a, from_b, to_a, to_b);
-        m.mode &= 0xFFFFFFF2u;
+        m.polar.setup(float(dur), mode, angle, speed, angle, 0.0f);
+        m.mode &= 0xFFFFFFF0u;
         return 0;
     }
     case 434:
