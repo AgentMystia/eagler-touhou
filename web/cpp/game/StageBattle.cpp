@@ -9,6 +9,13 @@ namespace th13 {
 
 namespace {
 
+u16 read_u16(const u8* p) {
+    return u16(p[0]) | u16(p[1]) << 8;
+}
+u32 read_u32(const u8* p) {
+    return u32(p[0]) | u32(p[1]) << 8 | u32(p[2]) << 16 | u32(p[3]) << 24;
+}
+
 // 0x4abc30 方向表（单位向量，斜向不归一）：0 无 1↑ 2↓ 3← 4→ 5↖ 6↗ 7↙ 8↘。
 const i32 kDirX[9] = {0, 0, 0, -1, 1, -1, 1, -1, 1};
 const i32 kDirY[9] = {0, -1, 1, 0, 0, -1, -1, 1, 1};
@@ -32,6 +39,38 @@ int dir_index(u32 held) {
 // 0x441eae：speed128 = int(sht 浮点 × 128.0)（截断）。
 i32 speed128_from_float(float value) {
     return i32(value * 128.0f);
+}
+
+// 0x443e40 的弹型域解析：+2 u16 块数、+0xc8 u32 指针表（+0xf4 基准的
+// 相对偏移），每块为 0x38 步长的记录数组、首字节 i8 <0 终止。记录体：
+// 类别 u16（3 主弹 / 8 附属弹）、plXX.anm 脚本 u16、x/y/角度浮点。
+bool parse_sht_shots(const u8* sht, size_t size, StageBattle& battle) {
+    if (size < 0xcc) return false;
+    const u16 blocks = read_u16(sht + 2);
+    if (blocks == 0 || blocks > StageBattle::kShtBlocks) return false;
+    for (u32 block = 0; block < blocks; block++) {
+        const u32 offset = read_u32(sht + 0xc8 + block * 4);
+        size_t cursor = size_t(0xf4) + offset;
+        std::vector<ShtShotRecord> records;
+        for (u32 record = 0;; record++) {
+            const size_t at = cursor + size_t(record) * 0x38;
+            // 终止记录只占首字节（末块常紧贴文件尾，实测四张 .sht 的末块
+            // 终止符落在 size-4 处）；完整记录体仍需 0x38 字节在界内。
+            if (at >= size) return false;
+            if (i8(sht[at]) < 0) break;
+            if (at + 0x38 > size) return false;
+            ShtShotRecord entry;
+            entry.kind = read_u16(sht + at);
+            entry.script = read_u16(sht + at + 2);
+            std::memcpy(&entry.x, sht + at + 4, sizeof entry.x);
+            std::memcpy(&entry.y, sht + at + 8, sizeof entry.y);
+            std::memcpy(&entry.angle, sht + at + 0x14, sizeof entry.angle);
+            records.push_back(entry);
+        }
+        battle.sht_shots[block] = std::move(records);
+    }
+    battle.sht_shots_loaded = true;
+    return true;
 }
 
 }  // namespace
@@ -62,6 +101,11 @@ bool StageBattle::load(EclResourceProvider& provider, const char* stage_file, i3
         speed_orth_focus = speed128_from_float(fields[1]);
         speed_diag = speed128_from_float(fields[2]);
         speed_diag_focus = speed128_from_float(fields[3]);
+        // 弹型域（0x443e40）：布局异常按装载失败处理（不静默降级）。
+        if (!parse_sht_shots(sht.data(), sht.size(), *this)) {
+            error_ = std::string("invalid shot table in ") + sht_name;
+            return false;
+        }
     }
     if (!sim.begin(provider, stage_file, difficulty_rank, event_path)) {
         error_ = sim.error();
@@ -99,14 +143,42 @@ void StageBattle::fire_shots() {
         return;
     }
     fire_cooldown_ = kFireInterval;
-    for (int i = -1; i <= 1; ++i) {
+    const auto spawn = [&](float x, float y, float damage, float angle, i32 script) {
         PlayerShot shot;
-        shot.x = player_x + kShotOffsetX * float(i);
-        shot.y = player_y - kShotOffsetY;
-        shot.damage = kShotDamage;
+        shot.x = x;
+        shot.y = y;
+        shot.damage = damage;
+        shot.angle = angle;
+        shot.script = script;
         shot.alive = true;
         shots.push_back(shot);
+    };
+    if (sht_shots_loaded) {
+        // .sht 弹型列（0x443e40 域）：能量档 = (power-100)/100 钳 0..4；
+        // 块序 = 档 + 焦点×5（0-4 非聚焦 / 5-9 聚焦 / 10 特殊）。本轮仅
+        // 主弹（类别 3）出膛；附属弹（类别 8 = Option 卫星锚定）与特殊块
+        // （类别 2）分期。每轮总伤恒为 3×kShotDamage（对拍孪生口径不变），
+        // 按主弹列数均摊。
+        const i32 level = player_->power < 100 ? 0 : (player_->power - 100) / 100;
+        const u32 block = u32(level > 4 ? 4 : level) + (focus ? 5u : 0u);
+        const auto& records = sht_shots[block];
+        u32 mains = 0;
+        for (const auto& record : records)
+            if (record.kind == 3) ++mains;
+        const float damage = mains ? (3.0f * kShotDamage) / float(mains) : kShotDamage;
+        for (const auto& record : records) {
+            if (record.kind != 3) continue;
+            spawn(player_x + record.x, player_y + record.y, damage, record.angle,
+                  record.script);
+        }
+        if (mains == 0) spawn(player_x, player_y - kShotOffsetY, kShotDamage * 3.0f,
+                              -1.5707964f, -1);  // 空表兜底（保持总伤）
+        return;
     }
+    // 无 .sht 回退（交互直入未带 .sht）：三发直线近似（原 §7.2 口径）。
+    for (int i = -1; i <= 1; ++i)
+        spawn(player_x + kShotOffsetX * float(i), player_y - kShotOffsetY, kShotDamage,
+              -1.5707964f, -1);
 }
 
 void StageBattle::step_shots() {
