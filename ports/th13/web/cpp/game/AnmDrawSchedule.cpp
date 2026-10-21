@@ -1,6 +1,6 @@
 #include "AnmDrawSchedule.hpp"
 namespace th13 {
-const std::array<AnmDrawSchedule::Entry,38> AnmDrawSchedule::entries{{
+const std::array<AnmDrawSchedule::Entry,31> AnmDrawSchedule::entries{{
  {0,5},
  {1,7},
  {2,9},
@@ -31,14 +31,7 @@ const std::array<AnmDrawSchedule::Entry,38> AnmDrawSchedule::entries{{
  {30,79},
  {25,57},
  {24,56,2,false,true,true,true,false},
- {27,61,0,false,false,false,false,true},
- {35,53,2,false,true,true,false,false},
- {36,58},
- {37,60},
- {38,62,0,false,false,false,false,true},
- {39,75},
- {40,77},
- {41,80}
+ {27,61,0,false,false,false,false,true}
 }};
 AnmDrawSchedule::AnmDrawSchedule(FrameScheduler& f,AnmManager& a,AnmRenderer& r,ZunGraphics& g,AnmDrawServices& s):scheduler(f),animations(a),renderer(r),graphics(g),services(s){for(u32 i=0;i<callbacks.size();i++){auto& c=callbacks[i];c.owner=this;c.index=i;c.callback.owner=&c;c.callback.enabled=true;c.callback.run=[](void* p){auto& c=*static_cast<Callback*>(p);return c.owner->draw(c.index)?i32(FrameAction::Continue):i32(FrameAction::Error);};if(scheduler.add(c.callback,FramePass::Draw,entries[i].priority)<0)error="Animation draw callback registration failed";}}
 AnmDrawSchedule::~AnmDrawSchedule(){for(auto& c:callbacks)scheduler.remove(c.callback);}
