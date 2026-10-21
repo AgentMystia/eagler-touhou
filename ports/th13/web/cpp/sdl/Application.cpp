@@ -6,6 +6,7 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 namespace th13::sdl {
@@ -226,6 +227,7 @@ bool ApplicationState::begin_run() {
     progress.scene_flags = 0;
     progress.rate = 1;
     progress.new_run = true;
+    replay_active = false;  // begin_run 重建对局；回放会话由 begin_replay_run 再接管
     std::vector<u8> bytes;
     if (!animations.resource(kFrontBank) &&
         (!read("front.anm", bytes) ||
@@ -263,10 +265,50 @@ bool ApplicationState::begin_run() {
     run = std::make_unique<RunScene>(progress, selection_player, selection_score, animations,
                                      renderer, environment, *this, scheduler, banks, kFrontBank,
                                      2);
+    if (!replay_sht.empty()) run->battle_sht = replay_sht;  // 回放会话移速源（§7.2）
     if (!run->initialize()) return fail(run->error);
     pause = std::make_unique<RunPause>(progress, animations, environment, *this, scheduler, kFrontBank);
     if (!pause->prepare()) return fail(pause->error);
     return true;
+}
+
+bool ApplicationState::begin_replay_run(const u8* data, size_t size, u32 stage_index) {
+    // 回放会话（回放侧 0x448200 的对局直入版）：标题流程全部跳过，难度/角色/
+    // 关卡按录像头配置；命数给足——近似判定下的死亡按无敌复活继续（harness
+    // replay 同款观察口径），终局菜单不触发。
+    if (!replay_file.decode(data, size)) return fail("Replay decode: " + replay_file.error());
+    if (stage_index >= replay_file.stages.size())
+        return fail("Replay stage index out of range");
+    const ReplayStage& stage = replay_file.stages[stage_index];
+    replay_cursor = std::make_unique<ReplayInputCursor>(stage);
+    replay_consumed = 0;
+    selected_stage = stage.number > 0 ? stage.number : 1;
+    progress.difficulty = replay_file.rank & 3;
+    progress.character = replay_file.character & 3;
+    selection_player = HudPlayerState{};  // 命数底板 8（step 内回填，HUD 域内不终局）
+    selection_score = HudScoreState{};
+    char sht[16];
+    std::snprintf(sht, sizeof sht, "pl%02d%c.sht", replay_file.character & 3,
+                  replay_file.shot_type == 0 ? 'a' : 'b');
+    replay_sht = sht;
+    // 直入对局：装载挡板/标题态就地清除（debug 泵不再经过 loading_waiting 分支）。
+    loading_startup = false;
+    loading_debt = 0;
+    pending_load = 0;
+    pending_destination = -1;
+    if (!begin_run()) return false;
+    replay_active = true;
+    current_destination = i32(Destination::Run);
+    return true;
+}
+
+u32 ApplicationState::replay_take_input() {
+    // 输入流帧号即游戏帧（golden README「时间轴对齐」）：每游戏帧恰取一次；
+    // 越界/EOF 后零态（0x448200:14-19 同源）。
+    if (!replay_active || !replay_cursor || !replay_cursor->valid()) return 0;
+    const ReplayFrame frame = replay_cursor->next();
+    ++replay_consumed;
+    return frame.state;
 }
 
 bool ApplicationState::apply_destination() {
@@ -303,6 +345,8 @@ bool ApplicationState::step(u32 held, u32 pressed, u32 repeated, float fps, bool
     (void)fps;
     if (!initialized || exiting || !failure.empty()) return false;
     if (!complete_loading()) return false;
+    if (replay_active && run && selection_player.extra_lives < 8)
+        selection_player.extra_lives = 8;  // 回放观察底板：近似判定的死亡不终局（HUD 域内）
     if (title) {
         title->controls({held, pressed, repeated, 0});
         if (scheduler.update() < 0)

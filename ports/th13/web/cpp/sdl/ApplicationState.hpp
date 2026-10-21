@@ -8,6 +8,7 @@
 #include "FontDevice.hpp"
 #include "AudioDevice.hpp"
 #include "FileStore.hpp"
+#include "../game/ReplayFile.hpp"
 #include "../game/TitleScene.hpp"
 #include "../game/RunScene.hpp"
 #include "../game/RunPause.hpp"
@@ -54,6 +55,13 @@ struct ApplicationState final : TitleScenePlatform, RunSceneServices, RunPausePl
     std::unique_ptr<RunPause> pause;
     i32 pending_destination = -1, selected_stage = 1, current_destination = 13;
     u32 frames = 0;
+    // 回放调试会话（th13_debug_* 帧泵驱动；正常标题流不经过）。输入流以
+    // 0x448200 节奏逐帧接管 controls——装载态/难度/角色取自录像头，直入对局。
+    ReplayFile replay_file;
+    std::unique_ptr<ReplayInputCursor> replay_cursor;
+    std::string replay_sht;  // plXXa/b.sht（§7.2 移速源；页面侧随录像备入 /assets）
+    bool replay_active = false;
+    u32 replay_consumed = 0;
     bool initialized = false, exiting = false;
     std::array<i32, 16> projected{};
     std::string failure;
@@ -73,6 +81,9 @@ struct ApplicationState final : TitleScenePlatform, RunSceneServices, RunPausePl
     bool apply_destination();
     bool begin_title(i32 reason);
     bool begin_run();
+    // 回放会话直入：解码 .rpy → 按录像头配置 → begin_run（跳过标题与装载挡板）。
+    bool begin_replay_run(const u8* data, size_t size, u32 stage_index);
+    u32 replay_take_input();  // 每游戏帧恰一次：取当前输入态并推进游标
     void release_run();
     const i32* projection();
     bool read(const std::string&, std::vector<u8>&);
