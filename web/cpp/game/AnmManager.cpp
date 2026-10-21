@@ -9,6 +9,14 @@ void AnmManager::collect_resources(){
 bool AnmManager::load(i32 id,const u8* bytes,u32 size){
     if(banks.count(id)){error="Animation resource already loaded";return false;}
     auto bank=std::make_unique<Bank>();if(!bank->data.open(bytes,size)){error="Invalid animation resource";return false;}
+    return adopt_bank(id,std::move(bank));
+}
+bool AnmManager::adopt(i32 id,AnmResource&& data){
+    if(banks.count(id)){error="Animation resource already loaded";return false;}
+    auto bank=std::make_unique<Bank>();bank->data=std::move(data);
+    return adopt_bank(id,std::move(bank));
+}
+bool AnmManager::adopt_bank(i32 id,std::unique_ptr<Bank> bank){
     bank->templates.resize(bank->data.scripts.size());
     for(u32 i=0;i<bank->templates.size();i++){auto& vm=bank->templates[i];vm.environment=&environment;vm.object_host=this;
         if(!vm.bind(bank->data,i)){error="Animation template binding failed";return false;}
