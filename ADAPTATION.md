@@ -39,3 +39,16 @@
   - 比对工具链：`oracle/stage1_compare.py`（--ulp 选项值解析修复）、
     `stage1_oracle.py` 的 c_int_arg 整型直通。
   - 单元测试：ecl 6/6、ui 3/3、anm 7/7、node 4/4 全绿；网页与 WASI 双构建通过。
+- 2026-10-21 · 第 6 轮 · 录像解码与回放注入（行为规格 `docs/plans/replay.md`）
+  - 模块：`web/cpp/game/ReplayFile`（"t13r" 头、两趟交织反转 XOR（0x7D/0x3A/0x100 +
+    0x5C/0xE1/0x400，初始密钥经 AL 传参自反汇编锚定）、ZUN LZ77 位流（13 位地址+4 位长、
+    环 0x2000 游标起 1）、0x74 顶层头 + 0xC4 stage 块链、USER 段）与 `ReplayInputCursor`
+    （6 字节/帧 = 态/按下沿/释放沿三 u16，事件流每 30 帧 1 慢速率字节）。
+  - 真机录像全量验证：`games/replays/th13_udSr01.rpy`（Kaz/Sanae/Normal/全通 24898353）
+    解压 637666 字节精确命中声明尺寸，6 关 105476 帧沿差分零错；USER 段摘要
+    （Rank Normal/Stage All Clear/Score 24898353）与顶层头字段互证。
+  - harness 注入：`tools/run-harness.mjs replay` 逐帧 `GameInput::update` →
+    `StageBattle::step`，一阶段 11064 帧全量注入跑通，Boss 出现帧 2380 实测登记。
+  - 单元测试：replay 套件 8/8（XOR 双向、LZ77 字面量/重叠拷贝、合成 rpy 全链路往返、
+    真机头/stage 链、首帧/Boss 前关键帧 2379/末帧、沿一致性、游标节拍）；
+    `node --test tests/*.test.mjs` 5/5；网页与 WASI 双构建通过。
