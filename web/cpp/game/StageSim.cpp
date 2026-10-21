@@ -179,20 +179,21 @@ void accumulate_mover(StageMover& m) {
 
 void StageSim::integrate(StageEnemy& e) {
     // 0x419450 序：vel 插值 → pos 插值 → movePosTime/极坐标 delta → 累加 → 0x419950。
+    // 0x419450:34-44：极坐标插值步进（elapsed 为 float，0x401400 每帧 +1.0）。
+    // 圆周模式（mode 2/3）不写回 angle——插值角维（409 setup 的 from=to=当前
+    // 角）不得覆写积分累计的 angle，仅 speed 维写回（vm+0xa0）。
     if (e.vel.polar.active()) {
         float a = 0, b = 0;
         step_polar_itp(e.vel.polar, a, b);
         const u32 mode = e.vel.mode & 0xF;
-        if (mode != 2 && mode != 3) a = wrap_angle(a);
-        e.vel.angle = a;
+        if (mode != 2 && mode != 3) e.vel.angle = wrap_angle(a);
         e.vel.speed = b;
     }
     if (e.pos.polar.active()) {
         float a = 0, b = 0;
         step_polar_itp(e.pos.polar, a, b);
         const u32 mode = e.pos.mode & 0xF;
-        if (mode != 2 && mode != 3) a = wrap_angle(a);
-        e.pos.angle = a;
+        if (mode != 2 && mode != 3) e.pos.angle = wrap_angle(a);
         e.pos.speed = b;
     }
     if (e.vel.postime.active()) {
