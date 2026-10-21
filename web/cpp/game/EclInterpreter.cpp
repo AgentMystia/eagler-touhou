@@ -394,8 +394,12 @@ int EclContext::step(float elapsed) {
                 case Op::SquareSum:
                 case Op::SquareSumRoot: {
                     const float x = float_arg(1), y = float_arg(2);
-                    const float squared = float(float(y * y) + float(x * x));
-                    store_float(0, op == Op::SquareSumRoot ? float(std::sqrt(double(squared))) : squared);
+                    // x87 单舍入链（oracle 实证：Phantom01 ins_86 输入
+                    // (−32.71, 2.61) → oracle=32.813961=double 链）：f32×f32
+                    // 积与和均落在 double 尾域内精确，一次舍入到 f32。
+                    const double squared = double(y) * double(y) + double(x) * double(x);
+                    store_float(0, op == Op::SquareSumRoot ? float(std::sqrt(squared))
+                                                           : float(squared));
                     adjust = true;
                     break;
                 }
