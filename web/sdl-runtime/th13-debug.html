@@ -52,7 +52,7 @@ try {
     'text.anm', 'sig.anm', 'ascii.anm', 'effect.anm', 'title.anm', 'title_v.anm', 'help.anm',
     'front.anm', 'enemy.anm', 'st01enm.anm', 'bullet.anm',
     'pl00.anm', 'pl01.anm', 'pl02.anm', 'pl03.anm',
-    'st01.ecl', 'default.ecl', 'st01bs.ecl',
+    'st01.ecl', 'default.ecl', 'st01bs.ecl', 'st01.std', 'st01wl.anm',
   ];
   mod.FS.mkdirTree('/assets');
   for (const name of [...assets, shtName]) {
@@ -79,6 +79,7 @@ try {
     consumed: () => mod._th13_debug_replay_frame(),
     stageFrame: () => mod._th13_debug_stage_frame(),
     report: () => mod.UTF8ToString(mod._th13_debug_layer_report()),
+    stageReport: () => mod.UTF8ToString(mod._th13_debug_stage_report()),
     pumpTo(frame) {
       const want = frame + 1;
       while (mod._th13_debug_replay_frame() < want) {
