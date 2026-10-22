@@ -120,17 +120,23 @@ title_v=**17**、help=**19**。title.anm 共 23 entry / 242 脚本（script0-241
 - script99 = 静止慢转版（复位用，L24216-24227）。script100 = 副标题 sprite78（192×16）
   @(360,480) 层 25（L24230-24239），label 1 = 淡出 60f。
 
-### 1.7 高亮条与光标（entry6 select01.png，L24248-24273）
+### 1.7 大行条与光标（entry6 select01.png，L24248-24273）
 
-- 高亮条 script101-110（L24277-24434）：sprite79-88（各 256×48），层 26，从 (-256,8)
-  20f 滑入 **(32,8)**；label 1 = 滑回 -256 销毁。**注意**：脚本内位置固定 y=8、无根
-  挂靠；但 `AnmManager::create` 支持逐实例 translation 覆盖（AnmManager.hpp:47），故
-  (32,8) 仅为脚本默认值。HANDOFF 判定其属难度/角色菜单，与菜单行距 18px/行高不符
-  （48px 高×10 条），**屏幕归属待锚定**（候选：PlayerData/结果屏行高亮）。
+`[oracle 修正 2026-10-22]` 条带内容按位图辨认：条 1-5（sprite79-83）= 难度行
+家内安全(EASY)/無病息災(NORMAL)/交通安全(HARD)/學業成就(LUNATIC)/六面◯◯
+(EXTRA)；条 6-9（sprite84-87）= 霊夢/魔理沙/早苗/妖夢 角色行；条 10
+（sprite88）=「やめる」行。golden 难度帧（menu_title_v000150）实证难度屏
+= 5 行大条（EASY..LUNATIC + やめる，行位 y≈288+48k、x≈32）+ 右侧数字组
+（0.269 等四位）+ 右列立绘。据此：
+
+- 大行条 script101-110：`(-256,8)` 20f 滑入 `(32,8)`，层 26；label 1 = 滑回
+  -256 销毁。**归属推定**：难度屏 = 101-104 + 109（やめる行），Extra 解锁
+  换行（105？）待锚定；角色屏 = 105-108。行位由 `AnmManager::create` 的逐实例
+  translation 覆盖（golden 行距 48px 拟合：y = 280+48k）。
 - 光标 script111/112（L24437/24455）：sprite89（14×14），层 25 alpha128，
   @(254,270)/@(382,270)，20f 放大至 scale(14,10)+alpha→208；label 1 = 缩灭销毁。
-  一对左右位（x=254/382 同高 y=270）——HANDOFF 判定为难度/角色菜单光标，
-  具体挂接屏**待 oracle**。
+  golden 难度帧未见该对光标可见图形，boot 窗亦无创建——**归属仍待 oracle**
+  （本轮难度/角色屏未建 111/112）。
 
 ### 1.8 其余脚本组（如 dump 有内容，列出边界）
 
@@ -205,67 +211,58 @@ struct TitleSceneResources {
 
 ## 三、TitleMainMenu::update 各 substate 创建/interrupt 序列
 
-对照 th15 范式（th15 TitleMainMenu.cpp:20-76）逐点翻译；凡未标「实证」者为
-**推定序列**，以 unicorn 标题窗 oracle 实测回写（§六）。
+`[oracle 修正 2026-10-22]` 本节已按 §八 实测重写为移植侧现行实现（旧 th15
+翻译稿废弃；原「提示幕/age120/portrait=17」病灶已随实现移除）。
 
-- **substate 0（进入/提示幕）**：
-  - 若首次（flags 无 2）：`create(89)` 背景 + `create(94)` LOGO + `create(version,0)`
-    版本条 + `create(ascii,19)` 提示幕 + 立绘 `create(title,125+char)` 后
-    `interrupt(立绘, 7+char)`（从右滑入，方向推定）；`age.set(120)`。
-    ① 时序细节（背景/LOGO/版本条建在按键前还是后）推定，oracle 锁定。
-  - 若复位（自子菜单返回，flags 有 2）：`create(95)` 复位 LOGO（无翻转直达）+ 其余同上
-    但立绘换 `interrupt(125+char, 12+char)` 或保持（推定）。
-  - 现状病灶：`main_prompt=3` 建的是 title bank 菜单项 0（TitleMainMenu.cpp:86-91）、
-    `portrait` 建的是版本条（:101-104）——全删。
-- **substate 1（age==120 主菜单展开）**：`create(0)`（子 3-22 自动 spawn，白态 15f
-  自淡入即未选中外观）+ `paint()`。现状 `paint()` 用 30/31（:43-49）在 th13 为空操作
-  无害，可保留兼容形状。age>130 → substate 2 + `select_animation()`。
-- **select_animation()（推定）**：`interrupt(0, 3, true)`（全体重置未选中）+
-  `interrupt(0, 7+cursor, false)`（选中项灰态入场脉动）+ `paint()`。
-  th15 同形（th15 :19）；th13 标签号恰好兼容——**这是本蓝图最重要的可原样迁移点**。
-- **substate 2（交互）**：上下移动 → `sound(10)` + `select_animation()`；
-  Esc/X → 跳到末项或直接 `change_substate(4)`+`sound(9)`（th15 :48-51 同形）；
-  Z/Enter 确认 → `interrupt(0, 6, false)`（全项闪灭销毁，子脚本 label 6 实证存在）+
-  `sound(7/9)` + 提示幕 `interrupt(19→1)` + 立绘 `interrupt(125+char, 3)`（中央淡出，
-  推定）→ substate 4。
-- **substate 4（age>19 分发）**：`enter(cursor)` 进 Difficulty/Quit 等；枚举补全见 §五-6。
+- **substate 0（进入）**：menu.count=10、wrapping、disable(1)；首次（flags 无 2）
+  `create(89)` 背景 + `create(94)` LOGO（使能帧 = g181）；返回（flags 有 2）
+  `create(95)` 复位 LOGO 并当场 open_menu。无提示幕、无 ascii。
+- **substate 1（intro/就绪）**：首次 age==180（g361）open_menu = `create(0)`
+  （灰条 3-12 停车、白条 13-22 **建后即 discard**——真机 boot 不建白条，引擎
+  插值冻结语义差异的移植侧补偿，§8.2）+ `create(17,0)` 版本条 + 全项
+  `child_interrupt(3+k, 7+k)` + 禁用项落色 0xA0000000；首次 age>=191（g372，
+  =180+11）/返回 age>=11 → substate 2 + `interrupt(0,7+cursor)`。
+- **substate 2（交互）**：↑↓=0x10/0x20 移动 → `sound(10)` +
+  `interrupt(0,7+new)`（无 label 3 广播、无 paint()——30/31 空操作已删）；
+  Esc/X(0x102) → 跳末项或 substate 4+`sound(9)`；Z(0x80001)：StartGame →
+  `sound(7)` + `interrupt(0,3,true)` 全菜单淡出（golden 难度帧行区无字条，
+  0 号项确认序列 oracle 未覆盖）+ substate 4；Quit → `sound(9)` + substate 4；
+  **其余入口（1/2/3/4/5/6/7/8）仅确认音、不切屏**（真机有画面，见附 9 登记）。
+- **substate 4（age>19 分发）**：`enter(cursor)`：0 → flags|=2 + Difficulty
+  （menu.push、count=5、select(configured_difficulty)）；9 → Quit；其余 no-op。
 
-## 四、TitleSelectionMenu 重锚
+## 四、TitleSelectionMenu 重锚（2026-10-22 随实现更新；推定条目待 oracle 难度/角色窗）
 
-### 4.1 难度菜单（根 1，5 项+2 数字行）
+### 4.1 难度菜单（根 1，5 项+数字行；golden 难度帧实证）
 
-- **substate 0**：`prompt()`（TitleAnimations.cpp:5，ascii19）；`retire(1)`→`create(1)`；
-  `interrupt(1, 3, true)` 重置 + `interrupt(1, 7+cursor)` 选中。
-  现状 `interrupt(root,3/cursor+13)`（TitleSelectionMenu.cpp:41-42）的标签算式是 th15
-  值域：th13 难度子脚本只有 7-11/17-21（灰名逐项）、7/8（数字行）、3/7/17/27/28/29/2/6/1
-  （白态与公共）——13/14 等号不存在（cursor≥4 时撞上灰名 0 的 17 与白态通用 17，
-  行为错乱），**必须改成 3/7+cursor**。
-- **substate 2**：移动 → `sound(10)` + `interrupt(1,3,true)` + `interrupt(1,7+new)`；
-  Esc/X → `retire(1)`（根 label 1 实证存在，L17291）+ 回 Main；Z → `interrupt(1,6)`
-  + `sound(7)` → substate 3。
-- **substate 3（age>13）**：`choose_character()`。
-- 数字行不单独调用（由中断传播联动，§〇-1）；若 oracle 显示需逐个 child_interrupt，
-  按实测回写。光标 111/112、高亮 101-110 是否挂本屏：**待 oracle**。
+- **substate 0**：retire(1)→create(1) + `interrupt(1, 7+cursor, true)`（名行+数字行
+  同号联动，§〇-1；**无 label 3 广播**，同主菜单 oracle 结论）；大行条
+  create(101..104, translation y=280+48k) + create(109, y=472)（§1.7 推定归属）；
+  立绘 create(125+preferred) + `interrupt(7+preferred)`（golden 帧右列实证有立绘，
+  挂接方式推定）。旧 th15 标签算式（cursor+13 等）已删。
+- **substate 2**：↑↓=0x10/0x20 移动 → `sound(10)` + `interrupt(1,7+new)`；
+  Esc/X → substate 4 + `sound(9)`；Z（0-3）→ `interrupt(1,6)`（名行闪灭销毁）+
+  行条/立绘 retire + `sound(7)` → substate 3；Z（4=やめる行）→ 同 Esc。
+- **substate 3（age>13）**：`choose_character()`（difficulty=cursor、count=7、
+  select(preferred+1)——角色=行 1-4 推定）。
+- **substate 4（age>5）**：retire(1)+行条+立绘 → 回 Main（返回路径 open_menu 复入）。
 
-### 4.2 角色菜单（根 2 + 根 129/130 立绘武器体系）
+### 4.2 角色菜单（根 2 + 根 129/130 立绘武器体系；2026-10-22 随实现更新）
 
-- **substate 0**：`create(2)` + `interrupt(2,3,true)` + `interrupt(2, 7+cursor)`（名条）；
-  `create(129)`（或 130，分支待锚定）后：
-  立绘 `child_interrupt(129, 125+cursor, 7+cursor)`（从右入，推定）+
-  武器图标 `child_interrupt(129, 135+cursor, 7+cursor)` +
-  选择框 `child_interrupt(129, 131+cursor, 7+cursor)`（若为逐角色框，推定）。
-  现状 `interrupt(root,3/cursor+7)`（TitleSelectionMenu.cpp:114-115）形状可保留。
-- **substate 2 左右移动**（现状 :126-135 用 th15 的 cursor+25/13/19/7）：改为
-  立绘/武器滑动对：旧 `child_interrupt(129, 125+old, 17+old 或 22+old)`（出左/出右）+
-  新 `child_interrupt(129, 125+new, 12+new 或 7+new)`（入左/入右），武器 135+同步；
-  名条 `interrupt(2, 7+new)`。方向配对（左移=新从左入旧向右出？）**待 oracle**。
-- **确认 Z**：现状 `selected_children` 用 `126/147/80/81`（:92-95）——126=立绘 pl01
-  滑入脚本、147/80/81=结果屏脚本，th15 残留**全错**。应为：立绘
-  `child_interrupt(129,125+cursor, 3)` + 武器 `child_interrupt(129,135+cursor, 3)`
-  + 名条 `interrupt(2, 6)` + `sound(7)` → substate 3。
-- **substate 3**：转场 effect bank8 script0（TitleScene.cpp:38-42）保留；age>39 开局
-  （进度 character=cursor）。
-- **substate 4**：`retire(129)` + 回难度屏。
+- **substate 0**：retire(2)→create(2) + `interrupt(2,7+cursor,true)`；retire(129)→
+  create(129)（130 EX 分支待锚定）+ `interrupt(129, 7+character)`（character=
+  cursor-1，行 1-4 = 霊夢/魔理沙/早苗/妖夢 推定）——129 广播同号命中立绘 125+c/
+  武器 135+c/选择框 131+c（§1.8），无需逐 child_interrupt。
+- **substate 2 左右移动**（0x40/0x80）：→ = 旧出左 `interrupt(129,17+old)` +
+  新自右入 `interrupt(129,7+new)`；← = 旧出右 `22+old` + 新自左入 `12+new`
+  （方向配对推定待 oracle）；名条 `interrupt(2,7+new)`。非角色行（0/5/6）不带动
+  立绘滑动（推定）。
+- **确认 Z（角色行 1-4）**：`interrupt(129,3)`（树中央淡出）+ `interrupt(2,6)`
+  （名行闪灭销毁）+ `sound(7)` → substate 3；Z（6=やめる行）→ 同 Esc 回难度；
+  Z（0/5 行）→ 确认音不动作（语义待锚定）。
+- **substate 3**：age==10 转场 effect bank8 script0 + interrupt 7；age>39 开局
+  （character=cursor-1）。
+- **substate 4**：retire(129)+retire(2) → 回难度屏（preferred 随预览行同步）。
 
 ## 五、TitleFrame / TitleState / TitleScene 差距清单（HANDOFF 13 项 → 代码落点）
 
@@ -290,9 +287,9 @@ struct TitleSceneResources {
 
 ## 六、事实源排序声明
 
-1. **oracle 真机行为 > 本蓝图**。unicorn 标题真机窗（另一工程师在建）实测的
-   创建/中断序列若与本文任何「推定」条目冲突，以 oracle 为准，并**回写本文档**
-   （改动处标注 `[oracle 修正 YYYY-MM-DD]`）。
+1. **oracle 真机行为 > 本蓝图**。unicorn 标题真机窗实测的创建/中断序列若与本文任何
+   「推定」条目冲突，以 oracle 为准，并**回写本文档**（§八 为 2026-10-22 标题窗
+   实测回写章；冲突处已就地标 `[oracle 修正 2026-10-22]`）。
 2. 本蓝图非推定条目（脚本号/锚点/层/标签号/精灵尺寸/插值参数）均直接出自 dump，
    与 oracle 冲突时优先怀疑 dump 工具链（thtk 版本/解码），上报而不是擅自改数。
 3. 位图内容（菜单项文字、数字组语义）只能由人类辨认 golden 帧或真机截图确认，
@@ -306,16 +303,103 @@ struct TitleSceneResources {
 3. 每轮修复附带覆盖矩阵更新：本轮 oracle 覆盖（三窗）/ 未覆盖（Quit/Demo/音乐室等
    分期屏）清单交接下一阶段。
 
-## 附：待锚定清单汇总（消费顺序即优先级）
+## 八、oracle 标题窗实测回写（2026-10-22，`oracle/title_oracle.py` + `artifacts/oracle-draws/title-draws.jsonl` 600 帧窗）
 
-1. 主菜单 10 项 / 难度 5 项 / 角色 7 项的位图文字语义（人类辨认 golden 帧）。
-2. 主菜单选中切换的准确标签组合（3+7+k 推定 vs 27/28/29 个体微调）——oracle 锁定。
-3. 难度/角色数字组的数值语义与动态换字机制——oracle + supervisor。
-4. 角色 7 项构成（4 角色+3 项其他?）、数字行仅 0-4 的对应关系。
-5. 根 129/130 分支条件（通常/EX 武器页）。
-6. 高亮 101-110 与光标 111/112 的屏幕归属（HANDOFF 判定存疑，§1.7）。
-7. LOGO 94/95 的启用时机（首入 vs 返回）；背景 92/93 label 2/3 的调用点。
+真机 boot 全链帧序（全局帧 g；窗口帧 = g-1）。以下全部为 oracle 直出事实，
+与 §〇-§五 冲突处以本章为准：
+
+### 8.1 boot 时序（无提示幕）
+
+| 帧 | 事件 | 绘制证据 |
+|---|---|---|
+| g1-g179 | 开场 sig.anm logo 幕（script0 左半 + 自 spawn 的 script1 右半，自黑场 10f 淡入） | sig 两半 ops（L23/L26），无任何 ascii/title 绘制 |
+| g180 | sig 卸载，空白帧 | ops=0 |
+| g181 | 标题任务使能：背景根 89 创建（92/93 亮、91/90 内建 170f 延迟） | select00 两半 ops 出现（L21/L23） |
+| g291 | LOGO script94 内建 110f 延迟到点 → 97（TEN DESIRES）翻转入场 | title_logo@26 起自 (732,663) 60f 滑至 (260,278) |
+| g350 | 森林 title00a 淡入（script90/91 内建 170f+60f） | title00a 两半 ops（L23/L22） |
+| g361 | 菜单展开：root0 + 十灰条（L26 批次）+ title_v 版本条（30f 延迟淡入） | title01@26（10 quad，alpha 全员渐升）+ title_ver@26 起 g390 |
+| g372 | 菜单可交互（= 使能帧 +191） | INPUT_SCRIPT 锚（f380/f420/f470 均在其后） |
+
+真机 boot **无「按任意键」提示幕**：DAT_004dc670=0 直进菜单，全程无 ascii 绘制 op；
+th15 式提示幕/`interrupt(89,2/3)` 体系不适用（§1.10 的 script18/19 属文本路径，
+boot 虽建有 ascii#18（主池插入、L22）但**无独立绘制 op**，机制未明——移植侧不建，
+登记差异）。
+
+### 8.2 主菜单真机行为
+
+- **10 项全员可见**：建帧起各灰条 alpha 渐升（≈15-20f）、色恒 (192,192,192)；
+  白态 13-22 **boot 不建**（全窗 f470 前无 title01@L25 op；Z 展开子菜单后才建，
+  可见期 f490-f497 约 8 帧闪烁）。⇒ §三 substate 1 的「白态 15f 自淡入即未选中
+  外观」不成立；真机 ins_500 子 VM 建后停在 ins_3 的插值**冻结**语义与移植侧
+  AnmUpdate 的「暂停仍推进插值」相悖——**AnmUpdate 语义待裁定**（本轮移植侧
+  以「建白条后即 discard」保绘制面一致，裁定后改回保留）。
+- **选中机制**：移动光标只 `interrupt(0,7+new)`（见 §三 就地修正）。旧项脉冲
+  自然结束静置于 255/192；新项 alpha 自 ~0 快速重入。
+- **1 号项禁用（Extra Start）**：字条黑 (0,0,0) × alpha 160（顶点色 0xA0000000，
+  自建帧恒定、无淡入）。机制疑为 supervisor 逐 VM 置色（脚本内无对应标签序列：
+  灰 label 27=变黑 4f 但无 alpha160 步）——移植侧直接落子 VM 色，机制待锚。
+  光标跳过（↓ 一次 0→2 实证）。
+- **Z 展开子菜单**（观察样本为 3 号项 = スペルプラクティス）：灰条**不销毁**
+  （title01@26 持续至 f599）、LOGO 于 ~f478-f484 淡出、白条 f490 起短暂可见、
+  子菜单树（root187 七行 spell.png 字条 + root240 立绘 236-239 + 提示条 241 +
+  rank00@23/select01@26 行条）入列；sig.anm 槽位于 f491 **重载**（20 个
+  bank1-entry1 VM @L22——为何 spell 屏用 sig.png 切片，待查）。0 号项（開始）
+  的确认序列 oracle 未覆盖，按 golden 难度帧「行区无主菜单字条」落为全菜单
+  label 3 淡出后转场（推定）。
+
+### 8.3 层值偏移现象（draw_compare 阶段处理）
+
+oracle 实测层与 dump `ins_304` 不一致的 VM（全部为背景拼贴半张）：
+sig 右半（dump 25 / 实测 26）、title00a 左半（22/23）、右半（21/22）、
+select00 右半（21/23→21→22 随转场搬移）。菜单字条/版本条/大行条层值两侧一致。
+推定 supervisor 在转场期对背景半张做逐 VM 层搬移——移植侧暂按 dump 层落码，
+差异留给标题窗 draw_compare 裁决（可能需要 manager 层覆盖 API）。
+
+### 8.4 位图辨认补充（title01.png 行序 → 内容，视觉模型多轮交叉读，待人类终审）
+
+y=0..144：開始/Extra開始/練習開始/スペル練習/リプレイ/プレイヤーデータ/
+音楽室/オプション/マニュアル/やめる（主菜单 10 项，y=144 四对 sprite 复用同位图
+——主 9 号项与难度 5 号项共条）；y=160 もどる；y=176..240 = 家内安全/無病息災/
+交通安全/學業成就/六面◯◯(Extra)；y=256..304 = 霊夢/魔理沙/早苗/妖夢；
+y=320..352 = スロー表示/スキップ/スピード（回放面板）；y=480/496 = 灰/白数字
+字模（11 枚/行）。角色根 script2 的 7 项布局推定：0=六面◯◯字条、1-4=角色、
+5=學業成就字条、6=やめる（0/5 行语义待锚定，移植侧按确认音不动作处理）。
+
+### 8.5 本轮未实现项登记（「未实现，真机有画面」——覆盖矩阵有意偏差）
+
+- 主菜单 1/2/3/4/5/6/7/8 号入口（Extra開始=无存档禁用、練習開始、スペル練習、
+  リプレイ、プレイヤーデータ、音楽室、オプション、マニュアル）：Z 确认音后
+  不切屏；真机均有各自画面（3 号项子菜单树已被 oracle 捕获：root187/240 +
+  sig 槽位重载，§8.2）。
+- 难度数字行动态换字（存档统计值）、Extra 解锁换行（第 5 行 → 105 行条/字条
+  34）、角色 0/5 行语义与数字行、Demo 1800 帧、音乐室/结算等分期屏。
+- TitleFrame：demo/音乐重播/return_reason 细分（supervisor 反汇编后回填，
+  TitleScreen 枚举值维持现状待锚）。
+
+## 附：待锚定清单汇总（消费顺序即优先级；[oracle 2026-10-22] 标注本轮回写后状态）
+
+1. 主菜单 10 项 / 难度 5 项 / 角色 7 项的位图文字语义——§8.4 视觉模型交叉读已出
+   候选（人类辨认终审待办）。
+2. ~~主菜单选中切换的准确标签组合~~ [oracle 2026-10-22 已锁：仅
+   interrupt(0,7+new)，无 label 3 广播；boot 展开 = 全项 7+k；禁用项直落 VM 色
+   0xA0000000，机制（supervisor 置色 vs 标签）待 supervisor 反汇编确认]。
+3. 难度/角色数字组的数值语义与动态换字机制——oracle + supervisor（golden 难度帧
+   右侧四位数字实证静态默认位图）。
+4. 角色 7 项构成（0/5 行语义）与数字行仅 0-4 的对应关系。
+5. 根 129/130 分支条件（通常/EX 武器页）；角色屏大行条 105-108 归属复核。
+6. 光标 111/112 的屏幕归属（golden 难度帧未见；boot 窗无创建）。
+7. LOGO 94/95 的启用时机（首入 vs 返回——返回用 95 为推定）；背景 92/93 label
+   2/3 的调用点。
 8. TitleScreen 枚举真值、return_reason 值域、demo 计时（需 supervisor 反汇编，
    锚点待登记 `web/cpp/rebuild/AddressMap.hpp`）。
 9. 菜单项禁用语义（Replay/PlayerData/MusicRoom 分期禁用后灰态处理）——与真机
    10 项全亮不同，需在覆盖矩阵登记为「有意偏差」或补齐。
+10. [oracle 2026-10-22 新增] AnmUpdate「暂停冻结插值」语义裁定（§8.2 白条证据；
+    影响移植侧白条 discard 补丁的去留）。
+11. [oracle 2026-10-22 新增] 背景半张层值偏移/搬移（§8.3）——draw_compare 阶段
+    需 manager 层覆盖 API。
+12. [oracle 2026-10-22 新增] ascii#18 建而不绘的机制（文本路径？）；spell 屏
+    sig.anm 槽位重载（f491，20 VM @L22）。
+13. [oracle 2026-10-22 新增] 0 号项（開始）确认序列与难度屏入场（oracle 未覆盖，
+    现按 golden 帧推定：label 3 淡出全菜单后建难度树）。
+14. [oracle 2026-10-22 新增] Extra 解锁后难度第 5 行换行机制（105 行条/字条 34？）。
