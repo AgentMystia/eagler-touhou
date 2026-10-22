@@ -1,5 +1,6 @@
-// 标题帧回调（th15 TitleFrame 裁剪：原版优先级 6 更新 / 66 文本绘制照搬；
-// demo/唱片室/说明书分支不做）。宿主拥有异步文件、音频与 destination 队列。
+// 标题帧回调（th15 TitleFrame 裁剪：原版优先级 6 更新；draw 回调承载标题期
+// 场景级 @R 边条提交——oracle at-r-strips.md 实证的四条常量几何）。宿主拥有
+// 异步文件、音频与 destination 队列。
 #pragma once
 
 #include "TitleState.hpp"
@@ -30,16 +31,19 @@ class TitleFrame {
     SessionState& progress;
     TitleFrameServices& host;
     FrameScheduler& scheduler;
+    AnmManager& animations;
     std::array<FrameCallback, 2> callbacks;
     TitleFrameInput input;
     bool check(bool, const char*);
     bool menu();
     bool initialize();
+    void submit_side_strips();  // @R 边条 ×4（场景级常量几何，见 .cpp）
 
 public:
     i32 music_age = 0;
     std::string error;
-    TitleFrame(TitleState&, SessionState&, TitleFrameServices&, FrameScheduler&);
+    TitleFrame(TitleState&, SessionState&, TitleFrameServices&, FrameScheduler&,
+               AnmManager&);
     ~TitleFrame();
     void controls(const TitleFrameInput& value) noexcept { input = value; }
     bool update(const TitleFrameInput&);
