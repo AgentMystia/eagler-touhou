@@ -13,8 +13,9 @@ bool TitleDifficultyMenu::sound(i32 id) {
     return false;
 }
 
-// 大行条 + 立绘（蓝图 §1.7 存疑项：select01 大行条归属按 golden 难度帧行位
-// (32,288+48k) 最优猜测落码；立绘见于 golden 难度帧右列。均待 oracle 窗口比对）。
+// 大行条 + 立绘（[窗A 修正] select01 大行条归属仍按 golden 难度帧行位
+// (32,288+48k) 推定落码；立绘经 oracle f500-599 反证不在难度期，已停用——
+// 两者均待 oracle 难度窗解剖报告，下一轮重做时对照）。
 bool TitleDifficultyMenu::build_rows() {
     for (i32 k = 0; k < 4; k++) {
         const i32 script = resources.rank_row_base + k;  // 101-104：EASY..LUNATIC
@@ -22,13 +23,16 @@ bool TitleDifficultyMenu::build_rows() {
     }
     if (!check(visuals.create_at(resources.rank_row_quit, Vec3{0, 280.f + 48.f * 4, 0})))
         return false;
-    // Extra 行条（rank_row_extra=105）在无存档（Extra 未解锁）下不建——
-    // golden 难度帧第 5 行即「やめる」，Extra 解锁换行机制待锚定（蓝图 §1.3）。
-    // 立绘：preferred 变更后重访时旧槽一并清（四槽全 retire 防叠影）。
+    // [窗A 修正] oracle f500-599（Z 后子菜单期）无 face/pl00 立绘绘制——立绘
+    // 不在难度期入场（真机建面时机待解剖报告，大概率角色菜单期）。建绘代码
+    // 保留路径但本轮停用：
+    //   const i32 portrait = resources.portrait_base + (preferred_character & 3);
+    //   check(visuals.create(portrait)) + interrupt(portrait, 7+(preferred&3), true)
+    // 四槽 retire 循环保留（对 0 句柄无害，重访防叠影）。Extra 行条
+    // rank_row_extra=105 在无存档下同样不建——golden 难度帧第 5 行即
+    // 「やめる」，解锁换行机制待锚定（蓝图 §1.3）。
     for (i32 c = 0; c < 4; c++) visuals.retire(resources.portrait_base + c);
-    const i32 portrait = resources.portrait_base + (settings.preferred_character & 3);
-    if (!check(visuals.create(portrait))) return false;
-    return check(visuals.interrupt(portrait, 7 + (settings.preferred_character & 3), true));
+    return true;
 }
 
 bool TitleDifficultyMenu::retire_rows() {
