@@ -118,6 +118,7 @@ bool StageBattle::load(EclResourceProvider& provider, const char* stage_file, i3
         return false;
     }
     events_ = event_path != nullptr;
+    life_probe_ = std::getenv("TH13_LIFE_PROBE") != nullptr;
     if (!sim.start()) {
         error_ = sim.error();
         return false;
@@ -253,7 +254,12 @@ void StageBattle::collide_player() {
 
 bool StageBattle::kill_player() {
     player_->deaths++;
-    player_->power = player_->power > 100 ? player_->power - 100 : 100;  // 掉 1.00 灵力（近似）
+    // 死亡掉 1.00 灵力（交互近似）。回放对拍口径（events_）不生效：oracle
+    // 孪生无死亡建模，功率恒 100+8×击杀 封顶 400（replay_model.on_kill 同式）
+    // ——否则双孪生功率/弹块漂移（udSr01 玩家 ~f2288 死亡 → port 块 9↔8、
+    // f2292 卫星弹 4↔2 发、Boss75 击杀 2651↔2694 分叉实证）。
+    if (!events_)
+        player_->power = player_->power > 100 ? player_->power - 100 : 100;
     if (player_->extra_lives > 0) {
         player_->extra_lives--;
         if (!host_->life_hud(player_->extra_lives, player_->life_pieces)) return false;
@@ -313,6 +319,21 @@ bool StageBattle::step(const GameInput& input) {
     }
     collide_shots();
     collide_player();
+    // 临时探针（TH13_LIFE_PROBE=1）：敌机生命轨迹对拍（与 stage1_oracle
+    // TH13_LIFE_PROBE 同窗，帧/序号/生命三字段同格式）。
+    if (life_probe_) {
+        for (const auto& shot : shots)
+            if (shot.alive)
+                std::printf("SHOT f=%d x=%.9g y=%.9g dmg=%.9g\n", sim.frame,
+                            double(shot.x), double(shot.y), double(shot.damage));
+        for (const auto& enemy : sim.enemies)
+            std::printf("LIFE f=%d e=%d life=%d pos=(%.9g,%.9g) hb=(%.9g,%.9g) "
+                        "flags=%08x\n",
+                        sim.frame, int(enemy->serial), int(enemy->life),
+                        double(enemy->position[0]), double(enemy->position[1]),
+                        double(enemy->hurtbox[0]), double(enemy->hurtbox[1]),
+                        enemy->flags);
+    }
     return error_.empty();
 }
 
