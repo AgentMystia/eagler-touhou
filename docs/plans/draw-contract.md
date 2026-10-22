@@ -166,13 +166,23 @@ x=%A+[-9987]*32 → GirlRedA01 x=-163.783264），与 ANM 流（装载 2 调+每
 double 中间量 + 帧尾 SetTexture(0,0)（设备态清空、mgr+0xb78188 缓存不
 失效——oracle f1-8 tex=None 的来源）。
 
-剩余首分歧（帧 92，下一轮工作面）：多敌机同层时序——f91 GirlBlueA01
-（GirlRedA02 之前 30 帧的那批，`ins_306(0,0)`）生成后，oracle 侧 f91-92
-只有 GirlRedA01 的行走 VM 出画（GirlBlue 的 script0 VM 不出），移植侧
-则 GirlBlue 出画且 GirlRed 的 up 缺失（f92 op[12] 两侧各是不同敌机）。
-涉及：同层多 VM 的排序/清场规则（0x419450 重挂的 retire 时点与
-0x46f3f0 尾插的层序耦合）、GirlBlue 的 script0 可见性条件。取证素材已
-备：trace_spawn 的 0x46a700 分发 dump + port 侧 layer(8) 构成插桩。
+剩余首分歧（帧 92，下一轮工作面）：多敌机同层时序 + 翻转门精确语义。
+轮 6 取证（trace_spawn f91-96 + 0x4679a0 flush 序 + 反汇编 0x41b359）：
+- oracle f91 层 8 dispatch=Blue(s0,sprite0)+Red(s7,sprite22)，两次
+  enqueue（Blue 452.5,-16.5 与 Red 177.5,82.5），但最终 up 批只含
+  Blue（cnt=4）；f92 只 Red enqueue（178.5,85.5）——0x4679a0 的批语义
+  （纹理/状态变化触发的中间 flush 与批内残留）是核心疑点，需按
+  0x467350:157-162（SetTexture 变化先刷批）逐次重建；
+- port 侧 Blue 行走 VM 位置 (451,-12) vs oracle (147,-12)：差 304——
+  Blue 的镜像翻转在 port 触发了错误的行走脚本（script7=Red 族）而
+  oracle Blue 行走=s4aa=1 ⟹ 行走脚本号=+0x278+7 的语义存疑（+0x278
+  oracle 实测恒 1、由 0x41b359（case1/302 族）写 0x478e60 返回值）；
+  且 +0x78 实测为位置类值非速度分量 ⟹ 0x419450:101-152 的字段解读
+  需按 oracle 实际敌机内存布局（0x4183f0 构造装配）反推，Ghidra 偏移
+  标注与真实布局有位移。
+- port 的位置差分翻转门在 GirlA01 的 405 圆周运动段有 0.03 阈值抖动
+  （dir 1→0→1 反复），速度语义修正试验未通过对拍已回退，差异本质待
+  结构反推后一并修。
 轮 5 已修：镜像翻转重挂（0x419450:101-152，flags&0x200000 + x 朝向
 符号变化 → 回收槽 0 VM、以脚本号 +0x278+7 重建行走动画、尾入池）——
 帧 63-91 敌机运动+行走动画逐字段全过。次级：敌机 up 的顶点色链、ECL
