@@ -492,7 +492,11 @@ int run_draws_replay(const char* replay_path, const char* resource_dir, const ch
         std::printf("draws-replay output failed: %s\n", session.capture.error().c_str());
         return 1;
     }
-    // 帧号与 oracle 同窗：帧 0 = 装载趟渲染；帧 f（≥1）消费输入 f-1。
+    // 帧号与 oracle 同窗（render_oracle.py run_replay：帧 0..total 共 total+1
+    // 行）：帧 0 = 装载趟渲染；帧 f（≥1）消费输入 f-1 并步进。oracle 侧循环
+    // while frame < total: frame += 1 → 执行帧 1..total，末帧 = total——两侧
+    // 帧→输入映射同构（帧 f ↔ 输入 f-1），本侧此前漏末帧 f=total（off-by-one，
+    // 实测 11064 行 vs oracle 11065 行）。
     const unsigned total = frames && frames < stage.frame_count ? frames
                                                                : unsigned(stage.frame_count);
     th13::ReplayInputCursor cursor(stage);
@@ -501,7 +505,7 @@ int run_draws_replay(const char* replay_path, const char* resource_dir, const ch
         std::printf("draws-replay frame 0 failed: %s\n", session.error.c_str());
         return 1;
     }
-    for (unsigned frame = 1; frame < total; frame++) {
+    for (unsigned frame = 1; frame <= total; frame++) {
         if (!cursor.valid()) {
             std::printf("draws-replay input exhausted at frame %u (window %u)\n", frame, total);
             return 1;
