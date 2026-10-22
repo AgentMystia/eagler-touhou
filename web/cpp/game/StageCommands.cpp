@@ -642,7 +642,19 @@ int StageCommands::execute(EclContext& c, u16 op) {
         }
         return 0;
     }
-    case 518:   // dialogRead（0x41e3da）：对话本体缺席，共享 525 的清场尾块
+    case 518: {  // dialogRead（0x41e3da → 0x428820(param)）：清场尾块与 525
+        // 共享（0x41ac70 门控销毁，oracle RNG 对拍实证）；param>=0 另建对话
+        // 对象（0x428820 else 分支，挂 stage ctx+0x198）——交互模式经
+        // dialog_host 注入 MsgPlayer，无头契约路径不注入（行为不变）。
+        i32 entry = 0;
+        if (!resolve_int(c, 0, entry)) {
+            sim.error_ = c.error;
+            return -2;
+        }
+        if (entry >= 0 && sim.dialog_host) sim.dialog_host->open_dialog(entry);
+    }
+        // fallthrough：共享 525 的清场尾块
+        [[fallthrough]];
     case 525: {  // enmKillAll（0x41e3fd → 0x41ac70）
         // 0x41ac70：flags 门控销毁——(bit5/7 全清 且 bit 0x400/0x800000/0x1000000
         // 全清) 或 bit8 置位。命中者当场走 0x41aad0（0x417b10 开头抽 1 次
@@ -661,9 +673,11 @@ int StageCommands::execute(EclContext& c, u16 op) {
         return 0;
     }
     case 519:
-        // dialogWait（0x41e407）：msgmgr+0x198 == 0 即通过。oracle 侧合成
-        // msgmgr 恒 0 → 即过；此处同判（对话系统缺席，§7.1【待校准】）。
-        return sim.boss_dialog_wait();
+        // dialogWait（0x41e407）：msgmgr+0x198 == 0 即通过。对话宿主在场时
+        // 以其活跃态判定（原版：对话对象销毁当帧 +0x198=0 → 下一趟放行）；
+        // 无头契约路径维持即过（§7.1【待校准】）。
+        return sim.dialog_host ? (sim.dialog_host->dialog_active() ? 1 : 0)
+                               : sim.boss_dialog_wait();
     case 520:  // bossWait（0x41e42e）：任一 BOSS 槽存活则让出
         return sim.boss() ? 1 : 0;
     case 535: {  // diffI（0x41d439）：dest = args[1 + DIFF]
