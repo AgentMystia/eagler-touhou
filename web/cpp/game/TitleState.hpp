@@ -8,6 +8,9 @@
 
 namespace th13 {
 
+// th13 TitleScreen 数值待 supervisor 反汇编锚定（0x44e600 对应物，蓝图 §五-8）：
+// 现沿 th15 世代枚举位，Quit=2 与 StartGame=2 同值冲突是有意保留的现状，
+// TitleFrame/ApplicationState 以 screen==Quit 区分（待锚后回填）。
 enum class TitleScreen : i32 {
     Initialize = 0,
     Main = 1,
@@ -28,7 +31,7 @@ struct TitleState {
     Timer age{0, 0, 0, 0, 0};
     u32 flags = 2;
     std::array<u32, 248> handles{};
-    u32 portrait = 0;
+    u32 version_bar = 0;  // 版本条（bank17 script0；原 portrait 字段误名，蓝图 §1.9）
     i32 return_reason = 1;
     u32 start_effect = 0;
 
