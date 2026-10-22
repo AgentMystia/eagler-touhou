@@ -3,7 +3,6 @@
 #include "StagePresentation.hpp"
 
 #include <algorithm>
-#include <cstdio>
 #include <cmath>
 
 namespace th13 {
@@ -40,21 +39,75 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
     if (!stage_resource || !bullet_resource || !player_resource)
         return fail("Stage presentation banks unavailable");
 
-    // ---- ECL 307/308 特效 VM（0x4243e0：模板拷贝→立即 tick→主池头入链；
-    // layer=-1（脚本自定层，如神灵 script91 ins_304(2)）、anmArg=0、
-    // 308 位置清零 / 307 敌机位。文件索引：0=bullet、1=effect、2..=stage 合并表）
+    // ---- ECL 30x ANM 创建（0x4243e0：模板拷贝→立即 tick→主池头入链；
+    // layer=-1（脚本自定层）、anmArg=0、位置清零（307 的敌机位仅特效路径用）。
+    // 文件索引：0=bullet、1=effect、2..=stage 合并表（脚本号文件内局部——
+    // 文件 3+ 的合并偏移为已知局限，窗口内敌机均用文件 2）----
     for (const auto& request : battle.sim.anm_effects) {
         const i32 bank = request.file == 0   ? banks.bullet
                          : request.file == 1 ? banks.effect
                                              : banks.stage;
-        if (!animations.create(bank, request.script, -1, 2,
-                               {request.x, request.y, request.z}, 0, false))
-            return fail("Effect animation creation failed: " + animations.error);
+        if (request.kind == 0) {
+            if (!animations.create(bank, request.script, -1, 2,
+                                   {request.x, request.y, request.z}, 0, false))
+                return fail("Effect animation creation failed: " + animations.error);
+            continue;
+        }
+        // kind=1：303/306 槽位 VM（0x41fe80 / 0x41b260 case3）——重挂先回收
+        // 旧槽（0x470110 语义：retire+子树 0x20 位），script<0 仅清槽。
+        StageEnemy* enemy = nullptr;
+        for (auto& candidate : battle.sim.enemies)
+            if (candidate->serial == request.serial) {
+                enemy = candidate.get();
+                break;
+            }
+        if (!enemy) continue;
+        u32& handle = enemy->anm_slot_handle[request.slot];
+        if (handle) {
+            if (!animations.retire(handle))
+                return fail("Slot animation retire failed: " + animations.error);
+            handle = 0;
+        }
+        if (request.script < 0) continue;
+        handle = animations.create(bank, request.script, -1, 2, {}, 0, false);
+        if (!handle)
+            return fail("Slot animation creation failed: " + animations.error);
+        if (request.slot == 0) {
+            if (AnmVm* vm = animations.registry.find(handle)) {
+                const float w = float(vm->visual.sprite_size.x *
+                                      vm->visual.scale.x);
+                const float h = float(vm->visual.sprite_size.y *
+                                      vm->visual.scale.y);
+                // 0x41fe80: +0x3f30=(vm+0x84)×(vm+0x64)、+0x3f34=(vm+0x80)×(vm+0x60)
+                enemy->anm_size_a[0] = h;
+                enemy->anm_size_a[1] = w;
+                if (request.opcode == 306) {
+                    enemy->anm_size_b[0] = h;
+                    enemy->anm_size_b[1] = w;
+                }
+            }
+        }
     }
     battle.sim.anm_effects.clear();
+    // 槽位 VM 位置跟随（0x41a8a0:84-93：敌机管理器每帧把敌机 ECL 位置
+    // （enemy+0x44/48/4c）写入各槽 VM 的偏移 +0x574/578/57c——0x466a80 的
+    // 位置和项；+320/+16 由 0x40000 位在 adjust 阶段补，此处只写 ECL 原值）。
+    if (enemies_from_ecl) {
+        for (auto& enemy : battle.sim.enemies)
+            for (u32 handle : enemy->anm_slot_handle)
+                if (AnmVm* vm = animations.registry.find(handle)) {
+
+                    vm->visual.translation = {enemy->position[0],
+                                              enemy->position[1],
+                                              enemy->position[2]};
+                }
+    }
 
     // ---- 敌机：ECL 记录的槽 0 脚本（全局序号），位置逐帧跟随 ----
+    //（enemies_from_ecl 时整段跳过：敌机本体 VM 由 ECL 303/306 创建入池，
+    // 与 oracle 极小环境同构——对拍窗语义）
     std::vector<u32> alive;
+    if (!enemies_from_ecl) {
     for (auto& enemy : battle.sim.enemies) {
         if (enemy->dead) continue;
         alive.push_back(enemy->serial);
@@ -97,6 +150,7 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
             return fail("Enemy animation release failed");
         enemies_.erase(enemies_.begin() + i);
     }
+    }  // !enemies_from_ecl
 
     // ---- 敌弹：bullet.anm 脚本 + 外观表精灵源（出生中断 2，0x40e840 尾）----
     if (bullets_.size() < battle.sim.bullets.size()) {
