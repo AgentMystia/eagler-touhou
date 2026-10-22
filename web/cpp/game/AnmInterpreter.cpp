@@ -90,8 +90,10 @@ int AnmVm::tick(GameRandom& rng,float rate){
         auto int_dest=[&](u32 n){auto* a=reinterpret_cast<i32*>(arg(n));return mask&(1u<<n)?variables.integer_destination(a):a;};
         auto float_dest=[&](u32 n){auto* a=reinterpret_cast<float*>(arg(n));return mask&(1u<<n)?variables.float_destination(a):a;};
         auto bits=[](u32& destination,u32 value,u32 shift,u32 field){destination=(destination&~field)|((value<<shift)&field);};
-        auto vec3=[&](){const float z=floating(2),y=floating(1),x=floating(0);return Vec3{x,y,z};};
-        auto vec2=[&](){const float y=floating(1),x=floating(0);return Vec2{x,y};};
+        // 实参求值序 = 声明序（x→y→z）：变量实参的 RNG 抽签次序与原版一致
+        // （oracle 实证 ins_415 的 [10010]×3 首签落 x 分量——曾因 z 先声明置换）。
+        auto vec3=[&](){const float x=floating(0),y=floating(1),z=floating(2);return Vec3{x,y,z};};
+        auto vec2=[&](){const float x=floating(0),y=floating(1);return Vec2{x,y};};
         auto color=[&](u32& destination){const u32 red=u8(integer(0)),green=u8(integer(1)),blue=u8(integer(2));destination=(destination&0xff000000)|(red<<16)|(green<<8)|blue;};
         auto rgb=[](u32 value){return std::array<i32,3>{u8(value),u8(value>>8),u8(value>>16)};};
         auto interpolate2=[&](Vec2Interpolation& interpolation,Vec2 from){const float y=floating(3),x=floating(2);const i32 frames=integer(0);interpolation.begin(frames,u8(read<u32>(arg(1))),{from.x,from.y},{x,y});};
