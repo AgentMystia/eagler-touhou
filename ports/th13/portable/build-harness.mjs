@@ -24,11 +24,20 @@ const main = resolve(workspace, 'tests/harness/harness.cpp');
 const output = resolve(out, 'th13-harness.wasm');
 
 const args = [
-  '--target=wasm32-wasip1', '-O2', '-std=c++17', '-fno-exceptions', '-fno-rtti',
+  '--target=wasm32-wasip1', '-O2', '-fno-inline-functions', '-std=c++17',
+  '-fno-exceptions', '-fno-rtti',
   '-ffp-contract=off', '-DTH13_WASI_HARNESS=1', '-DTH13_DRAW_CAPTURE=1',
   '-I' + resolve(root, 'cpp'),
   ...sources, main, '-o', output,
 ];
+// -fno-inline-functions（2026-10-22 窗B 崩溃遏制，非性能旗语）：
+//   症状 = 标题窗B（开局转场期，粒子全量绘制 + 深绘制链）node 原生 SIGSEGV，
+//   概率性 5/6，-O0 / --liftoff-only / 粒子不绘制 / 本旗语 四路全 0 崩。
+//   机理推定 = O2 跨函数内联膨胀绘制链栈帧（DrawCapture::emit_quad 内联
+//   4×append_matrix×16 append_float 等），在 V8 wasm 原生栈（远小于宿主
+//   8MB）上溢出且越过 V8 栈检查。根因修复（emit 路径栈瘦身/递归化）属
+//   DrawCapture/AnmRenderer 所有权（导出员），修复后可移除本旗语。
+//   证据链见 docs/plans/title-anm-blueprint.md §8.7。
 console.log('build th13 wasi harness');
 const run = spawnSync(clang, args, {stdio: 'inherit'});
 if (run.status) throw Error('clang++ failed ' + run.status);

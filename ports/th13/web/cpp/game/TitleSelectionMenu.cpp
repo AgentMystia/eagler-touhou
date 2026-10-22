@@ -74,11 +74,12 @@ void TitleDifficultyMenu::finish_menu_hides() {
 // title-draws.jsonl——节奏（f495 起 17@f500→55@f599，≈1/3 帧）先按
 // 「age5 突发 17 + 每 3 帧 1 枚」落码，出生次序/节奏待对拍校准。
 void TitleDifficultyMenu::spawn_particles(i32 count) {
-    for (i32 i = 0; i < count; i++)
+    for (i32 i = 0; i < count; i++) {
         if (!animations.create(resources.ascii, resources.difficulty_particle, -1, 0)) {
             check(false);
             return;
         }
+    }
 }
 
 void TitleDifficultyMenu::advance_choreography() {
