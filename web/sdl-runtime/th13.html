@@ -9,16 +9,22 @@
 <meta charset="utf-8">
 <title>东方神灵庙 th13 — 运行时</title>
 <style>
-  html, body { margin: 0; background: #101018; color: #ddd; font: 14px system-ui, sans-serif; }
-  canvas { display: block; margin: 0 auto; image-rendering: pixelated; outline: none; }
-  #status { text-align: center; padding: 8px; }
+  /* 上游范式（th10/th15 同款）：4:3 全屏信箱式缩放，黑底居中，无页面级 UI 常驻。 */
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; color: #ddd; font: 14px system-ui, sans-serif; }
+  body { display: grid; place-items: center; }
+  canvas { display: block; width: min(100vw, 133.333333vh); height: min(100vh, 75vw); outline: none; touch-action: none; }
+  #loading { position: fixed; top: 40%; max-width: 90%; text-align: center; }
+  #error { position: fixed; top: 40%; max-width: 90%; text-align: center; color: #ffb7b7; }
+  #error:empty { display: none; }
 </style>
 </head>
 <body>
-<div id="status">加载 th13 运行时…</div>
 <canvas id="canvas" tabindex="0"></canvas>
+<p id="loading" role="status">正在准备东方神灵庙…</p>
+<p id="error" role="alert"></p>
 <script type="module">
-const status = text => document.getElementById('status').textContent = text;
+const status = text => document.getElementById('loading').textContent = text;
+const fail = text => { document.getElementById('loading').textContent = ''; document.getElementById('error').textContent = text; };
 window.__th13_log = [];
 const note = (kind, text) => { window.__th13_log.push(kind + ' ' + text); };
 try {
@@ -62,9 +68,8 @@ try {
   mod._th13_draw_startup(90);
   if (!mod._th13_initialize()) throw new Error(runtime_error());
   mod._th13_loop_start();
-  const phase = () => ['标题', '对局', '暂停', '', '已退出'][mod._th13_phase()] ?? '';
-  status('th13 运行时已启动（' + phase() + '）— 点击画面聚焦后，Z/Enter 确认，方向键移动，Z 射击，X 炸弹，Shift 低速，Esc 暂停');
-  mod.onGameFrame = (ok) => { if (!ok) status('运行时错误：' + runtime_error()); };
+  status('');  // 启动完成：装载文字退场，画面交给游戏（操作说明在游戏内，页面不常驻 UI）
+  mod.onGameFrame = (ok) => { if (!ok) fail('运行时错误：' + runtime_error()); };
   // 帧泵看门狗：requestAnimationFrame 停摆的宿主（后台/嵌入式 webview）经
   // setTimeout 以 60fps 节奏持续驱动 th13_frame_tick；rAF 心跳恢复即让位。
   let lastFrame = -1, rafAlive = false, pumping = false;
@@ -85,10 +90,10 @@ try {
   }, 300);
 } catch (e) {
   if (e === 'unwind') {
-    status('th13 运行时已启动');
+    status('');
   } else {
     const detail = e && (e.stack || e.message) || String(e);
-    status('启动失败：' + detail);
+    fail('启动失败：' + detail);
     console.error(e);
   }
 }
