@@ -6,7 +6,7 @@ TitleScene::TitleScene(SessionState& p, TitleSelectionSettings& choice, AnmManag
                        TitleScenePlatform& h, FrameScheduler& schedule, TitleSceneResources bank)
     : progress(p), settings(choice), animations(a), host(h), scheduler(schedule), resources(bank),
       main(state, p, choice, a, bank), difficulty(state, p, choice, a, bank),
-      character(state, p, choice, a, *this, bank), frame(state, p, *this, schedule) {
+      character(state, p, choice, a, *this, bank), frame(state, p, *this, schedule, a) {
     state.screen = TitleScreen::Initialize;
     state.flags = 0;
     main.play_sound = [this](i32 id) { return host.sound(id); };
