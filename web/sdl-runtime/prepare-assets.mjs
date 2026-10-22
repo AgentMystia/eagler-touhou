@@ -17,6 +17,7 @@ const files = [
   'front.anm', 'enemy.anm', 'st01enm.anm', 'bullet.anm',
   'pl00.anm', 'pl01.anm', 'pl02.anm', 'pl03.anm',
   'st01.ecl', 'default.ecl', 'st01bs.ecl', 'st01.std', 'st01wl.anm',
+  'pl00a.sht', 'pl01a.sht', 'pl02a.sht', 'pl03a.sht',
 ];
 for (const name of files) {
   copyFileSync(resolve(raw, name), resolve(out, name));
