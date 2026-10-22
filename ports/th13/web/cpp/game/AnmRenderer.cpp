@@ -9,8 +9,14 @@ namespace th13 {
 using namespace touhou::graphics;
 AnmDrawProbe anm_draw_probe;
 #if TH13_DRAW_CAPTURE
-// 提交语境钩子：每个精灵进入渲染器时登记层号与九宫格锚点组（原版 0x46f380
-// 层 watch + startVertex 公式的移植侧同构物）。captures 为空（web 构建）时零开销。
+// 提交语境钩子：每个精灵的顶点进入渲染批次时登记层号与九宫格锚点组（原版
+// 0x46f380 层 watch + startVertex 公式的移植侧同构物）。captures 为空（web 构建）
+// 时零开销。
+// [层号错记修正] 钩子必须在 material() 之后、顶点入批之前调用：material 内的
+// flush 会提交「上一个 VM」的遗留批次——若钩子先于它落笔，该批 op 的 layer
+// 会被当前 VM 覆盖（串扰=下一绘制调用的层，f349 title00a 右半 22→23 实证）。
+// 各绘制路径（quad 族/shape/world/mesh/trail/distortion/strip）就地挂钩；
+// overlay 掩蔽矩形在 draw() 入口挂（其掩蔽 flush 保持历史行为，见 draw()）。
 #define TH13_DRAW_SPRITE(vm) \
     do { \
         if (draw_capture) draw_capture->sprite((vm).visual.layer, (vm).visual.flags); \
@@ -56,7 +62,7 @@ int AnmRenderer::shape(AnmVm& vm){
     const auto& v=vm.visual;const u32 mode=v.draw_mode();float width=float(v.sprite_size.x*v.scale.x),height=float(v.sprite_size.y*v.scale.y),angle=vm.variables.rotation.z;Vec3 center;if(!anm_position(vm,center)){error="Primitive animation position unavailable";return -2;}
     if(vm.creation_parent&&!(v.render_flags&0x10000)){const auto& parent=*vm.creation_parent;width=float(parent.visual.scale.x*width);height=float(parent.visual.scale.y*height);angle=float(parent.variables.rotation.z+angle);}
     const u32 resolution=v.render_flags>>20&7;if(resolution==1||resolution==2){if(!vm.environment){error="Primitive animation scene scale unavailable";return -2;}const float factor=resolution==1?vm.environment->resolution_scale:float(vm.environment->resolution_scale*.5f);width=float(factor*width);height=float(factor*height);}
-    flush();if(!material(vm,false))return -2;auto& state=graphics.pipeline();state.textureTransform=false;state.color.operation=state.alpha.operation=ColorOperation::First;state.color.first=state.alpha.first={ArgumentSource::Diffuse};graphics.set_layout(VertexLayout::ScreenColor);
+    flush();if(!material(vm,false))return -2;TH13_DRAW_SPRITE(vm);auto& state=graphics.pipeline();state.textureTransform=false;state.color.operation=state.alpha.operation=ColorOperation::First;state.color.first=state.alpha.first={ArgumentSource::Diffuse};graphics.set_layout(VertexLayout::ScreenColor);
     // th13 形态分族（0x46a700 分发表）：603/606 → 15/19 = 旋转实心矩形
     // （0046ad00：宽高+锚点，无段数）；607/608 → 20/21 = 矩形族 0046afa0；
     // 604/605 → 16/17 = 环/扇（0046b050/0046b3c0，段数 = vm+0x4AC）。
@@ -71,7 +77,7 @@ int AnmRenderer::shape(AnmVm& vm){
 }
 int AnmRenderer::draw_glyph(AnmVm& vm){
     if(anm_draw_probe.enabled)++anm_draw_probe.glyphs;
-    TH13_DRAW_SPRITE(vm);
+    // 捕获钩子在 pack_quad 内（material 后）；此处不再入口登记（次序修正见文件头注）。
     // Preserve original atlas glyphs. At integer high-resolution scale, sample
     // their texels directly rather than blurring them a second time.
     const u32 flags=vm.visual.render_flags;
@@ -88,7 +94,7 @@ int AnmRenderer::pack_quad(AnmVm& vm,Vec3 (&p)[4],bool pixel,const u32* supplied
     std::copy(std::begin(p),std::end(p),vm.visual.quad.begin());float left=p[0].x,right=left,top=p[0].y,bottom=top;for(u32 i=1;i<4;i++){left=std::min(left,p[i].x);right=std::max(right,p[i].x);top=std::min(top,p[i].y);bottom=std::max(bottom,p[i].y);}
     if(right<float(viewport.x)||bottom<float(viewport.y)||left>float(viewport.x+viewport.width)||top>float(viewport.y+viewport.height))return 0;
     auto& v=vm.visual;const u32 color_mode=v.flags>>17&3;u32 colors[4];if(supplied)std::copy(supplied,supplied+4,colors);else if(color_mode<2){u32 color=color_mode?v.secondary_color:v.color;if((v.render_flags&0x2000000)&&vm.creation_parent)color=multiply_color(color,vm.creation_parent->visual.inherited_color);v.inherited_color=color;for(auto& c:colors)c=tint_color(color);}else{const u32 a=tint_color(v.color),b=tint_color(v.secondary_color);colors[0]=a;colors[3]=b;colors[1]=color_mode==2?b:a;colors[2]=color_mode==2?a:b;}
-    if(!material(vm))return -2;Vec2 uv[4];uv[0]={float(v.uv_offset.x+v.uv[0].x),float(v.uv[0].y+v.uv_offset.y)};uv[1]={float(float(float(v.uv[1].x-v.uv[0].x)*v.uv_scale.x)+v.uv_offset.x)+v.uv[0].x,float(v.uv_offset.y+v.uv[1].y)};uv[2]={float(v.uv_offset.x+v.uv[2].x),float(float(float(v.uv[2].y-v.uv[0].y)*v.uv_scale.y)+v.uv_offset.y)+v.uv[0].y};uv[3]={float(float(float(v.uv[3].x-v.uv[2].x)*v.uv_scale.x)+v.uv_offset.x)+v.uv[2].x,float(float(float(v.uv[3].y-v.uv[1].y)*v.uv_scale.y)+v.uv_offset.y)+v.uv[1].y};
+    if(!material(vm))return -2;TH13_DRAW_SPRITE(vm);Vec2 uv[4];uv[0]={float(v.uv_offset.x+v.uv[0].x),float(v.uv[0].y+v.uv_offset.y)};uv[1]={float(float(float(v.uv[1].x-v.uv[0].x)*v.uv_scale.x)+v.uv_offset.x)+v.uv[0].x,float(v.uv_offset.y+v.uv[1].y)};uv[2]={float(v.uv_offset.x+v.uv[2].x),float(float(float(v.uv[2].y-v.uv[0].y)*v.uv_scale.y)+v.uv_offset.y)+v.uv[0].y};uv[3]={float(float(float(v.uv[3].x-v.uv[2].x)*v.uv_scale.x)+v.uv_offset.x)+v.uv[2].x,float(float(float(v.uv[3].y-v.uv[1].y)*v.uv_scale.y)+v.uv_offset.y)+v.uv[1].y};
     graphics.presentation_offset(offset);graphics.presentation_range(vm,vertices.size(),6,presentation_instance);
     for(u32 index:{0u,1u,2u,1u,2u,3u})vertices.push_back({p[index],1,colors[index],uv[index]});if(vertices.size()>=6144)flush();return 0;
 }
@@ -106,7 +112,7 @@ int AnmRenderer::world_quad(AnmVm& vm){
     const auto& v=vm.visual;if(!(v.color>>24))return 0;Matrix4 world;if(!anm_world_quad_transform(vm,world)){error="World animation transform unavailable";return -2;}
 
     const u32 ax=v.flags>>21&3,ay=v.flags>>23&3;if(ax>2||ay>2){error="World animation anchor outside range";return -2;}
-    flush();if(!material(vm))return -2;auto& state=graphics.pipeline();state.depthWrite=!(v.flags&0x2000);state.textureTransform=true;state.color.second=state.alpha.second={ArgumentSource::Factor};state.textureFactor=tint_color(v.flags&0x60000?v.secondary_color:v.color);
+    flush();if(!material(vm))return -2;TH13_DRAW_SPRITE(vm);auto& state=graphics.pipeline();state.depthWrite=!(v.flags&0x2000);state.textureTransform=true;state.color.second=state.alpha.second={ArgumentSource::Factor};state.textureFactor=tint_color(v.flags&0x60000?v.secondary_color:v.color);
     graphics.set_matrix(MatrixKind::World,world);graphics.set_matrix(MatrixKind::Texture,anm_texture_transform(vm));graphics.set_layout(VertexLayout::WorldUv);
     struct Vertex {Vec3 position;Vec2 uv;};constexpr float xs[3][2]={{-128,128},{0,256},{-256,0}},ys[3][2]={{-128,128},{0,256},{-256,0}};
     const Vertex data[]={{{xs[ax][0],ys[ay][0],0},{0,0}},{{xs[ax][1],ys[ay][0],0},{1,0}},{{xs[ax][0],ys[ay][1],0},{0,1}},{{xs[ax][1],ys[ay][1],0},{1,1}}};
@@ -114,15 +120,14 @@ int AnmRenderer::world_quad(AnmVm& vm){
 }
 int AnmRenderer::mesh(AnmVm& vm){
     const i32 count=vm.variables.integers[0];if(count<1||u32(count)>vm.geometry.world_vertices.size()/2){error="World animation mesh buffer unavailable";return -2;}Matrix4 world;if(!anm_mesh_transform(vm,world)){error="World animation mesh transform unavailable";return -2;}
-    flush();if(!material(vm))return -2;auto& state=graphics.pipeline();state.depthWrite=!(vm.visual.flags&0x2000);state.textureTransform=true;
+    flush();if(!material(vm))return -2;TH13_DRAW_SPRITE(vm);auto& state=graphics.pipeline();state.depthWrite=!(vm.visual.flags&0x2000);state.textureTransform=true;
     graphics.set_matrix(MatrixKind::World,world);graphics.set_matrix(MatrixKind::Texture,anm_texture_transform(vm));graphics.set_layout(VertexLayout::WorldColorUv);submit(vm,Topology::Strip,u32(count)*2-2,vm.geometry.world_vertices.data(),sizeof(AnmWorldVertex));return 0;
 }
 int AnmRenderer::trail(AnmVm& vm){
     auto& data=*vm.geometry.trail;const i32 count=data.age.current;if(count<1||count>64){error="Particle trail vertex count outside range";return -2;}const auto& v=vm.visual;const auto& p=vm.variables.position;Vec3 center{float(float(v.child_anchor.x+v.translation.x)+p.x),float(float(v.child_anchor.y+p.y)+v.translation.y),float(float(v.child_anchor.z+p.z)+v.translation.z)};if(!anm_adjust_position(vm,center)){error="Particle trail position unavailable";return -2;}
-    flush();if(!material(vm,false))return -2;graphics.set_depth_mask(false);auto& state=graphics.pipeline();state.color.operation=state.alpha.operation=ColorOperation::First;state.color.first=state.alpha.first={ArgumentSource::Diffuse};shapes.clear();for(i32 i=0;i<count;i++)shapes.push_back({{float(center.x+data.points[u32(i)].x),float(center.y+data.points[u32(i)].y),0},1,data.colors[u32(i)]});graphics.set_layout(VertexLayout::ScreenColor);submit(vm,Topology::LineStrip,u32(count-1),shapes.data(),sizeof(ColorVertex));return 0;
+    flush();if(!material(vm,false))return -2;TH13_DRAW_SPRITE(vm);graphics.set_depth_mask(false);auto& state=graphics.pipeline();state.color.operation=state.alpha.operation=ColorOperation::First;state.color.first=state.alpha.first={ArgumentSource::Diffuse};shapes.clear();for(i32 i=0;i<count;i++)shapes.push_back({{float(center.x+data.points[u32(i)].x),float(center.y+data.points[u32(i)].y),0},1,data.colors[u32(i)]});graphics.set_layout(VertexLayout::ScreenColor);submit(vm,Topology::LineStrip,u32(count-1),shapes.data(),sizeof(ColorVertex));return 0;
 }
 int AnmRenderer::draw(AnmVm& vm){
-    TH13_DRAW_SPRITE(vm);
     if(anm_draw_probe.enabled){
         ++anm_draw_probe.calls;
         const auto& v0=vm.visual;
@@ -136,24 +141,26 @@ int AnmRenderer::draw(AnmVm& vm){
             }
         }
     }
-    if(vm.geometry.overlay)return overlay(vm);
+    // 捕获钩子次序（见文件头注）：overlay 掩蔽矩形在 overlay() 内部最先提交，
+    // 其入口就地登记（掩蔽 flush 的遗留批次语义维持历史行为，非 overlay 路径
+    // 已在各绘制路径 material 后挂钩修正）；overlay 面板经 draw() 递归自挂。
+    if(vm.geometry.overlay){TH13_DRAW_SPRITE(vm);return overlay(vm);}
     if(vm.geometry.trail)return trail(vm);
-    const auto& v=vm.visual;if(vm.geometry.distortion){flush();if(!material(vm))return -2;graphics.set_depth_mask(false);graphics.set_layout(VertexLayout::ScreenColorUv);submit(vm,Topology::Fan,31,vm.geometry.distortion->vertices.data(),sizeof(AnmGeometryVertex));}
+    const auto& v=vm.visual;if(vm.geometry.distortion){flush();if(!material(vm))return -2;TH13_DRAW_SPRITE(vm);graphics.set_depth_mask(false);graphics.set_layout(VertexLayout::ScreenColorUv);submit(vm,Topology::Fan,31,vm.geometry.distortion->vertices.data(),sizeof(AnmGeometryVertex));}
     if((v.flags&3)!=3||(v.render_flags&0x60))return -1;const u32 mode=v.draw_mode();if(mode==8){if(!(v.color>>24)&&!(v.secondary_color>>24))return -1;return world_quad(vm);}if(mode==24||mode==25)return mesh(vm);
     if(graphics.pipeline().depthWrite){flush();graphics.set_depth_mask(false);}if(mode>=15&&mode<=22)return shape(vm);if(mode<=3){if(!(v.color>>24)&&!(v.secondary_color>>24))return -1;return quad(vm,mode==0);}
     if(mode==4||mode==6){if(!(v.color>>24)&&!(v.secondary_color>>24))return -1;return projected_quad(vm,mode==6);}
-    if(mode==10||mode==23||mode>25)return 0;if(mode==9||mode==11||mode==12||mode==13||mode==14){if(mode!=11&&!(v.color>>24))return -1;const i32 count=vm.variables.integers[0];if(count<2||u32(count)>vm.geometry.screen_vertices.size()/2){error="Animation strip buffer unavailable";return -2;}flush();if(!material(vm))return -2;graphics.set_layout(VertexLayout::ScreenColorUv);submit(vm,mode==11?Topology::Fan:Topology::Strip,u32(count)*2-2,vm.geometry.screen_vertices.data(),sizeof(AnmGeometryVertex));return 0;}
+    if(mode==10||mode==23||mode>25)return 0;if(mode==9||mode==11||mode==12||mode==13||mode==14){if(mode!=11&&!(v.color>>24))return -1;const i32 count=vm.variables.integers[0];if(count<2||u32(count)>vm.geometry.screen_vertices.size()/2){error="Animation strip buffer unavailable";return -2;}flush();if(!material(vm))return -2;TH13_DRAW_SPRITE(vm);graphics.set_layout(VertexLayout::ScreenColorUv);submit(vm,mode==11?Topology::Fan:Topology::Strip,u32(count)*2-2,vm.geometry.screen_vertices.data(),sizeof(AnmGeometryVertex));return 0;}
     error="Animation drawing mode not yet implemented: "+std::to_string(mode);return -2;
 }
 bool AnmRenderer::draw_layer(const std::vector<AnmVm*>& layer){for(auto* vm:layer)if(draw(*vm)==-2)return false;return true;}
 int AnmRenderer::draw_screen_strip(AnmVm& vm,const AnmGeometryVertex* data,u32 count){
     if(anm_draw_probe.enabled)++anm_draw_probe.strips;
-    TH13_DRAW_SPRITE(vm);
     if((vm.visual.flags&3)!=3||!vm.sprite)return -1;if(count<3)return 0;if(!data||count>0x200000){error="Screen strip vertex range invalid";return -2;}if(!material(vm))return -2;
-    if(count<18){if(vertices.size()+(count-2)*3>6144)flush();graphics.presentation_offset({});graphics.presentation_range(vm,vertices.size(),(count-2)*3,presentation_instance);for(u32 i=0;i+2<count;i++){const u32 order[3]={i+(i&1),i+((i&1)^1u),i+2};for(u32 j:order)vertices.push_back(data[j]);if(vertices.size()>=6144)flush();}return 0;}
+    if(count<18){if(vertices.size()+(count-2)*3>6144)flush();TH13_DRAW_SPRITE(vm);graphics.presentation_offset({});graphics.presentation_range(vm,vertices.size(),(count-2)*3,presentation_instance);for(u32 i=0;i+2<count;i++){const u32 order[3]={i+(i&1),i+((i&1)^1u),i+2};for(u32 j:order)vertices.push_back(data[j]);if(vertices.size()>=6144)flush();}return 0;}
     // Curved lasers already own their complete strip. Submit it to the shared
     // renderer, which copies/joins it safely, instead of expanding it into
     // three vertices per triangle in the sprite arena first.
-    flush();graphics.set_layout(VertexLayout::ScreenColorUv);submit(vm,Topology::Strip,count-2,data,sizeof(AnmGeometryVertex));return 0;
+    TH13_DRAW_SPRITE(vm);flush();graphics.set_layout(VertexLayout::ScreenColorUv);submit(vm,Topology::Strip,count-2,data,sizeof(AnmGeometryVertex));return 0;
 }
 }

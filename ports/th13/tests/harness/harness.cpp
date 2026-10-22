@@ -660,6 +660,12 @@ struct TitleSession {
             return false;
         loading_signature = loading_animations.create(1, 0);  // sig script0（两半拼 640）
         if (!loading_signature) return fail("loading signature create: " + loading_animations.error);
+        // [窗A 修正镜像] sig 右半（script0 自 spawn 的 script1）层 = L26——与
+        // Application.cpp draw_loading 同行（oracle boot 全程 f0-f178 实测 23/26；
+        // dump ins_304(25) 的 +1 偏移，蓝图 §8.3）。
+        if (auto* boot = loading_animations.registry.find(loading_signature))
+            if (auto* right = loading_animations.registry.find_child_script(*boot, 1, 0))
+                right->visual.layer = 26;
         loading_frames = 0;
         return render_loading_frame(0);
     }
@@ -700,6 +706,18 @@ struct TitleSession {
         for (const auto& bank : banks) {
             if (!read_bank(animations, bank.first, bank.second)) return false;
             if (bank.second == 2) environment.fallback_sprite_resource = animations.resource(2);
+        }
+        // @R 身份自证（比对契约键 (0,2,"@R")/(0,3,"@R")）：text.anm(槽0) entry2/3
+        // 为 640×480 离屏渲染目标标记（无纹素，契约只比身份与几何）——解析出的
+        // 名即登记身份，read_bank 已随槽 0 全量入表；此处打印供导出报告核对。
+        if (const auto* text = animations.resource(0)) {
+            if (text->textures.size() < 4) return fail("text.anm @R entries missing");
+            std::printf("title rt identities: (0,2,%s) (0,3,%s)\n",
+                        text->textures[2].name.c_str(), text->textures[3].name.c_str());
+            if (text->textures[2].name != "@R" || text->textures[3].name != "@R")
+                return fail("text.anm entry2/3 not @R: contract identity mismatch");
+        } else {
+            return fail("text.anm bank unavailable");
         }
         animation_updates[0].owner = animation_updates[1].owner = this;
         animation_updates[0].enabled = animation_updates[1].enabled = true;
