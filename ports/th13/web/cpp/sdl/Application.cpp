@@ -2,6 +2,7 @@
 // 帧序固定「装载完成 → 场景 controls+scheduler → 显示绘制 → 装载挡板 →
 // apply_destination」，docs/plans/ui-base.md §四）。
 #include "ApplicationState.hpp"
+#include "game/TitleFrame.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -71,7 +72,8 @@ bool ApplicationState::prepare_loading() {
     std::vector<u8> bytes;
     loading_environment.resolution_scale = 1;
     loading_environment.raster_scale = float(graphics.render_scale);
-    constexpr std::pair<const char*, i32> loading_banks[2] = {{"sig.anm", 1}, {"ascii.anm", 2}};
+    constexpr std::pair<const char*, i32> loading_banks[3] = {
+        {"sig.anm", 1}, {"ascii.anm", 2}, {"text.anm", 0}};
     for (const auto& bank : loading_banks) {
         if (!loading_animations.resource(bank.second) &&
             (!read(bank.first, bytes) ||
@@ -112,17 +114,25 @@ bool ApplicationState::draw_loading(bool signature) {
 
 bool ApplicationState::render_loading() {
     renderer.invalidate();
+    // textureFactor 保持（真机 TFACTOR 跨帧持续的设备态，蓝图 §8.8）。
+    const auto factor_kept = graphics.backend.pipeline().textureFactor;
     graphics.backend.pipeline() = touhou::graphics::PipelineState{};
+    graphics.backend.pipeline().textureFactor = factor_kept;
     if (!graphics.select_target(nullptr, 0) || !graphics.clear_target(0xff000000, nullptr))
         return fail(graphics.error);
     ScreenViews loading_views{renderer, loading_environment};
     if (!loading_views.camera(DrawCamera::Fullscreen, false)) return fail("Loading camera unavailable");
-    const auto* credit = loading_animations.registry.find(loading_signature);
-    for (u32 layer = 0; layer < 33; ++layer) {  // th13 层域：主链 0-30 + 副链 31/32
-        if (!renderer.draw_layer(loading_animations.registry.layer(layer))) return fail(renderer.error);
-        if (credit && layer == u32(credit->visual.layer)) {
-            renderer.flush();
-            graphics.draw_startup_branding(credit->visual.color);
+    // [boot @R] 装载幕期同发 4 条边条（oracle raw f1 起每帧恒定；仅捕获态生效）。
+    emit_title_side_strips(loading_animations);
+    // sig 幕止于 raw f179（oracle 实测 f180 为空档帧，f181 背景入场）。
+    if (loading_frames < 180) {
+        const auto* credit = loading_animations.registry.find(loading_signature);
+        for (u32 layer = 0; layer < 33; ++layer) {  // th13 层域：主链 0-30 + 副链 31/32
+            if (!renderer.draw_layer(loading_animations.registry.layer(layer))) return fail(renderer.error);
+            if (credit && layer == u32(credit->visual.layer)) {
+                renderer.flush();
+                graphics.draw_startup_branding(credit->visual.color);
+            }
         }
     }
     renderer.flush();
@@ -213,7 +223,10 @@ void ApplicationState::release_run() {
     environment.playfield_origin = {128, 16};
     views.configure(environment);
     renderer.invalidate();
+    // textureFactor 保持（真机 TFACTOR 跨帧持续的设备态，蓝图 §8.8）。
+    const auto factor_kept = graphics.backend.pipeline().textureFactor;
     graphics.backend.pipeline() = touhou::graphics::PipelineState{};
+    graphics.backend.pipeline().textureFactor = factor_kept;
     if (display) display->detach();
 }
 

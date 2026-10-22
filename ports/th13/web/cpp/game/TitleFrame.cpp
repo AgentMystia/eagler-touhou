@@ -93,7 +93,9 @@ bool TitleFrame::update(const TitleFrameInput& value) {
 // draw_capture 恒空 → 无视觉副作用；web 真实渲染不画不透明白条以免糊屏）。
 // 注：boot 期（oracle f1-179）四条同在——该段由 tests/harness 的装载幕镜像
 // 渲染（非本类所有权），已登记为 harness 镜像同步项。
-void TitleFrame::submit_side_strips() {
+void TitleFrame::submit_side_strips() { emit_title_side_strips(animations); }
+
+void emit_title_side_strips(AnmManager& animations) {
     if (!draw_capture) return;
     auto* text = animations.resource(0);  // text.anm 常驻槽 0（Application kBanks）
     if (!text) return;
@@ -106,8 +108,20 @@ void TitleFrame::submit_side_strips() {
                              {2, 30, 127.5f, 511.5f}, {3, 20, 31.5f, 415.5f}};
     struct Vertex { float x, y, z, rhw; u32 diffuse; float u, v; };
     draw_capture->set_layout(touhou::graphics::VertexLayout::ScreenColorUv);
+    // 边条 op 的 tfactor 记录**当前管线态**（真机为持续设备态：场景栈
+    // 提交不改 TFACTOR，idle 期恒 0、粒子期携带上一次 world_quad 族写入的
+    // 残留值——oracle f500 @R=0x2aff0140 实证）。blend 则是场景栈提交自带
+    // 的 (One,Zero,Add)——oracle 全窗 2400 个 @R op 恒 [2,1,1]，显式设置并
+    // 在发射后恢复（不污染帧内后续 VM 材质态）。
+    auto& pipeline = draw_capture->pipeline();
+    const auto tfactor_kept = pipeline.textureFactor;
+    const auto source_kept = pipeline.sourceBlend;
+    const auto destination_kept = pipeline.destinationBlend;
+    const auto equation_kept = pipeline.blendEquation;
+    pipeline.sourceBlend = touhou::graphics::BlendFactor::One;
+    pipeline.destinationBlend = touhou::graphics::BlendFactor::Zero;
+    pipeline.blendEquation = touhou::graphics::BlendEquation::Add;
     for (const auto& strip : strips) {
-        // 管线态影子的 blend 缺省 (One,Zero,Add) → 契约 [2,1,1]，与 oracle 恒等。
         draw_capture->bind_texture(draw_capture->texture(*text, strip.entry));
         draw_capture->set_stale_layer(i32(strip.layer));
         const Vertex verts[6] = {
@@ -120,6 +134,10 @@ void TitleFrame::submit_side_strips() {
         };
         draw_capture->primitives(touhou::graphics::Topology::Triangles, 2, verts, sizeof(Vertex));
     }
+    pipeline.textureFactor = tfactor_kept;
+    pipeline.sourceBlend = source_kept;
+    pipeline.destinationBlend = destination_kept;
+    pipeline.blendEquation = equation_kept;
 }
 
 }  // namespace th13

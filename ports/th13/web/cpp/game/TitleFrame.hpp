@@ -26,6 +26,11 @@ struct TitleFrameServices : TitleFramePlatform {
     virtual bool update_title_menu(TitleScreen, const TitleFrameInput&) = 0;
 };
 
+// @R 边条 ×4 场景级常量提交（oracle at-r-strips.md；标题期与 boot 装载幕共用——
+// 真机 f0-f599 每帧恒定，由四个场景 draw 任务的精灵栈提交，非 ANM 池 VM）。
+// 仅绘制清单捕获态（draw_capture 非空）有副作用；text.anm 需已装载于 bank 0。
+void emit_title_side_strips(AnmManager& animations);
+
 class TitleFrame {
     TitleState& state;
     SessionState& progress;
