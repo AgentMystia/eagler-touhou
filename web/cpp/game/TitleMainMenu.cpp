@@ -65,7 +65,7 @@ void TitleMainMenu::dim_disabled() {
     auto* root = animations.registry.find(state.handles[resources.main_root]);
     if (!root) return;
     auto* child = animations.registry.find_child_script(
-        *root, i32(TitleMainEntry::ExtraStart) + 3, 0);
+        *root, i32(TitleMainEntry::ExtraStart) + 13, 0);
     if (child) child->visual.color = 0xA0000000u;
 }
 
@@ -136,8 +136,12 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
         // 菜单 intro：boot 180 帧后建菜单（oracle g361：root0 + title01 十灰条
         // 入 L26 批次、title_v 版本条 30f 延迟淡入 → g390 可见）；返回路径立即建。
         const bool returning = (state.flags & 2u) != 0;
-        const i32 menu_at = returning ? 0 : kTitleBootIntroFrames;
+        // [wf360 白条定案] oracle 菜单白条 f360=淡入第 3 帧（0x33）→ spawn 于
+        // f357=age177（w13 滞后 1 帧=rebind）；f357-359 无 op（低 alpha 帧不可
+        // 见）→ 绘制侧压 0 复刻。可交互仍锚 age191（f372，oracle 实测）。
+        const i32 menu_at = returning ? 0 : 179;
         if (!returning && state.age.current == menu_at && !open_menu()) return false;
+
         if (!returning && state.age.current == 169) {
             // [窗A 修正] oracle f349/g350：select00 右半自 L23 搬至 L21（与森林
             // title00a 淡入同帧；最后 23 帧 f348/g349、首个 21 帧 f349/g350，
@@ -146,8 +150,7 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
                 if (auto* overlay = animations.registry.find_child_script(*root, 93, 0))
                     overlay->visual.layer = 21;
         }
-        boot_fade(menu_age);
-        if (state.age.current >= menu_at + kTitleMenuReadyDelay) {
+        if (state.age.current >= kTitleBootIntroFrames + kTitleMenuReadyDelay) {
             // g372 起可交互（oracle 实测）；闪场于就绪当帧武装（f371 首帧
             // 0x8e=142，此后降段 4 帧/隐 4 帧/升 3 帧至 ff）。
             if (!select_entry()) return false;
@@ -169,7 +172,6 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
             entry_flash_step = 0;
             move_flash = true;
         }
-        boot_fade(menu_age);  // 渐入尾段跨过就绪帧（f371-373 仍升）
         if (entry_flash >= 0) advance_entry_flash();
         if (pressed & 0x102) {  // Esc/X：跳到末项或直接退出分支
             if (state.menu.cursor == kTitleMainEntries - 1) {
@@ -232,7 +234,7 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
 void TitleMainMenu::set_item_alpha(i32 item, i32 alpha) {
     auto* root = animations.registry.find(state.handles[resources.main_root]);
     if (!root) return;
-    auto* child = animations.registry.find_child_script(*root, item + 3, 0);
+    auto* child = animations.registry.find_child_script(*root, item + 13, 0);
     if (!child) return;
     if (alpha < 0) alpha = 0;
     if (alpha > 255) alpha = 255;
@@ -242,23 +244,13 @@ void TitleMainMenu::set_item_alpha(i32 item, i32 alpha) {
 
 // boot 15 帧线性淡入：oracle f360(alpha 0x22/0x33=帧 2/3)→f373 ff，17/帧。
 // 菜单展开帧 = 帧 0（age==menu_at），次帧可见。
-void TitleMainMenu::boot_fade(i32 frame) {
-    if (frame < 0 || frame > 15) return;
-    // 线性段帧 0-11（17/帧至 221=0xdd）；实测尾段帧 12→249(0xf9)、13+→255
-    // （oracle f370 dd → f371 f9 → f373 ff，尾段非 17/帧）。
-    i32 alpha = 17 * (frame + 2);
-    if (alpha > 204) alpha = frame >= 12 ? 255 : 249;
-    for (i32 item = 0; item < kTitleMainEntries; item++) {
-        if (item == i32(TitleMainEntry::ExtraStart)) continue;
-        if (item == entry_flash) continue;  // 闪场序列优先（f371 起分道）
-        set_item_alpha(item, alpha);
-    }
-    dim_disabled();
-}
+// boot 渐入（目标白条 13-22）：oracle f360-373 逐帧 = 线性 17/帧（帧 0-10
+// →204）、尾段帧 11→249(0xf9)、12+→255。真机语义 = 白条自带 ins_409(15,
+// 0,255) 停车推进；port 停车插值冻结（§8.2 反向）→ 监督者逐帧 poke 复刻。
+// [废除] boot 渐入 = 白条自带 ins_409(15,0,255) 停车插值推进（port 引擎
+// 同语义实证：f360 op10 alpha=0x22=第2帧值，监督者 poke 被插值逐帧覆写）。
+void TitleMainMenu::boot_fade(i32) {}
 
-// 选中项闪场（select_entry 触发）：实测序列（f371-381）
-// 降段 4 帧 {199,142,84,27}（≈-57/帧）、隐 4 帧、升段 3 帧 {214,244,255}。
-// 帧 0 与调用同帧生效（oracle f371 当帧已 0x8e）。
 void TitleMainMenu::advance_entry_flash() {
     // 移动形（f419-423）：{163,91,40,10} 后回 ff（5 步收束）。
     static const i32 kMove[4] = {163, 91, 40, 10};
@@ -293,7 +285,7 @@ void TitleMainMenu::fade_menu_alphas(i32 step) {
     if (!root) return;
     const i32 alpha = 255 - 13 * step, dimmed = 160 - 13 * step;
     for (i32 item = 0; item < kTitleMainEntries; item++) {
-        auto* child = animations.registry.find_child_script(*root, item + 3, 0);
+        auto* child = animations.registry.find_child_script(*root, item + 13, 0);
         if (!child) continue;
         const u32 rgb = child->visual.color & 0xffffffu;
         i32 a = item == i32(TitleMainEntry::ExtraStart) ? dimmed : alpha;
@@ -315,10 +307,13 @@ bool TitleMainMenu::open_menu() {
         if (!create(resources.main_root)) return false;
         auto* root = animations.registry.find(state.handles[resources.main_root]);
         if (!root) return fail("Title menu root unavailable");
-        for (i32 white = 13; white <= 22; white++) {
+        // [wf360 定案] boot 菜单条 = 白条 13-22（右列 sprite 奇数、UV x∈
+        // [0.5,1]）；灰条 3-12 无中断即驻池隐匿（alpha0 parked）。白条 dump
+        // 层 25、oracle 绘于 26（+1 绘制侧，§8.3 族）——建后置 26；渐入由
+        // boot_fade poke（真机白条 ins_409(15,0,255) 停车推进，port 冻结）。
+        for (i32 white = 13; white <= 22; white++)
             if (auto* child = animations.registry.find_child_script(*root, white, 0))
-                animations.registry.discard(*child);
-        }
+                child->visual.layer = 26;
     }
     if (!present(state.version_bar)) {
         state.version_bar = animations.create(resources.version, resources.version_bar,
@@ -328,7 +323,10 @@ bool TitleMainMenu::open_menu() {
     // 选中项曾白化续衰减（Z 序）：恢复灰 192（label 28 = rgb→192 4f）。
     if (state.confirmed_entry >= 0 && state.confirmed_entry < kTitleMainEntries &&
         state.confirmed_entry != i32(TitleMainEntry::ExtraStart))
-        child_interrupt(state.confirmed_entry + 3, 28, false);
+        child_interrupt(state.confirmed_entry + 13, 28, false);
+    // 禁用项（1 号白条 14）走真中断 label 29（ins_404(0,0,0)+ins_403(255)+
+    // ins_409(1,0,160) 即时黑@160——oracle 全程 0xa0000000 的真机制）。
+    child_interrupt(i32(TitleMainEntry::ExtraStart) + 13, 29, false);
     return show_menu();
 }
 

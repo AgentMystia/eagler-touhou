@@ -49,7 +49,7 @@ void TitleDifficultyMenu::finish_menu_hides() {
     auto* menu_root = animations.registry.find(state.handles[0]);
     if (!menu_root) return;
     for (i32 item = 0; item < kTitleMainEntries; item++) {
-        auto* child = animations.registry.find_child_script(*menu_root, item + 3, 0);
+        auto* child = animations.registry.find_child_script(*menu_root, item + 13, 0);
         if (!child) continue;
         if (item == state.confirmed_entry) {
             child->visual.color = 0xccffffffu;  // 白化 @204（oracle f490 样本）
@@ -120,7 +120,7 @@ void TitleDifficultyMenu::advance_choreography() {
     }
     if (auto* menu_root = animations.registry.find(state.handles[0])) {
         if (auto* selected =
-                animations.registry.find_child_script(*menu_root, state.confirmed_entry + 3, 0)) {
+                animations.registry.find_child_script(*menu_root, state.confirmed_entry + 13, 0)) {
             if (f < 16) {
                 i32 alpha = 204 - 13 * f;
                 if (alpha < 0) alpha = 0;

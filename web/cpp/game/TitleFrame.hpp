@@ -39,6 +39,7 @@ class TitleFrame {
     AnmManager& animations;
     std::array<FrameCallback, 2> callbacks;
     TitleFrameInput input;
+    u32 white13_prev = 0;  // [wf360] w13 一帧记忆
     bool check(bool, const char*);
     bool menu();
     bool initialize();
