@@ -78,6 +78,7 @@ class TitleMainMenu {
     bool interrupt(i32, i32, bool);
     bool child_interrupt(i32, i32, bool);
     bool sound(i32);
+    void adopt_background_layers();  // [窗A] 背景半张层值按 oracle 实测（§8.3）
     bool open_menu();     // g361 菜单展开（root0+版本条+全项入场+禁用黑化）
     bool select_entry();  // interrupt(0,7+cursor) 选中入场
     bool show_menu();     // 全项入场（真机 boot 全员可见，oracle 顶点色实证）
