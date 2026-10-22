@@ -94,20 +94,27 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
     // 位置和项；+320/+16 由 0x40000 位在 adjust 阶段补，此处只写 ECL 原值）。
     if (enemies_from_ecl) {
         for (auto& enemy : battle.sim.enemies) {
-            // 镜像翻转重挂（0x419450:101-152）：flags&0x200000 且 x 朝向符号
-            // 变化（≠ mirror_dir 暂存）时回收槽 0 VM，以脚本号
-            // mirror_script_base+7 重建（行走动画；位置继承=槽跟随同源 0），
-            // 句柄存回槽 0——GirlRedA01 f63 首次移动触发的机制。
-            // 【f92 取证注】门的精确原版语义（+0x78 速度分量符号）与结构偏移
-            // （+0x278 实测恒 1）待下轮按 oracle 内存布局反推；当前差分近似
-            // 已覆盖帧 63-91（对拍实证），f92 起多敌机层序/翻转抖动为已知
-            // 工作面（draw-contract.md）。
+            // 镜像翻转重挂（0x4196d3-0x419827 对齐反汇编全解）：
+            // 门 = flags&0x200000 且 x 速度符号（+0x78 语义，位置差分近似）
+            // 变化；行走 VM 脚本号 = 槽 0 脚本号 + 朝向增量查表（旧 0：
+            // 新 -1→1 / 新 0,+1→2；旧 +1：恒 4；旧 -1：恒 3）；layer 恒 8；
+            // 位置 = 旧槽 VM 位置（继承，非零）；anmArg=0；尾入池句柄存回槽 0。
             if (enemy->flags & 0x200000u) {
                 const float dx = enemy->position[0] - enemy->mirror_prev_x;
                 const i32 dir = dx > 0.03f ? 1 : (dx < -0.03f ? -1 : 0);
                 if (dir != enemy->mirror_dir) {
-                    enemy->mirror_dir = dir;
+                    i32 step;
+                    if (enemy->mirror_dir == 0)
+                        step = dir == -1 ? 1 : 2;
+                    else if (enemy->mirror_dir == 1)
+                        step = 4;
+                    else
+                        step = 3;
                     u32& handle = enemy->anm_slot_handle[0];
+                    // 位置继承 = 翻转帧的敌机 ECL 位（原版读旧槽 VM+0x574，
+                    // 其值即当帧跟随位——本 sync 尚未写跟随，故直接取敌机位）
+                    const Vec3 old_pos{enemy->position[0], enemy->position[1],
+                                       enemy->position[2]};
                     if (handle) {
                         if (!animations.retire(handle))
                             return fail("Mirror retire failed: " + animations.error);
@@ -116,11 +123,15 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
                     const i32 bank = enemy->anm_file == 0   ? banks.bullet
                                      : enemy->anm_file == 1 ? banks.effect
                                                            : banks.stage;
-                    handle = animations.create(bank, enemy->mirror_script_base + 7,
-                                               -1, 2, {}, 0, false);
+                    // 槽 0 脚本号 = 306 记录（enemy->anm_script[0]）
+                    handle = animations.create(bank,
+                                               enemy->anm_script[0] + step,
+                                               enemy->mirror_script_base + 7,
+                                               2, old_pos, 0, false);
                     if (!handle)
                         return fail("Mirror animation creation failed: " +
                                     animations.error);
+                    enemy->mirror_dir = dir;
                 }
                 enemy->mirror_prev_x = enemy->position[0];
             }
