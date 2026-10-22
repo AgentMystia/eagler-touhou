@@ -126,12 +126,14 @@ struct StageEnemy {
     // VM 精灵像素宽高 × scale，公式 (h*scaleY, w*scaleX)）。事件窗 noop 不写。
     float anm_size_a[2] = {0, 0};
     float anm_size_b[2] = {0, 0};
-    // 镜像翻转重挂状态（0x419450:101-152：flags&0x200000 时按 x 朝向符号
-    // (+0x270 vs sign(+0x78)) 变化回收槽 0 VM 并以脚本号 +0x278+7 重建——
-    // Girl 族 f63 首次移动触发行走动画 VM 的机制）。
-    i32 mirror_dir = 0;          // +0x270 朝向符号（构造 0）
-    float mirror_prev_x = 0;     // 306 置位时的差分基线（防首拍误判）
-    i32 mirror_script_base = 0;  // +0x278（构造 0；脚本号 = base + 7）
+    // 镜像翻转重挂状态（0x4196d3-0x419827 对齐反汇编实证）：
+    // 门 = flags&0x200000 且 x 速度符号（+0x78，±0.03 死区）≠上次朝向
+    // （+0x270）；行走 VM 脚本号 = 槽 0 脚本号 + 增量（查表：旧 0 时新 -1→1、
+    // 新 0/+1→2；旧 +1→恒 4；旧 -1→恒 3），VM layer 恒 8（+0x278+7），
+    // 位置继承旧槽 VM 位置，anmArg=0，尾入池（0x46f3f0）句柄存回槽 0。
+    i32 mirror_dir = 0;          // +0x270 上次朝向（构造 0）
+    float mirror_prev_x = 0;     // 差分近似 sign(+0x78) 的基线
+    i32 mirror_script_base = 0;  // +0x278（构造 0；VM layer = base + 7）
 };
 
 // 交互模式的弹体实体（fire_et 事件同源的直进弹；无头路径不产实体）。
