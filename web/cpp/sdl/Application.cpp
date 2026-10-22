@@ -96,6 +96,13 @@ bool ApplicationState::draw_loading(bool signature) {
     if (signature) {
         loading_signature = loading_animations.create(1, 0);
         if (!loading_signature) return fail(loading_animations.error);
+        // [窗A 修正] sig 右半（script0 自 spawn 的 script1）层 = L26（oracle boot
+        // 全程 f0-f178 实测 23/26；dump ins_304(25) 的 +1 偏移，蓝图 §8.3）。
+        // 直接落子 VM 层——注意 tests/harness/harness.cpp 的 prepare_loading
+        // 镜像需同步此行（该文件非本轮所有权，已向协调方报告）。
+        if (auto* boot = loading_animations.registry.find(loading_signature))
+            if (auto* right = loading_animations.registry.find_child_script(*boot, 1, 0))
+                right->visual.layer = 26;
     }
     loading_startup = signature;
     loading_frames = 0;

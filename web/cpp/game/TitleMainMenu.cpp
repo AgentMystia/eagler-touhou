@@ -68,6 +68,23 @@ void TitleMainMenu::dim_disabled() {
     if (child) child->visual.color = 0xA0000000u;
 }
 
+// [窗A 修正] 背景半张层值按 oracle 实测落码（蓝图 §8.3 层偏移现象；机制 =
+// supervisor 逐 VM 置层推定，反汇编待锚）。oracle 证据（title-draws.jsonl）：
+//   f349/g350 起 title00a 左半(entry1)@L23、右半(entry2)@L22（dump ins_304 为
+//   22/21，各 +1）；select00 右半(entry4) boot 期 @L23（dump 21，+2），
+//   g350 搬至 L21（与森林淡入同帧，substate 1 age==169 复刻）；select00 左半
+//   (entry3)@L21 与 dump 一致不动。
+void TitleMainMenu::adopt_background_layers() {
+    auto* root = animations.registry.find(state.handles[resources.background_root]);
+    if (!root) return;
+    if (auto* forest_left = animations.registry.find_child_script(*root, 90, 0))
+        forest_left->visual.layer = 23;
+    if (auto* forest_right = animations.registry.find_child_script(*root, 91, 0))
+        forest_right->visual.layer = 22;
+    if (auto* overlay_right = animations.registry.find_child_script(*root, 93, 0))
+        overlay_right->visual.layer = 23;
+}
+
 void TitleMainMenu::enter(i32 entry) {
     switch (TitleMainEntry(entry)) {
     case TitleMainEntry::StartGame:
@@ -101,6 +118,8 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
         // g350 森林 = script90/91 内建 170f）。
         if (!present(state.handles[resources.background_root])) {
             if (!create(resources.background_root)) return false;
+            // 仅新建时落层值（返回路径背景常驻，保留 g350 搬移后的状态）。
+            adopt_background_layers();
         }
         const bool returning = (state.flags & 2u) != 0;
         if (!present(state.handles[resources.logo_root])) {
@@ -117,6 +136,14 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
         const bool returning = (state.flags & 2u) != 0;
         const i32 menu_at = returning ? 0 : kTitleBootIntroFrames;
         if (!returning && state.age.current == menu_at && !open_menu()) return false;
+        if (!returning && state.age.current == 169) {
+            // [窗A 修正] oracle f349/g350：select00 右半自 L23 搬至 L21（与森林
+            // title00a 淡入同帧；最后 23 帧 f348/g349、首个 21 帧 f349/g350，
+            // 蓝图 §8.3 层搬移现象）。搬移机制（supervisor 逐 VM 置层）未反汇编。
+            if (auto* root = animations.registry.find(state.handles[resources.background_root]))
+                if (auto* overlay = animations.registry.find_child_script(*root, 93, 0))
+                    overlay->visual.layer = 21;
+        }
         if (state.age.current >= menu_at + kTitleMenuReadyDelay) {
             // g372 起可交互（oracle 实测；帧数微差待 oracle 比对校正）。
             state.change_substate(2);
@@ -150,23 +177,35 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
         if (pressed & 0x80001) {  // Z/Enter：确认
             const i32 selected = state.menu.cursor;
             if (selected < 0 || selected >= kTitleMainEntries) break;
-            if (selected == i32(TitleMainEntry::StartGame)) {
-                if (!sound(7)) return false;
-                // 进难度屏（oracle 未覆盖该项确认序列）：全菜单淡出后转场
-                // （golden 难度帧行区无主菜单字条实证）；灰态 label 3=淡出 5f。
-                if (!interrupt(resources.main_root, 3, true)) return false;
-                state.change_substate(4);
-            } else if (selected == i32(TitleMainEntry::Quit)) {
+            if (selected == i32(TitleMainEntry::Quit)) {
                 if (!sound(9)) return false;
                 state.change_substate(4);
-            } else {
-                // 其余入口（真机有画面，本轮不实现）：仅确认音，不切屏、菜单保持可交互。
-                if (!sound(7)) return false;
+                break;
             }
+            if (!sound(7)) return false;
+            // [窗A 修正] Z 确认序（oracle 窗 Z@g471，f470 按下样本）：
+            //   ① 字条保留——不 label 3 淡出（oracle f480 十灰条 batch 仍在）；
+            //   ② interrupt(0,6)：全项 20f 闪灭销毁（灰态 label 6；oracle 十条
+            //      batch 末日 f489/g490 = Z+19，f490/g491 起批次消失 ✓ +20 死点）；
+            //   ③ 选中项改走 label 2（64↔255 闪 20f → 缩 0.5 飞至 (256,332) 停），
+            //      残留单条（oracle f490 起L26 单 quad 至 f505/g506）——覆盖 ②
+            //      对该项的 pending；
+            //   ④ 版本条 substate 4 age==8 处回收（oracle 末日 f477/g478 =
+            //      Z+7，f478/g479 起无 op）。
+            if (!interrupt(resources.main_root, 6, false)) return false;
+            if (!child_interrupt(selected + 3, 2, false)) return false;
+            state.change_substate(4);
+            // 其余入口（真机有画面，本轮不实现）：确认序同上，enter() 不切屏。
         }
         break;
     }
     case 4:
+        if (state.age.current == 8 && state.version_bar &&
+            state.menu.cursor != kTitleMainEntries - 1) {
+            // oracle g479（Z+8）起 title_ver 无绘制 op——立即回收对齐（Quit 分支
+            // 不观测到该序，保留版本条）。
+            animations.retire(state.version_bar);
+        }
         if (state.age.current > 19) enter(state.menu.cursor);
         break;
     }
@@ -178,6 +217,10 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
 // ops；真机 ins_500 建后待中断的插值冻结语义 vs 移植侧自动淡入，引擎差异，
 // 蓝图 §oracle 章登记，待 AnmUpdate 语义裁定后改为保留）。
 bool TitleMainMenu::open_menu() {
+    // 返回路径（flags bit1）：Z 确认序已闪灭字条子 VM（label 6）/选中项飞离
+    // （label 2），旧 root0 整树回收重建（真机返回序 oracle 未覆盖，推定）。
+    if ((state.flags & 2u) && state.handles[resources.main_root])
+        animations.retire(state.handles[resources.main_root]);
     if (!present(state.handles[resources.main_root])) {
         if (!create(resources.main_root)) return false;
         auto* root = animations.registry.find(state.handles[resources.main_root]);
