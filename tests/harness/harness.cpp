@@ -348,6 +348,31 @@ bool DrawsSession::render_frame(unsigned frame, th13::u32 held) {
     if (!animations.update(true)) return fail("fore pool update: " + animations.error);
     if (!presentation->sync(battle, held)) return fail("presentation sync: " + presentation->error());
     if (!animations.update(false)) return fail("main pool update: " + animations.error);
+    // f159 取证（TH13_DUMPCHECK=帧号）：层 2 灵的插值通道字段
+    //（world[12] = vm+0x3c；start/end/duration/timer 全量，位级 dump——
+    // oracle 侧 trace_spawn 0x4692d0 watch 同字段对照）。
+    if (const char* dump_at = std::getenv("TH13_DUMPCHECK")) {
+        const unsigned at = unsigned(std::atoi(dump_at));
+        if (frame == at) {
+            const auto as_bits = [](float value) {
+                return th13::u32(*reinterpret_cast<const th13::u32*>(&value));
+            };
+            for (th13::AnmVm* vm : animations.registry.layer(2)) {
+                const auto& ch = vm->interpolators.position;
+                std::printf(
+                    "[f%u] s4aa=%d x3c=%.9g bits=%08x start=%08x,%08x,%08x "
+                    "end=%08x,%08x,%08x dur=%08x mode=%d frac=%08x\n",
+                    frame, vm->source_script,
+                    double(vm->variables.position.x),
+                    as_bits(vm->variables.position.x),
+                    as_bits(ch.start[0]), as_bits(ch.start[1]),
+                    as_bits(ch.start[2]), as_bits(ch.end[0]),
+                    as_bits(ch.end[1]), as_bits(ch.end[2]),
+                    as_bits(float(ch.duration)), ch.mode,
+                    as_bits(ch.timer.fractional));
+            }
+        }
+    }
     if (!views.camera(th13::DrawCamera::Fullscreen, false))
         return fail("full-screen camera unavailable");
     for (th13::u32 layer = 0; layer < 33; layer++)  // th13 层域：主链 0-30 + 副链 31/32

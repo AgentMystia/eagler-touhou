@@ -46,7 +46,10 @@ for (const output of [args[3], args[4]]) {
   if (output && output.startsWith('/') && output.endsWith('.jsonl'))
     mkdirSync(dirname(workspace + output), {recursive: true});
 }
-const wasi = new WASI({version: 'preview1', args, env: {}, preopens: {'/': workspace}});
+// TH13_DUMPCHECK（可选宿主环境变量）：透传给 wasm——harness 侧在该帧
+// dump 层 2 插值通道字段（取证脚手架，见 tests/harness/harness.cpp）。
+const dumpCheck = process.env.TH13_DUMPCHECK;
+const wasi = new WASI({version: 'preview1', args, env: dumpCheck ? {TH13_DUMPCHECK: dumpCheck} : {}, preopens: {'/': workspace}});
 const module = await WebAssembly.compile(bytes);
 const instance = await WebAssembly.instantiate(module, wasi.getImportObject());
 const code = wasi.start(instance);
