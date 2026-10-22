@@ -7,8 +7,10 @@
 //   0x4abc30，斜向不归一)，speed128 四选一（focus × 斜向），出自 pl02a.sht
 //   （+0x10..+0x1c 浮点 ×128 取整：4.5/2.0/3.1819805/1.4142135 →
 //   576/256/407/181），钳制 x∈[-23552,23552]、y∈[4096,55296]，初态 (0,51200)。
-//   自机弹/判定半径为定标值（.sht 弹型域未接入）【待校准】，AABB 判定
-//   对齐 0x446870。全部整数/整值浮点运算，两侧无舍入差。
+//   自机弹出 .sht 弹型域（0x446000/0x445c40 原版语义：帧%间隔==相位出膛、
+//   伤害=记录+0x18、块=功率/100+聚焦×5；回放口径功率恒初值 100）。判定半径
+//   为定标值【待校准】，AABB 判定对齐 0x446870。全部整数/整值浮点运算，
+//   两侧无舍入差（与 oracle/replay_model.py 孪生逐字段同式）。
 #pragma once
 
 #include "GameInput.hpp"
@@ -36,13 +38,19 @@ struct PlayerShot {
 };
 
 // .sht 弹型记录（0x443e40 装载解析：+0xc8 指针表 → +0xf4 基准块，记录
-// 步长 0x38、首字节 <0 终止）。字段序 = 文件布局：类别 u16、脚本 u16、
-// {x, y} 出膛偏移、角度（-π/2 直上）。
+// 步长 0x38、首字节 <0 终止）。字段序 = 文件布局（0x446000/0x445c40 直读）：
+// +0 u8 间隔（帧 % 间隔 == 相位才出膛，0x446000:24；pl00a 主弹=3、卫星=8、
+// 该字节兼类别）、+1 u8 相位、+2 u16 脚本、+4/+8 f32 {x,y} 出膛偏移
+// （anchor≠0 时相对卫星——孪生口径≈自机位，卫星模型分期）、+0x14 f32 角度、
+// +0x18 f32 伤害（0x445c40:55，pl00a 主弹=24/卫星=4）、+0x20 i8 卫星锚位。
 struct ShtShotRecord {
-    i32 kind = 0;    // 3 = 主弹；8 = 附属弹（Option 卫星，分期未接）
-    i32 script = 0;  // plXX.anm 脚本号
+    i32 interval = 0;  // 发射间隔（= 首字节，兼类别：3 主弹 / 8 卫星弹）
+    i32 phase = 0;     // 发射相位（帧 % interval == phase 出膛）
+    i32 script = 0;    // plXX.anm 脚本号
+    i32 anchor = 0;    // 卫星锚位（0 = 自机；≠0 = Option 卫星，分期）
     float x = 0, y = 0;
     float angle = 0;
+    float damage = 0;
 };
 
 class StageBattle {
@@ -61,10 +69,14 @@ public:
     i32 speed_orth_focus = 256, speed_diag_focus = 181;
     u32 input_state = 0;                         // 当帧回放输入（player 事件用）
 
-    // 定标常量（弹型表主弹列以外的域：碰撞/无敌等，§7.2【待校准】）。
-    static constexpr i32 kFireInterval = 4;      // 射击间隔帧
-    static constexpr float kShotDamage = 12.0f;  // 单发伤害（整值；.sht 接入后按列数均摊）
-    static constexpr float kShotSpeed = 12.0f;   // 垂直弹速（整值）
+    // 定标常量（.sht 弹型域以外的域：碰撞/无敌等，§7.2【待校准】）。
+    // kFireInterval/kShotDamage/kShotOffset* 仅无 .sht 回退路径使用；
+    // 弹型/伤害/间隔/相位全部出自 .sht 记录（0x446000/0x445c40 原版语义）。
+    static constexpr i32 kFireInterval = 4;      // 回退：发射间隔帧（相位制）
+    static constexpr float kShotDamage = 12.0f;  // 回退：单发伤害（整值）
+    static constexpr float kShotSpeed = 12.0f;   // 垂直弹速（整值；sht 速度域
+                                                 // +0xc/+0x10=48/16 的运动函数
+                                                 // 表语义待 oracle 实证，暂不替换）
     static constexpr float kShotHalf = 4.0f;     // 弹体半宽高
     static constexpr float kShotOffsetX = 8.0f;  // 无 .sht 回退：三发 x 偏移
     static constexpr float kShotOffsetY = 12.0f; // 无 .sht 回退：出膛 y 偏移
@@ -97,7 +109,7 @@ public:
 
 private:
     void move_player(u32 held);
-    void fire_shots();
+    void fire_shots(i32 frame);
     void step_shots();
     void collide_shots();
     void collide_player();
@@ -107,7 +119,8 @@ private:
     SessionState* progress_ = nullptr;
     HudPlayerState* player_ = nullptr;
     HudScoreState* score_ = nullptr;
-    i32 fire_cooldown_ = 0;
+    i32 fire_frame_ = 0;  // 发射相位帧计数（1 基，自对局首帧；0x446000 的
+                          // 帧 % 间隔 == 相位判决源，玩家 ctx+0x146cc 同源口径）
     bool events_ = false;  // 事件落盘（回放对拍）
     std::string error_;
 };
