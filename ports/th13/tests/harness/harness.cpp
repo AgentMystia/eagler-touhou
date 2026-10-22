@@ -246,12 +246,14 @@ struct DrawsSession {
         th13::i32 slot = -1;
     };
     th13::DrawCapture capture;
-    th13::GameRandom visual;  // web 同款 seed 0（ApplicationState::visual）
     th13::AnmEnvironment environment;
-    th13::AnmManager animations{visual, environment};
+    // battle 先于 animations：ANM 与 ECL 共享同一条 0x472c90 游戏侧 RNG
+    // （原版全局态 0x4dc31c；oracle 实证装载期 2 调 + 每神灵 spawn 10 调，
+    // ECL 与 ANM 本就是同一流——先前独立 visual 实例是移植侧偏差）。
+    th13::StageBattle battle;
+    th13::AnmManager animations{battle.sim.random, environment};
     th13::AnmRenderer renderer{capture};
     th13::ScreenViews views{renderer, environment};
-    th13::StageBattle battle;
     std::unique_ptr<th13::StagePresentation> presentation;
     std::vector<StageFileRange> stage_files;
     std::string error;
@@ -278,14 +280,17 @@ struct DrawsSession {
 
 bool DrawsSession::load_banks(DrawsProvider& provider, const char* player_anm) {
     std::vector<th13::u8> bytes;
-    // ascii.anm（bank 2 = mgr 槽 2）：兜底精灵源（web initialize 同式——
-    // effect.anm 模板 300 族脚本选精灵失败时经 fallback 解析）。
-    if (!read_whole_file(provider.dir + "/ascii.anm", bytes) ||
-        !animations.load(2, bytes.data(), th13::u32(bytes.size())))
-        return fail("ascii.anm load failed: " + animations.error);
-    environment.fallback_sprite_resource = animations.resource(2);
-    if (auto* file = animations.resource(2))
-        capture.register_texture(file, 0, th13::u32(file->textures.size()), 2);
+    // 装载序对齐 oracle 最小战斗集（draw-contract §0 / render_oracle run()）：
+    // bullet（0x40d920 弹幕管理器先装）→ effect（mgr 槽 8）→ st01 ANIM 名单。
+    // 模板 tick 共享 0x472c90 RNG，装载序错位会移动共享流（装载期 2 调的
+    // 归属文件序即消费序）。ascii 不装（oracle 窗外资产；模板 tick 会抽签）；
+    // 兜底精灵源 = bullet.anm（原版 game_main+0x19194 同源）。
+    if (!read_whole_file(provider.dir + "/bullet.anm", bytes) ||
+        !animations.load(kDrawsBulletBank, bytes.data(), th13::u32(bytes.size())))
+        return fail("bullet.anm load failed: " + animations.error);
+    if (auto* file = animations.resource(kDrawsBulletBank))
+        capture.register_texture(file, 0, th13::u32(file->textures.size()), 7);
+    environment.fallback_sprite_resource = animations.resource(kDrawsBulletBank);
     // effect.anm（mgr 槽 8；全局 ANM，oracle 0x46df40(EAX=8) 同位）。
     if (!read_whole_file(provider.dir + "/effect.anm", bytes) ||
         !animations.load(kDrawsEffectBank, bytes.data(), th13::u32(bytes.size())))
@@ -319,12 +324,6 @@ bool DrawsSession::load_banks(DrawsProvider& provider, const char* player_anm) {
     if (auto* file = animations.resource(kDrawsStageBank))
         for (const auto& range : stage_files)
             capture.register_texture(file, range.first, range.count, range.slot);
-    // bullet.anm（mgr 槽 7：弹幕管理器装载位）。
-    if (!read_whole_file(provider.dir + "/bullet.anm", bytes) ||
-        !animations.load(kDrawsBulletBank, bytes.data(), th13::u32(bytes.size())))
-        return fail("bullet.anm load failed: " + animations.error);
-    if (auto* file = animations.resource(kDrawsBulletBank))
-        capture.register_texture(file, 0, th13::u32(file->textures.size()), 7);
     // plXX.anm（自机 bank：oracle 窗口外的表现资产；身份槽 -1 可见标记）。
     if (!read_whole_file(provider.dir + "/" + std::string(player_anm), bytes) ||
         !animations.load(kDrawsPlayerBank, bytes.data(), th13::u32(bytes.size())))
@@ -350,6 +349,7 @@ bool DrawsSession::render_frame(unsigned frame, th13::u32 held) {
     for (th13::u32 pass = 0; pass < 4; pass++)
         if (!presentation->draw(pass)) return fail("presentation draw: " + presentation->error());
     renderer.flush();
+    capture.clear_device_texture();  // 0x45d2f0:49 帧尾 SetTexture(0,0)（UG 缓存不失效）
     if (!capture.end_frame()) return fail("draws write: " + capture.error());
     return true;
 }
