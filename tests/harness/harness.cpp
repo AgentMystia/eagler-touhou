@@ -49,6 +49,7 @@
 #include "game/StagePresentation.hpp"
 #include "game/StageSim.hpp"
 #include "game/TitleScene.hpp"
+#include "game/TitleFrame.hpp"
 
 namespace {
 
@@ -656,7 +657,8 @@ struct TitleSession {
     bool prepare_loading() {
         loading_environment.resolution_scale = 1;
         loading_environment.raster_scale = 1;
-        if (!read_bank(loading_animations, "sig.anm", 1) || !read_bank(loading_animations, "ascii.anm", 2))
+        if (!read_bank(loading_animations, "sig.anm", 1) || !read_bank(loading_animations, "ascii.anm", 2) ||
+            !read_bank(loading_animations, "text.anm", 0))  // [boot @R] 边条纹理身份（槽0 entry2/3）
             return false;
         loading_signature = loading_animations.create(1, 0);  // sig script0（两半拼 640）
         if (!loading_signature) return fail("loading signature create: " + loading_animations.error);
@@ -674,13 +676,24 @@ struct TitleSession {
     bool render_loading_frame(unsigned frame) {
         capture.begin_frame(frame);
         renderer.invalidate();
-        capture.pipeline() = touhou::graphics::PipelineState{};  // render_loading 帧首管线复位
+        // 帧首管线复位，但 textureFactor 保持（真机 TFACTOR 为跨帧持续的
+        // 设备态：D3D 初始 0，仅 world_quad 族批设置写入——oracle f500 @R
+        // 携带上帧残留 0x2aff0140 实证，见蓝图 §8.8）。
+        const auto factor_kept = capture.pipeline().textureFactor;
+        capture.pipeline() = touhou::graphics::PipelineState{};
+        capture.pipeline().textureFactor = factor_kept;
         th13::ScreenViews loading_views{renderer, loading_environment};
         if (!loading_views.camera(th13::DrawCamera::Fullscreen, false))
             return fail("loading camera unavailable");
-        for (th13::u32 layer = 0; layer < 33; layer++)
-            if (!renderer.draw_layer(loading_animations.registry.layer(layer)))
-                return fail("loading layer draw: " + renderer.error);
+        // [boot @R] 装载幕帧发 4 条边条（oracle raw f1 起每帧恒定；raw f0 即
+        // prepare 首渲染保持空帧——oracle f0 也无 op，两侧 prefix 均=1 对齐）。
+        if (frame != 0) th13::emit_title_side_strips(loading_animations);
+        // sig 幕止于 raw f179（oracle 实测：f179 末日、f180 空档帧仅 @R、
+        // f181 背景入场——开场计数 0xb4 使能标题任务在 f181）。
+        if (frame < 180)
+            for (th13::u32 layer = 0; layer < 33; layer++)
+                if (!renderer.draw_layer(loading_animations.registry.layer(layer)))
+                    return fail("loading layer draw: " + renderer.error);
         renderer.flush();
         capture.clear_device_texture();  // 0x45d2f0:49 帧尾 SetTexture(0,0)（契约 §2.1）
         return capture.end_frame();

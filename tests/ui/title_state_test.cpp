@@ -5,6 +5,7 @@
 // 合成 ANM 的 spawn 结构镜像 title.anm 真实布局（root0→3-22、root1→23-48、
 // root2→49-82、root89→92/93/91/90、root94/95、root129/130→125-142）。
 #include "ui_test_fixtures.hpp"
+#include <cstdio>
 #include "../harness/test_framework.hpp"
 
 #include "game/TitleScene.hpp"
@@ -99,9 +100,22 @@ struct TitleHarness {
     TitleSelectionSettings selection;
     FrameScheduler scheduler;
     TitleHost host{manager};
+    std::array<FrameCallback, 2> animation_updates{};
     std::unique_ptr<TitleScene> scene;
 
     TitleHarness() {
+        // 动画双回调（优先级 9/34，镜像 harness TitleSession——label 中断消费/
+        // 插值推进/VM 生灭全走真机路径；此前 UI 面不 tick 属测试盲区）。
+        animation_updates[0].owner = animation_updates[1].owner = &manager;
+        animation_updates[0].enabled = animation_updates[1].enabled = true;
+        animation_updates[0].run = [](void* p) {
+            return static_cast<AnmManager*>(p)->update(true) ? 1 : 5;
+        };
+        animation_updates[1].run = [](void* p) {
+            return static_cast<AnmManager*>(p)->update(false) ? 1 : 5;
+        };
+        CHECK(scheduler.add(animation_updates[0], FramePass::Update, 9) >= 0);
+        CHECK(scheduler.add(animation_updates[1], FramePass::Update, 34) >= 0);
         CHECK(load_bank(manager, 16, title_anm_fixture()));
         CHECK(load_bank(manager, 17, synthetic_anm(1, trivial_scripts(1))));   // title_v
         CHECK(load_bank(manager, 2, synthetic_anm(8, trivial_scripts(20))));   // ascii
@@ -115,6 +129,19 @@ struct TitleHarness {
 
     void frame(u32 pressed = 0, u32 repeated = 0) {
         scene->controls({0, pressed, repeated, 0});
+        if (scheduler.update() < 0) {
+            std::printf("[frame-fail] screen=%d sub=%d age=%d anim=%s\n",
+                        i32(scene->state.screen), scene->state.substate, scene->state.age.current,
+                        manager.error.c_str());
+            for (u32 alternate = 0; alternate < 2; alternate++)
+                for (u32 index = 0; index < manager.registry.ordered_count(alternate); index++) {
+                    auto* vm = manager.registry.find(
+                        manager.registry.ordered_handle(alternate, index));
+                    if (vm && !vm->error.empty())
+                        std::printf("  [err-vm] chain=%u script=%d err=%s\n", alternate,
+                                    vm->source_script, vm->error.c_str());
+                }
+        }
         CHECK(scheduler.update() >= 0);
     }
 
