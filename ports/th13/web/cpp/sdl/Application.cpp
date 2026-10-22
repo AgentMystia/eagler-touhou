@@ -85,6 +85,10 @@ bool ApplicationState::prepare_loading() {
 bool ApplicationState::loading_waiting() const { return loading_startup || pending_load != 0; }
 
 bool ApplicationState::draw_loading(bool signature) {
+    // 真机 boot 开场（oracle 标题窗实证）：仅 sig.anm script0（自带 script1 右半
+    // spawn，两半 512×480 拼 640 宽）自黑场 10f 淡入，g1..g179 共 179 帧后卸载；
+    // 无 ascii 祷告/提示幕（旧 create(2,17) 为 th15 残留，已删）。180 帧挡板由
+    // advance_loading 计（g181 = 标题任务使能帧）。
     graphics.presentation.reset();
     if (!loading_animations.retire(loading_signature) ||
         !loading_animations.retire(loading_prayer))
@@ -93,8 +97,6 @@ bool ApplicationState::draw_loading(bool signature) {
         loading_signature = loading_animations.create(1, 0);
         if (!loading_signature) return fail(loading_animations.error);
     }
-    loading_prayer = loading_animations.create(2, 17, -1, 0, {960, 784, 0});
-    if (!loading_prayer) return fail(loading_animations.error);
     loading_startup = signature;
     loading_frames = 0;
     loading_debt = 0;
