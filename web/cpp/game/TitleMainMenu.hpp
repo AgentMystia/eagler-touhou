@@ -82,6 +82,12 @@ class TitleMainMenu {
     bool interrupt(i32, i32, bool);
     bool child_interrupt(i32, i32, bool);
     bool sound(i32);
+    i32 entry_flash = -1, entry_flash_step = 0;  // [wf371] 选中项闪场驱动
+    bool move_flash = false;  // [wf419] 移动闪场（与就绪闪场不同形）
+    i32 menu_age = -1;  // [wf360] 单调屏龄（substate 切换重置 state.age 的规避）
+    void set_item_alpha(i32 item, i32 alpha);    // [wf360] 逐项 alpha poke
+    void boot_fade(i32 frame);                   // [wf360] 15 帧线性入场
+    void advance_entry_flash();                  // [wf371] 闪场序列
     void adopt_background_layers();  // [窗A] 背景半张层值按 oracle 实测（§8.3）
     void fade_menu_alphas(i32 step);  // [解剖轮2] Z+10 起灰条透明度衰减 poke
     bool open_menu();     // g361 菜单展开（root0+版本条+全项入场+禁用黑化）
