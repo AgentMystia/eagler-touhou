@@ -166,18 +166,20 @@ x=%A+[-9987]*32 → GirlRedA01 x=-163.783264），与 ANM 流（装载 2 调+每
 double 中间量 + 帧尾 SetTexture(0,0)（设备态清空、mgr+0xb78188 缓存不
 失效——oracle f1-8 tex=None 的来源）。
 
-剩余首分歧（帧 92，下一轮工作面）：行走 VM 的屏幕坐标。轮 7 全解了
-翻转重挂机制（0x4196d3-0x419827 对齐反汇编，勘正轮 6 的三处偏移误读：
-+0x278 非脚本基址而是 layer 基、+0x78 是 x 速度、行走脚本号 =
-anm_script[0]+朝向增量查表）并移植：行走 VM 身份已逐一对齐（Red→7、
-Blue→1 与 oracle s4aa 吻合）。f92 分歧字段从「错敌机」推进为「行走 VM
-的屏幕 x」（port 483.5 vs oracle 178.5）：port 的 x 构成 = ECL 位+320+16
-（y 未加 16）⟹ port 的 screen offset 应用把 (320,16) 同时算进了 x
-（偏移构成疑点：anm_quad_positions 的 offset 分支 values 取用与
-0x467350 的 ROUND−0.5 序），且 oracle 侧行走 VM y=-12.5 ⟹ 其 +0x574
-跟随与 offset 应用序也需逐项复原（0x467350:37-54 的平移+ROUND 段）。
-另批语义工作面保留（f91 oracle 双 enqueue 只出 Blue 的 0x4679a0 批
-残留语义）。
+剩余首分歧（帧 92，下一轮工作面）：同层多敌机的出画选择。轮 8 取证
+（trace_spawn p574 dump + DPUP/flush 序）：
+- oracle f92 层 8 dispatch 双行走 VM（Red t=31 p574=-125.29、Blue t=2
+  p574=147.63），四角均在视口内，但 **enqueue 只发生 Red**——Blue 在
+  0x467350 内部被丢（裁剪不成立，丢弃点在该函数后段未定位：dispatch
+  序 Red 先 Blue 后，疑与 0x46a700→0x467350 的调用链参数（param_1
+  flags 位）或 mgr 批状态相关）；f91 反之（Blue enqueue、Red 丢弃）。
+- port 侧无此丢弃规则：两行走 VM 都出画（f92 op[12] 出 Blue 483.5——
+  其 x 构成 ECL+336 为第二疑点：p0=483.6=147.6+320+16 而 y 未 +16，
+  anm_quad_positions 的 offset 分支取值待逐行核）。
+- 修复面：① 0x467350 后段的 Blue 丢弃条件（需 objdump 全函数后半 +
+  watch 实证）；② port quad 的 offset 应用（x 误加 16）。
+轮 7 已修：翻转重挂机制全解（脚本号查表/门=sign(x速度)/layer=+0x278+7/
+位置继承），行走 VM 身份两侧已逐一对齐（Red→7、Blue→1=oracle s4aa）。
 轮 5 已修：镜像翻转重挂（0x419450:101-152，flags&0x200000 + x 朝向
 符号变化 → 回收槽 0 VM、以脚本号 +0x278+7 重建行走动画、尾入池）——
 帧 63-91 敌机运动+行走动画逐字段全过。次级：敌机 up 的顶点色链、ECL
