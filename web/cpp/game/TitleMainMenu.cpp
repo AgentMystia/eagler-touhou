@@ -317,26 +317,22 @@ void TitleMainMenu::advance_selection() {
     static const i32 kOldWhiteRise[4] = {214, 244, 255, 255};
     static const i32 kNewWhiteFall[4] = {163, 91, 40, 0};
     const i32 step = selection_step++;
+    // [轮8 定案] oracle 绘制全窗无灰条 quad（u=0 列缺席）——灰条 VM 驻池
+    // 恒隐，选择交叉为**纯白条**序列（SCAN 的 s3/s5 alpha 上升是 VM 态，
+    // 不达绘制）。移动帧 0x5b/0x28 = 新/旧白条的交叉值。
     if (!selection_move) {
-        if (step < 5) {
-            set_item_alpha(selection_item, kGreyIn[step], false);
-            set_item_alpha(selection_item, kWhiteOut[step], true);
-        } else {
-            set_item_alpha(selection_item, 255, false);
+        if (step < 5) set_item_alpha(selection_item, kWhiteOut[step], true);
+        else {
             set_item_alpha(selection_item, 0, true);
             selection_active = false;
         }
     } else {
         const i32 old_item = selection_previous, new_item = selection_item;
-        if (step < 5) {
-            set_item_alpha(old_item, step < 3 ? kGreyOut[step] : 0, false);
+        if (step < 4) {
             set_item_alpha(old_item, kOldWhiteRise[step], true);
-            set_item_alpha(new_item, kGreyIn[step], false);
             set_item_alpha(new_item, kNewWhiteFall[step], true);
         } else {
-            set_item_alpha(old_item, 0, false);
             set_item_alpha(old_item, 255, true);
-            set_item_alpha(new_item, 255, false);
             set_item_alpha(new_item, 0, true);
             selection_active = false;
         }
