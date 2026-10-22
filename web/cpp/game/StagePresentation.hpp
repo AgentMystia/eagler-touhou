@@ -59,7 +59,9 @@ private:
     AnmManager& animations;
     AnmRenderer& renderer;
     Banks banks;
-    GameRandom random{1};
+    // 与管理器（=ECL sim）同一条 0x472c90 游戏侧 RNG：原版敌机/弹体/自机弹
+    // VM 全在全局态 0x4dc31c 上抽签，独立种子会移动共享流（对拍实证）。
+    GameRandom& random;
     std::vector<EnemyVisual> enemies_;
     std::vector<BulletSlot> bullets_;
     std::vector<std::unique_ptr<AnmVm>> shots_;
