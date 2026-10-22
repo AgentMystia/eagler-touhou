@@ -41,10 +41,14 @@ bool TitleFrame::initialize() {
         return menu();
     };
     if (reason == 0) {
-        state.flags |= 2;  // 冷启动：主菜单直接展开（无提示幕停留）
+        // 冷启动（真机 boot）：无提示幕，走完整时序——开场 logo 幕 180 帧后
+        // 标题展开、菜单 intro 180 帧插值（oracle g181/g361/g372 锚点）。
+        state.flags &= ~2u;
         return main();
     }
-    state.flags &= ~2u;
+    // 自对局/回放返回（return_reason 值域待 supervisor 反汇编锚定，蓝图 §五-9）：
+    // 菜单直接展开（背景复位根 script95、无 180 帧等待——推定，待 oracle）。
+    state.flags |= 2u;
     return main();
 }
 
