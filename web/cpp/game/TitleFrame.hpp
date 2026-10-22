@@ -40,6 +40,7 @@ class TitleFrame {
     std::array<FrameCallback, 2> callbacks;
     TitleFrameInput input;
     u32 white13_prev = 0;  // [wf360] w13 一帧记忆
+    u32 frame_count = 0;   // [轮7] 单调帧计数（age 重置规避；f = count+179）
     bool check(bool, const char*);
     bool menu();
     bool initialize();

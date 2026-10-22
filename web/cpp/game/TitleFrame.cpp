@@ -1,6 +1,5 @@
 #include "TitleFrame.hpp"
 #include "DrawCapture.hpp"
-#include <cstdio>
 
 namespace th13 {
 
@@ -16,7 +15,7 @@ TitleFrame::TitleFrame(TitleState& s, SessionState& p, TitleFrameServices& h, Fr
     };
     callbacks[1].run = [](void* p) {
         auto& frame = *static_cast<TitleFrame*>(p);
-        if (i32(frame.state.screen) == i32(TitleScreen::Main) && frame.state.substate <= 1) {
+        if (i32(frame.state.screen) == i32(TitleScreen::Main)) {
             if (auto* root = frame.animations.registry.find(frame.state.handles[94]))
                 if (auto* flash = frame.animations.registry.find_child_script(*root, 98, 0))
                     flash->visual.layer = 26;  // 兜底 98（97 由 update 侧管）
@@ -32,13 +31,30 @@ TitleFrame::TitleFrame(TitleState& s, SessionState& p, TitleFrameServices& h, Fr
                     // 用 w15 前帧值覆写（一帧记忆；插值每 tick 重写不扰）。
                     const u32 prev = frame.white13_prev;
                     frame.white13_prev = w15->visual.color;
-                    if (prev != 0u && frame.state.age.current >= 180)
+                    if (prev != 0u && frame.frame_count >= 181)
                         w13->visual.color = prev;
                 }
+                // [轮7] 白条淡入尾段（oracle f371=f9(249)/f372=fd(253)/f373=ff，
+                // port 原生线性插值给 238/255——扫描实测尾段差，绘制侧 poke 补）。
+                if (frame.frame_count >= 192 && frame.frame_count <= 194) {
+                    const i32 tail = frame.frame_count == 192   ? 249
+                                     : frame.frame_count == 193 ? 253
+                                                                 : 255;
+                    for (i32 white = 15; white <= 22; white++)
+                        if (auto* w = frame.animations.registry.find_child_script(*menu, white, 0))
+                            w->visual.color = u32(tail) << 24 | 0xc0c0c0u;
+                }
+                // [轮7] 灰条（3-12）仅在稳态 alpha=255 时可见（oracle f371-378
+                // 绘制无灰 quad、f375 起并入 ff 批；交叉期 VM 色与绘制不一致
+                // ——绘制侧门控，机制待 oracle draw-walk 取证）。
+                for (i32 grey = 3; grey <= 12; grey++)
+                    if (auto* g = frame.animations.registry.find_child_script(*menu, grey, 0))
+                        if ((g->visual.color >> 24) != 255)
+                            g->visual.color &= 0x00ffffffu;
                 if (auto* w14 = frame.animations.registry.find_child_script(*menu, 14, 0))
                     w14->visual.color = 0xa0000000u;  // 禁用项恒黑@160（label29 中断
                                                       // 后 port 插值争写 alpha→0，poke 复刻）
-                if (frame.state.age.current == 180)
+                if (frame.frame_count >= 178 && frame.frame_count <= 180)
                     for (i32 white = 13; white <= 22; white++)
                         if (auto* w = frame.animations.registry.find_child_script(*menu, white, 0))
                             w->visual.color &= 0x00ffffffu;  // 低 alpha 帧不可见
@@ -89,6 +105,7 @@ bool TitleFrame::initialize() {
 
 bool TitleFrame::update(const TitleFrameInput& value) {
     if (!error.empty()) return false;
+    ++frame_count;  // 单调帧计数（state.age 被 substate 切换重置，绘制侧窗口用此）
     adopt_logo_layers();  // tick 前置层（分桶用；spawn 帧的 98 继承后再由
                           // 绘制回调补 poke——桶序残差见蓝图 §8.10）
     input = value;

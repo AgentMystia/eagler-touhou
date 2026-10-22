@@ -150,12 +150,14 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
                 if (auto* overlay = animations.registry.find_child_script(*root, 93, 0))
                     overlay->visual.layer = 21;
         }
-        if (state.age.current >= kTitleBootIntroFrames + kTitleMenuReadyDelay) {
-            // g372 起可交互（oracle 实测）；闪场于就绪当帧武装（f371 首帧
-            // 0x8e=142，此后降段 4 帧/隐 4 帧/升 3 帧至 ff）。
+        if (state.age.current == kTitleBootIntroFrames + kTitleMenuReadyDelay) {
+            // [轮7] 交叉武装提前一帧（oracle grey3 于 f371 首绘 alpha=0x5b=
+            // 中断后第 1 tick——port 中断 tick 才执行标签体、alpha 写在次 tick，
+            // 故武装于 190）。白条淡出同帧起（f371=0x8e=142 实测）。
             if (!select_entry()) return false;
-            state.change_substate(2);
         }
+        if (state.age.current >= kTitleBootIntroFrames + kTitleMenuReadyDelay)
+            state.change_substate(2);
         break;
     }
     case 2: {
@@ -164,15 +166,15 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
         if ((pressed | repeated) & 0x20) state.menu.move(1);   // ↓=0x20
         if (!state.menu.error.empty()) return fail(state.menu.error);
         if (state.menu.previous != state.menu.cursor) {
-            // 仅新项入场（oracle f419-423 移动形：4 帧降至 {163,91,40,10} 后
-            // 回 ff 平直；无脉动、无隐藏段——与就绪闪场不同形）。
             if (!sound(10)) return false;
-            if (entry_flash >= 0) set_item_alpha(entry_flash, 255);  // 旧闪场复位
-            entry_flash = state.menu.cursor;
-            entry_flash_step = 0;
-            move_flash = true;
+            // [轮7] 双向交叉（全 poke 序列，advance_selection 驱动）。
+            selection_previous = state.menu.previous;
+            selection_item = state.menu.cursor;
+            selection_step = 0;
+            selection_move = true;
+            selection_active = true;
         }
-        if (entry_flash >= 0) advance_entry_flash();
+        advance_selection();
         if (pressed & 0x102) {  // Esc/X：跳到末项或直接退出分支
             if (state.menu.cursor == kTitleMainEntries - 1) {
                 if (!sound(9)) return false;
@@ -231,10 +233,10 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
 
 // 逐项 alpha poke（灰条入场插值早已结束/未开始，poke 不被覆写）。
 // rgb 恒 (192,192,192)；禁用项恒黑 rgb（oracle 全程 0xa0000000）。
-void TitleMainMenu::set_item_alpha(i32 item, i32 alpha) {
+void TitleMainMenu::set_item_alpha(i32 item, i32 alpha, bool white) {
     auto* root = animations.registry.find(state.handles[resources.main_root]);
     if (!root) return;
-    auto* child = animations.registry.find_child_script(*root, item + 13, 0);
+    auto* child = animations.registry.find_child_script(*root, item + (white ? 13 : 3), 0);
     if (!child) return;
     if (alpha < 0) alpha = 0;
     if (alpha > 255) alpha = 255;
@@ -250,33 +252,6 @@ void TitleMainMenu::set_item_alpha(i32 item, i32 alpha) {
 // [废除] boot 渐入 = 白条自带 ins_409(15,0,255) 停车插值推进（port 引擎
 // 同语义实证：f360 op10 alpha=0x22=第2帧值，监督者 poke 被插值逐帧覆写）。
 void TitleMainMenu::boot_fade(i32) {}
-
-void TitleMainMenu::advance_entry_flash() {
-    // 移动形（f419-423）：{163,91,40,10} 后回 ff（5 步收束）。
-    static const i32 kMove[4] = {163, 91, 40, 10};
-    // 就绪形（f371-381）：降 {142,79,35,8}、隐 4 帧、升 {214,244,255}。
-    static const i32 kDown[4] = {142, 79, 35, 8};
-    static const i32 kUp[3] = {214, 244, 255};
-    const i32 step = entry_flash_step++;
-    i32 alpha;
-    if (move_flash) {
-        if (step < 4) alpha = kMove[step];
-        else {
-            set_item_alpha(entry_flash, 255);
-            entry_flash = -1;
-            move_flash = false;
-            return;
-        }
-    } else if (step < 4) alpha = kDown[step];
-    else if (step < 8) alpha = -1;  // 隐藏（alpha 0——批内消失）
-    else if (step < 11) alpha = kUp[step - 8];
-    else {
-        set_item_alpha(entry_flash, 255);
-        entry_flash = -1;
-        return;
-    }
-    set_item_alpha(entry_flash, alpha < 0 ? 0 : alpha);
-}
 
 // Z+10 起灰条透明度衰减（oracle f479-f489 顶点色线性 -13/帧；rgb 恒定，
 // 禁用项黑 rgb 不变）。直接 poke visual.color。
@@ -330,15 +305,54 @@ bool TitleMainMenu::open_menu() {
     return show_menu();
 }
 
+// [轮7] 选择交叉（全绘制侧 poke；child_interrupt(3,7) 实测 pending 被消费
+// 但无可见效果——疑引擎停车中断路径另有语义，登记待查）。曲线全部来自
+// oracle SCAN 实测：灰 in {91,163,214,244,255}(5f)/out {40,10,0}；白 out
+// {142,79,35,8,0}；移动旧白升 {214,244,255}、新白降 {163,91,40,0}。
+void TitleMainMenu::advance_selection() {
+    if (!selection_active) return;
+    static const i32 kGreyIn[5] = {91, 163, 214, 244, 255};
+    static const i32 kGreyOut[3] = {40, 10, 0};
+    static const i32 kWhiteOut[5] = {142, 79, 35, 8, 0};
+    static const i32 kOldWhiteRise[4] = {214, 244, 255, 255};
+    static const i32 kNewWhiteFall[4] = {163, 91, 40, 0};
+    const i32 step = selection_step++;
+    if (!selection_move) {
+        if (step < 5) {
+            set_item_alpha(selection_item, kGreyIn[step], false);
+            set_item_alpha(selection_item, kWhiteOut[step], true);
+        } else {
+            set_item_alpha(selection_item, 255, false);
+            set_item_alpha(selection_item, 0, true);
+            selection_active = false;
+        }
+    } else {
+        const i32 old_item = selection_previous, new_item = selection_item;
+        if (step < 5) {
+            set_item_alpha(old_item, step < 3 ? kGreyOut[step] : 0, false);
+            set_item_alpha(old_item, kOldWhiteRise[step], true);
+            set_item_alpha(new_item, kGreyIn[step], false);
+            set_item_alpha(new_item, kNewWhiteFall[step], true);
+        } else {
+            set_item_alpha(old_item, 0, false);
+            set_item_alpha(old_item, 255, true);
+            set_item_alpha(new_item, 255, false);
+            set_item_alpha(new_item, 0, true);
+            selection_active = false;
+        }
+    }
+}
+
 // [wf371 实测] 菜单就绪（f371=age191）选中项闪场：alpha 255→0 约 4 帧线性
 // （f371-374: 0x8e/0x4f/0x23/0x08）、隐 4 帧（f375-378 批内消失）、
 // 3 帧回升至 ff（f379-381: 0xd6/0xf4/0xff）后稳态平直。移动光标的入场
 // 同为短淡入至 ff 平直（无脉动）。经 alpha poke 序列驱动（update 内）。
 bool TitleMainMenu::select_entry() {
-    entry_flash = state.menu.cursor;
-    entry_flash_step = 0;
-    move_flash = false;
-    advance_entry_flash();  // 当帧生效（oracle f371 首帧即 0x8e）
+    selection_step = 0;
+    selection_active = true;
+    selection_move = false;
+    selection_item = state.menu.cursor;
+    advance_selection();  // 当帧首帧（oracle f371 首帧即 0x8e/0x5b）
     return true;
 }
 
