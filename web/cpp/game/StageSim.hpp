@@ -153,6 +153,17 @@ struct StageBullet {
 
 class StageSim;
 
+// 对话系统宿主接口（ins_518/519 的接口位）：原版 0x428820(param>=0) 建
+// 0x1a8 对话对象挂 stage ctx+0x198，519 dialogWait 以 +0x198==0 放行。
+// 无头契约路径（stage1/replay 窗）不注入——msgmgr 合成态恒 0 的旧行为
+// 保持逐字节不变（event-contract.md §7.1【待校准】）；交互模式由 RunScene
+// 注入 MsgPlayer 实现。
+struct StageDialogHost {
+    virtual ~StageDialogHost() = default;
+    virtual void open_dialog(i32 entry) = 0;     // 0x428820 else 分支
+    virtual bool dialog_active() const = 0;      // stagectx+0x198 != 0
+};
+
 // 全局变量供给（0x420380/0x420d00 行为子集；current 指向正在步进的敌机）。
 class StageGvars final : public EclVariables {
 public:
@@ -233,6 +244,8 @@ public:
     // 519 dialogWait（0x41e407）：msgmgr+0x198==0 即通过——oracle 合成态
     // msgmgr 恒 0 → 原生即过，此处同判（§7.1 对话缺席【待校准】）。
     int boss_dialog_wait() const { return 0; }
+    // 对话宿主（交互模式注入；空 = 对话缺席：518 只做清场尾块、519 即过）。
+    StageDialogHost* dialog_host = nullptr;
     // §7 回放会话才落 boss_op/kill 事件（被动 stage1 窗口流保持 v1 字节不变）。
     bool replay_events = false;
     // 建敌（enmCreate 族与 root 装载共用；含构造内首趟 0x41a8a0）。
