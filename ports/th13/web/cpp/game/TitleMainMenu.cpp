@@ -183,44 +183,66 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
                 break;
             }
             if (!sound(7)) return false;
-            // [窗A 修正] Z 确认序（oracle 窗 Z@g471，f470 按下样本）：
-            //   ① 字条保留——不 label 3 淡出（oracle f480 十灰条 batch 仍在）；
-            //   ② interrupt(0,6)：全项 20f 闪灭销毁（灰态 label 6；oracle 十条
-            //      batch 末日 f489/g490 = Z+19，f490/g491 起批次消失 ✓ +20 死点）；
-            //   ③ 选中项改走 label 2（64↔255 闪 20f → 缩 0.5 飞至 (256,332) 停），
-            //      残留单条（oracle f490 起L26 单 quad 至 f505/g506）——覆盖 ②
-            //      对该项的 pending；
-            //   ④ 版本条 substate 4 age==8 处回收（oracle 末日 f477/g478 =
-            //      Z+7，f478/g479 起无 op）。
-            if (!interrupt(resources.main_root, 6, false)) return false;
-            if (!child_interrupt(selected + 3, 2, false)) return false;
+            // [解剖轮2] Z 确认序重做（difficulty-menu-anatomy.md §③/⑥ + 顶点色）：
+            // 主菜单 VM **不销毁**（解剖实证 3..12/13..22 转屏后仍在池、仅逐步
+            // 隐出）——废除轮1 的 interrupt(0,6)/label2。帧级时间线（Z=age0）：
+            //   +8  title_ver 末日（age==8 回收，次帧起无 op，oracle f477/478）；
+            //   +10 灰条透明度线性衰减 -13/帧（oracle f479 起 0xff→0xf2→0xe5…，
+            //       rgb 恒 192、禁用项黑 rgb 不变自 0xa0 起）——无对应标签序列，
+            //       supervisor 置色推定，逐帧 poke（入场插值早已结束不覆写）；
+            //   +14 LOGO 树回收（title_logo 末日 f483、f484 起无 op）；
+            //   +20 enter() 转难度屏（难度内容 f490=Z+21 起在场）；
+            //   +21 起的隐藏时间线（非选中灰条隐藏/选中白化续衰减/白条 9 枚闪
+            //       8 帧）由难度屏接手（TitleDifficultyMenu，其 age0 = Z+21）。
+            state.confirmed_entry = selected;
             state.change_substate(4);
-            // 其余入口（真机有画面，本轮不实现）：确认序同上，enter() 不切屏。
+            // 其余入口（真机有画面，本轮不实现）：确认序同上，enter() 不切屏
+            // ——解剖实证字条隐藏与转屏解耦，难度侧时间线照走。
         }
         break;
     }
-    case 4:
+    case 4: {
         if (state.age.current == 8 && state.version_bar &&
             state.menu.cursor != kTitleMainEntries - 1) {
-            // oracle g479（Z+8）起 title_ver 无绘制 op——立即回收对齐（Quit 分支
-            // 不观测到该序，保留版本条）。
+            // oracle g478（Z+8）title_ver 末日、g479 起无 op——立即回收对齐。
             animations.retire(state.version_bar);
         }
+        if (state.age.current == 14 && state.handles[resources.logo_root]) {
+            // oracle title_logo 末日 f483（Z+14）、f484 起无 op。
+            animations.retire(state.handles[resources.logo_root]);
+        }
+        if (state.age.current >= 10 && state.age.current <= 30) fade_menu_alphas(state.age.current - 10);
         if (state.age.current > 19) enter(state.menu.cursor);
         break;
     }
+    }
     return true;
+}
+
+// Z+10 起灰条透明度衰减（oracle f479-f489 顶点色线性 -13/帧；rgb 恒定，
+// 禁用项黑 rgb 不变）。直接 poke visual.color。
+void TitleMainMenu::fade_menu_alphas(i32 step) {
+    auto* root = animations.registry.find(state.handles[resources.main_root]);
+    if (!root) return;
+    const i32 alpha = 255 - 13 * step, dimmed = 160 - 13 * step;
+    for (i32 item = 0; item < kTitleMainEntries; item++) {
+        auto* child = animations.registry.find_child_script(*root, item + 3, 0);
+        if (!child) continue;
+        const u32 rgb = child->visual.color & 0xffffffu;
+        i32 a = item == i32(TitleMainEntry::ExtraStart) ? dimmed : alpha;
+        if (a < 0) a = 0;
+        if (a > 255) a = 255;
+        child->visual.color = u32(a) << 24 | rgb;
+    }
 }
 
 // g361 菜单展开：root0（spawn 3-22）+ 版本条 + 全项入场 + 禁用项黑化。
 // 白态 13-22 子 VM 建后即毁——真机 boot 无白条绘制（oracle 全窗无 title01@L25
 // ops；真机 ins_500 建后待中断的插值冻结语义 vs 移植侧自动淡入，引擎差异，
 // 蓝图 §oracle 章登记，待 AnmUpdate 语义裁定后改为保留）。
+// [解剖轮2] Z 序不再销毁字条 VM（解剖 §⑥：转屏后仍在池）——返回路径无需
+// 整树重建，present 复用 + 全项重入场（label 7+k 恢复透明度/可见性）。
 bool TitleMainMenu::open_menu() {
-    // 返回路径（flags bit1）：Z 确认序已闪灭字条子 VM（label 6）/选中项飞离
-    // （label 2），旧 root0 整树回收重建（真机返回序 oracle 未覆盖，推定）。
-    if ((state.flags & 2u) && state.handles[resources.main_root])
-        animations.retire(state.handles[resources.main_root]);
     if (!present(state.handles[resources.main_root])) {
         if (!create(resources.main_root)) return false;
         auto* root = animations.registry.find(state.handles[resources.main_root]);
@@ -235,6 +257,10 @@ bool TitleMainMenu::open_menu() {
                                               -1, 0);
         if (!state.version_bar) return fail(animations.error);
     }
+    // 选中项曾白化续衰减（Z 序）：恢复灰 192（label 28 = rgb→192 4f）。
+    if (state.confirmed_entry >= 0 && state.confirmed_entry < kTitleMainEntries &&
+        state.confirmed_entry != i32(TitleMainEntry::ExtraStart))
+        child_interrupt(state.confirmed_entry + 3, 28, false);
     return show_menu();
 }
 
