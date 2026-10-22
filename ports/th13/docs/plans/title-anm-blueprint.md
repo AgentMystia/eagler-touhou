@@ -224,12 +224,15 @@ struct TitleSceneResources {
   =180+11）/返回 age>=11 → substate 2 + `interrupt(0,7+cursor)`。
 - **substate 2（交互）**：↑↓=0x10/0x20 移动 → `sound(10)` +
   `interrupt(0,7+new)`（无 label 3 广播、无 paint()——30/31 空操作已删）；
-  Esc/X(0x102) → 跳末项或 substate 4+`sound(9)`；Z(0x80001)：StartGame →
-  `sound(7)` + `interrupt(0,3,true)` 全菜单淡出（golden 难度帧行区无字条，
-  0 号项确认序列 oracle 未覆盖）+ substate 4；Quit → `sound(9)` + substate 4；
-  **其余入口（1/2/3/4/5/6/7/8）仅确认音、不切屏**（真机有画面，见附 9 登记）。
-- **substate 4（age>19 分发）**：`enter(cursor)`：0 → flags|=2 + Difficulty
-  （menu.push、count=5、select(configured_difficulty)）；9 → Quit；其余 no-op。
+  Esc/X(0x102) → 跳末项或 substate 4+`sound(9)`；Z(0x80001) 非 Quit →
+  `sound(7)` + **确认序**（[窗A 修正] §8.2 帧级锁定）：`interrupt(0,6)` 全项
+  20f 闪灭（g491 死点）+ 选中项 `child_interrupt(3+cursor,2)` 残留单条 + substate 4
+  （字条保留、不 label 3 淡出）；Quit → `sound(9)` + substate 4；
+  **其余入口（1/2/3/4/5/6/7/8）确认序同上、enter() 不切屏**（真机有画面，附 9）。
+- **substate 4**：age==8 回收版本条（oracle g479 起 title_ver 无 op；Quit 分支
+  保留版本条）；age>19 `enter(cursor)`：0 → flags|=2 + Difficulty（menu.push、
+  count=5、select(configured_difficulty)；返回路径 open_menu 整树重建——旧树
+  字条已死/选中项飞离）；9 → Quit；其余 no-op（菜单终局）。
 
 ## 四、TitleSelectionMenu 重锚（2026-10-22 随实现更新；推定条目待 oracle 难度/角色窗）
 
@@ -339,21 +342,42 @@ boot 虽建有 ascii#18（主池插入、L22）但**无独立绘制 op**，机�
   自建帧恒定、无淡入）。机制疑为 supervisor 逐 VM 置色（脚本内无对应标签序列：
   灰 label 27=变黑 4f 但无 alpha160 步）——移植侧直接落子 VM 色，机制待锚。
   光标跳过（↓ 一次 0→2 实证）。
-- **Z 展开子菜单**（观察样本为 3 号项 = スペルプラクティス）：灰条**不销毁**
-  （title01@26 持续至 f599）、LOGO 于 ~f478-f484 淡出、白条 f490 起短暂可见、
-  子菜单树（root187 七行 spell.png 字条 + root240 立绘 236-239 + 提示条 241 +
-  rank00@23/select01@26 行条）入列；sig.anm 槽位于 f491 **重载**（20 个
-  bank1-entry1 VM @L22——为何 spell 屏用 sig.png 切片，待查）。0 号项（開始）
-  的确认序列 oracle 未覆盖，按 golden 难度帧「行区无主菜单字条」落为全菜单
-  label 3 淡出后转场（推定）。
+- **Z 展开子菜单**（观察样本为 3 号项 = スペルプラクティス；Z=g471）——
+  [窗A 首轮比对 2026-10-22 帧级锁定]：
+  - **g478（Z+7）为 title_ver 末日、g479（Z+8）起无 op** → 移植侧 substate 4
+    age==8 立即回收版本条（非 10f 淡出）；
+  - **字条保留至 Z+19**（f480/g481 十灰条 batch n=20 仍在、末日 f489/g490），
+    **g491（Z+20）批次消失** = 灰态 label 6 的 20f 闪灭销毁死点 → 移植侧
+    `interrupt(0,6)`（不再 label 3 淡出）；
+  - **选中项残留单条**（f490/g491 起 L26 单 quad 至 f505/g506）→ 移植侧选中项
+    改 `child_interrupt(3+cursor, 2)`（label 2 飞至 (256,332)，覆盖 label 6 pending）；
+  - 白条 9 quad 闪烁 g491-g498（8 帧）——本轮不复刻（角色/难度屏重做轮处理）；
+  - 子菜单树（root187 七行 spell.png 字条 + root240 立绘 236-239 + 提示条 241 +
+    rank00@23/select01@26 行条）入列；sig.anm 槽位于 f491 **重载**（20 个
+    bank1-entry1 VM @L22——为何 spell 屏用 sig.png 切片，待查）。
+  - **f500-599 无 face/pl00 立绘绘制** → 难度期不建立绘（建面时机待解剖报告，
+    移植侧已从难度屏撤出、代码路径保留）。
 
-### 8.3 层值偏移现象（draw_compare 阶段处理）
+### 8.3 层值偏移现象（[窗A 首轮比对 2026-10-22 已按帧落码]）
 
-oracle 实测层与 dump `ins_304` 不一致的 VM（全部为背景拼贴半张）：
-sig 右半（dump 25 / 实测 26）、title00a 左半（22/23）、右半（21/22）、
-select00 右半（21/23→21→22 随转场搬移）。菜单字条/版本条/大行条层值两侧一致。
-推定 supervisor 在转场期对背景半张做逐 VM 层搬移——移植侧暂按 dump 层落码，
-差异留给标题窗 draw_compare 裁决（可能需要 manager 层覆盖 API）。
+oracle 实测层与 dump `ins_304` 不一致处及精确帧（title-draws.jsonl）：
+- **sig 右半**（script1，dump 25）：boot 全程 f0-f178 实测 **L26**（左半 23 与 dump 一致）；
+- **select00 右半**（script93，dump 21）：自 **g181（f180）起 L23**；**g350（f349）起 L21**
+  （最后 23 帧 f348、首个 21 帧 f349——与森林淡入同帧搬移；f517 起再搬 22，属
+  子菜单转场期，本轮不复刻）；
+- **title00a 左/右半**（script90/91，dump 22/21）：自 g350 淡入起实测 **23/22**（各 +1）；
+- select00 左半（script92）与 dump 一致恒 21。
+移植侧落码：`TitleMainMenu::adopt_background_layers()`（建根时 90→23/91→22/93→23，
+92 不动）+ substate 1 age==169（g350）93→21；sig 右半在 `ApplicationState::draw_loading`
+建后置 26（**web 侧已落，tests/harness/harness.cpp 的 prepare_loading 镜像需同步一行**
+——该文件非标题链路所有权，已向协调方报告）。机制（supervisor 逐 VM 置层）仍未反汇编。
+
+**[窗A 首轮比对附带发现] 移植侧捕获管线层错记**：DrawCapture 导出的 op 层与 VM
+真实层存在系统性串扰（疑似 sprite() 钩子与 op 落笔次序滞后一个绘制调用）。wasm
+内 printf 实证 VM 层全对（90=23/91=22/92=21/93=23→21@t169 恒稳），而导出呈
+「右半 +1 / 下一 VM 层」样偏移（f349 导出 [2]=23/[4]=22 vs VM 91=22/93=21）。
+**draw_compare 前需修 DrawCapture/AnmRenderer 钩子次序（harness 所有权）**，
+否则层值比对永差一。
 
 ### 8.4 位图辨认补充（title01.png 行序 → 内容，视觉模型多轮交叉读，待人类终审）
 
