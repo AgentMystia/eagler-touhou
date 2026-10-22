@@ -555,9 +555,11 @@ int StageCommands::execute(EclContext& c, u16 op) {
         }
         return 0;
     }
-    case 552: {  // 0x41b34f（case 0x56）：敌机+0x278 = arg0——敌机族 ANM
-        // 创建层基（0x41fe80:0x41ff24 槽位 VM 与 0x419450:0x419764 镜像重挂
-        // VM 均以 [+0x278]+7 建层；trace 实测窗口敌机该字段 = 1 → 层 8）。
+    case 552: {  // 0x41b34f（case 0x56，eclmap 名 zIndex）：敌机内嵌 VM+0x278
+        // （=敌机结构+0x1464）= arg0——敌机族 ANM 创建层基。两消费点
+        // 0x41fe80:0x41ff24（槽位 VM）与 0x419450:0x419764（镜像重挂 VM）
+        // 均以 [+0x278]+7 建层。构造默认 1（0x419195，Unicorn 写 watch
+        // 实证），本指令为覆盖（窗口 st01 未用——st05bs 父子敌机有用例）。
         i32 value = 0;
         if (!resolve_int(c, 0, value)) {
             sim.error_ = c.error;
