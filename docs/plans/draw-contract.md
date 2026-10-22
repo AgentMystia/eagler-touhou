@@ -144,15 +144,17 @@ ECL no-op 跳表改写 = stage1 `NOOP_OPS` 剔除 ANM 指令族
 | 无输入 port-draws.jsonl | 3600（0..3599） | 293792 | 289456 | 4336 | 0 | cmp 逐字节一致 |
 | 回放 port-draws-replay.jsonl | 11065（0..11064） | 750436 | 735098 | 15338 | 0 | cmp 逐字节一致 |
 
-`draw_compare.py` 当前裁决（2026-10 对齐轮 3 后）：两窗 `first_divergence_
-frame=61`，帧 61 的 op 数两侧已同为 9（8 神灵 quad + 1 敌机 up），分歧深
-入敌机 up 的 verts 字段（`op[8].verts[0][0]: '149.5' != '139.5'`）。轮 3
-的关键更正：**原版侧曾缺 0x43bbc0 战斗 gamestate 初始化**——视口块
-gamestate+0xd8（UP 裁剪数据源）恒全零致全部 UP 精灵被裁（v1 修复后基线
-的 ups 是误画、轮 2 基线的 ups=0 是误裁）；补驱动后基线 ups=139（无输入
-窗）。敌机链已通：ECL 303/306 槽位 VM 创建（0x41fe80/case3）+ 每帧位置
-跟随（0x41a8a0 把敌机 ECL 位置写槽 VM+0x574）+ UP 层口径（flush 时 watch
-残值 56）。
+`draw_compare.py` 当前裁决（2026-10 对齐轮 4 后）：两窗 `first_divergence_
+frame=63`，帧 61-62 逐字段全过（敌机 up 顶点 x/y/z/rhw/argb 与 oracle 一
+致）。轮 4 的关键更正：**ECL 与 ANM 是两条独立种子 0 的 0x472c90 流**——
+ECL 的 [-9987]（RANDF2）在 f61 仍返回新流第 1 抽（MainSub00 的生成坐标
+x=%A+[-9987]*32 → GirlRedA01 x=-163.783264），与 ANM 流（装载 2 调+每神灵
+10 调，f61 前已耗 82）互不推进；轮 2 的单流合并是过度修正（f61 前 ECL 恰
+零抽签故神灵匹配，f61 首抽即偏）。此前轮 3 的更正保留：原版侧曾缺
+0x43bbc0 战斗 gamestate 初始化（视口块=UP 裁剪数据源恒零致全裁）。敌机
+链已通：ECL 303/306 槽位 VM 创建（0x41fe80/case3）+ 每帧位置跟随
+（0x41a8a0 把敌机 ECL 位置写槽 VM+0x574）+ UP 层口径（flush 时 watch 残
+值 56）。
 
 神灵链已通：ECL `MapleEnemy` 的 `ins_308(1,91)`（0x41b260 case5 →
 0x4243e0）→ 移植侧 `StageCommands` 307/308 真实现 + `StagePresentation`
@@ -163,15 +165,17 @@ gamestate+0xd8（UP 裁剪数据源）恒全零致全部 UP 精灵被裁（v1 �
 double 中间量 + 帧尾 SetTexture(0,0)（设备态清空、mgr+0xb78188 缓存不
 失效——oracle f1-8 tex=None 的来源）。
 
-剩余首分歧（帧 61 verts，下一轮工作面）：移植敌机运动模型首拍位移与
-原版不符——GirlRedA01 生成 (-163.78,-16)，原版前两帧静止（+0x574 恒
--163.79），移植首拍已移动至 (-154.11,-16)（Δ≈9.67）。敌机运动学子系统
-（ECL 404/405 速度/加速度解释、ins_23 等待期间的运动语义）此前仅有事件
-操作码级验证、无位置级对拍——现在有了逐帧位置地面真值（槽 VM +0x574），
-需按 0x418e00 族逐条对齐。次级：敌机 up 的 UV/顶点色链、ECL 313/316
-（MBoss2 case7/10）未实现、回放窗自机弹 VM 的 RNG 消费（oracle 窗内无
-自机弹系统）、stage 合并 bank 的文件 3+ 脚本号偏移（窗口内敌机均用文件
-2，暂无影响）。
+剩余首分歧（帧 63 verts UV，下一轮工作面）：f63 起原版敌机 up 的 u 从
+0（sprite12）跳到 0.25（sprite16 行走动画）——取证结论：f63 出现的 VM
+（034ecf08，地址低于槽 VM ⟹ 敌机结构内嵌 VM enemy+0x11EC）被激活并取
+代槽 VM 出画；它不经 0x4243e0 创建、不经 0x46f4a0/f3f0/f540/f5f0 入池、
+不经 0x461cb0 重绑（以上全 watch 排除）⟹ 激活逻辑内联在敌机管理器族——
+0x41a8a0 每拍调敌机+0x2c4 的类型回调（+0x40e8 另一回调，0x478db0 解引用
+调用），妖精行走 VM 属敌机类型子系统（+0x2c4 回调由 0x4183f0 构造时装
+配，脚本选择/时序规则待挖）。移植侧现由 StagePresentation 表现层近似。
+次级：敌机 up 的顶点色链、ECL 313/316（MBoss2 case7/10）未实现、回放窗
+自机弹 VM 的 RNG 消费、stage 合并 bank 的文件 3+ 脚本号偏移（窗口内敌机
+均用文件 2，暂无影响）。
 
 【事件窗回归注】replay 事件窗（vs stage1-oracle-replay.jsonl 48406 事件）
 在 50433ebc（本轮改动之前）即已分歧于 frame 124（54816 事件；stash 本轮
