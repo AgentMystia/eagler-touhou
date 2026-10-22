@@ -15,9 +15,11 @@ TitleScene::TitleScene(SessionState& p, TitleSelectionSettings& choice, AnmManag
 
 TitleScene::~TitleScene() {
     for (auto& handle : state.handles) animations.retire(handle);
-    animations.retire(state.portrait);
+    animations.retire(state.version_bar);
     animations.retire(state.start_effect);
-    for (const i32 bank : {resources.title, resources.portrait}) animations.retire_resource(bank);
+    // 析构 bank 清单（蓝图 §五-12）：title=16 / title_v=17 / help=19（help 补漏）。
+    for (const i32 bank : {resources.title, resources.version, resources.help})
+        animations.retire_resource(bank);
 }
 
 bool TitleScene::check(bool ok, const std::string& why) {
