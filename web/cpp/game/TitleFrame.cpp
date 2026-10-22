@@ -15,6 +15,7 @@ TitleFrame::TitleFrame(TitleState& s, SessionState& p, TitleFrameServices& h, Fr
     };
     callbacks[1].run = [](void* p) {
         auto& frame = *static_cast<TitleFrame*>(p);
+        frame.adopt_logo_layers();
         frame.submit_side_strips();
         return i32(FrameAction::Continue);
     };
@@ -94,6 +95,25 @@ bool TitleFrame::update(const TitleFrameInput& value) {
 // 注：boot 期（oracle f1-179）四条同在——该段由 tests/harness 的装载幕镜像
 // 渲染（非本类所有权），已登记为 harness 镜像同步项。
 void TitleFrame::submit_side_strips() { emit_title_side_strips(animations); }
+
+// [wf290 机制待定] LOGO 翻转族层搬移（蓝图 §8.8）：dump 96-100 全为
+// ins_304(25)，oracle 实测 97（TEN DESIRES 3D 翻转）f290-348 绘于 L26、
+// f349（60f 插值完成）即落 L25 并保持（f349-360 L25 n2 0x80ffffff 轨迹
+// 两侧逐位一致）；98 爆闪（97 完成时 spawn，10f 命 f349-358）oracle 全命
+// L26（野生位 -56.47→-547.90、色 0x51bbbbff→0x14242ff）。「3D 变换期层+1」
+// 与 sig 右半恒 +1 同族（§8.3），机制未 trace（trace_spawn 不覆盖标题流，
+// 需 oracle 侧 VM 层写 watch）。层窗口按绘制侧口径（age 已 tick）：
+// ≤169 → 26、≥170 → 25。挂 Draw 回调（优先级 2，tick 后层走前）以覆盖
+// 97 的 spawn 当帧。
+void TitleFrame::adopt_logo_layers() {
+    if (i32(state.screen) != i32(TitleScreen::Main) || state.substate > 1) return;
+    auto* root = animations.registry.find(state.handles[94]);
+    if (!root) return;
+    if (auto* flip = animations.registry.find_child_script(*root, 97, 0))
+        flip->visual.layer = state.age.current <= 169 ? 26 : 25;
+    if (auto* flash = animations.registry.find_child_script(*root, 98, 0))
+        flash->visual.layer = 26;
+}
 
 void emit_title_side_strips(AnmManager& animations) {
     if (!draw_capture) return;
