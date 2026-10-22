@@ -132,11 +132,16 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
                                                            : banks.stage;
                     // 槽 0 脚本号 = 306 记录（enemy->anm_script[0]）；
                     // layer = 敌机内嵌 VM+0x278 + 7（0x419450:0x419764 实证，
-                    // mirror_script_base 构造默认 1 → 层 8，ECL 552 可覆盖）
+                    // mirror_script_base 构造默认 1 → 层 8，ECL 552 可覆盖）；
+                    // 插入方向 = 主链尾插（0x419764 块直调 0x46f3f0——f92
+                    // Unicorn 实测 F3F0-tail，重挂 VM 落链尾、层桶序排旧 VM
+                    // 之后。此前沿用 create 默认 ordering=2（0x46f4a0 头插
+                    // 语义；303/306 建池 0x4243e0 才是头插）→ f92 op[12] 的
+                    // 层内序 Blue 先于 Red，与 oracle 相反（draws 首分歧）。
                     handle = animations.create(bank,
                                                enemy->anm_script[0] + step,
                                                enemy->mirror_script_base + 7,
-                                               2, old_pos, 0, false);
+                                               0, old_pos, 0, false);
                     if (!handle)
                         return fail("Mirror animation creation failed: " +
                                     animations.error);
