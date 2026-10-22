@@ -44,13 +44,6 @@ TitleFrame::TitleFrame(TitleState& s, SessionState& p, TitleFrameServices& h, Fr
                         if (auto* w = frame.animations.registry.find_child_script(*menu, white, 0))
                             w->visual.color = u32(tail) << 24 | 0xc0c0c0u;
                 }
-                // [轮7] 灰条（3-12）仅在稳态 alpha=255 时可见（oracle f371-378
-                // 绘制无灰 quad、f375 起并入 ff 批；交叉期 VM 色与绘制不一致
-                // ——绘制侧门控，机制待 oracle draw-walk 取证）。
-                for (i32 grey = 3; grey <= 12; grey++)
-                    if (auto* g = frame.animations.registry.find_child_script(*menu, grey, 0))
-                        if ((g->visual.color >> 24) != 255)
-                            g->visual.color &= 0x00ffffffu;
                 if (auto* w14 = frame.animations.registry.find_child_script(*menu, 14, 0))
                     w14->visual.color = 0xa0000000u;  // 禁用项恒黑@160（label29 中断
                                                       // 后 port 插值争写 alpha→0，poke 复刻）
