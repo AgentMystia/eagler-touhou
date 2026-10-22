@@ -167,11 +167,9 @@ TEST(title_boot_introduces_menu_per_real_timeline) {
     CHECK(harness.scene->error.empty());
 }
 
-// [暂缓][引擎 bug 蓝图 §8.9] 难度构建期 vm(120) 自 spawn 死循环 + 宿主
-// SIGSEGV（case500 插桩实证 child_script=120；疑窗B node 崩溃同根因）。
-// 复现步骤保留在用例体内（解除下行 return 即复现）；引擎修复后删除 return。
+// 引擎 AnmRegistry 幂等回收修复（蓝图 §8.9：整树 retire 子节点双入队→双
+// erase→槽位复用→tick 中 VM 被覆写）后恢复；本例即原复现载体。
 TEST(title_full_chain_start_game) {
-    return;  // TODO(引擎): 注册池槽复用/模板绑定污染——修复后恢复
 
     TitleHarness harness;
     harness.reach_menu();
@@ -249,9 +247,7 @@ TEST(title_unimplemented_entries_confirm_without_switching) {
 }
 
 // 难度「やめる」行（第 5 项，位图辨认）＝取消回主菜单；Esc 同效。
-// [暂缓][引擎 bug 蓝图 §8.9] 难度屏构建即触发——修复后删除 return 恢复。
 TEST(title_difficulty_quit_row_returns_to_main) {
-    return;  // TODO(引擎): vm(120) 自 spawn 死循环
     TitleHarness harness;
     harness.reach_menu();
     harness.frame(0x01);
@@ -268,9 +264,7 @@ TEST(title_difficulty_quit_row_returns_to_main) {
 }
 
 // 角色菜单 Esc 回难度、难度 Esc 回主菜单的回退链；预览行同步 preferred。
-// [暂缓][引擎 bug 蓝图 §8.9] 难度屏构建即触发——修复后删除 return 恢复。
 TEST(title_character_escape_returns_to_difficulty) {
-    return;  // TODO(引擎): vm(120) 自 spawn 死循环
     TitleHarness harness;
     harness.reach_menu();
     harness.frame(0x01);
@@ -334,9 +328,7 @@ TEST(title_background_layer_pokes_per_oracle) {
 // [解剖轮2] Z 后隐藏时间线 + 难度屏构成自证（difficulty-menu-anatomy.md）：
 // 非选中灰条隐藏不销毁、选中白化 @204、白条 14-22 闪现、粒子（ascii18 克隆）
 // 自 age5 起累积、光标 119 缓动首/末值、f517（难度龄 27）背景右半层分裂。
-// [暂缓][引擎 bug 蓝图 §8.9] 难度屏构建即触发——修复后删除 return 恢复。
 TEST(title_difficulty_anatomy_choreography) {
-    return;  // TODO(引擎): vm(120) 自 spawn 死循环
     TitleHarness harness;
     harness.reach_menu();
     harness.frame(0x01);   // Z（開始）
