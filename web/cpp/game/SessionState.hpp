@@ -15,6 +15,22 @@ struct SessionState {
     float rate = 1;
     u32 scene_flags = 0;
     bool new_run = true;
+    // ---- S3 对局终了链路（results-overlay-anatomy.md / results-flow.md）----
+    // DAT_004be830：bit4-5 = mode（0=故事 1=Extra 2=符卡练习 3=Overdrive 同 2 类）、
+    // bit6 = 演示回放；0x42cd40 以 (flags>>4)&3 取 mode、&0x30==0x20 门符卡练习。
+    u32 run_mode_flags = 0;
+    // GameInf+0x74 模式参数（0=常规 1=练习）：非 0 时关终改走结算A（0x43e5a0）。
+    i32 practice_mode = 0;
+    // DAT_004be808（「白点」计数，>599 → 好结局资格）与 DAT_004be83c（好结局
+    // 资格计数，残≥3 时置 3；结局选择的门见 results-flow.md §4.2）。
+    i32 ending_points = 0;
+    i32 good_endings = 0;
+    // GameInf+0x2ac：本次关终 clear bonus 累计（0x42abf0 覆盖写、六面/Extra
+    // 再 += 同式原值；HUD 通关演出消费——显示 TODO）。
+    i32 stage_clear_bonus = 0;
+    // score 数据块 +0x7fc 起的关卡通过位（内存态；ScoreFile 落档属后期阶段）。
+    // 位序 = stage + difficulty*8（0x42cd40:100 的字节写位同式）。
+    u32 stage_cleared_bits = 0;
 };
 
 // HUD 侧玩家资源视图（battle 未接入前的持有者；完整 PlayerLifeSession
