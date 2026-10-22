@@ -153,6 +153,12 @@ int AnmRenderer::draw(AnmVm& vm){
     if(mode==10||mode==23||mode>25)return 0;if(mode==9||mode==11||mode==12||mode==13||mode==14){if(mode!=11&&!(v.color>>24))return -1;const i32 count=vm.variables.integers[0];if(count<2||u32(count)>vm.geometry.screen_vertices.size()/2){error="Animation strip buffer unavailable";return -2;}flush();if(!material(vm))return -2;TH13_DRAW_SPRITE(vm);graphics.set_layout(VertexLayout::ScreenColorUv);submit(vm,mode==11?Topology::Fan:Topology::Strip,u32(count)*2-2,vm.geometry.screen_vertices.data(),sizeof(AnmGeometryVertex));return 0;}
     error="Animation drawing mode not yet implemented: "+std::to_string(mode);return -2;
 }
+// UP 批冲批纪律（f349/f61 双窗实证，蓝图 §8.9 诊断清单裁定）：原版 UP 批仅按
+// 材质键（纹理+管线态）冲批，层不是冲批触发——f61 敌机 UP 批跨上下文并入
+// L56 终批即铁证；f349 的三段 title_logo op 全部由键差驱动（97/98 blend=1 vs
+// 96/100 blend=0）。故此处不做层边界 flush（加了会破坏对局窗 L56 终批口径，
+// 实测首分歧 511→61）；op 的 layer 字段精度由捕获钩子次序保证（顶点入批时
+// 登记 VM 真值层，见文件头注）。
 bool AnmRenderer::draw_layer(const std::vector<AnmVm*>& layer){for(auto* vm:layer)if(draw(*vm)==-2)return false;return true;}
 int AnmRenderer::draw_screen_strip(AnmVm& vm,const AnmGeometryVertex* data,u32 count){
     if(anm_draw_probe.enabled)++anm_draw_probe.strips;
