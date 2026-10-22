@@ -1,9 +1,14 @@
-// 标题状态机单测：主菜单 → 难度 → 角色 → 开始游戏 全链路（合成 ANM bank），
-// 以及 Quit 出口（destination 语义见 ui-base.md §四）。
+// 标题状态机单测：按真机脚本号/时序对合（oracle 标题窗实证 + dump 结构）。
+// 覆盖：boot 无提示幕时序（g181 背景/LOGO、g361 菜单、g372 可交互）→ 光标
+// 跳过禁用项 → Z 进难度 → 难度移动/やめる行 → Z 进角色 → 角色确认 → Run
+// 转场请求；Quit 出口；难度/角色 Esc 回退链。
+// 合成 ANM 的 spawn 结构镜像 title.anm 真实布局（root0→3-22、root1→23-48、
+// root2→49-82、root89→92/93/91/90、root94/95、root129/130→125-142）。
 #include "ui_test_fixtures.hpp"
 #include "../harness/test_framework.hpp"
 
 #include "game/TitleScene.hpp"
+#include "game/TitleMainMenu.hpp"
 #include "game/FrameScheduler.hpp"
 
 using namespace th13;
@@ -33,13 +38,45 @@ struct TitleHost final : TitleScenePlatform {
         return true;
     }
     bool hud_text(const HudTextDraw&) override { return true; }
-    // StartGame 与 Quit 共享 TitleScreen 值：开局请求排队后不覆盖（原版守卫）。
     bool title_exit(i32 destination) override {
         if (start_stage >= 0) return true;
         exit_destination = destination;
         return true;
     }
 };
+
+// title.anm 合成镜像：243 脚本槽位，根脚本按 dump spawn 序派生子脚本，
+// 其余一律 spawn 后停在 ins_3()（与真实灰态/白态字条停车形状一致）。
+std::vector<u8> title_anm_fixture() {
+    std::vector<std::vector<AnmIns>> scripts(243);
+    for (auto& script : scripts) script = {wait(), stop()};
+    auto spawn_range = [&](i32 root, i32 first, i32 last) {
+        scripts[u32(root)].clear();
+        for (i32 child = first; child <= last; child++)
+            scripts[u32(root)].push_back(spawn(child));
+        scripts[u32(root)].push_back(wait());
+        scripts[u32(root)].push_back(stop());
+    };
+    spawn_range(0, 3, 22);      // 主菜单根 (70,280)：灰 3-12 / 白 13-22
+    spawn_range(1, 23, 48);     // 难度根 (70,312)：名行+数字行
+    spawn_range(2, 49, 82);     // 角色根 (70,312)：名行+数字行
+    scripts[89] = {spawn(92), spawn(93), spawn(91), spawn(90), wait(), stop()};  // 背景根
+    scripts[94] = {spawn(97), spawn(96), spawn(100), wait(), stop()};            // LOGO 首入场
+    scripts[95] = {spawn(99), spawn(96), spawn(100), wait(), stop()};            // LOGO 复位
+    // 129：立绘 125-128 + 选择框 131-134 + 武器 135-138（非连续！含 129/130 会自递归）。
+    scripts[129].clear();
+    for (i32 child : {125, 126, 127, 128, 135, 136, 137, 138, 131, 132, 133, 134})
+        scripts[129].push_back(spawn(child));
+    scripts[129].push_back(wait());
+    scripts[129].push_back(stop());
+    // 130：立绘 + EX 武器 139-142。
+    scripts[130].clear();
+    for (i32 child : {125, 126, 127, 128, 139, 140, 141, 142})
+        scripts[130].push_back(spawn(child));
+    scripts[130].push_back(wait());
+    scripts[130].push_back(stop());
+    return synthetic_anm(8, scripts);
+}
 
 struct TitleHarness {
     GameRandom random;
@@ -52,19 +89,15 @@ struct TitleHarness {
     std::unique_ptr<TitleScene> scene;
 
     TitleHarness() {
-        // title bank：script0 在创建时派生菜单子脚本 3..22；其余平凡。
-        std::vector<std::vector<AnmIns>> title_scripts = trivial_scripts(24);
-        title_scripts[0].clear();
-        for (int child = 3; child <= 22; child++) title_scripts[0].push_back(spawn(child));
-        title_scripts[0].push_back(wait());
-        title_scripts[0].push_back(stop());
-        CHECK(load_bank(manager, 16, synthetic_anm(8, title_scripts)));
-        CHECK(load_bank(manager, 17, synthetic_anm(1, trivial_scripts(1))));
-        CHECK(load_bank(manager, 2, synthetic_anm(8, trivial_scripts(24))));  // ascii（prompt=19）
-        CHECK(load_bank(manager, 8, synthetic_anm(4, trivial_scripts(4))));   // effect 转场
+        CHECK(load_bank(manager, 16, title_anm_fixture()));
+        CHECK(load_bank(manager, 17, synthetic_anm(1, trivial_scripts(1))));   // title_v
+        CHECK(load_bank(manager, 2, synthetic_anm(8, trivial_scripts(20))));   // ascii
+        CHECK(load_bank(manager, 19, synthetic_anm(4, trivial_scripts(4))));   // help
+        CHECK(load_bank(manager, 8, synthetic_anm(4, trivial_scripts(4))));    // effect 转场
         scene = std::make_unique<TitleScene>(progress, selection, manager, host, scheduler,
                                              TitleSceneResources{});
         CHECK(scene->error.empty());
+        scene->state.return_reason = 0;  // 冷启动（ApplicationState::begin_title(0) 同款）
     }
 
     void frame(u32 pressed = 0, u32 repeated = 0) {
@@ -75,42 +108,69 @@ struct TitleHarness {
     void advance(int frames, u32 pressed = 0, u32 repeated = 0) {
         for (int i = 0; i < frames; i++) frame(pressed, repeated);
     }
+
+    // 走完 boot intro（180 帧菜单插值 + 11 帧就绪延迟）到达可交互主菜单。
+    void reach_menu() {
+        advance(kTitleBootIntroFrames + kTitleMenuReadyDelay + 1);
+        CHECK_EQ(int(scene->state.screen), int(TitleScreen::Main));
+        CHECK_EQ(scene->state.substate, 2);
+    }
 };
 }  // namespace
 
+// 真机时序锚：g181 建背景/LOGO（标题任务使能帧）、g361 建菜单+版本条、
+// g372 起可交互（oracle/title_oracle.py docstring + title-draws.jsonl 帧序）。
+TEST(title_boot_introduces_menu_per_real_timeline) {
+    TitleHarness harness;
+    harness.advance(1);  // 首帧：Initialize → Main substate 0
+    CHECK(harness.scene->state.handles[89] != 0);  // 背景根（g181）
+    CHECK(harness.scene->state.handles[94] != 0);  // LOGO 首入场根
+    CHECK_EQ(harness.scene->state.handles[0], 0u);  // 菜单未建（intro 中）
+    harness.advance(kTitleBootIntroFrames);        // 至 age==180（g361）建菜单
+    CHECK(harness.scene->state.handles[0] != 0);   // 主菜单根已建
+    CHECK(harness.scene->state.version_bar != 0);  // 版本条（title_v script0）
+    CHECK_EQ(harness.scene->state.substate, 1);    // 仍不可交互
+    // intro 期间按键无效（真机 g372 前不接受输入）。
+    harness.frame(0x20);
+    CHECK_EQ(harness.scene->state.menu.cursor, 0);
+    harness.advance(kTitleMenuReadyDelay);  // g372：可交互
+    CHECK_EQ(harness.scene->state.substate, 2);
+    harness.frame(0x20);
+    CHECK_EQ(harness.scene->state.menu.cursor, 2);  // 禁用项 1 被跳过（oracle 0→2）
+    CHECK(harness.scene->error.empty());
+}
+
 TEST(title_full_chain_start_game) {
     TitleHarness harness;
-    // 入场：Initialize → Main，等待提示幕与主菜单展开（age 120 → >130）。
-    harness.advance(1);
-    CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Main));
-    harness.advance(20);  // 越过 age==120 建根与 >130 展开闸
-    CHECK_EQ(harness.scene->state.substate, 2);
-    // 确认（Z）：StartGame → 难度幕。
-    harness.frame(1);
-    harness.advance(25);  // substate 4 的 age>19 转场
+    harness.reach_menu();
+    // 确认 0 号（開始）：→ 难度（substate 4 的 age>19 转场）。
+    harness.frame(0x01);
+    harness.advance(25);
     CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Difficulty));
-    // 难度：默认 Normal(1)；右移到 Hard(2) 后确认。
-    harness.advance(10);  // substate 0→1→2
+    CHECK(harness.scene->state.handles[1] != 0);    // 难度根（script1）
+    CHECK(harness.scene->state.handles[101] != 0);  // 大行条 101（家内安全）
+    CHECK(harness.scene->state.handles[109] != 0);  // 「やめる」大行条
+    // 难度：默认 Normal(1)；↓ 到 Hard(2) 后确认。
+    harness.advance(10);
     CHECK_EQ(harness.scene->state.substate, 2);
-    harness.frame(0xa0);  // →|↓ 掩码：下一项
+    harness.frame(0x20);
     CHECK_EQ(harness.scene->state.menu.cursor, 2);
-    harness.frame(1);  // 确认 Hard
+    harness.frame(0x01);
     harness.advance(20);
     CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Character));
     CHECK_EQ(harness.progress.difficulty, 2);
-    // 角色：右移到 Marisa(1)，左移回 Reimu(0)，再右移到 Marisa 后确认。
+    CHECK(harness.scene->state.handles[2] != 0);    // 角色根（script2）
+    CHECK(harness.scene->state.handles[129] != 0);  // 立绘/武器根（script129）
+    // 角色：行 1-4 为角色（推定），→ 到魔理沙(行 2) 确认。
     harness.advance(10);
     CHECK_EQ(harness.scene->state.substate, 2);
-    harness.frame(0x80);
-    CHECK_EQ(harness.scene->state.menu.cursor, 1);
-    harness.frame(0x40);
-    CHECK_EQ(harness.scene->state.menu.cursor, 0);
-    harness.frame(0x80);
-    CHECK_EQ(harness.scene->state.menu.cursor, 1);
-    harness.frame(1);  // 确认：转场 + age>39 → start_game
+    CHECK_EQ(harness.scene->state.menu.cursor, 1);  // 初始 = preferred(0)+1 = 霊夢行
+    harness.frame(0x80);                            // →
+    CHECK_EQ(harness.scene->state.menu.cursor, 2);
+    harness.frame(0x01);  // 确认：转场 + age>39 → start_game
     harness.advance(45);
     CHECK_EQ(harness.host.start_stage, 1);
-    CHECK_EQ(harness.progress.character, 1);
+    CHECK_EQ(harness.progress.character, 1);  // 行 2 → 角色 1（魔理沙）
     CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::StartGame));
     CHECK(harness.scene->error.empty());
     CHECK_EQ(harness.host.exit_destination, -1);  // 开局排队后 Quit 分支不触发
@@ -118,12 +178,11 @@ TEST(title_full_chain_start_game) {
 
 TEST(title_quit_requests_exit_destination) {
     TitleHarness harness;
-    harness.advance(25);
-    CHECK_EQ(harness.scene->state.substate, 2);
-    // Replay/PlayerData/MusicRoom 禁用：一次下移直接落到 Quit(4)。
-    harness.frame(0x20);
-    CHECK_EQ(harness.scene->state.menu.cursor, 4);
-    harness.frame(1);
+    harness.reach_menu();
+    // 环绕开启：↑ 一次自 0 直达 9（やめる）。
+    harness.frame(0x10);
+    CHECK_EQ(harness.scene->state.menu.cursor, 9);
+    harness.frame(0x01);
     harness.advance(25);
     CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Quit));
     harness.advance(2);  // TitleFrame case 2：title_exit
@@ -133,10 +192,77 @@ TEST(title_quit_requests_exit_destination) {
 
 TEST(title_disabled_entries_not_selectable) {
     TitleHarness harness;
-    harness.advance(25);
-    for (int i = 0; i < 6; i++) harness.frame(0x20);  // 充分环绕
+    harness.reach_menu();
+    for (int i = 0; i < 11; i++) harness.frame(0x20);  // 充分环绕
     const i32 cursor = harness.scene->state.menu.cursor;
-    CHECK(cursor == 0 || cursor == 4);  // 只停在 StartGame/Quit
+    CHECK(cursor != 1);  // Extra Start（无存档）永不停留（oracle：↓ 一次 0→2）
+}
+
+// 未实现入口（Replay/PlayerData/音乐室/Option/Manual）：确认音后不切屏、
+// 菜单保持可交互（真机有画面，蓝图「未实现」清单登记为有意偏差）。
+TEST(title_unimplemented_entries_confirm_without_switching) {
+    TitleHarness harness;
+    harness.reach_menu();
+    for (int i = 0; i < 3; i++) harness.frame(0x20);  // 光标 0→2→3→4
+    CHECK_EQ(harness.scene->state.menu.cursor, 4);
+    const int sounds_before = harness.host.sounds;
+    harness.frame(0x01);  // Z on Replay(4)
+    CHECK(harness.host.sounds == sounds_before + 1);  // 仅确认音
+    CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Main));
+    harness.frame(0x20);  // 菜单仍可移动
+    CHECK_EQ(harness.scene->state.menu.cursor, 5);
+    CHECK(harness.scene->error.empty());
+}
+
+// 难度「やめる」行（第 5 项，位图辨认）＝取消回主菜单；Esc 同效。
+TEST(title_difficulty_quit_row_returns_to_main) {
+    TitleHarness harness;
+    harness.reach_menu();
+    harness.frame(0x01);
+    harness.advance(25);
+    CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Difficulty));
+    harness.advance(10);
+    for (int i = 0; i < 3; i++) harness.frame(0x20);  // 1→2→3→4（やめる行）
+    CHECK_EQ(harness.scene->state.menu.cursor, 4);
+    harness.frame(0x01);
+    harness.advance(30);  // 难度 substate 4 转场 + 返回路径菜单就绪（11 帧）
+    CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Main));
+    CHECK_EQ(harness.scene->state.substate, 2);  // 返回路径菜单直接展开可交互
+    CHECK(harness.scene->state.handles[0] != 0);  // 主菜单根复用（未销毁）
+}
+
+// 角色菜单 Esc 回难度、难度 Esc 回主菜单的回退链；预览行同步 preferred。
+TEST(title_character_escape_returns_to_difficulty) {
+    TitleHarness harness;
+    harness.reach_menu();
+    harness.frame(0x01);
+    harness.advance(25);
+    harness.advance(10);
+    harness.frame(0x01);  // 确认难度
+    harness.advance(20);
+    CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Character));
+    harness.advance(10);
+    harness.frame(0x80);  // →：霊夢行(1) → 魔理沙行(2)
+    CHECK_EQ(harness.scene->state.menu.cursor, 2);
+    harness.frame(0x100);  // Esc：回难度
+    harness.advance(10);
+    CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Difficulty));
+    harness.advance(10);
+    CHECK_EQ(harness.scene->state.substate, 2);
+    harness.frame(0x100);  // Esc：回主菜单
+    harness.advance(10);
+    CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Main));
+    // 回退后 preferred 角色随预览行同步（魔理沙行 2 → 角色 1）。
+    harness.advance(12);  // 返回路径菜单就绪（11 帧延迟）
+    CHECK_EQ(harness.scene->state.substate, 2);
+    harness.frame(0x01);   // Z：再进难度
+    harness.advance(25);
+    harness.advance(10);
+    CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Difficulty));
+    harness.frame(0x01);   // Z：确认难度 → 角色
+    harness.advance(20);
+    CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Character));
+    CHECK_EQ(harness.scene->state.menu.cursor, 2);  // preferred(1)+1
 }
 
 int main() { return th13test::run_all("标题状态机"); }
