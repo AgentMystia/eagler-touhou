@@ -198,8 +198,9 @@ TEST(title_disabled_entries_not_selectable) {
     CHECK(cursor != 1);  // Extra Start（无存档）永不停留（oracle：↓ 一次 0→2）
 }
 
-// 未实现入口（Replay/PlayerData/音乐室/Option/Manual）：确认音后不切屏、
-// 菜单保持可交互（真机有画面，蓝图「未实现」清单登记为有意偏差）。
+// 未实现入口（Replay/PlayerData/音乐室/Option/Manual）：Z 播确认音 + 走真机
+// 确认序（label6 闪灭/选中项 label2 飞离/版本条回收）但不切屏、无后续画面
+// （真机有画面，蓝图 §8.5 登记；菜单随之终局——与真机菜单死亡序一致）。
 TEST(title_unimplemented_entries_confirm_without_switching) {
     TitleHarness harness;
     harness.reach_menu();
@@ -208,9 +209,10 @@ TEST(title_unimplemented_entries_confirm_without_switching) {
     const int sounds_before = harness.host.sounds;
     harness.frame(0x01);  // Z on Replay(4)
     CHECK(harness.host.sounds == sounds_before + 1);  // 仅确认音
-    CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Main));
-    harness.frame(0x20);  // 菜单仍可移动
-    CHECK_EQ(harness.scene->state.menu.cursor, 5);
+    CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Main));  // 不切屏
+    CHECK_EQ(harness.scene->state.substate, 4);  // 确认序终局（无后续画面）
+    harness.frame(0x20);  // 菜单已终局：不再移动
+    CHECK_EQ(harness.scene->state.menu.cursor, 4);
     CHECK(harness.scene->error.empty());
 }
 
@@ -263,6 +265,33 @@ TEST(title_character_escape_returns_to_difficulty) {
     harness.advance(20);
     CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Character));
     CHECK_EQ(harness.scene->state.menu.cursor, 2);  // preferred(1)+1
+}
+
+
+// [窗A 修正] 背景半张层值落码自证：substate 0 建根后 90→23 / 91→22 / 93→23，
+// 92 不动（合成 bank 子 VM 继承根层 0；真机 anm 侧由脚本 ins_304 预置 21/22）。
+TEST(title_background_layer_pokes_per_oracle) {
+    TitleHarness harness;
+    harness.advance(1);
+    auto* root = harness.manager.registry.find(harness.scene->state.handles[89]);
+    CHECK(root != nullptr);
+    auto layer_of = [&](i32 script) {
+        auto* vm = harness.manager.registry.find_child_script(*root, script, 0);
+        return vm ? vm->visual.layer : -1;
+    };
+    CHECK_EQ(layer_of(90), 23);
+    CHECK_EQ(layer_of(91), 22);
+    CHECK_EQ(layer_of(93), 23);
+    // 92（select00 左半）不落码：合成 bank 继承根层 0（真机 anm 为脚本 21）。
+    CHECK_EQ(layer_of(92), 0);
+    // intro 期 age 169（g350）：select00 右半搬至 21。update #N 的 age=N-1，
+    // poke 在 update #170（age 169）——此前共 169 次 update。
+    harness.advance(168);  // 加首次共 169 次：age 仍未到 169
+    CHECK_EQ(layer_of(93), 23);
+    harness.frame();  // update #170：age 169 → 搬移
+    CHECK_EQ(layer_of(93), 21);
+    CHECK_EQ(layer_of(90), 23);
+    CHECK_EQ(layer_of(91), 22);
 }
 
 int main() { return th13test::run_all("标题状态机"); }
