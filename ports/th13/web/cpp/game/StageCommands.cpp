@@ -106,9 +106,17 @@ int StageCommands::execute(EclContext& c, u16 op) {
         i32 slot = 0, script = 0;
         if (resolve_int(c, 0, slot) && resolve_int(c, 1, script) && slot >= 0 && slot < 4)
             e.anm_script[slot] = script;  // script < 0 = 清槽（0x41fe80）
-        if (!sim.anm_effects_noop && sim.ecl_slot_anm && slot >= 0 && slot < 4)
+        if (!sim.anm_effects_noop && sim.ecl_slot_anm && slot >= 0 && slot < 4) {
+            // case3 slot0 附加：flags 0x200000（镜像翻转重挂门，0x419450:102；
+            // +0x270 构造 0、+0x78 首拍速度 0 ⟹ 差分基线=当前生成位，避免
+            // 首次 sync 误判朝向）
+            if (op == 306 && slot == 0) {
+                e.flags |= 0x200000u;
+                e.mirror_prev_x = e.position[0];
+            }
             sim.anm_effects.push_back({e.anm_file, script, 0, 0, 0,
-                                        1, u8(op), slot, e.serial});
+                                        1, u16(op), slot, e.serial});
+        }
         return 0;
     }
     case 307:   // anmAt（case4：file=arg0、script=arg1、位置=敌机 xyz、主池头入链）

@@ -126,6 +126,12 @@ struct StageEnemy {
     // VM 精灵像素宽高 × scale，公式 (h*scaleY, w*scaleX)）。事件窗 noop 不写。
     float anm_size_a[2] = {0, 0};
     float anm_size_b[2] = {0, 0};
+    // 镜像翻转重挂状态（0x419450:101-152：flags&0x200000 时按 x 朝向符号
+    // (+0x270 vs sign(+0x78)) 变化回收槽 0 VM 并以脚本号 +0x278+7 重建——
+    // Girl 族 f63 首次移动触发行走动画 VM 的机制）。
+    i32 mirror_dir = 0;          // +0x270 朝向符号（构造 0）
+    float mirror_prev_x = 0;     // 差分近似 sign(+0x78)（本帧位移符号）
+    i32 mirror_script_base = 0;  // +0x278（构造 0；脚本号 = base + 7）
 };
 
 // 交互模式的弹体实体（fire_et 事件同源的直进弹；无头路径不产实体）。
