@@ -21,6 +21,8 @@ class AnmManager final:public AnmObjectHost {
     bool adopt_bank(i32,std::unique_ptr<Bank>);
 public:
     AnmRegistry registry;std::string error;float rate=1;
+    // 0x472c90 游戏侧 RNG 源（原版全局态 0x4dc31c；表现层/装载模板共享）。
+    GameRandom& random_source()const noexcept{return random;}
     std::unordered_map<i32,std::string> resource_names;
     bool name_resource(i32 id,const std::string& name){if(!resource(id)||name.empty()||name.size()>1024)return false;resource_names[id]=name;return true;}
     std::function<bool(AnmVm&,i32)> effect;

@@ -20,7 +20,8 @@ constexpr float kBulletSpriteForward = 0.0f;
 
 StagePresentation::StagePresentation(AnmManager& manager, AnmRenderer& draw, Banks banks,
                                      i32 player_shot_sprite)
-    : animations(manager), renderer(draw), banks(banks), player_shot_sprite_(player_shot_sprite) {}
+    : animations(manager), renderer(draw), banks(banks),
+      random(manager.random_source()), player_shot_sprite_(player_shot_sprite) {}
 
 void StagePresentation::release() {
     for (auto& enemy : enemies_)
