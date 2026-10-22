@@ -29,6 +29,14 @@ constexpr AddressAnchor kAnchors[] = {
     {"player", 0},
     {"spirit", 0},        // th13 特有：神灵/灵界系统
     {"replay", 0},
+    // S3-1（2026-10-23）：对话/关终了/覆盖层三族——行为规格与字节证据见
+    // game/MsgPlayer.hpp 头注释与 docs/plans/results-overlay-anatomy.md。
+    {"msg-dialog", 0x428ae0},      // 对话执行器（装载 0x424fd0、entry 定位 0x428820:128、
+                                   // 文本解密 0x42a340）；C++ 对应物 game/MsgPlayer
+    {"stage-clear", 0x42cd40},     // 关终了处理器（每关奖 0x42abf0、六面四式 0x42ce96-0x42ced0、
+                                   // Extra 0x42cfb3）；C++ 对应物 game/PostGameFlow::on_stage_clear
+    {"post-game-overlay", 0x43dbc0},  // 覆盖层 31 态分发（结算A 0x43e780/GameOver 0x43fa90/
+                                      // 结算B 0x440960）；C++ 对应物 game/PostGameFlow 骨架
 };
 
 }  // namespace th13::rebuild
