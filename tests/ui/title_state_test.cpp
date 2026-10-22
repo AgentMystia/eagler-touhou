@@ -58,6 +58,13 @@ std::vector<u8> title_anm_fixture() {
         scripts[u32(root)].push_back(stop());
     };
     spawn_range(0, 3, 22);      // 主菜单根 (70,280)：灰 3-12 / 白 13-22
+    for (i32 item = 0; item < 10; item++) {
+        // 灰条各自入场 label 7+k（真机 dump；中断跳入后 park → visible 置位）。
+        scripts[u32(3 + item)].clear();
+        scripts[u32(3 + item)].push_back(label(7 + item));
+        scripts[u32(3 + item)].push_back(wait());
+        scripts[u32(3 + item)].push_back(stop());
+    }
     spawn_range(1, 23, 48);     // 难度根 (70,312)：名行+数字行
     spawn_range(2, 49, 82);     // 角色根 (70,312)：名行+数字行
     scripts[89] = {spawn(92), spawn(93), spawn(91), spawn(90), wait(), stop()};  // 背景根
@@ -75,6 +82,12 @@ std::vector<u8> title_anm_fixture() {
         scripts[130].push_back(spawn(child));
     scripts[130].push_back(wait());
     scripts[130].push_back(stop());
+    // 123：难度屏根（解剖轮2）——spawn 83,84,113..121（与 dump 同序，非连续）。
+    scripts[123].clear();
+    for (i32 child : {83, 84, 118, 119, 120, 121, 113, 114, 115, 116})
+        scripts[123].push_back(spawn(child));
+    scripts[123].push_back(wait());
+    scripts[123].push_back(stop());
     return synthetic_anm(8, scripts);
 }
 
@@ -147,9 +160,9 @@ TEST(title_full_chain_start_game) {
     harness.frame(0x01);
     harness.advance(25);
     CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Difficulty));
-    CHECK(harness.scene->state.handles[1] != 0);    // 难度根（script1）
-    CHECK(harness.scene->state.handles[101] != 0);  // 大行条 101（家内安全）
-    CHECK(harness.scene->state.handles[109] != 0);  // 「やめる」大行条
+    // [解剖轮2] 难度屏构成：root123 树（行条/徽记/光标 119）+ 固定徽记 101。
+    CHECK(harness.scene->state.handles[123] != 0);
+    CHECK(harness.scene->state.handles[101] != 0);
     // 难度：默认 Normal(1)；↓ 到 Hard(2) 后确认。
     harness.advance(10);
     CHECK_EQ(harness.scene->state.substate, 2);
@@ -292,6 +305,54 @@ TEST(title_background_layer_pokes_per_oracle) {
     CHECK_EQ(layer_of(93), 21);
     CHECK_EQ(layer_of(90), 23);
     CHECK_EQ(layer_of(91), 22);
+}
+
+
+// [解剖轮2] Z 后隐藏时间线 + 难度屏构成自证（difficulty-menu-anatomy.md）：
+// 非选中灰条隐藏不销毁、选中白化 @204、白条 14-22 闪现、粒子（ascii18 克隆）
+// 自 age5 起累积、光标 119 缓动首/末值、f517（难度龄 27）背景右半层分裂。
+TEST(title_difficulty_anatomy_choreography) {
+    TitleHarness harness;
+    harness.reach_menu();
+    harness.frame(0x01);   // Z（開始）
+    harness.advance(21);   // substate 4 age20 转屏 → 难度屏 age0 = Z+21 建面+隐藏序
+    CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Difficulty));
+    auto& registry = harness.manager.registry;
+    auto* menu_root = registry.find(harness.scene->state.handles[0]);
+    CHECK(menu_root != nullptr);
+    auto item_state = [&](i32 item) {
+        auto* vm = registry.find_child_script(*menu_root, item + 3, 0);
+        return vm ? std::pair<bool, u32>(vm->visible, vm->visual.color) : std::pair<bool, u32>(false, 0);
+    };
+    // 注：UI 合成面不带动画 tick（label 中断不消费、visible 不置位）——可
+    // 见性机制由 harness 真机面覆盖，此处断言色值时间线（解剖顶点色）。
+    const auto selected = item_state(0);
+    CHECK_EQ(selected.second >> 24, 204u);  // 选中白化 alpha 204（oracle f490）
+    CHECK_EQ(selected.second & 0xffu, 255u);  // rgb 白化
+    const auto other = item_state(2);
+    CHECK_EQ(other.second >> 24, 125u);  // 非选中衰减尾（255-13*10，VM 留池不销毁）
+    // 白条 14-22（items 1-9）建齐。
+    for (i32 script = 14; script <= 22; script++)
+        CHECK(harness.scene->state.handles[script] != 0);
+    // 光标缓动（解剖 §② 首值；根 123 子相对系）：难度龄 0 = -202。
+    auto* tree = registry.find(harness.scene->state.handles[123]);
+    CHECK(tree != nullptr);
+    auto* cursor = registry.find_child_script(*tree, 119, 0);
+    CHECK(cursor != nullptr);
+    CHECK_EQ(cursor->visual.layer, 26);
+    CHECK_NEAR(cursor->visual.translation.x, float(-202 - 320), 1e-6);
+    const u32 before = registry.count();
+    harness.advance(5);  // 难度龄 5：粒子突发 17
+    CHECK(registry.count() >= before + 17);
+    harness.advance(13);  // 至缓动末（龄 18）
+    CHECK_NEAR(cursor->visual.translation.x, float(32 - 320), 1e-6);
+    // f517 层分裂（难度龄 27）：背景右半 93 → L22（左半不动——合成 bank 为 0）。
+    harness.advance(9);
+    auto* bg = registry.find(harness.scene->state.handles[89]);
+    CHECK(bg != nullptr);
+    CHECK_EQ(registry.find_child_script(*bg, 93, 0)->visual.layer, 22);
+    CHECK_EQ(registry.find_child_script(*bg, 92, 0)->visual.layer, 0);
+    CHECK(harness.scene->error.empty());
 }
 
 int main() { return th13test::run_all("标题状态机"); }
