@@ -163,9 +163,10 @@ ECL no-op 跳表改写 = stage1 `NOOP_OPS` 剔除 ANM 指令族
 0..11063，漏末帧 f=11064）；修复后重导出应为 11065 行（0..11064），与本
 节 oracle 表对齐。§5 下文轮次注记中的行数引用以各自导出时点为准。
 
-`draw_compare.py` 当前裁决（2026-10 对齐轮 5 后）：两窗 `first_divergence_
-frame=92`，帧 63-91 逐帧逐 op 逐字段全过（敌机运动 + 镜像翻转行走动画
-全链）。轮 4 已修：ECL/ANM 双独立种子 0 流（[-9987] 新流第 1 抽实证，
+`draw_compare.py` 当前裁决（2026-10 轮 9 后）：无输入窗 `first_divergence_
+frame=511`、回放窗 `first_divergence_frame=124`（帧 0-510 / 0-123 逐帧逐
+op 逐字段全过——f92 层内序 + f159 缓动权重 80 位链两个根因已修，新工
+作面见后文登记）。轮 4 已修：ECL/ANM 双独立种子 0 流（[-9987] 新流第 1 抽实证，
 单流合并勘误）。轮 4 的关键更正：**ECL 与 ANM 是两条独立种子 0 的 0x472c90 流**——
 ECL 的 [-9987]（RANDF2）在 f61 仍返回新流第 1 抽（MainSub00 的生成坐标
 x=%A+[-9987]*32 → GirlRedA01 x=-163.783264），与 ANM 流（装载 2 调+每神灵
@@ -185,18 +186,53 @@ x=%A+[-9987]*32 → GirlRedA01 x=-163.783264），与 ANM 流（装载 2 调+每
 double 中间量 + 帧尾 SetTexture(0,0)（设备态清空、mgr+0xb78188 缓存不
 失效——oracle f1-8 tex=None 的来源）。
 
-剩余首分歧（帧 92，下一轮工作面）：同层多敌机的出画选择。轮 8 取证
-（trace_spawn p574 dump + DPUP/flush 序）：
-- oracle f92 层 8 dispatch 双行走 VM（Red t=31 p574=-125.29、Blue t=2
-  p574=147.63），四角均在视口内，但 **enqueue 只发生 Red**——Blue 在
-  0x467350 内部被丢（裁剪不成立，丢弃点在该函数后段未定位：dispatch
-  序 Red 先 Blue 后，疑与 0x46a700→0x467350 的调用链参数（param_1
-  flags 位）或 mgr 批状态相关）；f91 反之（Blue enqueue、Red 丢弃）。
-- port 侧无此丢弃规则：两行走 VM 都出画（f92 op[12] 出 Blue 483.5——
-  其 x 构成 ECL+336 为第二疑点：p0=483.6=147.6+320+16 而 y 未 +16，
-  anm_quad_positions 的 offset 分支取值待逐行核）。
-- 修复面：① 0x467350 后段的 Blue 丢弃条件（需 objdump 全函数后半 +
-  watch 实证）；② port quad 的 offset 应用（x 误加 16）。
+【帧 92 已修（本轮轮 9）】轮 8 的「Blue 丢弃」假设证伪——0x467350
+反编译（`00467350.c:130-156`）只有视口裁剪四向比较，四角在内必 enqueue；
+f92 实测（trace_spawn 新增 0x46f1d7 主链遍历 watch + 0x46f4a0/0x46f3f0
+插入归表 watch）：f91 Blue 出生走 0x4243e0→0x46f4a0 **头插**（链头），
+f92 Blue 翻转重挂走 0x419764→0x46f3f0 **尾插**（链尾）——oracle 层桶序
+（主链头→尾遍历序）f91 = Blue 先、f92 = Red 先。op[12] 的 up 批
+`verts` 截断序列化只保留批内**第一个**精灵的顶点，f92 oracle 批序
+Red 在前（verts 全 Red），port 批序 Blue 在前 → 首分歧 483.5 vs 178.5。
+port 根因：翻转重挂复用 `AnmManager::create` 默认 ordering=2（0x46f4a0
+头插语义；303/306 建池 0x4243e0 才是头插），原版重挂直调 0x46f3f0 尾插。
+修复：`StagePresentation.cpp` 镜像重挂 create 调用 ordering 2→0（尾插）。
+（此前「x 误加 16」疑点亦证伪：port v0 是镜像精灵的右上角，中心
+467.5 = oracle Blue p574=147.63+320 ✓ 位置本身一致。）
+
+【帧 159 已修（轮 9 续）】f92 修复后首分歧 159（op[18].world[12]
+-6.02060699 vs -6.02061462，16 ULP）。取证：world[12] = 灵行走 VM
++0x3c 直接值；两侧插值通道输入**位级一致**（oracle trace 通道字段
+dump vs port `TH13_DUMPCHECK=159` harness dump：start=4264ad62、
+end=c283e607、elapsed=152、dur=300、mode=9 全同）。根因 = `0x473a40`
+缓动权重 mode9 族 else 分支 `(2-(2-t2)²)×0.5` 全程 x87 80 位链、仅
+最终一次落 f32（0x473b98-0x473baa 无中间 fstps）；port `Interpolation.cpp`
+逐步 f32 落位。数值实证：double 链复现精确命中 oracle 位 c0c0a8e0，
+逐步 f32 复现 port 位 c0c0a8d0。修复：`interpolation_weight` 幂族
+（mode 1-6、9-14、22-31）中间量改 double、最终单次落 float（t 入口
+除法与 mode9 族 t2=t+t 加倍点仍单次落 f32——0x473a50/0x473b65
+fstps 实证）。mode 18-21（sin 族）未逐位验证、窗口无消费，保持现值。
+无输入窗裁决推进 159→511。
+
+【新工作面登记（轮 9 实测）】
+- 无输入窗 f511：层 56 敌机 up 批 verts[12][1] 446.5 vs 447.5——
+  port 侧中心 x≈509.5 的敌机 f511 起 ECL 位置冻结（x/y 均停、uv 帧
+  动画仍走 → ANM VM 活着、位置跟随断），oracle 继续每帧 +1。ECL 敌机
+  运动链分歧，未定位。
+- 回放窗 f124：op[16] 层 56 敌机批 count 6≠4——oracle f124 起批内
+  少一个行走敌机精灵，port 保留。与事件窗 replay frame 124 分歧
+  （§事件窗回归注，50433ebc 前已存在）同帧同源，属既有登记面。
+两窗裁决（draw_compare ULP-4）：无输入 92→**511**，回放 92→**124**；
+确定性自证：port draws 重跑 `cmp` 逐字节一致。
+
+【轮 8 取证存档（f92 工作面的当时假设，轮 9 已证伪并翻案，见上）】
+trace_spawn p574 dump + DPUP/flush 序当时记录：oracle f92 层 8 dispatch
+双行走 VM（Red t=31 p574=-125.29、Blue t=2 p574=147.63），四角均在视口
+内，「enqueue 只发生 Red」的观察其实来自 _enq_log 打印配额（3 条上限）
+吞掉了 Blue 的第二条 enqueue——f91 实际两条 enqueue（452.5 与 177.5）
+同帧并存，f92 同样双精灵批（count=4=2 prim×2 精灵），截断序列化只见
+第一个精灵。「0x467350 后段丢弃条件」与「port x 误加 16」两个修复面
+均已被轮 9 证伪（层内提交序 + 尾插才是根因）。
 
 【敌机 aura up 缺口登记（评审确认轮新增，独立于上面 Blue 丢弃+offset
 工作面）】f92 起 port 侧敌机 aura 的 up op 与 oracle 出现系统性差异
@@ -219,8 +255,8 @@ VM 层同样以 `[+0x278]+7`（0x419450:0x419764），此前 mirror_script_base
 【本轮修复后实测（无输入窗）】层号主链修复生效：敌机本体 up 落层 8
 （此前 0/2），f92 帧层 56 双侧同、f1371+ 敌机层 8 与 oracle 侧 8 对齐；
 aura 独立缺口仍在（port 层 7 vs oracle 层 4——父脚本无出生 op 的登记项
-③），up 总量 4336→30812、draw_compare 两窗裁决保持 f92（op[12] Blue
-丢弃+offset 工作面未动）。回放窗行数 11064→11065 与 oracle 对齐。
+③），up 总量 4336→30812（当时裁决保持 f92；轮 9 层序+权重修复后见上方
+新裁决）。回放窗行数 11064→11065 与 oracle 对齐。
 轮 7 已修：翻转重挂机制全解（脚本号查表/门=sign(x速度)/layer=+0x278+7/
 位置继承），行走 VM 身份两侧已逐一对齐（Red→7、Blue→1=oracle s4aa）。
 轮 5 已修：镜像翻转重挂（0x419450:101-152，flags&0x200000 + x 朝向
