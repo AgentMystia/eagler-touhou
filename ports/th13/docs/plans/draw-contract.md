@@ -11,7 +11,15 @@
 | 窗口 | 帧号范围 | 行数 | 基线对照 |
 |---|---|---|---|
 | 无输入窗 | frame 0..3599 | 3600 | stage1-oracle.jsonl（10187 事件，末帧 3599） |
-| 回放窗 | frame 0..10662 | 10663 | stage1-oracle-replay.jsonl（48406 事件，末帧 10662；th13_udSr01 stage0） |
+| 回放窗 | frame 0..11064 | 11065 | stage1-oracle-replay.jsonl（48406 事件，Boss 1非帧 10362 两侧同） |
+
+【2026-10 勘误】v1 此前登记回放窗「frame 0..10662 / 10663 行」，与两侧实测均
+不符（oracle 重导出 11065 行 = 帧 0..11064、port 11064 行 = 帧 0..11063）：事件
+流基线窗口（10663 帧，th13_udSr01 stage0 全长）与渲染窗窗口（11065 帧）是两个
+窗口——渲染窗以 replay stage 全长 11064 输入帧 + 帧 0 装载趟为口径（oracle
+`run_replay` 的 `total = min(frames, stage.frame_count)` 后执行帧 1..total）。
+两侧帧→输入映射同构（帧 f ↔ 输入 f-1），此前的 off-by-one 是 port 侧驱动循环
+漏末帧（`frame < total` 应为 `frame <= total`，已修）；非输入序列错位。
 
 frame 0 = 装载 + root spawn（含构造内首趟）。每帧序（对齐 0x45d2f0 帧序）：
 
@@ -82,8 +90,15 @@ ECL no-op 跳表改写 = stage1 `NOOP_OPS` 剔除 ANM 指令族
 - `verts`：C×顶点，每顶点按 stride 展开：FVF 0x144（stride 0x1c）为
   `[x,y,z,rhw,diffuse_u32,u,v]`；FVF 0x44（stride 0x14）为
   `[x,y,z,rhw,diffuse_u32,0,0]`。浮点 %.9g；`argb` 为 32 位色（u32 十进制）。
-- 一次 DrawPrimitiveUP = 一个 op（0x4679a0 批提交的全部 6×count 三角形顶点
-  平铺）。
+  【2026-10 更正】0x44 分支的 u/v 槽为 JSON **整数 0**（两侧一致；port 侧
+  曾输出字符串 "0"，str-vs-int 属潜在假分歧，已修——当前窗口 port 无
+  0x44 up op，oracle 的 0x44 up 集中在帧 10362+）。
+- 一次 DrawPrimitiveUP = 一个 op。`verts` 序列化为扁平顶点流（3C 个 float32
+  槽中每顶点前 `per = stride/4` 项）的**前 C 项前缀**——TRIANGLELIST 批的
+  每图元 3 顶点、钩子 count = PrimitiveCount（每精灵 2 三角形）时，单精灵
+  保留上缘 2 顶点（丢 4/6）、多精灵批后续精灵全部丢弃（v1 此处「全部
+  6×count 三角形顶点平铺」的括注与实现不符，两侧实现同构截断、比对裁决
+  不受影响——帧 91 count=4 样本 verts=[c0,c1,c2,c1] 实证）。
 
 ## 3. 数值与比对规则
 
@@ -142,7 +157,11 @@ ECL no-op 跳表改写 = stage1 `NOOP_OPS` 剔除 ANM 指令族
 | 窗口 | 行数（帧号） | ops | quad | up | 零绘制帧 | 两次连跑 |
 |---|---|---|---|---|---|---|
 | 无输入 port-draws.jsonl | 3600（0..3599） | 293792 | 289456 | 4336 | 0 | cmp 逐字节一致 |
-| 回放 port-draws-replay.jsonl | 11065（0..11064） | 750436 | 735098 | 15338 | 0 | cmp 逐字节一致 |
+| 回放 port-draws-replay.jsonl | 11064（0..11063） | 750436 | 735098 | 15338 | 0 | cmp 逐字节一致 |
+
+【2026-10 勘误】上表回放窗为 off-by-one 修复前的实测（11064 行 = 帧
+0..11063，漏末帧 f=11064）；修复后重导出应为 11065 行（0..11064），与本
+节 oracle 表对齐。§5 下文轮次注记中的行数引用以各自导出时点为准。
 
 `draw_compare.py` 当前裁决（2026-10 对齐轮 5 后）：两窗 `first_divergence_
 frame=92`，帧 63-91 逐帧逐 op 逐字段全过（敌机运动 + 镜像翻转行走动画
@@ -178,6 +197,26 @@ double 中间量 + 帧尾 SetTexture(0,0)（设备态清空、mgr+0xb78188 缓�
   anm_quad_positions 的 offset 分支取值待逐行核）。
 - 修复面：① 0x467350 后段的 Blue 丢弃条件（需 objdump 全函数后半 +
   watch 实证）；② port quad 的 offset 应用（x 误加 16）。
+
+【敌机 aura up 缺口登记（评审确认轮新增，独立于上面 Blue 丢弃+offset
+工作面）】f92 起 port 侧敌机 aura 的 up op 与 oracle 出现系统性差异
+（port-draws.jsonl f1371+ vs st01-draws.jsonl f1371+）：层号错（port
+0/2 vs oracle 4/8——aura 创建层与敌机本体层未按构造分置）、缺 op、
+提交序错且该段 up 总量约为 oracle 的 1.72 倍。根因主链已字节码+反汇编
+双重实证：① port 槽位 VM 创建曾传 layer=-1（脚本自定层）——原版
+0x41fe80:0x41ff24 以敌机 `[+0x278]+7` 建层（+0x278 由 ECL 552
+/0x41b359 写，窗口敌机实测 1 → 层 8），已改为 `[+0x278]+7` 并补 552
+指令；② 镜像重挂行走 VM 层同样以 `[+0x278]+7`（0x419450:0x419764），
+此前 mirror_script_base 全仓无赋值点恒 0 → 落层 7（已随 552 接线修复）；
+③ slot1 父脚本 enemy.anm 85/91 无 op304/相关出生 op（oracle 侧 aura
+为独立 op，port 侧缺失待逐 op 补齐）。此缺口此前未登记，修复后需重
+导出并以 draw_compare 复核 f92 后的裁决移动（评审注：严格 ULP-4 下
+f159 浮点分歧先于层号分歧暴露，非「f92 修复后立即暴露」）。
+【本轮修复后实测（无输入窗）】层号主链修复生效：敌机本体 up 落层 8
+（此前 0/2），f92 帧层 56 双侧同、f1371+ 敌机层 8 与 oracle 侧 8 对齐；
+aura 独立缺口仍在（port 层 7 vs oracle 层 4——父脚本无出生 op 的登记项
+③），up 总量 4336→30812、draw_compare 两窗裁决保持 f92（op[12] Blue
+丢弃+offset 工作面未动）。回放窗行数 11064→11065 与 oracle 对齐。
 轮 7 已修：翻转重挂机制全解（脚本号查表/门=sign(x速度)/layer=+0x278+7/
 位置继承），行走 VM 身份两侧已逐一对齐（Red→7、Blue→1=oracle s4aa）。
 轮 5 已修：镜像翻转重挂（0x419450:101-152，flags&0x200000 + x 朝向
