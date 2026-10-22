@@ -3,6 +3,8 @@
 #include "StageBattle.hpp"
 
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace th13 {
@@ -42,8 +44,9 @@ i32 speed128_from_float(float value) {
 }
 
 // 0x443e40 的弹型域解析：+2 u16 块数、+0xc8 u32 指针表（+0xf4 基准的
-// 相对偏移），每块为 0x38 步长的记录数组、首字节 i8 <0 终止。记录体：
-// 类别 u16（3 主弹 / 8 附属弹）、plXX.anm 脚本 u16、x/y/角度浮点。
+// 相对偏移），每块为 0x38 步长的记录数组、首字节 i8 <0 终止。记录体
+// （0x446000/0x445c40 直读）：+0 u8 间隔（兼类别）、+1 u8 相位、+2 u16
+// 脚本、+4/+8 f32 出膛偏移、+0x14 f32 角度、+0x18 f32 伤害、+0x20 i8 锚位。
 bool parse_sht_shots(const u8* sht, size_t size, StageBattle& battle) {
     if (size < 0xcc) return false;
     const u16 blocks = read_u16(sht + 2);
@@ -60,11 +63,14 @@ bool parse_sht_shots(const u8* sht, size_t size, StageBattle& battle) {
             if (i8(sht[at]) < 0) break;
             if (at + 0x38 > size) return false;
             ShtShotRecord entry;
-            entry.kind = read_u16(sht + at);
-            entry.script = read_u16(sht + at + 2);
+            entry.interval = i32(sht[at]);
+            entry.phase = i32(sht[at + 1]);
+            entry.script = i32(read_u16(sht + at + 2));
+            entry.anchor = i32(static_cast<i8>(sht[at + 0x20]));
             std::memcpy(&entry.x, sht + at + 4, sizeof entry.x);
             std::memcpy(&entry.y, sht + at + 8, sizeof entry.y);
             std::memcpy(&entry.angle, sht + at + 0x14, sizeof entry.angle);
+            std::memcpy(&entry.damage, sht + at + 0x18, sizeof entry.damage);
             records.push_back(entry);
         }
         battle.sht_shots[block] = std::move(records);
@@ -137,12 +143,7 @@ void StageBattle::move_player(u32 held) {
     player_y = float(pos_fy) * 0.0078125f;
 }
 
-void StageBattle::fire_shots() {
-    if (fire_cooldown_ > 0) {
-        --fire_cooldown_;
-        return;
-    }
-    fire_cooldown_ = kFireInterval;
+void StageBattle::fire_shots(i32 frame) {
     const auto spawn = [&](float x, float y, float damage, float angle, i32 script) {
         PlayerShot shot;
         shot.x = x;
@@ -154,28 +155,33 @@ void StageBattle::fire_shots() {
         shots.push_back(shot);
     };
     if (sht_shots_loaded) {
-        // .sht 弹型列（0x443e40 域）：能量档 = (power-100)/100 钳 0..4；
-        // 块序 = 档 + 焦点×5（0-4 非聚焦 / 5-9 聚焦 / 10 特殊）。本轮仅
-        // 主弹（类别 3）出膛；附属弹（类别 8 = Option 卫星锚定）与特殊块
-        // （类别 2）分期。每轮总伤恒为 3×kShotDamage（对拍孪生口径不变），
-        // 按主弹列数均摊。
-        const i32 level = player_->power < 100 ? 0 : (player_->power - 100) / 100;
-        const u32 block = u32(level > 4 ? 4 : level) + (focus ? 5u : 0u);
-        const auto& records = sht_shots[block];
-        u32 mains = 0;
-        for (const auto& record : records)
-            if (record.kind == 3) ++mains;
-        const float damage = mains ? (3.0f * kShotDamage) / float(mains) : kShotDamage;
-        for (const auto& record : records) {
-            if (record.kind != 3) continue;
-            spawn(player_x + record.x, player_y + record.y, damage, record.angle,
-                  record.script);
+        // 原版语义（replay-twin-divergence.md §3）：
+        // 块 = 功率/步长（0x446000:13-16，power_step=100 出 sht+0x24；回放
+        // 口径功率恒初值 100 → 块 1/6，拾取演化分期），聚焦 +5（sht+0x20=4）。
+        i32 level = player_ ? player_->power / player_->power_step : 0;
+        if (level < 0) level = 0;
+        if (level > 4) level = 4;
+        const u32 block = u32(level) + (focus ? 5u : 0u);
+        // 临时探针（TH13_SHOT_PROBE=1）：P0 弹迹对拍（与 tools/shot_probe.py 同窗）。
+        const char* probe = std::getenv("TH13_SHOT_PROBE");
+        const bool shot_probe = probe && probe[0] == '1';
+        for (const auto& record : sht_shots[block]) {
+            // 0x446000:24：帧 % 间隔 == 相位才出膛（无冷却计数）。
+            if (record.interval <= 0) continue;
+            if (frame % record.interval != record.phase) continue;
+            // 伤害 = 记录 +0x18（0x445c40:55）；anchor≠0 的卫星锚位记录
+            // 孪生口径按自机位出膛（卫星拖尾模型分期）。
+            spawn(player_x + record.x, player_y + record.y, record.damage,
+                  record.angle, record.script);
+            if (shot_probe && sim.frame <= 130)
+                std::printf("PROBE fire ff=%d sim=%d pos=(%.2f,%.2f) dmg=%.1f\n",
+                            frame, sim.frame, player_x + record.x, player_y + record.y,
+                            double(record.damage));
         }
-        if (mains == 0) spawn(player_x, player_y - kShotOffsetY, kShotDamage * 3.0f,
-                              -1.5707964f, -1);  // 空表兜底（保持总伤）
         return;
     }
-    // 无 .sht 回退（交互直入未带 .sht）：三发直线近似（原 §7.2 口径）。
+    // 无 .sht 回退（交互直入未带 .sht）：三发直线近似，同相位制。
+    if (frame % kFireInterval != 0) return;
     for (int i = -1; i <= 1; ++i)
         spawn(player_x + kShotOffsetX * float(i), player_y - kShotOffsetY, kShotDamage,
               -1.5707964f, -1);
@@ -194,6 +200,9 @@ void StageBattle::step_shots() {
 }
 
 void StageBattle::collide_shots() {
+    // 临时探针（TH13_SHOT_PROBE=1）：P0 命中检测对拍（与 stage1_oracle HITCHK 同窗）。
+    const char* probe = std::getenv("TH13_SHOT_PROBE");
+    const bool shot_probe = probe && probe[0] == '1';
     for (auto& shot : shots) {
         if (!shot.alive) continue;
         for (auto& enemy : sim.enemies) {
@@ -204,6 +213,11 @@ void StageBattle::collide_shots() {
             const float hw = enemy->hurtbox[0] * 0.5f + kShotHalf;
             const float hh = enemy->hurtbox[1] * 0.5f + kShotHalf;
             const float dx = shot.x - ex, dy = shot.y - ey;
+            if (shot_probe && sim.frame <= 130)
+                std::printf("HITCHK f=%d enemy=? shot=(%.2f,%.2f) enemy=(%.2f,%.2f) "
+                            "hb=(%.2f,%.2f) dx=%.2f dy=%.2f\n",
+                            sim.frame, shot.x, shot.y, ex, ey,
+                            enemy->hurtbox[0], enemy->hurtbox[1], dx, dy);
             if (dx < -hw || dx > hw || dy < -hh || dy > hh) continue;
             sim.damage(*enemy, shot.damage);
             shot.alive = false;
@@ -274,6 +288,7 @@ bool StageBattle::step(const GameInput& input) {
         ++sim.frame;
         sim.sink.set_frame(sim.frame);
     }
+    ++fire_frame_;  // 发射相位计数（1 基，交互/回放同拍）
     input_state = input.held;
     if (invulnerable > 0) --invulnerable;
     if (!player_dead) move_player(input.held);
@@ -281,8 +296,7 @@ bool StageBattle::step(const GameInput& input) {
     // ECL 步进吃实时自机位置（etOn 瞄准/追弹用）。
     sim.player_x = player_x;
     sim.player_y = player_y;
-    if (!player_dead && (input.held & 0x01)) fire_shots();
-    else if (fire_cooldown_ > 0) --fire_cooldown_;
+    if (!player_dead && (input.held & 0x01)) fire_shots(fire_frame_);
     if (input.pressed & 0x02) on_bomb_key();
     step_shots();
     if (bomb_timer > 0) {
