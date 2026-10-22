@@ -314,8 +314,11 @@ void DrawCapture::emit_up(u32 prim, u32 count, u32 stride, const void* data) {
             line_ += ",";
             append_float(line_, field(attributes.uv / 4 + 1));
         } else {
-            // FVF 0x44（XYZRHW|DIFFUSE，无 UV）：u=v 恒 "0"（契约 §2.2）。
-            line_ += "\"0\",\"0\"";
+            // FVF 0x44（XYZRHW|DIFFUSE，无 UV）：u=v 恒 JSON int 0——与
+            // oracle _dev_draw_primitive_up 的 per>=5 且 per<7 分支（`u=0,
+            // v=0` 整数）同型。此前输出字符串 "0" 会造成 draw_compare 的
+            // str-vs-int 潜在假分歧（当前窗口 port 无 0x44 up op 不可达）。
+            line_ += "0,0";
         }
         line_ += "]";
     }
