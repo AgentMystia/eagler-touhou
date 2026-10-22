@@ -16,7 +16,6 @@
 //     帧序镜像 web 调度：副池步进 → ECL/battle → 表现层 sync → 主池步进 →
 //     逐层（0..32）+ 战斗直绘 4 pass（debug_pass_mask=4 仅敌机，对齐 oracle
 //     窗口径：mgr 两池精灵；HUD/STD/自机不在窗）。帧 0 = 装载趟渲染（不步进）。
-#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -247,11 +246,15 @@ struct DrawsSession {
     };
     th13::DrawCapture capture;
     th13::AnmEnvironment environment;
-    // battle 先于 animations：ANM 与 ECL 共享同一条 0x472c90 游戏侧 RNG
-    // （原版全局态 0x4dc31c；oracle 实证装载期 2 调 + 每神灵 spawn 10 调，
-    // ECL 与 ANM 本就是同一流——先前独立 visual 实例是移植侧偏差）。
+    // 双流实证（oracle）：ANM 用全局 0x4dc31c（种子 0，装载 2 调 + 每神灵
+    // 10 调）；ECL 的 [-9987] 族抽签在 f61 仍返回新流第 1 抽（-0.618 →
+    // GirlRedA01 生成 x=-163.783264）——与 ANM 消费互不推进 ⟹ 两条独立
+    // 种子 0 流（stage1 事件基线逐字节一致亦证 ECL 流无 ANM 污染）。
+    // 曾误并为单流（轮 2）：f61 前恰好 ECL 零抽签故神灵仍匹配，f61 首抽
+    // 即分歧（x=-154.101）。
+    th13::GameRandom anm_random;  // ANM 侧流（原版 0x4dc31c 同构）
     th13::StageBattle battle;
-    th13::AnmManager animations{battle.sim.random, environment};
+    th13::AnmManager animations{anm_random, environment};
     th13::AnmRenderer renderer{capture};
     th13::ScreenViews views{renderer, environment};
     std::unique_ptr<th13::StagePresentation> presentation;

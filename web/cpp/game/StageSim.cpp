@@ -4,7 +4,6 @@
 #include "StageMath.hpp"
 
 #include <cmath>
-#include <cstdio>
 #include <cstring>
 
 namespace th13 {
