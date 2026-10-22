@@ -95,9 +95,13 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
     if (enemies_from_ecl) {
         for (auto& enemy : battle.sim.enemies) {
             // 镜像翻转重挂（0x419450:101-152）：flags&0x200000 且 x 朝向符号
-            // 变化（sign(+0x78) ≠ +0x270）时回收槽 0 VM，以脚本号
+            // 变化（≠ mirror_dir 暂存）时回收槽 0 VM，以脚本号
             // mirror_script_base+7 重建（行走动画；位置继承=槽跟随同源 0），
             // 句柄存回槽 0——GirlRedA01 f63 首次移动触发的机制。
+            // 【f92 取证注】门的精确原版语义（+0x78 速度分量符号）与结构偏移
+            // （+0x278 实测恒 1）待下轮按 oracle 内存布局反推；当前差分近似
+            // 已覆盖帧 63-91（对拍实证），f92 起多敌机层序/翻转抖动为已知
+            // 工作面（draw-contract.md）。
             if (enemy->flags & 0x200000u) {
                 const float dx = enemy->position[0] - enemy->mirror_prev_x;
                 const i32 dir = dx > 0.03f ? 1 : (dx < -0.03f ? -1 : 0);

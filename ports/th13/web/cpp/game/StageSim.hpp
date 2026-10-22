@@ -130,7 +130,7 @@ struct StageEnemy {
     // (+0x270 vs sign(+0x78)) 变化回收槽 0 VM 并以脚本号 +0x278+7 重建——
     // Girl 族 f63 首次移动触发行走动画 VM 的机制）。
     i32 mirror_dir = 0;          // +0x270 朝向符号（构造 0）
-    float mirror_prev_x = 0;     // 差分近似 sign(+0x78)（本帧位移符号）
+    float mirror_prev_x = 0;     // 306 置位时的差分基线（防首拍误判）
     i32 mirror_script_base = 0;  // +0x278（构造 0；脚本号 = base + 7）
 };
 
