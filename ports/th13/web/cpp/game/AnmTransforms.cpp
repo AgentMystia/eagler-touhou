@@ -2,7 +2,10 @@
 #include <cmath>
 namespace th13 {
 Matrix4 matrix_product(const Matrix4& a,const Matrix4& b)noexcept{
-    Matrix4 out;for(u32 r=0;r<4;r++)for(u32 c=0;c<4;c++){const float x=float(a.m[r*4]*b.m[c]),y=float(a.m[r*4+1]*b.m[4+c]),z=float(a.m[r*4+2]*b.m[8+c]),w=float(a.m[r*4+3]*b.m[12+c]);out.m[r*4+c]=r==0||r==3?float(float(x+y)+float(z+w)):float(float(float(x+y)+z)+w);}return out;
+ // D3DXMatrixMultiply（x87 80 位中间量；oracle 桩 = double 左结合累加后一次
+ // f32 舍入）：逐项 f32 乘加会在组合矩阵元素上漂 1-5 ULP（f33 world[4]
+ // 对拍实证），全部中间量走 double。
+ Matrix4 out;for(u32 r=0;r<4;r++)for(u32 c=0;c<4;c++){const double x=double(a.m[r*4])*b.m[c],y=double(a.m[r*4+1])*b.m[4+c],z=double(a.m[r*4+2])*b.m[8+c],w=double(a.m[r*4+3])*b.m[12+c];out.m[r*4+c]=float(((x+y)+z)+w);}return out;
 }
 Matrix4 axis_rotation(u32 axis,float angle)noexcept{
     Matrix4 out;out.identity();const float s=float(std::sin(double(angle))),c=float(std::cos(double(angle)));const u32 a=(axis+1)%3,b=(axis+2)%3;out.m[a*4+a]=out.m[b*4+b]=c;out.m[a*4+b]=s;out.m[b*4+a]=-s;return out;
