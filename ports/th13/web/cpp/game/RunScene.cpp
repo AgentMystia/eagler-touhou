@@ -1,5 +1,7 @@
 #include "RunScene.hpp"
 
+#include <cstdio>
+
 namespace th13 {
 
 namespace {
@@ -31,7 +33,8 @@ RunScene::RunScene(SessionState& p, HudPlayerState& player, HudScoreState& score
       presentation(std::make_unique<StagePresentation>(animations, scene_renderer, banks,
                                                        kPlayerShotSprite)),
       scenery_bank(scenery_bank),
-      scenery_std(std_name) {
+      scenery_std(std_name),
+      post_flow(p, player, score, *this) {
     age.set(0);
     callbacks[0].owner = callbacks[1].owner = this;
     callbacks[0].enabled = callbacks[1].enabled = true;
@@ -112,6 +115,22 @@ bool RunScene::initialize() {
         if (scheduler.add(draw.callback, FramePass::Draw, kStageDrawPriorities[index]) < 0)
             return fail("Stage draw callback registration failed");
     }
+    // S3：对话资产（st0Na-d.msg 按角色四份——stage 表 +0x14..+0x20 以
+    // be7bc+be7b8 选份，0x424fd0:27）。缺失时降级为对话缺席（519 即过、
+    // 事件契约行为不变）；浏览器侧资产清单补 st0N[a-d].msg 属接线 TODO。
+    char msg_name[16];
+    std::snprintf(msg_name, sizeof msg_name, "st%02d%c.msg", int(progress.stage),
+                  'a' + (progress.character & 3));
+    std::vector<u8> msg_bytes;
+    if (host.read_asset(msg_name, msg_bytes)) {
+        std::string msg_error;
+        if (dialog_file.open(msg_bytes.data(), u32(msg_bytes.size()), msg_error)) {
+            dialog_ready = true;
+            battle.sim.dialog_host = this;  // ins_518/519 接口位
+        } else {
+            return fail("Stage msg invalid: " + std::string(msg_name) + ": " + msg_error);
+        }
+    }
     hud.prepare_stage_assets();
     if (!hud.initialize(HudEntryContext{})) return fail(hud.error);
     return true;
@@ -120,6 +139,9 @@ bool RunScene::initialize() {
 bool RunScene::update() {
     if (!error.empty()) return false;
     if (environment.paused) return true;  // 暂停覆盖层冻结对局（th15 environment.paused 同机制）
+    // 对局内覆盖层三旗冻结（0x42c550:263：GameInf+0x60 的 0x10/0x20/0x40 任一
+    // 非零 → 对局 update 返 3 不推帧；0x4000 通关演出不在门内照常推帧）。
+    if (progress.scene_flags & 0x70u) return true;
     progress.stage_frame++;
     age.tick(&progress.rate);
     GameInput input;
@@ -127,6 +149,8 @@ bool RunScene::update() {
     input.pressed = input_pressed;
     input.repeated = input_repeated;
     if (!battle.step(input)) return fail(battle.error());
+    // 对话解释器（0x4265a0 每帧驱动：ECL 步进后同帧推进；Z 边沿 = bit0）。
+    if (dialog.active()) dialog.step((input_pressed & 0x01u) != 0);
     // Boss 登场变暗推进：boss 槽存活（midboss 同走 512 setBoss）→ 30 帧淡入
     // 0.6 α；消失反向淡出。事件流实证：2381 MBoss spawn 与 setBoss 同帧。
     if (battle.sim.boss() != nullptr) {
@@ -139,7 +163,36 @@ bool RunScene::update() {
     if (!presentation->sync(battle, input_held)) return fail(presentation->error());
     hud.update(HudFrameContext{}, host);
     hud.update_score();
+    // 覆盖层/通关演出推进（0x43dbc0 行为子集 + GameInf 0x4000 路径）。
+    post_flow.update();
     return hud.error.empty() || fail(hud.error);
+}
+
+void RunScene::open_dialog(i32 entry) {
+    // 0x428820 else 分支：已有对话先销毁（+0x198 换手），再开新 entry。
+    if (!dialog_ready) return;
+    std::string dialog_error;
+    if (!dialog.open(dialog_file, u32(entry), *this, dialog_error))
+        fail("Dialog entry " + std::to_string(entry) + ": " + dialog_error);
+}
+
+void RunScene::msg_bgm(i32) {
+    // BGM 族（opcode 2/19/20/31——stage 表 0x64/0x2c/难度门/0x68 曲名）：
+    // 音频接线属 Application 层 TODO（本阶段对话乐句切换不生效）。
+}
+
+void RunScene::msg_portrait_load() {
+    // opcode 1：按角色装载对话立绘 bank（0x4c0aa0 + be7b8*4）——视觉阶段
+    // 随结算窗 oracle 一起锚定（TODO）。
+}
+
+void RunScene::msg_boss_battle() {
+    // opcode 22/27 → 0x43af70（Boss 战设置）：battle 侧接线 TODO。
+}
+
+void RunScene::msg_stage_clear() {
+    // opcode 21 → 0x42cd40 关终了（Boss 后对话 entry 尾的通关触发链入口）。
+    post_flow.on_stage_clear();
 }
 
 bool RunScene::draw_stage(u32 pass) {
@@ -218,6 +271,24 @@ bool RunScene::draw_scenery(u32 pass) {
 bool RunScene::draw() {
     if (!error.empty()) return false;
     hud.draw(HudDrawContext{}, host);
+    // 对话文本预览（S3 第一阶段）：仅 ASCII 行经 hud_text 通道显示；全角
+    // 假名/汉字需对话字体（原版 0x42a120 名牌/0x46e8f0 文本 VM 的逐字栅格），
+    // 属渲染阶段 TODO——届时换全角通道并按 oracle draws 对齐。
+    if (dialog.active()) {
+        const auto& state = dialog.state();
+        for (u32 row = 0; row < state.lines.size() && row < 2; row++) {
+            const std::string& text = state.lines[row];
+            bool representable = !text.empty();
+            for (char ch : text)
+                if ((u8(ch) & 0x80u) != 0) representable = false;
+            if (!representable) continue;
+            HudTextDraw preview;
+            preview.position = {state.box_x, state.box_y + 18.f * float(row), 0};
+            preview.style.color = 0xffffffff;
+            preview.text = text;
+            host.hud_text(preview);
+        }
+    }
     return hud.error.empty() || fail(hud.error);
 }
 
