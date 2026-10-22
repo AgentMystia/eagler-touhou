@@ -141,23 +141,31 @@ ECL no-op 跳表改写 = stage1 `NOOP_OPS` 剔除 ANM 指令族
 
 | 窗口 | 行数（帧号） | ops | quad | up | 零绘制帧 | 两次连跑 |
 |---|---|---|---|---|---|---|
-| 无输入 port-draws.jsonl | 3600（0..3599） | 294076 | 289456 | 4620 | 0 | cmp 逐字节一致 |
-| 回放 port-draws-replay.jsonl | 11065（0..11064） | 751202 | 732818 | 18384 | 0 | cmp 逐字节一致 |
+| 无输入 port-draws.jsonl | 3600（0..3599） | 293792 | 289456 | 4336 | 0 | cmp 逐字节一致 |
+| 回放 port-draws-replay.jsonl | 11065（0..11064） | 750436 | 735098 | 15338 | 0 | cmp 逐字节一致 |
 
-`draw_compare.py` 当前裁决（2026-10 对齐轮后）：两窗 `first_divergence_
-frame=0`，分歧字段 `op[0].world[0]`（神灵四边形旋转成分，无输入窗
-`0.0448210835` vs `0.0447573513`——第 4 位小数）；op[0] 的其余字段
-（prim/anchor/count/tex/layer/blend/tfactor/fvf/texmat/view/proj）已逐字段
-一致。神灵链已通：ECL `MapleEnemy` 的 `ins_308(1,91)`（0x41b260 case5 →
+`draw_compare.py` 当前裁决（2026-10 对齐轮 2 后）：两窗 `first_divergence_
+frame=61`（帧 0-60 逐帧逐 op 逐字段全过——神灵矩阵/纹理缓存语义/视图投
+影全部一致；此前为 frame 0 world 旋转差）。帧 61 = 敌机出场帧：移植 9 ops
+vs 原版 8（移植多一个敌机 up）。
+
+神灵链已通：ECL `MapleEnemy` 的 `ins_308(1,91)`（0x41b260 case5 →
 0x4243e0）→ 移植侧 `StageCommands` 307/308 真实现 + `StagePresentation`
-排空创建（主池头入链），移植 quad 总数 289456 与原版**完全相等**。
+排空创建（主池头入链），移植 quad 总数 289456 与原版**完全相等**；对齐轮
+2 的关键修复：ANM/ECL 共享同一条 0x472c90 全局 RNG（状态 0x4dc31c 种子
+0，装载期 2 调 = effect script23 模板 ins_120×2、每神灵 spawn 10 调）+
+装载序 bullet→effect→stage + vec3 实参求值序 x→y→z + matrix_product
+double 中间量 + 帧尾 SetTexture(0,0)（设备态清空、mgr+0xb78188 缓存不
+失效——oracle f1-8 tex=None 的来源）。
 
-剩余首分歧根因（下一轮工作面）：ANM 随机变量 10010-10012（角速度种子，
-`ins_415`）在原版经 0x4621b0/0x472c90 抽**全局 _rand()**，与 ECL 同流；
-移植侧 AnmManager 用独立 visual GameRandom → 神灵旋转不同。需共享 RNG
-流并对齐装载序（原版 bullet→effect→stage anims；移植 ascii→effect→
-stage→bullet→player）与模板 tick 的 RNG 消费点。次级工作面：敌机 up
-（上表）、ECL 313/316（MBoss2 阶段 case7/10）未实现。
+剩余首分歧（帧 61，下一轮工作面）：敌机 up 的位置种子链——oracle 极小
+环境里敌机 ANM 的 ins_407 目标位置经变量 10019-10021 读 .data 全局
+（0x461e80 case 0x2720-0x2722：_DAT_004dcb18/30 + DAT_004dcaf4/…），
+该块在 stage1 环境静止为 0 → 敌机 VM 位置插值目标为垃圾（实测 y≈-5745
+恒屏外）→ 原版侧被正确裁剪不出 op；移植侧表现层用 sim 位置（事件窗基
+线）正常出 up → op 数差。修复面 = oracle 侧补 0x43b900 族相机/参考全局
+的初值（或移植侧等价裁剪语义）。次级：ECL 313/316（MBoss2 case7/10）
+未实现、回放窗自机弹 VM 的 RNG 消费（oracle 窗内无自机弹系统）。
 
 【事件窗回归注】replay 事件窗（vs stage1-oracle-replay.jsonl 48406 事件）
 在 50433ebc（本轮改动之前）即已分歧于 frame 124（54816 事件；stash 本轮
