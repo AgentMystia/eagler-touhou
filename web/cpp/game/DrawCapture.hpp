@@ -102,12 +102,16 @@ private:
     void fail(const char* why) {
         if (error_.empty()) error_ = why;
     }
-    void emit_quad(u32 prim, u32 count);
-    void emit_up(u32 prim, u32 count, u32 stride, const void* data);
-    void append_tex(const Identity& identity);
-    void append_blend();
-    void append_matrix(const Matrix4& matrix);
-    static void append_float(std::string& out, float value);
+    // 栈纪律（V8 wasm 原生栈远小于宿主，蓝图 §8.7/§8.9）：emit 路径禁止被
+    // -O2 跨函数内联成巨帧（emit_quad 内联 4×append_matrix×16 append_float
+    // 曾在窗B 转场期粒子全量绘制时溢出 V8 栈并越过栈检查）。定点 noinline
+    // 取代全局 -fno-inline-functions 旗语（emit_* 系互不内联，帧尺寸有界）。
+    __attribute__((noinline)) void emit_quad(u32 prim, u32 count);
+    __attribute__((noinline)) void emit_up(u32 prim, u32 count, u32 stride, const void* data);
+    __attribute__((noinline)) void append_tex(const Identity& identity);
+    __attribute__((noinline)) void append_blend();
+    __attribute__((noinline)) void append_matrix(const Matrix4& matrix);
+    __attribute__((noinline)) static void append_float(std::string& out, float value);
 };
 
 // AnmRenderer 提交钩子的目标（定义于 DrawCapture.cpp；默认 nullptr = 闲置）。
