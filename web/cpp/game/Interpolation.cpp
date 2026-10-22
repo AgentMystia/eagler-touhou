@@ -8,21 +8,28 @@ namespace th13 {
 float interpolation_weight(i32 mode, float elapsed, float duration) noexcept {
     if (duration == 0 || std::isnan(duration)) return 1;
     float t = static_cast<float>(elapsed / duration);
-    auto power = [](float v, u32 exponent) {
-        float r = v;
-        for (u32 i = 1; i < exponent; i++) r = static_cast<float>(r * v);
+    // 0x473a40 精度链（draw_compare f159 帧位级实证）：除 t 入口一次落
+    // f32 后，幂/二次曲线族的全部中间量在 x87 80 位寄存器链上流转，
+    // 仅最终结果一次落 f32（逐分支 fstps 唯一）。逐步 f32 舍入会在
+    // (2-(2-t2)²)×0.5 等链上漂 1-16 ULP（f159 神灵 world[12] 实测
+    // c0c0a8d0 vs oracle c0c0a8e0，double 链复现精确命中）。
+    // ⟹ 中间量走 double，最终单次落 float。
+    auto power = [](double v, u32 exponent) {
+        double r = v;
+        for (u32 i = 1; i < exponent; i++) r = r * v;
         return r;
     };
-    if (mode >= 1 && mode <= 3) return power(t, u32(mode + 1));
-    if (mode >= 4 && mode <= 6) return static_cast<float>(1 - power(static_cast<float>(1 - t), u32(mode - 2)));
+    if (mode >= 1 && mode <= 3) return static_cast<float>(power(double(t), u32(mode + 1)));
+    if (mode >= 4 && mode <= 6) return static_cast<float>(1 - power(1 - double(t), u32(mode - 2)));
     if (mode >= 9 && mode <= 14) {
         const u32 exponent = u32((mode - 9) % 3 + 2);
-        t = static_cast<float>(t * 2);
+        // mode9 族加倍点 t2 落 f32（0x473b65 fstps 实证）——保持单次舍入。
+        const double t2 = static_cast<float>(t * 2);
         if (mode <= 11)
-            return t < 1 ? static_cast<float>(power(t, exponent) * .5f)
-                         : static_cast<float>(static_cast<float>(2 - power(static_cast<float>(2 - t), exponent)) * .5f);
-        return t < 1 ? static_cast<float>(.5f - static_cast<float>(power(static_cast<float>(1 - t), exponent) * .5f))
-                     : static_cast<float>(static_cast<float>(power(static_cast<float>(t - 1), exponent) * .5f) + .5f);
+            return t2 < 1 ? static_cast<float>(power(t2, exponent) * .5)
+                          : static_cast<float>((2 - power(2 - t2, exponent)) * .5);
+        return t2 < 1 ? static_cast<float>(.5 - power(1 - t2, exponent) * .5)
+                      : static_cast<float>(power(t2 - 1, exponent) * .5 + .5);
     }
     if (mode == 15) return 0;
     if (mode == 16) return 1;
@@ -48,13 +55,14 @@ float interpolation_weight(i32 mode, float elapsed, float duration) noexcept {
         constexpr float subtract[] = {.111111111938953399658203125f, .18367348611354827880859375f, .28994083404541015625f, .375650346279144287109375f, .4444444477558135986328125f};
         constexpr float scale[] = {.888888895511627197265625f, .81632649898529052734375f, .71005916595458984375f, .624349653720855712890625f, .5555555820465087890625f};
         const u32 i = u32((mode - 22) % 5);
-        if (mode >= 27) t = static_cast<float>(1 - t);
-        t = static_cast<float>(t - shift[i]);
-        t = static_cast<float>(t * t);
-        t = static_cast<float>(t / divisor[i]);
-        t = static_cast<float>(t - subtract[i]);
-        t = static_cast<float>(t / scale[i]);
-        return mode >= 27 ? static_cast<float>(1 - t) : t;
+        // 同 0x473a40 单次落位链：二次曲线族中间量 double。
+        double v = mode >= 27 ? 1 - double(t) : double(t);
+        v = v - shift[i];
+        v = v * v;
+        v = v / divisor[i];
+        v = v - subtract[i];
+        v = v / scale[i];
+        return mode >= 27 ? static_cast<float>(1 - v) : static_cast<float>(v);
     }
     return t;
 }
