@@ -41,7 +41,11 @@ struct PipelineState {
     BlendFactor sourceAlphaBlend=BlendFactor::One,destinationAlphaBlend=BlendFactor::Zero;
     BlendEquation alphaBlendEquation=BlendEquation::Add;
     Cull cull=Cull::None;
-    u32 colorMask=15, alphaReference=0, fogColor=0, textureFactor=0xffffffff;
+    u32 colorMask=15, alphaReference=0, fogColor=0, textureFactor=0;
+    // textureFactor 缺省 0 = D3D 设备初始 TFACTOR（实测：oracle 标题窗 idle 期
+    // 全 op tfactor=0、无任何写入；up 路径不写 TFACTOR，色调走顶点色；仅
+    // world_quad 族批设置按 VM 色+变化缓存写入，状态跨帧持续——见
+    // docs/plans/title-anm-blueprint.md §8.8）。
     FogMode fogMode=FogMode::None;
     float fogNear=0, fogFar=1, fogDensity=1;
     Combiner color{}, alpha{ColorOperation::First};
