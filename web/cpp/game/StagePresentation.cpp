@@ -93,7 +93,33 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
     // （enemy+0x44/48/4c）写入各槽 VM 的偏移 +0x574/578/57c——0x466a80 的
     // 位置和项；+320/+16 由 0x40000 位在 adjust 阶段补，此处只写 ECL 原值）。
     if (enemies_from_ecl) {
-        for (auto& enemy : battle.sim.enemies)
+        for (auto& enemy : battle.sim.enemies) {
+            // 镜像翻转重挂（0x419450:101-152）：flags&0x200000 且 x 朝向符号
+            // 变化（sign(+0x78) ≠ +0x270）时回收槽 0 VM，以脚本号
+            // mirror_script_base+7 重建（行走动画；位置继承=槽跟随同源 0），
+            // 句柄存回槽 0——GirlRedA01 f63 首次移动触发的机制。
+            if (enemy->flags & 0x200000u) {
+                const float dx = enemy->position[0] - enemy->mirror_prev_x;
+                const i32 dir = dx > 0.03f ? 1 : (dx < -0.03f ? -1 : 0);
+                if (dir != enemy->mirror_dir) {
+                    enemy->mirror_dir = dir;
+                    u32& handle = enemy->anm_slot_handle[0];
+                    if (handle) {
+                        if (!animations.retire(handle))
+                            return fail("Mirror retire failed: " + animations.error);
+                        handle = 0;
+                    }
+                    const i32 bank = enemy->anm_file == 0   ? banks.bullet
+                                     : enemy->anm_file == 1 ? banks.effect
+                                                           : banks.stage;
+                    handle = animations.create(bank, enemy->mirror_script_base + 7,
+                                               -1, 2, {}, 0, false);
+                    if (!handle)
+                        return fail("Mirror animation creation failed: " +
+                                    animations.error);
+                }
+                enemy->mirror_prev_x = enemy->position[0];
+            }
             for (u32 handle : enemy->anm_slot_handle)
                 if (AnmVm* vm = animations.registry.find(handle)) {
 
@@ -101,6 +127,7 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
                                               enemy->position[1],
                                               enemy->position[2]};
                 }
+        }
     }
 
     // ---- 敌机：ECL 记录的槽 0 脚本（全局序号），位置逐帧跟随 ----
