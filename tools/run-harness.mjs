@@ -6,7 +6,10 @@
 //   （rpy 用工作区根相对路径，如 games/replays/th13_udSr01.rpy）；
 //   draws [资源目录] [绘制输出] [帧数] [stage.ecl] / draws-replay <rpy> [资源目录]
 //   [绘制输出] [帧数] [stage 索引]：语义绘制清单导出（draw-contract.md v1
-//   移植侧；默认输出 artifacts/port-draws/ 下，无输入窗 3600 帧、回放窗帧数显式传）。
+//   移植侧；默认输出 artifacts/port-draws/ 下，无输入窗 3600 帧、回放窗帧数显式传）；
+//   title [资源目录] [绘制输出] / title-b [资源目录] [绘制输出]：标题窗导出
+//   （oracle/title_oracle.py 同窗同规则；窗A 600 帧主菜单→难度、窗B 至开局
+//   转场请求帧，boot 装载幕 + 输入时刻表内置）。
 import {WASI} from 'node:wasi';
 import {readFileSync, mkdirSync} from 'node:fs';
 import {resolve, dirname} from 'node:path';
@@ -41,6 +44,14 @@ if (args[1] === 'draws-replay') {
   args[2] = '/' + args[2].replace(/^\/+/, '');
   if (!args[3]) args[3] = '/artifacts/reference/raw';
   if (!args[4]) args[4] = '/artifacts/port-draws/port-draws-replay.jsonl';
+}
+if (args[1] === 'title' || args[1] === 'title-b') {
+  // title/title-b [资源目录] [绘制输出]（窗长内置：A=600、B=转场请求帧；
+  // 输出与 oracle title-draws{,-b}.jsonl 同名同窗）
+  if (!args[2]) args[2] = '/artifacts/reference/raw';
+  if (!args[3]) args[3] = args[1] === 'title'
+      ? '/artifacts/port-draws/title-draws.jsonl'
+      : '/artifacts/port-draws/title-draws-b.jsonl';
 }
 for (const output of [args[3], args[4]]) {
   if (output && output.startsWith('/') && output.endsWith('.jsonl'))
