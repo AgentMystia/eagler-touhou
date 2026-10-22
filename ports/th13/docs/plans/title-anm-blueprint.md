@@ -422,6 +422,43 @@ y=320..352 = スロー表示/スキップ/スピード（回放面板）；y=480
   层走）经 draw_capture 直发（web 构建无捕获指针即无视觉副作用）；
   **boot 期（f1-179）四条同在——tests/harness 装载幕镜像需同步**（登记）。
 
+
+### 8.9 [轮4 2026-10-23] LOGO 层时间线定档 + 翻转窗浮点取证 + 引擎 bug 实证
+
+**LOGO 层（已落码，fda7be91）**：97 翻转 f290-348 L26 / f349 起 L25（60f 插值
+完成即落）；98 爆闪全命 L26；机制=「3D 变换期层+1」族（sig 右半同款），
+VM 层写 watch 待 oracle 侧（trace_spawn 走对局窗不覆盖标题流）。
+
+**翻转窗（f290-348）浮点取证（移交 oracle/引擎组）**：
+- 角落公式 = **float 链**（sin/cos 先落 f32、逐积 f32、两次加法 f32）——
+  wf299 双侧逐位一致实证；double 化角落反而错（曾试，已回退）。
+- wf300 起间歇 1-16 ULP：输入量（rot/scale/pos）某处 1ULP 漂移经角落
+  560 量级项（320cs+240sn）放大。微扰三候选均能复现 oracle 值：
+  rot+1ulp / scale−2ulp / center+1ulp（翻转龄 10 处 python 双精度模型
+  显示 f32 权重链与 80 位权重链恰差 1ULP——但 port 侧双精度权重实验
+  未能移动实测值，帧号映射复杂化定位）。**需 oracle 侧逐帧 VM 字段
+  dump（rot/scale/pos 三通道）锁定差异源**。
+- 插值计时实证：94 根首延迟 107 tick（97 于 update#108 出生、#110 首
+  绘 alpha=0x04）；96/100 于 #167 出生（oracle f349 首绘 alpha=0x33=2
+  tick）；port 与 oracle 出生帧一致，差异仅在层/批构成。
+
+**引擎 bug 实证（阻断 UI 全链用例，移交引擎所有权）**：难度构建期
+vm(source_script=120) 执行 ins_500(120) 自 spawn 死循环并宿主 SIGSEGV
+（case500 插桩实证 child_script=120；合成 fixture 亦触发）。**疑窗B
+node 崩溃同根因（注册池槽复用/模板绑定状态污染类），-fno-inline-functions
+仅扰动其表现**。复现载体：tests/ui/title_state_test.cpp 的
+title_full_chain_start_game（难度屏构建后第一帧）。
+
+**f349+ 诊断清单（翻转顶点遮蔽后逐帧比对，供下轮）**：
+- f349：port 10 ops vs oracle 11——97(L25) 与 98(L26) 跨层合批（renderer
+  批键不含层；oracle 逐层任务天然分离）→ renderer 需层边界 flush（导出员
+  所有权）；
+- f357-359：96/100 短暂 L26 窗（f357 起 0xffffffff 全亮时上移一层？机制
+  未定）；
+- f360+：菜单条顶点色族（首项 0x22c0c0c0 vs port 0x5bc0c0c0 等——入场
+  脉动相位差）与菜单批次 count 差；
+- 其后：粒子 quad 矩阵路径化（world_quad+TFACTOR）。
+
 ## 附：待锚定清单汇总（消费顺序即优先级；[oracle 2026-10-22] 标注本轮回写后状态）
 
 1. 主菜单 10 项 / 难度 5 项 / 角色 7 项的位图文字语义——§8.4 视觉模型交叉读已出
