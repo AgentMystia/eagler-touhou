@@ -28,6 +28,9 @@ public:
                       i32 player_shot_sprite);
     // 帧同步（Update pass 内调用）：敌机脚本接线、弹体/自机弹/自机姿态。
     bool sync(StageBattle& battle, u32 held);
+    // true = 敌机本体 VM 由 ECL 303/306 创建入池（0x41fe80/case3 同构），
+    // sync 的敌机接线/清理段跳过（draws 对拍模式；web 旧路径 false）。
+    bool enemies_from_ecl = false;
     // 直绘 pass：0=自机弹 1=自机 2=敌机 3=敌弹（调用方保证 Fullscreen 相机）。
     bool draw(u32 pass);
     void release();  // 场景卸载：销毁敌机子树（外部 VM 归还 registry 外部表）

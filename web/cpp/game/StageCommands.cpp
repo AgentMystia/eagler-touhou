@@ -101,11 +101,14 @@ int StageCommands::execute(EclContext& c, u16 op) {
         if (resolve_int(c, 0, file)) e.anm_file = file;
         return 0;
     }
-    case 303:   // anmScript（槽位脚本，vm+0x120 起槽数组；槽 0 = 本体）
-    case 306: {  // anmRun（同槽数组，创建即跑）
+    case 303:   // anmScript（0x41fe80：槽位 VM 创建/清槽 + 句柄存储）
+    case 306: {  // anmRun（0x41b260 case3：同 303 + slot0 附加字段/主形身份）
         i32 slot = 0, script = 0;
         if (resolve_int(c, 0, slot) && resolve_int(c, 1, script) && slot >= 0 && slot < 4)
             e.anm_script[slot] = script;  // script < 0 = 清槽（0x41fe80）
+        if (!sim.anm_effects_noop && sim.ecl_slot_anm && slot >= 0 && slot < 4)
+            sim.anm_effects.push_back({e.anm_file, script, 0, 0, 0,
+                                        1, u8(op), slot, e.serial});
         return 0;
     }
     case 307:   // anmAt（case4：file=arg0、script=arg1、位置=敌机 xyz、主池头入链）
