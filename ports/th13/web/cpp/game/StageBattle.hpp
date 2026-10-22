@@ -121,6 +121,7 @@ private:
     HudScoreState* score_ = nullptr;
     i32 fire_frame_ = 0;  // 发射相位帧计数（1 基，自对局首帧；0x446000 的
                           // 帧 % 间隔 == 相位判决源，玩家 ctx+0x146cc 同源口径）
+    bool life_probe_ = false;  // TH13_LIFE_PROBE=1：敌机生命轨迹对拍探针
     bool events_ = false;  // 事件落盘（回放对拍）
     std::string error_;
 };
