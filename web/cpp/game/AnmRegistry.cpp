@@ -39,11 +39,21 @@ bool AnmRegistry::attach(AnmVm& child,AnmVm& parent){
     entry->parent=owner;owner->children.push_front(entry);return true;
 }
 void AnmRegistry::collect(Node& entry){
-    for(auto* child:entry.children)collect(*child);
+    // 幂等收集（0x46f690 同构：每节点恰回收一次）：整树 retire 时子节点会先被
+    // 链扫描按自身 0x20 收集（0x40 已置位），父节点的递归不得重复入队——否则
+    // pending_deletion 同节点双份，update 尾部双 erase 把槽位二次压回空闲链，
+    // 后续 allocate 复用存活槽 → 正在 tick 的 VM 被新子覆写（vm(120)"自
+    // spawn"假象与 SIGSEGV 的真根因，蓝图 §8.9；DOUBLE ERASE 插桩实证）。
+    for(auto* child:entry.children)if(!(child->vm.visual.render_flags&0x40))collect(*child);
     pending_deletion.push_back(&entry);
     entry.vm.rotation_parent=entry.vm.creation_parent=nullptr;entry.vm.visual.render_flags=(entry.vm.visual.render_flags&~32u)|64;
 }
 void AnmRegistry::erase(Node& entry){
+    // 幂等守卫：原版 0x46f690 对池内节点内联回收恰一次（子链只打 0x20 下帧
+    // 链扫自回收，无二次路径）；移植侧直毁（destroy_tree/discard/spawn 失败
+    // 清理）与延迟队列双路径并存，已回收节点必须静默跳过（collect 幂等的
+    // defence in depth：直毁子后 update 队列残留项不再二次释放槽位）。
+    if(!entry.active&&!entry.borrowed)return;
     if(entry.borrowed){external.erase(entry.borrowed);return;}
     if(entry.vm.geometry.gather)for(auto& h:entry.vm.geometry.gather->handles){auto* child=find(h);if(!child){h=0;continue;}child->visual.flags&=~1u;child->visible=false;child->instruction_offset=-1;}
     if(entry.registered)groups[entry.alternate].erase(entry.position);
@@ -69,6 +79,9 @@ bool AnmRegistry::tick_chain(u32 alternate,GameRandom& random,float rate){
     auto next=groups[alternate].begin();while(next!=groups[alternate].end()){
         auto* entry=*next++;
         if(entry->vm.visual.render_flags&0x20){collect(*entry);continue;}
+        // 本帧已随父收集入队（0x40 已置位、尚在链表）：不 tick（脚本副作用会
+        // 打在待回收 VM 上）、不重复入队——update 尾部统一释放。
+        if(entry->vm.visual.render_flags&0x40)continue;
         const int result=entry->vm.tick(random,rate);
         if(result<0){error=entry->vm.error;return false;}
         if(result){collect(*entry);continue;}
