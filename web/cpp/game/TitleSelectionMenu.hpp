@@ -1,10 +1,9 @@
-// 难度与角色菜单（th13 脚本号重锚，蓝图 §四 + oracle 实测章）。
-// 难度根 script1 (70,312)：5 名行（家内安全/無病息災/交通安全/學業成就/やめる，
-// 灰 23-27 白 28-32）+ 数字行 33-48（label 与名行同号联动）；大行条 select01
-// 101-104+109（行位 (32,288+48k)，golden 难度帧行距拟合，归属存疑待 oracle）。
-// 角色根 script2 (70,312)：7 名行（0=EXTRA 字条/1-4=霊夢・魔理沙・早苗・妖夢/
-// 5=LUNATIC 字条/6=やめる，位图辨认待复核）+ 数字行 63-82；立绘+武器+选择框
-// 挂根 129（EX 分支 130，分支条件待锚定）。
+// 难度与角色菜单。[解剖轮2] 难度屏按 difficulty-menu-anatomy.md 重做：
+// root script123 (320,178) spawn 83,84,113..121（行条对/辅助/徽记滚动组/
+// 光标 119/右半 118），独立建 script101（自驱滑入→固定徽记 (192,178) L26），
+// 神霊粒子 = ascii bank2 script18 克隆（全屏随机出生逐帧漂移，脚本经 RNG 槽
+// 10010-10012 自算几何）；难度子脚本 23-48 真机不建（root1 名行/数字行方案
+// 作废）。角色菜单（窗B 解剖未覆盖）维持 script2/129 现实现待下轮解剖。
 #pragma once
 
 #include "TitleAnimations.hpp"
@@ -28,10 +27,15 @@ class TitleDifficultyMenu {
     TitleSelectionSettings& settings;
     TitleAnimations visuals;
     TitleSceneResources resources;
+    AnmManager& animations;
+    i32 frames = -1;  // 屏龄（substate 切换会重置 state.age，独立计时；-1=未入屏）
     bool check(bool);
     bool sound(i32);
-    bool build_rows();           // 大行条+立绘（推定归属，蓝图 §1.7 注记）
-    bool retire_rows();          // 行条滑出销毁（label 1）
+    bool build_difficulty();      // [解剖] root123+badge101+徽记滚动（age0 = Z+21）
+    void finish_menu_hides();     // [解剖] 主菜单 Z+21 隐藏时间线（非选中隐/选中白化/白条闪）
+    void advance_choreography();  // [解剖] 每帧：光标缓动/徽记下滚/粒子/白条与选中衰减
+    void spawn_particles(i32 count);  // ascii18 克隆（脚本自算位置漂移，RNG 对拍）
+    void retire_difficulty();     // 退场回收 + 背景右半层复位
     void choose_character() noexcept;
     void return_main();
 
@@ -41,7 +45,7 @@ public:
     TitleDifficultyMenu(TitleState& s, SessionState& p, TitleSelectionSettings& settings,
                         AnmManager& a, TitleSceneResources resources)
         : state(s), progress(p), settings(settings), visuals(s, a, resources.title, resources.ascii),
-          resources(resources) {}
+          resources(resources), animations(a) {}
     bool update(u32 pressed, u32 repeated);
 };
 
