@@ -60,14 +60,20 @@ struct StageMover {
     StagePosItp postime;           // 位置插值（活动期间覆写 pos）
 };
 
-// ECL 307/308 特效 VM 创建请求（0x41b260 分发 case4/case5 → 0x4243e0：
-// 拷脚本模板 → 立即 tick → 主池头入链 0x46f4a0）。file = ECL 文件索引
-// （ctl+0x80 表：0=bullet.anm、1=effect.anm、2..=st01 ANIM 名单），script =
-// 文件内脚本号；308 位置清零（0x4243e0:22-24）、307 传敌机 xyz（case4:
-// param_1+0x11 起）。表现层（StagePresentation::sync）每帧排空。
+// ECL 30x ANM 创建请求（0x41b260 分发 → 0x4243e0/0x41fe80：拷脚本模板 →
+// 立即 tick → 主池头入链 0x46f4a0）。file = ECL 文件索引（ctl+0x80 表：
+// 0=bullet.anm、1=effect.anm、2..=st01 ANIM 名单），script = 文件内脚本号；
+// 307/308 特效（308 位置清零 0x4243e0:22-24、307 传敌机 xyz）；
+// 303/306 槽位 VM（0x41fe80/case3：重挂先回收旧槽、句柄入敌机+0x120 槽数组、
+// slot0 附加尺寸/身份字段）。表现层（StagePresentation::sync）按 ECL 执行
+// 序排空。
 struct AnmEffectRequest {
     i32 file = 0, script = 0;
     float x = 0, y = 0, z = 0;
+    u8 kind = 0;        // 0=特效（307/308）；1=槽位（303/306）
+    u16 opcode = 0;     // 槽位路径区分 303/306 的 slot0 附加字段
+    i32 slot = 0;
+    u32 serial = 0;   // 槽位路径的目标敌机序号
 };
 
 // et 发射器槽（0xE0 float 状态的行为子集，事件相关的字段）。
@@ -113,6 +119,13 @@ struct StageEnemy {
     // 303 anmScript / 306 anmRun：槽位脚本（vm+0x120 起槽数组；槽 0 = 本体，
     // 记录 -1 表示清槽）。脚本号是 stage ANM 合并表的全局序号。
     i32 anm_script[4] = {-1, -1, -1, -1};
+    // 303/306 真实现的槽位句柄（原版敌机+0x120 起槽数组，0x41fe80/case3
+    // 创建后存句柄、重挂时先 0x470110 回收旧 VM）。
+    u32 anm_slot_handle[4] = {0, 0, 0, 0};
+    // slot0 附加尺寸字段（0x41fe80 → +0x3f30/0x3f34 与 case3 → +0xfcc/0xfcd：
+    // VM 精灵像素宽高 × scale，公式 (h*scaleY, w*scaleX)）。事件窗 noop 不写。
+    float anm_size_a[2] = {0, 0};
+    float anm_size_b[2] = {0, 0};
 };
 
 // 交互模式的弹体实体（fire_et 事件同源的直进弹；无头路径不产实体）。
@@ -185,6 +198,10 @@ public:
     // NOOP_OPS 同源不解析参数（参数解析对带掩码实参有 RNG 副作用，会移动
     // 事件时间线——replay 事件窗 frame124 分歧实证）；渲染/交互模式保持真实语义。
     bool anm_effects_noop = false;
+    // 303/306 槽位 VM 真实现开关（draws 对拍模式置 true：ECL 创建敌机本体
+    // VM 入池、表现层敌机段关闭——与 oracle 极小环境同构）。web 暂走表现层
+    // 旧路径（双绘制风险），后续轮再切换。
+    bool ecl_slot_anm = false;
     std::string error_;
     bool interactive = false;  // 交互模式：弹体实体 + 可写玩家位置（不落事件）
     i32 difficulty_rank = 0x08;

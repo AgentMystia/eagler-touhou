@@ -43,6 +43,9 @@ public:
     // AnmRenderer 提交钩子语境：层号 + 九宫格锚点组（原版 startVertex =
     // ((flags>>23&3)*3+(flags>>21&3))*4，render-chain.md §2.1 第 10 步）。
     void sprite(i32 layer, u32 flags) noexcept;
+    // UP 批提交时的层口径：原版 UP op 的 layer = 0x46f380 层 watch 的残值
+    // （层循环走完 = 56，flush 发生在其后）——层循环后、flush 前调用。
+    void set_stale_layer(i32 layer) noexcept { layer_ = layer; }
 
     u64 frames_out() const noexcept { return frames_out_; }
     u64 quads() const noexcept { return quads_; }

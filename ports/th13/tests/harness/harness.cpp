@@ -271,6 +271,10 @@ struct DrawsSession {
         environment.render_target_has_alpha = true;
         environment.screen_offsets = {320, 16, 320, 16};
         environment.playfield_origin = {128, 16};
+        // 0x43bbc0 战斗初始化后的相机/参考全局（oracle 同构）：变量 10018 =
+        // 0x4dcb38(0)+0x4dcafc(1000.0)——神灵 z 链（ins_103 [10006]+=1000）对拍
+        // 实证；10016/10017/10019-10021 均为 0。
+        environment.camera_origin = {0, 0, 1000};
     }
     bool load_banks(DrawsProvider& provider, const char* player_anm);
     // 一帧渲染（draw-contract §0 帧序的移植侧镜像；ECL/battle 步进由调用方
@@ -348,6 +352,7 @@ bool DrawsSession::render_frame(unsigned frame, th13::u32 held) {
             return fail("animation layer draw: " + renderer.error);
     for (th13::u32 pass = 0; pass < 4; pass++)
         if (!presentation->draw(pass)) return fail("presentation draw: " + presentation->error());
+    capture.set_stale_layer(56);  // 原版层循环 0..56 走完后的 watch 残值（UP 层口径）
     renderer.flush();
     capture.clear_device_texture();  // 0x45d2f0:49 帧尾 SetTexture(0,0)（UG 缓存不失效）
     if (!capture.end_frame()) return fail("draws write: " + capture.error());
@@ -381,6 +386,8 @@ int run_draws(const char* resource_dir, const char* draws_path, unsigned frames,
                                                    kDrawsStageBank, kDrawsBulletBank,
                                                    kDrawsPlayerBank, kDrawsEffectBank},
         31);
+    session.presentation->enemies_from_ecl = true;  // 敌机本体 VM 走 ECL 303/306
+    session.battle.sim.ecl_slot_anm = true;
     th13::StagePresentation::debug_pass_mask = 4;  // 仅敌机（oracle 窗口径）
     // 无输入窗玩家口径：静态 (192,420)（oracle stage1 env 契约常量；不走
     // battle 自机模型——ECL 瞄准读 sim.player_x/y 默认值即此）。
@@ -475,6 +482,8 @@ int run_draws_replay(const char* replay_path, const char* resource_dir, const ch
                                                    kDrawsStageBank, kDrawsBulletBank,
                                                    kDrawsPlayerBank, kDrawsEffectBank},
         31);
+    session.presentation->enemies_from_ecl = true;  // 敌机本体 VM 走 ECL 303/306
+    session.battle.sim.ecl_slot_anm = true;
     th13::StagePresentation::debug_pass_mask = 4;
     if (!session.capture.open_output(draws_path)) {
         std::printf("draws-replay output failed: %s\n", session.capture.error().c_str());
