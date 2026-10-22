@@ -133,7 +133,10 @@ struct StageEnemy {
     // 位置继承旧槽 VM 位置，anmArg=0，尾入池（0x46f3f0）句柄存回槽 0。
     i32 mirror_dir = 0;          // +0x270 上次朝向（构造 0）
     float mirror_prev_x = 0;     // 差分近似 sign(+0x78) 的基线
-    i32 mirror_script_base = 0;  // +0x278（构造 0；VM layer = base + 7）
+    // +0x278 敌机族 ANM 创建层基（ECL 552 / 0x41b359 写；构造 0）。303/306
+    // 槽位 VM（0x41fe80:0x41ff24）与镜像重挂 VM（0x419450:0x419764）的
+    // 创建层 = base + 7（trace 实测窗口敌机该字段 = 1 → 层 8）。
+    i32 mirror_script_base = 0;
 };
 
 // 交互模式的弹体实体（fire_et 事件同源的直进弹；无头路径不产实体）。

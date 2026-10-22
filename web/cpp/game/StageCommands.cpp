@@ -104,9 +104,15 @@ int StageCommands::execute(EclContext& c, u16 op) {
     case 303:   // anmScript（0x41fe80：槽位 VM 创建/清槽 + 句柄存储）
     case 306: {  // anmRun（0x41b260 case3：同 303 + slot0 附加字段/主形身份）
         i32 slot = 0, script = 0;
-        if (resolve_int(c, 0, slot) && resolve_int(c, 1, script) && slot >= 0 && slot < 4)
+        const bool resolved = resolve_int(c, 0, slot) && resolve_int(c, 1, script);
+        if (resolved && slot >= 0 && slot < 4)
             e.anm_script[slot] = script;  // script < 0 = 清槽（0x41fe80）
-        if (!sim.anm_effects_noop && sim.ecl_slot_anm && slot >= 0 && slot < 4) {
+        // push 门须与解析成败绑定（0x41fe80:0x41ff00 门 = script ≥ 0；
+        // resolve_int 失败时 out 参数保持初值（EclContext 失败路径不写值），
+        // 此前残值 slot=0/script=0 会通过范围检查 push 伪创建请求，且 306
+        // 残值还会误置镜像门 flags/mirror_prev_x——对比同函数 307/308 分支
+        // resolve 失败即 return -2。失败时 c.error 亦不得被 return 0 吞掉。
+        if (resolved && !sim.anm_effects_noop && sim.ecl_slot_anm && slot >= 0 && slot < 4) {
             // case3 slot0 附加：flags 0x200000（镜像翻转重挂门，0x419450:102；
             // +0x270 构造 0、+0x78 首拍速度 0 ⟹ 差分基线=当前生成位，避免
             // 首次 sync 误判朝向）
@@ -116,6 +122,10 @@ int StageCommands::execute(EclContext& c, u16 op) {
             }
             sim.anm_effects.push_back({e.anm_file, script, 0, 0, 0,
                                         1, u16(op), slot, e.serial});
+        }
+        if (!resolved) {
+            sim.error_ = c.error.empty() ? "anmScript args" : c.error;
+            return -2;
         }
         return 0;
     }
@@ -543,6 +553,17 @@ int StageCommands::execute(EclContext& c, u16 op) {
             const i32 args[1] = {slot};
             sim.sink.boss_op(e.serial, 512, args, 1, "");
         }
+        return 0;
+    }
+    case 552: {  // 0x41b34f（case 0x56）：敌机+0x278 = arg0——敌机族 ANM
+        // 创建层基（0x41fe80:0x41ff24 槽位 VM 与 0x419450:0x419764 镜像重挂
+        // VM 均以 [+0x278]+7 建层；trace 实测窗口敌机该字段 = 1 → 层 8）。
+        i32 value = 0;
+        if (!resolve_int(c, 0, value)) {
+            sim.error_ = c.error;
+            return -2;
+        }
+        e.mirror_script_base = value;
         return 0;
     }
     case 558: {  // 0x41e451：flags bit20（镜像）按参数异或翻转
