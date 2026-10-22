@@ -32,6 +32,14 @@ public:
     void close_output() noexcept;
     void begin_frame(u32 frame);          // 帧界：viewport 保留（同 oracle 影子）
     bool end_frame();                     // 落一行 JSONL（含末尾 \n）
+    // 帧尾 SetTexture(0,0)（0x45d2f0:49 的移植侧镜像）：设备侧纹理清空
+    // （契约 §2.1：此后绘制 tex=null），但精灵侧缓存（原版 mgr+0xb78188）
+    // 不失效——次帧同纹理精灵经缓存判定跳过 SetTexture，DrawPrimitive 落
+    // 在 NULL 纹理上（oracle f1-8 tex=None 的来源，需逐帧复现）。
+    void clear_device_texture() noexcept {
+        bound_set_ = false;
+        bound_ = Identity{};
+    }
     // AnmRenderer 提交钩子语境：层号 + 九宫格锚点组（原版 startVertex =
     // ((flags>>23&3)*3+(flags>>21&3))*4，render-chain.md §2.1 第 10 步）。
     void sprite(i32 layer, u32 flags) noexcept;

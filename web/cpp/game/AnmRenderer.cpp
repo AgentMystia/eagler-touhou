@@ -21,7 +21,9 @@ AnmDrawProbe anm_draw_probe;
 namespace {u32 multiply_color(u32 a,u32 b){u32 out=0;for(u32 shift=0;shift<32;shift+=8)out|=std::min(255u,(((a>>shift)&255)*((b>>shift)&255))>>7)<<shift;return out;}}
 void AnmRenderer::flush(){if(vertices.empty())return;graphics.set_layout(VertexLayout::ScreenColorUv);graphics.triangles(vertices.size()/3,vertices.data(),sizeof(AnmGeometryVertex));vertices.clear();}
 void AnmRenderer::invalidate(){flush();bound_texture=~0u;}
-void AnmRenderer::set_viewport(const GraphicsViewport& value){invalidate();viewport=value;graphics.set_viewport(value);}
+// 视口切换只冲顶点批，不丢纹理缓存：原版 SetViewport（0x45d2f0:30 每帧）
+// 不清精灵侧纹理缓存 mgr+0xb78188（oracle f1-8 tex=None 的缓存语义）。
+void AnmRenderer::set_viewport(const GraphicsViewport& value){flush();viewport=value;graphics.set_viewport(value);}
 void AnmRenderer::set_camera(const AnmCamera& value){flush();graphics.presentation_camera(false);camera=value;graphics.set_matrix(MatrixKind::View,camera.view);graphics.set_matrix(MatrixKind::Projection,camera.projection);}
 u32 AnmRenderer::tint_color(u32 color)const noexcept{return tint_enabled?multiply_color(color,tint):color;}
 bool AnmRenderer::material(AnmVm& vm,bool textured){
@@ -102,6 +104,7 @@ int AnmRenderer::world_quad(AnmVm& vm){
     // World quads use a fixed four-vertex unit sprite. Per-instance world and
     // texture matrices carry the actual geometry and atlas selection.
     const auto& v=vm.visual;if(!(v.color>>24))return 0;Matrix4 world;if(!anm_world_quad_transform(vm,world)){error="World animation transform unavailable";return -2;}
+
     const u32 ax=v.flags>>21&3,ay=v.flags>>23&3;if(ax>2||ay>2){error="World animation anchor outside range";return -2;}
     flush();if(!material(vm))return -2;auto& state=graphics.pipeline();state.depthWrite=!(v.flags&0x2000);state.textureTransform=true;state.color.second=state.alpha.second={ArgumentSource::Factor};state.textureFactor=tint_color(v.flags&0x60000?v.secondary_color:v.color);
     graphics.set_matrix(MatrixKind::World,world);graphics.set_matrix(MatrixKind::Texture,anm_texture_transform(vm));graphics.set_layout(VertexLayout::WorldUv);
