@@ -31,11 +31,14 @@ try {
   });
   window.mod = mod;  // 调试面：控制台可直查运行时状态
   // ---- 资源进 MEMFS /assets（缺件即启动失败，不静默降级）----
+  // 与 sdl-runtime/prepare-assets.mjs 的 files 保持一致（单一事实源，改一处必改另一处）
   const assets = [
     'text.anm', 'sig.anm', 'ascii.anm', 'effect.anm', 'title.anm', 'title_v.anm', 'help.anm',
     'front.anm', 'enemy.anm', 'st01enm.anm', 'bullet.anm',
     'pl00.anm', 'pl01.anm', 'pl02.anm', 'pl03.anm',
     'st01.ecl', 'default.ecl', 'st01bs.ecl',
+    'st01.std', 'st01wl.anm',
+    'pl00a.sht', 'pl01a.sht', 'pl02a.sht', 'pl03a.sht',
   ];
   mod.FS.mkdirTree('/assets');
   for (const name of assets) {
