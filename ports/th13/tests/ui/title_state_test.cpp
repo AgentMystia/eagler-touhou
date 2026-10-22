@@ -129,19 +129,6 @@ struct TitleHarness {
 
     void frame(u32 pressed = 0, u32 repeated = 0) {
         scene->controls({0, pressed, repeated, 0});
-        if (scheduler.update() < 0) {
-            std::printf("[frame-fail] screen=%d sub=%d age=%d anim=%s\n",
-                        i32(scene->state.screen), scene->state.substate, scene->state.age.current,
-                        manager.error.c_str());
-            for (u32 alternate = 0; alternate < 2; alternate++)
-                for (u32 index = 0; index < manager.registry.ordered_count(alternate); index++) {
-                    auto* vm = manager.registry.find(
-                        manager.registry.ordered_handle(alternate, index));
-                    if (vm && !vm->error.empty())
-                        std::printf("  [err-vm] chain=%u script=%d err=%s\n", alternate,
-                                    vm->source_script, vm->error.c_str());
-                }
-        }
         CHECK(scheduler.update() >= 0);
     }
 
