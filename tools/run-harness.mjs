@@ -57,10 +57,13 @@ for (const output of [args[3], args[4]]) {
   if (output && output.startsWith('/') && output.endsWith('.jsonl'))
     mkdirSync(dirname(workspace + output), {recursive: true});
 }
-// TH13_DUMPCHECK（可选宿主环境变量）：透传给 wasm——harness 侧在该帧
-// dump 层 2 插值通道字段（取证脚手架，见 tests/harness/harness.cpp）。
-const dumpCheck = process.env.TH13_DUMPCHECK;
-const wasi = new WASI({version: 'preview1', args, env: dumpCheck ? {TH13_DUMPCHECK: dumpCheck} : {}, preopens: {'/': workspace}});
+// TH13_DUMPCHECK / TH13_SHOT_PROBE（可选宿主环境变量）：透传给 wasm——
+// 前者 harness 侧 dump 层 2 插值通道字段，后者 StageBattle 出膛/命中探针
+// （取证脚手架，见 tests/harness/harness.cpp 与 StageBattle.cpp）。
+const env = {};
+for (const key of ['TH13_DUMPCHECK', 'TH13_SHOT_PROBE'])
+  if (process.env[key]) env[key] = process.env[key];
+const wasi = new WASI({version: 'preview1', args, env, preopens: {'/': workspace}});
 const module = await WebAssembly.compile(bytes);
 const instance = await WebAssembly.instantiate(module, wasi.getImportObject());
 const code = wasi.start(instance);
