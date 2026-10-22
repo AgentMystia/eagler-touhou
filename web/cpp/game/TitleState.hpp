@@ -33,6 +33,7 @@ struct TitleState {
     std::array<u32, 248> handles{};
     u32 version_bar = 0;  // 版本条（bank17 script0；原 portrait 字段误名，蓝图 §1.9）
     i32 return_reason = 1;
+    i32 confirmed_entry = -1;  // Z 确认的主菜单项（转屏后隐藏时间线仍需定位该项）
     u32 start_effect = 0;
 
     TitleState() { age.set(0); }

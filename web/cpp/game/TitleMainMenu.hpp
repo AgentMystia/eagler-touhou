@@ -50,6 +50,15 @@ struct TitleSceneResources {
     i32 character_root = 2;       // 角色根 (70,312)，spawn 49-82（7 名行+数字行）
     i32 char_menu_root = 129;     // 角色菜单根（立绘 125-128+武器 131-138+选择框）
     i32 char_menu_root_ex = 130;  // EX 武器分支根（129/130 分支条件待锚定，蓝图 §1.8）
+    // [解剖轮2] 难度屏构成（difficulty-menu-anatomy.md）：root script123
+    // (320,178) spawn 83,84,113..121（行条/辅助/徽记/光标 119/右半 118）；
+    // 独立建 script101（自带滑入→固定徽记 (192,178) L26）；神霊粒子 = ascii
+    // bank2 script18 克隆（RNG 槽 10010-10012 自算位置/漂移）；难度子脚本
+    // 23-48 真机不建（解剖实证，root1 方案作废——旧 rank_row_* 字段一并废除）。
+    i32 difficulty_tree = 123;    // 难度屏根（子 83,84,113-121）
+    i32 difficulty_badge = 101;   // 固定徽记（translation {160,170}，自驱滑入）
+    i32 difficulty_cursor = 119;  // 光标（0x473210 移动器缓动序列，解剖 §②）
+    i32 difficulty_particle = 18; // 神霊粒子模板（ascii bank2 script18）
     i32 background_root = 89;     // 背景根（spawn 92,93,91,90；内建 110f/170f 时序）
     i32 logo_root = 94;           // LOGO 首入场根（110f 延迟翻转，oracle g291 实证）
     i32 logo_restore_root = 95;   // LOGO 复位根（自子菜单/对局返回，时机待 oracle）
@@ -58,11 +67,6 @@ struct TitleSceneResources {
     i32 weapon_base = 135;        // 通常武器图标 135+角色号（同上标签族）
     i32 weapon_base_ex = 139;     // EX 武器图标 139+角色号
     i32 weapon_selector_base = 131;  // 武器选择框 131+k（用途待锚定）
-    // 难度/角色大行条（select01.png 256×48，蓝图 §1.7；行位 (32,288+48k) 由
-    // golden 难度帧行距 48px 拟合，屏幕归属蓝图标注存疑待 oracle 窗口比对）：
-    i32 rank_row_base = 101;      // 家内安全(EASY)…學業成就(LUNATIC) 大行条 101-104
-    i32 rank_row_quit = 109;      // 「やめる」大行条（select01 第 10 条，位图辨认）
-    i32 rank_row_extra = 105;     // EXTRA 大行条（Extra 解锁时启用？待锚定）
 };
 
 class TitleMainMenu {
@@ -79,6 +83,7 @@ class TitleMainMenu {
     bool child_interrupt(i32, i32, bool);
     bool sound(i32);
     void adopt_background_layers();  // [窗A] 背景半张层值按 oracle 实测（§8.3）
+    void fade_menu_alphas(i32 step);  // [解剖轮2] Z+10 起灰条透明度衰减 poke
     bool open_menu();     // g361 菜单展开（root0+版本条+全项入场+禁用黑化）
     bool select_entry();  // interrupt(0,7+cursor) 选中入场
     bool show_menu();     // 全项入场（真机 boot 全员可见，oracle 顶点色实证）
