@@ -70,10 +70,11 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
             handle = 0;
         }
         if (request.script < 0) continue;
-        // 槽位 VM 创建层 = 敌机+0x278 + 7（0x41fe80:0x41ff24 `mov 0x278(%esi),
-        // %eax; add $0x7,%eax`——脚本模板不自带层，此前传 -1（脚本自定层）
-        // 使 aura 挂错层）。+0x278 由 ECL 552 写（StageCommands case 552），
-        // 窗口敌机实测 1 → 层 8（与 oracle 敌机 aura up 层 4/8 对拍）。
+        // 槽位 VM 创建层 = 敌机内嵌 VM+0x278 + 7（0x41fe80:0x41ff24 `mov
+        // 0x278(%esi),%eax; add $0x7,%eax`——脚本模板不自带层，此前传 -1
+        // （脚本自定层）使 aura 挂错层）。该字段构造默认 1（StageEnemy
+        // mirror_script_base，ECL 552 可覆盖）→ 层 8（与 oracle 敌机
+        // aura up 层 4/8 对拍）。
         handle = animations.create(bank, request.script,
                                    enemy->mirror_script_base + 7, 2, {}, 0, false);
         if (!handle)
@@ -130,8 +131,8 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
                                      : enemy->anm_file == 1 ? banks.effect
                                                            : banks.stage;
                     // 槽 0 脚本号 = 306 记录（enemy->anm_script[0]）；
-                    // layer = 敌机+0x278 + 7（0x419450:0x419764 实证，
-                    // mirror_script_base 由 ECL 552 写，窗口敌机 = 1 → 层 8）
+                    // layer = 敌机内嵌 VM+0x278 + 7（0x419450:0x419764 实证，
+                    // mirror_script_base 构造默认 1 → 层 8，ECL 552 可覆盖）
                     handle = animations.create(bank,
                                                enemy->anm_script[0] + step,
                                                enemy->mirror_script_base + 7,
