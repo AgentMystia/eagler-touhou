@@ -39,8 +39,9 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
     if (!stage_resource || !bullet_resource || !player_resource)
         return fail("Stage presentation banks unavailable");
 
-    // ---- ECL 30x ANM 创建（0x4243e0：模板拷贝→立即 tick→主池头入链；
-    // layer=-1（脚本自定层）、anmArg=0、位置清零（307 的敌机位仅特效路径用）。
+    // ---- ECL 30x ANM 创建（0x4243e0：模板拷贝→立即 tick→主池头入链。
+    // kind=0 特效路径 layer=-1（脚本自定层）、anmArg=0、位置清零（307 的
+    // 敌机位仅特效路径用）；kind=1 槽位路径见下方 [+0x278]+7 注。
     // 文件索引：0=bullet、1=effect、2..=stage 合并表（脚本号文件内局部——
     // 文件 3+ 的合并偏移为已知局限，窗口内敌机均用文件 2）----
     for (const auto& request : battle.sim.anm_effects) {
@@ -69,7 +70,12 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
             handle = 0;
         }
         if (request.script < 0) continue;
-        handle = animations.create(bank, request.script, -1, 2, {}, 0, false);
+        // 槽位 VM 创建层 = 敌机+0x278 + 7（0x41fe80:0x41ff24 `mov 0x278(%esi),
+        // %eax; add $0x7,%eax`——脚本模板不自带层，此前传 -1（脚本自定层）
+        // 使 aura 挂错层）。+0x278 由 ECL 552 写（StageCommands case 552），
+        // 窗口敌机实测 1 → 层 8（与 oracle 敌机 aura up 层 4/8 对拍）。
+        handle = animations.create(bank, request.script,
+                                   enemy->mirror_script_base + 7, 2, {}, 0, false);
         if (!handle)
             return fail("Slot animation creation failed: " + animations.error);
         if (request.slot == 0) {
@@ -123,7 +129,9 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
                     const i32 bank = enemy->anm_file == 0   ? banks.bullet
                                      : enemy->anm_file == 1 ? banks.effect
                                                            : banks.stage;
-                    // 槽 0 脚本号 = 306 记录（enemy->anm_script[0]）
+                    // 槽 0 脚本号 = 306 记录（enemy->anm_script[0]）；
+                    // layer = 敌机+0x278 + 7（0x419450:0x419764 实证，
+                    // mirror_script_base 由 ECL 552 写，窗口敌机 = 1 → 层 8）
                     handle = animations.create(bank,
                                                enemy->anm_script[0] + step,
                                                enemy->mirror_script_base + 7,
