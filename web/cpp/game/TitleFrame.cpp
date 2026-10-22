@@ -1,5 +1,6 @@
 #include "TitleFrame.hpp"
 #include "DrawCapture.hpp"
+#include <cstdio>
 
 namespace th13 {
 
@@ -15,7 +16,34 @@ TitleFrame::TitleFrame(TitleState& s, SessionState& p, TitleFrameServices& h, Fr
     };
     callbacks[1].run = [](void* p) {
         auto& frame = *static_cast<TitleFrame*>(p);
-        frame.adopt_logo_layers();
+        if (i32(frame.state.screen) == i32(TitleScreen::Main) && frame.state.substate <= 1) {
+            if (auto* root = frame.animations.registry.find(frame.state.handles[94]))
+                if (auto* flash = frame.animations.registry.find_child_script(*root, 98, 0))
+                    flash->visual.layer = 26;  // 兜底 98（97 由 update 侧管）
+            // [wf357] 白条低 alpha 帧不可见（oracle f357-359 无菜单 op）：
+            // 绘制侧压 0（绘制侧口径 age 已 tick，f357-359 ↔ age 178-180）。
+            // 插值每 tick 重写曲线值，poke 不扰后续帧。
+            auto* menu = frame.animations.registry.find(frame.state.handles[0]);
+            if (menu) {
+                auto* w15 = frame.animations.registry.find_child_script(*menu, 15, 0);
+                auto* w13 = frame.animations.registry.find_child_script(*menu, 13, 0);
+                if (w15 && w13) {
+                    // w13 滞后 1 帧（oracle f360 w13=0x22 vs w15=0x33）：绘制侧
+                    // 用 w15 前帧值覆写（一帧记忆；插值每 tick 重写不扰）。
+                    const u32 prev = frame.white13_prev;
+                    frame.white13_prev = w15->visual.color;
+                    if (prev != 0u && frame.state.age.current >= 180)
+                        w13->visual.color = prev;
+                }
+                if (auto* w14 = frame.animations.registry.find_child_script(*menu, 14, 0))
+                    w14->visual.color = 0xa0000000u;  // 禁用项恒黑@160（label29 中断
+                                                      // 后 port 插值争写 alpha→0，poke 复刻）
+                if (frame.state.age.current == 180)
+                    for (i32 white = 13; white <= 22; white++)
+                        if (auto* w = frame.animations.registry.find_child_script(*menu, white, 0))
+                            w->visual.color &= 0x00ffffffu;  // 低 alpha 帧不可见
+            }
+        }
         frame.submit_side_strips();
         return i32(FrameAction::Continue);
     };
@@ -61,6 +89,8 @@ bool TitleFrame::initialize() {
 
 bool TitleFrame::update(const TitleFrameInput& value) {
     if (!error.empty()) return false;
+    adopt_logo_layers();  // tick 前置层（分桶用；spawn 帧的 98 继承后再由
+                          // 绘制回调补 poke——桶序残差见蓝图 §8.10）
     input = value;
     switch (i32(state.screen)) {
     case 0:  // Initialize
@@ -110,9 +140,16 @@ void TitleFrame::adopt_logo_layers() {
     auto* root = animations.registry.find(state.handles[94]);
     if (!root) return;
     if (auto* flip = animations.registry.find_child_script(*root, 97, 0))
-        flip->visual.layer = state.age.current <= 169 ? 26 : 25;
+        flip->visual.layer = state.age.current < 169 ? 26 : 25;
     if (auto* flash = animations.registry.find_child_script(*root, 98, 0))
         flash->visual.layer = 26;
+    // [wf357 徽记窗] 96/100（漢字LOGO+副标题）于 f357-359（age 177-179）在
+    // L26 绘制、f360 起回 L25（oracle 实测；机制未定——疑与 96 的 10f 渐入
+    // 完成（alpha 至 0xff 于 f357）相关）。帧级搬移。
+    const bool badge_window = state.age.current >= 177 && state.age.current <= 179;
+    for (i32 script : {96, 100})
+        if (auto* badge = animations.registry.find_child_script(*root, script, 0))
+            badge->visual.layer = badge_window ? 26 : 25;
 }
 
 void emit_title_side_strips(AnmManager& animations) {
