@@ -270,8 +270,9 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
             // 早前「Z+8」系末日帧 off-by-one，retire 于 age==9。
             animations.retire(state.version_bar);
         }
-        if (state.age.current == 14 && state.handles[resources.logo_root]) {
-            // oracle title_logo 末日 f483（Z+14）、f484 起无 op。
+        if (state.age.current == 15 && state.handles[resources.logo_root]) {
+            // [f483 复验] oracle title_logo 末日 f483（Z+14，本帧仍有 op）、
+            // f484 起无——retire 于 age==15（末日+1，与 ver 同型 off-by-one）。
             animations.retire(state.handles[resources.logo_root]);
         }
         if (state.age.current >= 9 && state.age.current <= 30) fade_menu_alphas(state.age.current - 9);
