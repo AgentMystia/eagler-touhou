@@ -29,9 +29,13 @@ TitleFrame::TitleFrame(TitleState& s, SessionState& p, TitleFrameServices& h, Fr
                 if (w15 && w13) {
                     // w13 滞后 1 帧（oracle f360 w13=0x22 vs w15=0x33）：绘制侧
                     // 用 w15 前帧值覆写（一帧记忆；插值每 tick 重写不扰）。
+                    // [f384+ 修正] 仅 boot 渐入窗（frame_count 181-191 = f360-370）
+                    // 生效——菜单就绪（f371）后 advance_selection 接管 w13，
+                    // 恒开跟随会把 w13 锁死在 w15 的 00（实测 f389-393 s13=00
+                    // 缺批、oracle 稳态 10 枚的根因）。
                     const u32 prev = frame.white13_prev;
                     frame.white13_prev = w15->visual.color;
-                    if (prev != 0u && frame.frame_count >= 181)
+                    if (prev != 0u && frame.frame_count >= 181 && frame.frame_count <= 191)
                         w13->visual.color = prev;
                 }
                 // [轮7] 白条淡入尾段（oracle f371=f9(249)/f372=fd(253)/f373=ff，

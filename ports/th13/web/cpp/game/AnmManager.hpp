@@ -21,6 +21,10 @@ class AnmManager final:public AnmObjectHost {
     bool adopt_bank(i32,std::unique_ptr<Bank>);
 public:
     AnmRegistry registry;std::string error;float rate=1;
+    // [f371 标题重挂] 入场重挂需公开实例化/提交面（oracle 批序尾插语义）。
+    using AnmObjectHost::spawn_child;
+    AnmVm* create_instance(AnmResource& resource,i32 script){return instantiate(resource,script);}
+    bool prime_instance(AnmVm& vm){return initial_tick(vm);}
     // 0x472c90 游戏侧 RNG 源（原版全局态 0x4dc31c；表现层/装载模板共享）。
     GameRandom& random_source()const noexcept{return random;}
     std::unordered_map<i32,std::string> resource_names;
