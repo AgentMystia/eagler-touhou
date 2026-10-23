@@ -82,8 +82,11 @@ void TitleMainMenu::adopt_background_layers() {
         forest_left->visual.layer = 23;
     if (auto* forest_right = animations.registry.find_child_script(*root, 91, 0))
         forest_right->visual.layer = 22;
+    // [窗A 复验修正] select00 右半 boot 期（截窗 f0-348）oracle 实测 @L23——
+    // 早前按「f349 起 L21」在创建时置 21 是错读（f349 才搬）。f349 搬移由
+    // update substate1 age>=169 分支执行（保持）；此处创建期置 23。
     if (auto* overlay_right = animations.registry.find_child_script(*root, 93, 0))
-        overlay_right->visual.layer = 21;
+        overlay_right->visual.layer = 23;
 }
 
 void TitleMainMenu::enter(i32 entry) {
