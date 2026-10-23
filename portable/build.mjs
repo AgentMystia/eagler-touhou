@@ -77,7 +77,7 @@ await run([...flags, '--emit-symbol-map', '-sDEFAULT_TO_CXX=1', '--no-entry',
   '-sALLOW_MEMORY_GROWTH=1', '-sSTACK_SIZE=1048576', '-sINITIAL_MEMORY=67108864',
   '-sMAXIMUM_MEMORY=1073741824', '-sINVOKE_RUN=0', '-sEXIT_RUNTIME=0',
   '-sMIN_WEBGL_VERSION=2', '-sMAX_WEBGL_VERSION=2', '-sGL_SUPPORT_AUTOMATIC_ENABLE_EXTENSIONS=0',
-  '-sEXPORTED_RUNTIME_METHODS=FS,UTF8ToString,HEAP32,allocateUTF8',  // th13.html 资源进 MEMFS /assets + 错误解码 + 投影读取；allocateUTF8 = debug 页传录像名
+  '-sEXPORTED_RUNTIME_METHODS=FS,UTF8ToString,HEAP32,HEAPU8,allocateUTF8',  // th13.html 资源进 MEMFS /assets + 错误解码 + 投影/渲染统计读取（HEAPU8 = tests/sdl 统计契约测试）；allocateUTF8 = debug 页传录像名
   ...outputs, '-o', output]);
 
 const wasm = readFileSync(output.replace('.mjs', '.wasm'));
