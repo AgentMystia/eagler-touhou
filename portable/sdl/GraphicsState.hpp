@@ -80,7 +80,11 @@ struct StateCommands {
         auto& p=pipeline();p.depthTest=true;p.blend=true;p.sourceBlend=BlendFactor::SourceAlpha;p.destinationBlend=BlendFactor::InverseSourceAlpha;
         p.depthCompare=Compare::Always;p.alphaTest=true;p.alphaReference=alphaRef;p.alphaCompare=Compare::GreaterEqual;
         p.cull=Cull::None;p.fog=true;p.fogMode=FogMode::Linear;p.fogDensity=1;p.fogColor=0xffa0a0a0;p.fogNear=1000;p.fogFar=5000;
-        p.color.operation=p.alpha.operation=ColorOperation::Multiply;p.color.first=p.alpha.first={ArgumentSource::Texture};p.minFilter=p.magFilter=Filter::Linear;p.addressU=p.addressV=Address::Repeat;p.color.second=p.alpha.second={ArgumentSource::Factor};p.textureTransform=true;
+        // 第二参数=Diffuse（D3D 缺省调制：纹理×漫反射色）。此前=Factor 曾靠
+        // textureFactor 缺省 0xffffffff 掩蔽；缺省改 0（真机 TFACTOR 初始态）后
+        // Factor 缺省会把全像素着色为黑——web 视觉全灭的根因。Factor 模式由
+        // AnmRenderer world_quad 族按 VM 色显式设置（真机 0x4692d0 同位）。
+        p.color.operation=p.alpha.operation=ColorOperation::Multiply;p.color.first=p.alpha.first={ArgumentSource::Texture};p.minFilter=p.magFilter=Filter::Linear;p.addressU=p.addressV=Address::Repeat;p.color.second=p.alpha.second={ArgumentSource::Diffuse};p.textureTransform=true;
     }
 };
 
