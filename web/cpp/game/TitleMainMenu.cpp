@@ -174,7 +174,6 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
             selection_move = true;
             selection_active = true;
         }
-        advance_selection();
         if (pressed & 0x102) {  // Esc/X：跳到末项或直接退出分支
             if (state.menu.cursor == kTitleMainEntries - 1) {
                 if (!sound(9)) return false;
@@ -321,9 +320,16 @@ void TitleMainMenu::advance_selection() {
     // 恒隐，选择交叉为**纯白条**序列（SCAN 的 s3/s5 alpha 上升是 VM 态，
     // 不达绘制）。移动帧 0x5b/0x28 = 新/旧白条的交叉值。
     if (!selection_move) {
-        if (step < 5) set_item_alpha(selection_item, kWhiteOut[step], true);
+        // [轮9] oracle f371-381 全序：降 {142,79,35,8,0}（5 帧）→隐（3 帧）→
+        // 回升 {214,244,255}（f379-381）→稳态 255（w13 复入批）。
+        static const i32 kRise[3] = {214, 244, 255};
+        // oracle f371=0x8e(142) 于武装当帧（step0）；尾回升后稳态 255。
+        static const i32 kOut[5] = {142, 79, 35, 8, 0};
+        if (step < 5) set_item_alpha(selection_item, kOut[step], true);
+        else if (step < 8) set_item_alpha(selection_item, 0, true);
+        else if (step < 11) set_item_alpha(selection_item, kRise[step - 8], true);
         else {
-            set_item_alpha(selection_item, 0, true);
+            set_item_alpha(selection_item, 255, true);
             selection_active = false;
         }
     } else {
@@ -348,8 +354,7 @@ bool TitleMainMenu::select_entry() {
     selection_active = true;
     selection_move = false;
     selection_item = state.menu.cursor;
-    advance_selection();  // 当帧首帧（oracle f371 首帧即 0x8e/0x5b）
-    return true;
+    return true;  // 首帧由绘制回调 step0 落 142（oracle f371=0x8e）
 }
 
 }  // namespace th13

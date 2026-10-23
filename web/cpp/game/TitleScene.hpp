@@ -37,6 +37,7 @@ private:
     bool title_exit(i32) override;
     bool fade_out_title_music() override;
     bool update_title_menu(TitleScreen, const TitleFrameInput&) override;
+    void advance_main_menu_selection() override;
     // TitleMenuServices
     bool sound(i32) override;
     bool begin_transition(u32&) override;

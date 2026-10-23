@@ -53,6 +53,7 @@ TitleFrame::TitleFrame(TitleState& s, SessionState& p, TitleFrameServices& h, Fr
                             w->visual.color &= 0x00ffffffu;  // 低 alpha 帧不可见
             }
         }
+        frame.host.advance_main_menu_selection();
         frame.submit_side_strips();
         return i32(FrameAction::Continue);
     };

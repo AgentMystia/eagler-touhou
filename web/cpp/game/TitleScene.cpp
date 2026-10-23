@@ -48,6 +48,8 @@ bool TitleScene::start_game(i32 stage) {
     return host.start_game(stage);
 }
 
+void TitleScene::advance_main_menu_selection() { main.advance_selection(); }
+
 bool TitleScene::update_title_menu(TitleScreen screen, const TitleFrameInput& value) {
     input = value;
     switch (screen) {
