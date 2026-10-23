@@ -67,10 +67,7 @@ export function createPlayerKeyboard(options: PlayerKeyboardOptions) {
     if (mapping && keyboardInputBridge(context)) {
       if (event.type === 'keydown' && event.isComposing) return;
       if (options.launcherOwnsTarget(event.target) && event.type === 'keydown') return;
-      // Key releases are always forwarded: filtering them strands the Runtime's
-      // held key with no later event to retire it (#102). Only presses are
-      // candidates for ownership, composing and modifier-chord rejection.
-      if (event.type === 'keydown' && (!mapping.recognizes(event) || event.altKey || event.metaKey)) return;
+      if (!mapping.recognizes(event) || event.type === 'keydown' && (event.altKey || event.metaKey)) return;
       if (options.runtime.postInput('keyboard', {code:event.code,key:event.key,keyCode:event.keyCode,location:event.location,
           down:event.type === 'keydown',repeat:event.repeat,inputSource:'physical',launcherOwnsFocus:options.launcherOwnsTarget(event.target)})) event.preventDefault();
       return;
@@ -128,9 +125,6 @@ export function createPlayerKeyboard(options: PlayerKeyboardOptions) {
         supports:code=>owner.supports(code),
         sampleLocal(seat){if(!options.playerOpen()||options.document.visibilityState==='hidden')owner.clear();return owner.sampleLocal(seat,options.runtime.getInputContext());},
         map(event,down,source,profile) {
-          // Silent rejection is for presses only. A release must always reach
-          // the mapping so a key held across an ownership change still retires
-          // (#102); releases against a replaced context only ever clear.
           if (down && (clearing || !sameNativeContext(next,options.runtime.getMidiEventContext()) || !options.playerOpen())) return [];
           if (source === 'physical' && event.code === 'Enter' && (down && event.altKey && !event.metaKey && !event.ctrlKey || !down && chord)) {
             if (down) {if (!event.repeat && !chord) {chord = true;options.toggleFullscreen();}}
