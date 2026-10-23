@@ -30,7 +30,7 @@ struct RunSceneServices : HudDrawServices, HudFrameServices, StageBattleServices
         return false;
     }
     // 交互装载：ECL/ANM 字节（经宿主资源通道，浏览器侧 /assets）。
-    virtual bool read_asset(const std::string& name, std::vector<u8>& bytes) = 0;
+    virtual bool read_asset(const std::string& name, std::vector<u8>& bytes, bool required = true) = 0;
     // STD 舞台背景支撑：图形设备 / 背景 ANM bank 装载（宿主侧 preload 一体）。
     virtual ZunGraphics& stage_graphics() = 0;
     virtual bool preload_scenery_animation(i32 bank, const std::string& name) = 0;

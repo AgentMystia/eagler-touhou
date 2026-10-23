@@ -17,6 +17,10 @@ const files = [
   'front.anm', 'enemy.anm', 'st01enm.anm', 'bullet.anm',
   'pl00.anm', 'pl01.anm', 'pl02.anm', 'pl03.anm',
   'st01.ecl', 'default.ecl', 'st01bs.ecl', 'st01.std', 'st01wl.anm',
+  'st01a.msg', 'st01b.msg', 'st01c.msg', 'st01d.msg', 'st01logo.anm',
+  'st02.ecl', 'st02bs.ecl', 'st02mbs.ecl', 'st02.std', 'st02wl.anm', 'st02enm.anm', 'st02logo.anm',
+  'st02a.msg', 'st02b.msg', 'st02c.msg', 'st02d.msg',
+  'staff.msg',
   'pl00a.sht', 'pl01a.sht', 'pl02a.sht', 'pl03a.sht',
 ];
 for (const name of files) {

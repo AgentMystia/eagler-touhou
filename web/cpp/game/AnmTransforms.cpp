@@ -18,7 +18,7 @@ bool resolution(AnmVm& vm){const u32 mode=vm.visual.render_flags>>20&7;if(mode!=
 bool anm_billboard_transform(AnmVm& vm,Matrix4& out)noexcept{
     auto& v=vm.visual;if(!(v.flags&0x10000)){scale_sprite(vm);rotate(vm,vm.total_rotation(),0);}out=v.transform_matrix;
     out.m[12]=float(float(float(v.translation.x+vm.variables.position.x)+v.child_anchor.x)+v.transform_matrix.m[12]);float y=v.transform_matrix.m[13];
-    if((v.render_flags&0xc0000)&&!vm.creation_parent){if(!vm.environment)return false;out.m[12]=float(float(float(vm.environment->screen_width)*.5f)+out.m[12]);y=float(float(float(float(vm.environment->screen_height)-448.f)*.5f)+y);}
+    if((v.render_flags&0xc0000)&&!vm.creation_parent){if(!vm.environment)return false;out.m[12]=float(float(vm.environment->screen_offsets[2])+out.m[12]);y=float(float(vm.environment->screen_offsets[3])+y);}
     out.m[13]=float(float(float(v.translation.y+vm.variables.position.y)+v.child_anchor.y)+y);out.m[14]=float(float(v.translation.z+vm.variables.position.z)+v.child_anchor.z);
     if(vm.creation_parent&&!(v.render_flags&0x10000)){const auto& p=*vm.creation_parent;out.m[12]=float(float(float(p.visual.translation.x+p.variables.position.x)+p.visual.child_anchor.x)+out.m[12]);out.m[13]=float(float(float(p.visual.translation.y+p.variables.position.y)+p.visual.child_anchor.y)+out.m[13]);out.m[14]=float(float(float(p.visual.translation.z+p.variables.position.z)+p.visual.child_anchor.z)+out.m[14]);}return true;
 }

@@ -314,3 +314,13 @@ TO/RO 均预置 `DAT_004dcc5c |= 0x180` 破 0x46df40 族等待环；但 0x42b990
    语义，但若对策 A 失败需回退 B 时要解。
 
 —— 完 ——
+
+## 附录：真机全链路窗 HUD 实证（oracle 侧，2026-10-23）
+
+全链路分片跑法（boot→菜单→难度→角色→开局装载→战斗，attack5.jsonl
+1100 帧稳定产物）实测：**HUD front00.png 在战斗段 f761（全局帧）首现
+并稳定为 15→17 项 up op**，同帧伴随 pl01.png（玩家）、eff_base.png
+（背景特效递增）、st01logo.png、eff_switch.png；战斗窗（render_oracle
+直调装载序）同段无任何 HUD op——HUD 仅由真机全链路（场景 7 战斗
+update/draw 任务族）产生，捕获面必须走全链路路径。证据文件：
+`artifacts/tmp-scratch/attack5.jsonl`（oracle 侧）/ `f752-attack-report.md` §12。

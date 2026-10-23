@@ -288,8 +288,8 @@ struct DrawsSession {
         environment.raster_scale = 1;
         environment.resolution_scale = 1;
         environment.render_target_has_alpha = true;
-        environment.screen_offsets = {320, 16, 320, 16};
-        environment.playfield_origin = {128, 16};
+        environment.screen_offsets = {32, 16, 224, 16};
+        environment.playfield_origin = {32, 16};
         // 0x43bbc0 战斗初始化后的相机/参考全局（oracle 同构）：变量 10018 =
         // 0x4dcb38(0)+0x4dcafc(1000.0)——神灵 z 链（ins_103 [10006]+=1000）对拍
         // 实证；10016/10017/10019-10021 均为 0。
@@ -711,8 +711,8 @@ struct TitleSession {
     bool prepare_title() {
         environment.raster_scale = 1;
         environment.render_target_has_alpha = true;
-        environment.screen_offsets = {320, 16, 320, 16};
-        environment.playfield_origin = {128, 16};
+        environment.screen_offsets = {32, 16, 224, 16};
+        environment.playfield_origin = {32, 16};
         constexpr std::pair<const char*, th13::i32> banks[7] = {
             {"text.anm", 0},  {"sig.anm", 1},   {"ascii.anm", 2}, {"effect.anm", 8},
             {"title.anm", 16}, {"title_v.anm", 17}, {"help.anm", 19}};

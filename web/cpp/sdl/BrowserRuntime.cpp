@@ -311,9 +311,9 @@ EMSCRIPTEN_KEEPALIVE const char* th13_debug_layer_report() {
                     ? source->textures[source->sprites[th13::u32(sprite)].texture].name.c_str()
                     : "-";
             std::snprintf(line, sizeof line,
-                          "  script=%d sprite=%d pos=(%.0f,%.0f) scale=%.2fx%.2f tex=%s/%s\n",
+                          "  script=%d sprite=%d pos=(%.0f,%.0f) flags=0x%x tex=%s/%s\n",
                           vm->source_script, sprite, vm->visual.translation.x,
-                          vm->visual.translation.y, vm->visual.scale.x, vm->visual.scale.y,
+                          vm->visual.translation.y, vm->visual.render_flags,
                           texture, sprite_texture);
             report += line;
         }
