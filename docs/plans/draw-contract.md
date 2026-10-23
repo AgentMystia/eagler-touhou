@@ -130,8 +130,13 @@ ECL no-op 跳表改写 = stage1 `NOOP_OPS` 剔除 ANM 指令族
    code 判定，杜绝「过滤后 none」被当全绿。
 3. **限期销账**：每个进入 --ignore 的字段必须在 HANDOFF 工作面登记销账
    条件（根因修复或证据化等价）与期限；销账后该字段必须回到全字段比对。
-   当前唯一登记项：`tfactor`（对局窗 f0 一帧滞后族——真机 D3D TFACTOR
-   跨帧持续设备态，蓝图 §8.8；销账条件 = 装载趟插值进度残留态建模完成）。
+   登记台账：~~`tfactor`~~（**已销账 2026-10-23**：根因 = ECL 30x/镜像
+   创建点的色/α 插值缺一步「ctor 趟步进」——原版 0x41fe80/case3 与
+   0x419450 镜像块在敌机更新趟内创建 VM 时色通道多推进一步（oracle
+   VM+0x15c α=6/timer=3 vs port 4/2 实测）；修复 = StagePresentation
+   创建点 `create_color_step`（AnmInterpolators::advance_color，仅色/α
+   两通道，脚本与矩阵不动）。销账实测：对局无输入窗 RAW f511、回放窗
+   RAW f124——tfactor 全窗对齐，无过滤比对恢复）。当前无在册登记项。
 
 NaN 相等性（`cmp_float` 的「任一 NaN == 任一 NaN」）是本契约的既定语义
 （§3 序列化规则的一部分，两侧同式），非遮蔽——勿与 --ignore 混淆。

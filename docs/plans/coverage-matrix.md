@@ -13,8 +13,8 @@
 |---|---|---|---|---|
 | 标题窗 A（主菜单 600 帧） | `title_oracle.py` → `title-draws.jsonl` | harness `title` | 🟡 f487（81%） | f487 起 ins_408 首帧语义差——已按机制层优先原则冻结参数微调，升级引擎语义工作面（oracle VM 层写 watch）；触发判据登记 |
 | 标题窗 B（开局链 750 帧） | `title_oracle.py` 窗 B | harness `title-b` | 🟡 f379 | 与窗 A 同根因族（f379=count 22≠20 属 A/B 输入序列差异面） |
-| 对局窗·无输入（st01 3600 帧） | `render_oracle.py` → `st01-draws.jsonl` | harness `draws` | 🟡 f0（tfactor）/f61（敌机行走位差） | golden 已锚（replay-verifier：BASELINE-HELD）；事件流同窗 10187 **none** 硬基线 |
-| 对局窗·回放（udSr01 11065 帧） | `st01-draws-replay.jsonl` | harness `draws-replay` | 🟡 f0（tfactor）/f61 | golden 已锚；**本窗是对局主线**：f61 敌机行走精灵 x 差 96px（ECL 运动链）、f0 tfactor 一帧滞后（装载趟插值残留态——`--ignore tfactor` 唯一登记项，销账=建模完成） |
+| 对局窗·无输入（st01 3600 帧） | `render_oracle.py` → `st01-draws.jsonl` | harness `draws` | 🟡 **f511 RAW**（2026-10-23 机制层双修后） | f61 位差（0x40000 屏幕原点 320）与 f0 tfactor（创建点色步进）已销账；新前沿 f511 = op[64] 顶点 y 1px（x87/SSE 数值语义面）；事件流同窗 10187 **none** 硬基线 |
+| 对局窗·回放（udSr01 11065 帧） | `st01-draws-replay.jsonl` | harness `draws-replay` | 🟡 **f124 RAW**（同上） | **本窗是对局主线**：新前沿 f124 = op[16] count 6≠4（批内多一精灵——回放输入驱动的下一机制面） |
 | 难度窗 | ❌ 未建（真机行为已锚：蓝图 §8.6） | ❌ | 📦 | 入场条件：窗 A 的 ins_408 工作面销账后（难度屏构建期 vm120 自 spawn 崩溃已修） |
 | 角色窗 | ❌ 未建（蓝图 §8.4/窗B 解剖部分完成） | ❌ | 📦 | 窗 B 前沿推进后 |
 | HUD 窗 | ❌ 未建（捕获面研究：`hud-capture-plan.md`） | ❌ | 📦 | oracle 捕获面扩展：0x40e4d0 族不在现捕获面——需假设备扩展 |
