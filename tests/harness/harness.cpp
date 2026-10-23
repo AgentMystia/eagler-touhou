@@ -74,7 +74,28 @@ int stage1(const char* resource_dir, const char* event_path, unsigned frames,
         std::printf("stage1 load failed: %s\n", sim.error().c_str());
         return 1;
     }
-    const bool ok = sim.run(frames);
+    // TH13_LIFE_PROBE=1：stage1 路径同款生命轨迹探针（与 StageBattle::step /
+    // oracle stage1_oracle 同格式——draws 循环走 sim.step_frame 不经 battle，
+    // 无输入窗对拍需在此出探针）。
+    bool ok;
+    if (std::getenv("TH13_LIFE_PROBE")) {
+        ok = sim.start();
+        for (unsigned f = 1; ok && f < frames && sim.error().empty(); ++f) {
+            sim.sink.set_frame(f);
+            if (!sim.step_frame()) break;
+            for (const auto& enemy : sim.enemies)
+                std::printf("LIFE f=%u e=%d life=%d pos=(%.9g,%.9g) hb=(%.9g,%.9g) "
+                            "flags=%08x\n",
+                            f, int(enemy->serial), int(enemy->life),
+                            double(enemy->position[0]), double(enemy->position[1]),
+                            double(enemy->hurtbox[0]), double(enemy->hurtbox[1]),
+                            enemy->flags);
+        }
+        sim.sink.close();
+        ok = ok && sim.error().empty() && sim.sink.ok();
+    } else {
+        ok = sim.run(frames);
+    }
     std::printf("stage1 frames=%u enemies=%u events=%llu ok=%d\n", frames, sim.spawn_count(),
                 static_cast<unsigned long long>(sim.event_count()), ok ? 1 : 0);
     if (!ok) {
@@ -302,7 +323,7 @@ struct DrawsSession {
         environment.raster_scale = 1;
         environment.resolution_scale = 1;
         environment.render_target_has_alpha = true;
-        environment.screen_offsets = {32, 16, 224, 16};
+        environment.screen_offsets = {32, 16, 320, 16};
         environment.playfield_origin = {32, 16};
         // 0x43bbc0 战斗初始化后的相机/参考全局（oracle 同构）：变量 10018 =
         // 0x4dcb38(0)+0x4dcafc(1000.0)——神灵 z 链（ins_103 [10006]+=1000）对拍
@@ -389,9 +410,13 @@ bool DrawsSession::render_frame(unsigned frame, th13::u32 held) {
             };
             for (th13::AnmVm* vm : animations.registry.layer(2)) {
                 const auto& ch = vm->interpolators.position;
+                const auto& col = vm->interpolators.color;
+                const auto& al = vm->interpolators.alpha;
                 std::printf(
                     "[f%u] s4aa=%d x3c=%.9g bits=%08x start=%08x,%08x,%08x "
-                    "end=%08x,%08x,%08x dur=%08x mode=%d frac=%08x\n",
+                    "end=%08x,%08x,%08x dur=%08x mode=%d frac=%08x "
+                    "color=%08x cdur=%d ctimer=%d alpha=%08x adur=%d "
+                    "atimer=%d astart=%.9g aend=%.9g\n",
                     frame, vm->source_script,
                     double(vm->variables.position.x),
                     as_bits(vm->variables.position.x),
@@ -399,7 +424,10 @@ bool DrawsSession::render_frame(unsigned frame, th13::u32 held) {
                     as_bits(ch.start[2]), as_bits(ch.end[0]),
                     as_bits(ch.end[1]), as_bits(ch.end[2]),
                     as_bits(float(ch.duration)), ch.mode,
-                    as_bits(ch.timer.fractional));
+                    as_bits(ch.timer.fractional),
+                    vm->visual.color, int(col.duration), col.timer.current,
+                    vm->visual.color, int(al.duration), al.timer.current,
+                    double(al.start[0]), double(al.end[0]));
             }
         }
     }
@@ -746,7 +774,7 @@ struct TitleSession {
     bool prepare_title() {
         environment.raster_scale = 1;
         environment.render_target_has_alpha = true;
-        environment.screen_offsets = {32, 16, 224, 16};
+        environment.screen_offsets = {32, 16, 320, 16};
         environment.playfield_origin = {32, 16};
         constexpr std::pair<const char*, th13::i32> banks[7] = {
             {"text.anm", 0},  {"sig.anm", 1},   {"ascii.anm", 2}, {"effect.anm", 8},
