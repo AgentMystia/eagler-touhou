@@ -264,9 +264,10 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
         break;
     }
     case 4: {
-        if (state.age.current == 8 && state.version_bar &&
+        if (state.age.current == 9 && state.version_bar &&
             state.menu.cursor != kTitleMainEntries - 1) {
-            // oracle g478（Z+8）title_ver 末日、g479 起无 op——立即回收对齐。
+            // [f477 复验] oracle ver 末日 f478（Z+9、alpha 末值 0x19）——
+            // 早前「Z+8」系末日帧 off-by-one，retire 于 age==9。
             animations.retire(state.version_bar);
         }
         if (state.age.current == 14 && state.handles[resources.logo_root]) {
