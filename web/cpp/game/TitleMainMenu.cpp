@@ -274,7 +274,7 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
             // oracle title_logo 末日 f483（Z+14）、f484 起无 op。
             animations.retire(state.handles[resources.logo_root]);
         }
-        if (state.age.current >= 10 && state.age.current <= 30) fade_menu_alphas(state.age.current - 10);
+        if (state.age.current >= 9 && state.age.current <= 30) fade_menu_alphas(state.age.current - 9);
         if (state.age.current > 19) enter(state.menu.cursor);
         break;
     }
@@ -304,15 +304,18 @@ void TitleMainMenu::set_item_alpha(i32 item, i32 alpha, bool white) {
 // 同语义实证：f360 op10 alpha=0x22=第2帧值，监督者 poke 被插值逐帧覆写）。
 void TitleMainMenu::boot_fade(i32) {}
 
-// Z+10 起灰条透明度衰减（oracle f479-f489 顶点色线性 -13/帧；rgb 恒定，
-// 禁用项黑 rgb 不变）。直接 poke visual.color。
+// Z 序衰减（[f478 复验] oracle 实测 f478 起：白条 -13/帧、禁用黑条独立
+// -8/帧——「Z+10 起」与黑条同率两处皆系旧读，帧位与曲线一并修正）。
 void TitleMainMenu::fade_menu_alphas(i32 step) {
     auto* root = animations.registry.find(state.handles[resources.main_root]);
     if (!root) return;
-    const i32 alpha = 255 - 13 * step, dimmed = 160 - 13 * step;
+    const i32 alpha = 255 - 13 * step, dimmed = 160 - 8 * step;
     for (i32 item = 0; item < kTitleMainEntries; item++) {
         auto* child = animations.registry.find_child_script(*root, item + 13, 0);
         if (!child) continue;
+        // [f478] 跳过已隐藏项（Z 序把 w13 隐 0 后 fade 不复活——oracle
+        // f477 双侧同缺 279.5、f478 oracle 仍 20 枚的实证）。
+        if (!(child->visual.color >> 24)) continue;
         const u32 rgb = child->visual.color & 0xffffffu;
         i32 a = item == i32(TitleMainEntry::ExtraStart) ? dimmed : alpha;
         if (a < 0) a = 0;

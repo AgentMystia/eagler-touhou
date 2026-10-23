@@ -48,9 +48,11 @@ TitleFrame::TitleFrame(TitleState& s, SessionState& p, TitleFrameServices& h, Fr
                         if (auto* w = frame.animations.registry.find_child_script(*menu, white, 0))
                             w->visual.color = u32(tail) << 24 | 0xc0c0c0u;
                 }
-                if (auto* w14 = frame.animations.registry.find_child_script(*menu, 14, 0))
-                    w14->visual.color = 0xa0000000u;  // 禁用项恒黑@160（label29 中断
-                                                      // 后 port 插值争写 alpha→0，poke 复刻）
+                if (frame.frame_count <= 194)  // [f479] boot 渐入窗内复刻黑条；
+                    if (auto* w14 = frame.animations.registry.find_child_script(*menu, 14, 0))
+                        w14->visual.color = 0xa0000000u;  // 禁用项恒黑@160（label29 中断
+                                                          // 后 port 插值争写 alpha→0，poke 复刻）。
+                                                          // 菜单就绪后 Z 序 fade 接管（oracle -8/帧）。
                 if (frame.frame_count >= 178 && frame.frame_count <= 180)
                     for (i32 white = 13; white <= 22; white++)
                         if (auto* w = frame.animations.registry.find_child_script(*menu, white, 0))
