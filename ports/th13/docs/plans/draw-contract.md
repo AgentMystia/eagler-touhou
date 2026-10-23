@@ -118,6 +118,24 @@ ECL no-op 跳表改写 = stage1 `NOOP_OPS` 剔除 ANM 指令族
 - 分歧报告：首个不匹配的 (frame, seq, 字段, 两侧值)。末行
   `RESULT first_divergence_frame=<n|none> window=<帧数> ops=<两侧 op 总数较大者>`。
 
+## 3.5 字段过滤纪律（--ignore；整改 2026-10-23）
+
+`draw_compare.py --ignore <field>` 为**诊断模式**开关，仅限隔离工作面
+（回答「除 X 外是否还有别的分歧」）。规则：
+
+1. **绿灯链路禁用**：任何交付门禁、HANDOFF 战果、golden 登记（replay-verifier
+   run-gate）不得基于带 --ignore 的 RESULT 声明对齐。
+2. **输出显式登记**：带过滤的 RESULT 行尾强制追加 `ignored=<字段,...>`，
+   且退出码 = 3（无过滤通过 = 0、分歧 = 1、用法错 = 2）——脚本化门禁按
+   code 判定，杜绝「过滤后 none」被当全绿。
+3. **限期销账**：每个进入 --ignore 的字段必须在 HANDOFF 工作面登记销账
+   条件（根因修复或证据化等价）与期限；销账后该字段必须回到全字段比对。
+   当前唯一登记项：`tfactor`（对局窗 f0 一帧滞后族——真机 D3D TFACTOR
+   跨帧持续设备态，蓝图 §8.8；销账条件 = 装载趟插值进度残留态建模完成）。
+
+NaN 相等性（`cmp_float` 的「任一 NaN == 任一 NaN」）是本契约的既定语义
+（§3 序列化规则的一部分，两侧同式），非遮蔽——勿与 --ignore 混淆。
+
 ## 4. 已知边界（v1 不覆盖、如实标注）
 
 1. **纹理内容不比**：像素（THTX/文本 GDI 上传/后台缓冲→@R 拷贝）不进清单；
