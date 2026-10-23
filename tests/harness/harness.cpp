@@ -391,9 +391,39 @@ bool DrawsSession::render_frame(unsigned frame, th13::u32 held) {
     }
     if (!views.camera(th13::DrawCamera::Fullscreen, false))
         return fail("full-screen camera unavailable");
+    // [探针] f8 层桶 VM 的 resource 归属打印。
+    if (frame >= 7 && frame <= 9) {
+        for (th13::u32 layer = 0; layer < 33; layer++)
+            for (auto* vm : animations.registry.layer(layer)) {
+                if (!vm) continue;
+                const i32 bank = animations.resource_id(vm->resource);
+                if (bank != -1 && bank != 6 && bank != 4 && bank != 5)
+                    continue;
+                std::printf("[f%u] L%u s%d bank=%d res=%s vis=%d alpha=%02x\n",
+                            frame, layer, vm->source_script, bank,
+                            vm->resource && !vm->resource->textures.empty()
+                                ? vm->resource->textures[0].name.c_str() : "?",
+                            int(vm->visible), vm->visual.color >> 24);
+            }
+        std::fflush(stdout);
+    }
+    // [f8 捕获面对齐] oracle 窗不含玩家/弹幕遍历绘制（draw-contract §4.2：
+    // 0x40e4d0 族不在捕获面）。port 的 .sht 弹型脚本 spawn 的子弹入了
+    // registry 层桶（真机走 IShot 独立遍历）——绘制时隐藏 player-bank
+    // 池 VM 以镜像捕获面（行为仍 tick，仅 draws 捕获不画）。
+    std::vector<th13::AnmVm*> hidden;
+    std::vector<bool> had_flag;
+    for (th13::u32 layer = 0; layer < 33; layer++)
+        for (auto* vm : animations.registry.layer(layer))
+            if (vm && vm->resource == animations.resource(kDrawsPlayerBank) && (vm->visual.flags & 1u)) {
+                had_flag.push_back(true);
+                vm->visual.flags &= ~1u;  // draw 门 = flags bit0（非 visible）
+                hidden.push_back(vm);
+            }
     for (th13::u32 layer = 0; layer < 33; layer++)  // th13 层域：主链 0-30 + 副链 31/32
         if (!renderer.draw_layer(animations.registry.layer(layer)))
             return fail("animation layer draw: " + renderer.error);
+    for (auto* vm : hidden) vm->visual.flags |= 1u;
     for (th13::u32 pass = 0; pass < 4; pass++)
         if (!presentation->draw(pass)) return fail("presentation draw: " + presentation->error());
     capture.set_stale_layer(56);  // 原版层循环 0..56 走完后的 watch 残值（UP 层口径）
