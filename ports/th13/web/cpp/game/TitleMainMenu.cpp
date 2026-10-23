@@ -253,6 +253,11 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
             //       8 帧）由难度屏接手（TitleDifficultyMenu，其 age0 = Z+21）。
             state.confirmed_entry = selected;
             state.change_substate(4);
+            // [f469 复验] oracle Z 当帧 ver 走 label 1 淡出（f469 alpha 229 =
+            // 淡出第 1 帧值）——Z 分支内当帧发 interrupt（immediate=false：
+            // pending 由本帧 AnmManager.update 的 tick 消费恰 1 步）。
+            if (state.version_bar && selected != kTitleMainEntries - 1)
+                animations.interrupt(state.version_bar, 1, false);
             // 其余入口（真机有画面，本轮不实现）：确认序同上，enter() 不切屏
             // ——解剖实证字条隐藏与转屏解耦，难度侧时间线照走。
         }
