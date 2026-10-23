@@ -48,7 +48,7 @@ class TitleFrame {
     bool menu();
     bool initialize();
     void submit_side_strips();  // @R 边条 ×4（场景级常量几何，见 .cpp）
-    void adopt_logo_layers();   // [wf290] 97/98 翻转期层搬移（机制待定，蓝图 §8.8）
+    void adopt_logo_layers();   // [wf290] 97/98 翻转期层搬移（机制待定，蓝图 §8.9）
 
 public:
     i32 music_age = 0;

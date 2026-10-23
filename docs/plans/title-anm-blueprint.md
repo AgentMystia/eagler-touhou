@@ -423,6 +423,51 @@ y=320..352 = スロー表示/スキップ/スピード（回放面板）；y=480
   **boot 期（f1-179）四条同在——tests/harness 装载幕镜像需同步**（登记）。
 
 
+### 8.7 [锚点补档 2026-10-23] 捕获栈纪律 + 注册池崩溃根因（原「§8.7」悬空引用的正式落锚）
+
+> 本节为补档：轮4/轮5 回写跳号（8.6→8.9）后，代码注释中既有的「§8.7」
+> 引用（DrawCapture 栈纪律、build-harness 栈扩、AnmRegistry 崩溃根因
+> 证据链）悬空——整改轮登记为正式小节，内容按既有代码证据归档，非新取证。
+
+- **wasm 捕获栈纪律**（`DrawCapture.hpp` emit 系 noinline + harness
+  `-Wl,-z,stack-size=1048576`，取代 `-fno-inline-functions` 旗语）：
+  V8 wasm 原生栈远小于宿主——emit_quad 内联 4×append_matrix×16
+  append_float 在窗B 转场期粒子全量绘制的深调用链
+  （绘制层→draw→quad→material→flush→emit 系）下溢出 V8 栈并越过栈
+  检查，且 Liftoff/TurboFan 分层编译帧尺寸不同使症状间歇出现。
+  修复=栈扩 1MB + emit_* 系定点 noinline（帧尺寸有界），旗语退场。
+- **注册池崩溃根因**（阻断 UI 全链用例，移交引擎所有权）：AnmRegistry
+  整树 retire 子节点双入 pending_deletion → 双 erase → 槽位二次入空闲链
+  → allocate 复用存活槽 → tick 中 VM 被覆写（难度屏 vm(120) "自 spawn"
+  连锁假象与宿主 SIGSEGV 的真根因；DOUBLE ERASE 插桩实证；-fno-inline
+  仅扰动其表现）。修复 = collect/erase 幂等（0x46f690 同构：每节点恰
+  回收一次，链扫 0x40 已置位者跳过）后窗B 10 连跑零崩。
+  证据链正文见 §8.9 引擎 bug 实证条（复现载体：
+  tests/ui/title_state_test.cpp 的 title_full_chain_start_game）。
+
+### 8.8 [锚点补档 2026-10-23] TFACTOR = 跨帧持续设备态（原「§8.8」悬空引用的正式落锚）
+
+> 本节为补档：TFACTOR 语义模型此前只在代码注释与 GraphicsState 缺省值
+> 修改里引用「§8.8」，蓝图未落节——整改轮正式登记。oracle 实证全在
+> 标题窗 A（600 帧捕获）。
+
+- **语义**：textureFactor（TFACTOR）= **持续设备态**——D3D 设备初始 0、
+  跨帧保持、仅 world_quad 族批按 VM 色显式设置写入（真机 0x4692d0
+  同位）+ 变化缓存；up 路径不写 TFACTOR（色调全走顶点色）。
+- **实证**：oracle 标题窗 idle 期全 op tfactor=0、无任何写入；粒子期
+  @R 边条携带上一次 world_quad 族写入的残留值（f500 @R=0x2aff0140）。
+- **移植侧落点**：① `portable/sdl/GraphicsState.hpp` textureFactor
+  缺省 0（真机初始态）；② `configure_game` 组合器第二参数 Diffuse
+  （此前 Factor 曾靠缺省 0xffffffff 掩蔽，缺省改 0 后 Factor 会把全像素
+  着色为黑——web 视觉全灭根因）；③ 帧首管线复位保持 textureFactor
+  （`Application::render_loading`/`begin_run`，tests/harness 装载幕镜像
+  同步）。**对局窗 f0 tfactor 残留分歧（a=4 vs 6）= 本族未竟工作面**
+  （装载趟插值进度残留态，见 HANDOFF 已知缺口），禁用 --ignore 长期
+  遮蔽——按契约须限期销账。
+- **配套**：LOGO 翻转族层搬移（97 f290-348 L26 / f349 起 L25、98 全命
+  L26、96/100 f357-359 L26 窗）此前曾被注为「§8.8」——层时间线定档与
+  机制归 §8.9，引用已就地更正。
+
 ### 8.9 [轮4 2026-10-23] LOGO 层时间线定档 + 翻转窗浮点取证 + 引擎 bug 实证
 
 **LOGO 层（已落码，fda7be91）**：97 翻转 f290-348 L26 / f349 起 L25（60f 插值
