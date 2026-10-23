@@ -58,7 +58,10 @@ for (const id of ids) {
   let status = 'PASS';
   if (verdict.first === 'none') status = 'PASS';
   else if (prior && prior.first_divergence_frame !== 'none') {
-    const better = Number(verdict.first) <= Number(prior.first_divergence_frame);
+    // 只升不降：新首分歧帧 ≥ 基线才 BASELINE-HELD（分歧更晚=更好；旧代码
+    // 方向写反——把改进判 REGRESSION、退化判 HELD，2026-10-23 f511 改进
+    // 被 FAIL 时暴露）。
+    const better = Number(verdict.first) >= Number(prior.first_divergence_frame);
     status = better ? 'BASELINE-HELD' : 'REGRESSION';
   } else if (prior && prior.first_divergence_frame === 'none') {
     status = 'REGRESSION';  // 曾全绿后退化

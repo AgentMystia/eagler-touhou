@@ -8,10 +8,18 @@
 // 输出：<output>/<id>.candidate.jsonl（+ stdout 摘要行）。
 // 依赖：web/artifacts/wasi/th13-harness.wasm（portable/build-harness.mjs 产物）。
 import {spawnSync} from 'node:child_process';
-import {readFileSync, mkdirSync} from 'node:fs';
+import {readFileSync, mkdirSync, openSync, readSync, closeSync,
+        createReadStream} from 'node:fs';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
+
+// 大文件流式 sha256（候选清单 GB 级，readFileSync 会爆内存/字符串上限）。
+const sha256File = path => new Promise((done, fail) => {
+  const hash = createHash('sha256');
+  createReadStream(path).on('data', c => hash.update(c)).on('end',
+      () => done(hash.digest('hex'))).on('error', fail);
+});
 
 const here = fileURLToPath(new URL('./', import.meta.url));
 const project = resolve(here, '../..');
@@ -59,11 +67,17 @@ for (const id of ids) {
       '/artifacts/reference/raw', mounted]);
   }
   // 身份自证：候选清单的首行 frame=0 + 帧数摘要回显（防拿错文件当基线——
-  // 8 轮假 -1 前科的对策：比对前先自证身份）。
-  const first = readFileSync(target).toString().split('\n', 1)[0];
+  // 8 轮假 -1 前科的对策：比对前先自证身份）。回放窗候选 >1GB：首行只读
+  // 头部块、sha256 走流式——整读 toString 撞 Node 512MB 字符串上限
+  //（ERR_STRING_TOO_LONG，2026-10-23 f61 修复轮实测）。
+  const fd = openSync(target, 'r');
+  const head = Buffer.alloc(1 << 16);
+  const got = readSync(fd, head, 0, head.length, 0);
+  closeSync(fd);
+  const first = head.toString('utf8', 0, got).split('\n', 1)[0];
   const frame0 = JSON.parse(first).frame;
   if (frame0 !== 0) throw Error('Candidate manifest does not start at frame 0: ' + id);
-  const sha = createHash('sha256').update(readFileSync(target)).digest('hex');
+  const sha = await sha256File(target);
   console.log(JSON.stringify({id, target, framesFirst: frame0, sha256: sha,
                               summary}));
 }
