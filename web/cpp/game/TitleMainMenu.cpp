@@ -275,6 +275,11 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
             // f484 起无——retire 于 age==15（末日+1，与 ver 同型 off-by-one）。
             animations.retire(state.handles[resources.logo_root]);
         }
+        if (state.age.current == 18 && state.handles[resources.background_root]) {
+            // [f489] oracle Z+18 对背景根发 label 3（亮化：403(255)+408(60,
+            // 0,192) 调色起点——f489 rgb=68=第 2 步值反推）。
+            animations.interrupt(state.handles[resources.background_root], 3, false);
+        }
         if (state.age.current >= 9 && state.age.current <= 30) fade_menu_alphas(state.age.current - 9);
         if (state.age.current > 19) enter(state.menu.cursor);
         break;
