@@ -40,7 +40,7 @@ bool ApplicationState::fail(const std::string& why) {
     return false;
 }
 
-bool ApplicationState::read(const std::string& name, std::vector<u8>& bytes) {
+bool ApplicationState::read(const std::string& name, std::vector<u8>& bytes, bool required) {
     const auto at = name.find_last_of("/\\");
     const auto base = name.substr(at == std::string::npos ? 0 : at + 1);
     if (base.empty() || base == "." || base == "..") return fail("Invalid game asset name");
@@ -51,7 +51,7 @@ bool ApplicationState::read(const std::string& name, std::vector<u8>& bytes) {
     }
     size_t size = 0;
     auto* data = static_cast<u8*>(SDL_LoadFile(("/assets/" + base).c_str(), &size));
-    if (!data) return fail("Missing game asset: " + base);
+    if (!data) return required ? fail("Missing game asset: " + base) : false;
     bytes.assign(data, data + size);
     SDL_free(data);
     if (bytes.size() <= 1024 * 1024 && base.size() >= 4 && base.substr(base.size() - 4) != ".wav" &&
@@ -164,8 +164,8 @@ bool ApplicationState::initialize(bool device) {
     if (!fonts.initialize() || !audio_device.initialize(device)) return fail(fonts.error);
     environment.raster_scale = float(graphics.render_scale);
     environment.render_target_has_alpha = true;
-    environment.screen_offsets = {320, 16, 320, 16};
-    environment.playfield_origin = {128, 16};
+    environment.screen_offsets = {32, 16, 224, 16};
+    environment.playfield_origin = {32, 16};
     if (!files.initialize()) return fail(files.error);
     animations.resource_release = [this](const AnmResource& resource) { graphics.unload(resource); };
     std::vector<u8> bytes;
@@ -219,8 +219,8 @@ void ApplicationState::release_run() {
     environment.paused = false;
     environment.screen_translation = {};
     environment.background_delta = {};
-    environment.screen_offsets = {320, 16, 320, 16};
-    environment.playfield_origin = {128, 16};
+    environment.screen_offsets = {32, 16, 224, 16};
+    environment.playfield_origin = {32, 16};
     views.configure(environment);
     renderer.invalidate();
     // textureFactor 保持（真机 TFACTOR 跨帧持续的设备态，蓝图 §8.8）。
@@ -254,7 +254,7 @@ bool ApplicationState::begin_title(i32 reason) {    title.reset();
 bool ApplicationState::begin_run() {
     title.reset();
     release_run();
-    for (auto& callback : animation_updates) callback.enabled = false;
+    for (auto& callback : animation_updates) callback.enabled = true;
     progress.stage = selected_stage;
     progress.starting_stage = selected_stage;
     progress.stage_frame = 0;  // 重开归零（原版 supervisor 重建对局状态）
