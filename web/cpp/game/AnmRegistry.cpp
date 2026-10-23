@@ -48,6 +48,14 @@ void AnmRegistry::collect(Node& entry){
     pending_deletion.push_back(&entry);
     entry.vm.rotation_parent=entry.vm.creation_parent=nullptr;entry.vm.visual.render_flags=(entry.vm.visual.render_flags&~32u)|64;
 }
+void AnmRegistry::requeue_to_back(AnmVm& vm){
+    // [f389 标题批序] 把已注册 VM 挪到其链表尾（不改变任何运行态；仅
+    // 绘制提交序受影响）。oracle 侧重挂语义（0x46f3f0 尾插）的同构物。
+    auto* entry=node(vm);
+    if(!entry||!entry->registered||entry->alternate)return;
+    groups[0].erase(entry->position);
+    entry->position=groups[0].insert(groups[0].end(),entry);
+}
 void AnmRegistry::erase(Node& entry){
     // 幂等守卫：原版 0x46f690 对池内节点内联回收恰一次（子链只打 0x20 下帧
     // 链扫自回收，无二次路径）；移植侧直毁（destroy_tree/discard/spawn 失败
