@@ -1,7 +1,9 @@
 #include "AnmRenderer.hpp"
 #include "AnmOverlay.hpp"
+#include "Probe.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #if TH13_DRAW_CAPTURE
 #include "DrawCapture.hpp"  // 语义绘制清单钩子（draw-contract.md；仅 harness 构建）
 #endif
@@ -89,6 +91,8 @@ int AnmRenderer::quad(AnmVm& vm,bool pixel){
     return pack_quad(vm,p,pixel);
 }
 int AnmRenderer::pack_quad(AnmVm& vm,Vec3 (&p)[4],bool pixel,const u32* supplied){
+    // 临时探针：四边形顶点取证（-96px 排查；按 layer+script 去重）
+    if(probe::enabled){static u32 seen_count=0;const u64 key=(u64(vm.visual.layer)<<32)|u32(vm.source_script)*2654435761u+u32(vm.visual.draw_mode());static u64 seen[256]={};bool dup=false;for(u32 i=0;i<seen_count&&i<256;i++)if(seen[i]==key){dup=true;break;}if(!dup&&seen_count<256){seen[seen_count++]=key;std::printf("[probe-quad] layer=%u script=%d mode=%u rflags=%06x p0=(%.3f,%.3f) p2=(%.3f,%.3f) envoff2=%d\n",vm.visual.layer,vm.source_script,vm.visual.draw_mode(),vm.visual.render_flags,double(p[0].x),double(p[0].y),double(p[2].x),double(p[2].y),vm.environment?vm.environment->screen_offsets[2]:-1);}}
     for(auto& point:p){point.x=float(point.x+offset.x);point.y=float(point.y+offset.y);}if(pixel&&!vm.presentation_motion&&vm.interpolators.position.duration<=0){const float scale=vm.environment?vm.environment->raster_scale:1;const auto snap=[scale](float value){return float(std::nearbyint(value*scale)/scale-.5f);};p[0].x=snap(p[0].x);p[1].x=snap(p[1].x);p[0].y=snap(p[0].y);p[2].y=snap(p[2].y);p[1].y=p[0].y;p[2].x=p[0].x;p[3].x=p[1].x;p[3].y=p[2].y;}
     if(pixel&&(vm.presentation_motion||vm.interpolators.position.duration>0))for(auto& point:p){point.x-=.5f;point.y-=.5f;}
     std::copy(std::begin(p),std::end(p),vm.visual.quad.begin());float left=p[0].x,right=left,top=p[0].y,bottom=top;for(u32 i=1;i<4;i++){left=std::min(left,p[i].x);right=std::max(right,p[i].x);top=std::min(top,p[i].y);bottom=std::max(bottom,p[i].y);}
@@ -110,6 +114,8 @@ int AnmRenderer::world_quad(AnmVm& vm){
     // World quads use a fixed four-vertex unit sprite. Per-instance world and
     // texture matrices carry the actual geometry and atlas selection.
     const auto& v=vm.visual;if(!(v.color>>24))return 0;Matrix4 world;if(!anm_world_quad_transform(vm,world)){error="World animation transform unavailable";return -2;}
+    // 临时探针：world 矩阵平移取证（-96px 排查；按 layer+script 去重）
+    if(probe::enabled){static u32 wseen_count=0;const u64 key=(u64(v.layer)<<32)|u32(vm.source_script);static u64 wseen[256]={};bool dup=false;for(u32 i=0;i<wseen_count&&i<256;i++)if(wseen[i]==key){dup=true;break;}if(!dup&&wseen_count<256){wseen[wseen_count++]=key;std::printf("[probe-world] layer=%u script=%d rflags=%06x world12=%.3f world13=%.3f envoff2=%d\n",v.layer,vm.source_script,v.render_flags,double(world.m[12]),double(world.m[13]),vm.environment?vm.environment->screen_offsets[2]:-1);}}
 
     const u32 ax=v.flags>>21&3,ay=v.flags>>23&3;if(ax>2||ay>2){error="World animation anchor outside range";return -2;}
     flush();if(!material(vm))return -2;TH13_DRAW_SPRITE(vm);auto& state=graphics.pipeline();state.depthWrite=!(v.flags&0x2000);state.textureTransform=true;state.color.second=state.alpha.second={ArgumentSource::Factor};state.textureFactor=tint_color(v.flags&0x60000?v.secondary_color:v.color);
