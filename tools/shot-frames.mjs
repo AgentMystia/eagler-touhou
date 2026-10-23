@@ -201,7 +201,9 @@ const sideUrl = await composePage.evaluate(async frames => {
     ctx.font = '16px system-ui, sans-serif';
     ctx.fillText('游戏帧 ' + frame, x, y + 17);
     ctx.drawImage(golden, x, y + LABEL);
-    ctx.drawImage(ours, x + W, y + LABEL);
+    // 几何适配（golden 校准勘误）：golden=游戏 x∈[97,640]（544 宽），ours 裁
+    // x∈[98,640] 后绘制，两侧画格逐像素对齐（±1px 残差）。
+    ctx.drawImage(ours, 98, 0, 542, 480, x + W, y + LABEL, 542, 480);
   });
   return canvas.toDataURL('image/png');
 }, sideFrames);
