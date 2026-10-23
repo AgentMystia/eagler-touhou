@@ -702,6 +702,11 @@ struct TitleSession {
     bool advance_loading(unsigned frame) {
         if (!loading_animations.update(false) || !loading_animations.update(true))
             return fail("loading tick: " + loading_animations.error);
+        // [boot tick 对齐] oracle raw f1（截窗 f0）sig alpha=76=n3：装载趟 tick#1
+        // + raw f0 update walk tick#2（空帧不画）+ raw f1 tick#3。port 侧
+        // prepare render0 即画出（n2），首个 advance 帧补一趟 tick 对齐 n3。
+        if (frame == 1 && !loading_animations.update(false))
+            return fail("loading tick: " + loading_animations.error);
         ++loading_frames;
         return render_loading_frame(frame);
     }
