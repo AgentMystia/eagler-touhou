@@ -36,7 +36,11 @@ const fetchBytes = async path => {
   return new Uint8Array(await response.arrayBuffer());
 };
 try {
-  const Module = await import('../artifacts/sdl3/th13-sdl.mjs');
+  // artifact 可指向捕获构建（../artifacts/sdl3-capture/th13-sdl.mjs，经
+  // ?artifact= 指定）：语义绘制清单导出（captureBegin/End + drawList）与
+  // 像素采样（pixels）需该构建的精灵层号钩子。
+  const artifact = params.get('artifact') ?? '../artifacts/sdl3/th13-sdl.mjs';
+  const Module = await import(artifact);
   const canvas = document.getElementById('canvas');
   // WebGL2 可用性探针用离屏 canvas：真 canvas 的首个 getContext 属于 SDL3 运行时
   // （先占会冻结创建属性）。
@@ -78,6 +82,8 @@ try {
   // 确定性取帧 API：pumpTo(游戏帧号 F) —— 恰推进到「已消费 F+1 帧输入」的画面
   // （golden 游戏帧 F = 第 F+1 次泵后的画面，见 golden README 时间轴对齐），
   // 同一 JS 任务内返回 PNG dataURL。重复调用按需续泵。
+  // 捕获构建附加：captureBegin/End（语义清单 MEMFS 导出）、pumpFrames（无
+  // PNG 的裸泵）、pixels（GL 帧缓冲 RGBA 采样，GL 坐标系：左下原点）。
   window.__th13_debug = {
     total,
     consumed: () => mod._th13_debug_replay_frame(),
@@ -97,6 +103,29 @@ try {
         throw new Error('帧号失同步：consumed=' + mod._th13_debug_replay_frame() +
                         ' stage=' + mod._th13_debug_stage_frame() + ' want=' + want);
       return canvas.toDataURL('image/png');
+    },
+    captureBegin(path = '/th13-capture.jsonl') {
+      if (!mod._th13_debug_capture_begin)
+        throw new Error('捕获 API 缺失（需 ?artifact=../artifacts/sdl3-capture/th13-sdl.mjs）');
+      const ptr = mod.allocateUTF8(path);
+      const ok = mod._th13_debug_capture_begin(ptr);
+      return {ok, path};
+    },
+    captureEnd() { return mod._th13_debug_capture_end(); },
+    captureDrawList(path = '/th13-capture.jsonl') {
+      const bytes = mod.FS.readFile(path);
+      return new TextDecoder().decode(bytes);
+    },
+    pumpFrames(count) {
+      for (let i = 0; i < count; i++)
+        if (!mod._th13_debug_frame())
+          throw new Error('帧泵失败@' + mod._th13_debug_replay_frame() + '：' + runtime_error());
+      return mod._th13_debug_replay_frame();
+    },
+    pixels(x, y, w, h) {
+      const ptr = mod._th13_debug_read_pixels(x, y, w, h);
+      if (!ptr) throw new Error('像素采样失败');
+      return new Uint8Array(mod.HEAPU8.buffer, ptr, w * h * 4).slice();
     },
   };
 } catch (e) {

@@ -13,7 +13,11 @@ const builtAt = new Date().toISOString();
 const workspace = resolve(fileURLToPath(new URL('../', import.meta.url)));
 const game = 'th13';
 const root = resolve(workspace, 'web');
-const out = resolve(root, 'artifacts', 'sdl3');
+// 捕获构建（TH13_WEB_CAPTURE=1）：-DTH13_DRAW_CAPTURE 开 AnmRenderer 精灵
+// 钩子，产物落 artifacts/sdl3-capture/（独立对象缓存；供 th13-debug.html
+// ?artifact= 指定加载，做 web 语义清单确定性导出）。
+const captureBuild = process.env.TH13_WEB_CAPTURE === '1';
+const out = resolve(root, 'artifacts', captureBuild ? 'sdl3-capture' : 'sdl3');
 if (!printingRuntimeInputs) mkdirSync(out, {recursive: true});
 
 const sdk = process.env.EMSDK ?? (existsSync(resolve(workspace, 'tools/emsdk')) ? resolve(workspace, 'tools/emsdk') : resolve(workspace, '../toolchains/emsdk'));
@@ -34,6 +38,7 @@ const common = ['-O2', '-g0', '-fno-strict-aliasing', '-ffp-contract=off',
   '-DTH_SDL3=1', '-DTH_NATIVE_PLATFORM=1', '--use-port=sdl3',
   '-I' + resolve(root, 'cpp')];
 const flags = [...common, '-std=c++17', '-fno-exceptions', '-fno-rtti'];
+if (captureBuild) flags.push('-DTH13_DRAW_CAPTURE=1');
 
 const sources = [
   ...readdirSync(resolve(root, 'cpp/game')).filter(n => n.endsWith('.cpp')).map(n => 'cpp/game/' + n),

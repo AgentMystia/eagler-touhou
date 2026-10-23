@@ -114,7 +114,34 @@ u32 GraphicsDevice::texture(const AnmResource& file, u32 index) {
         error = "ANM texture was not preloaded";
         return 0;
     }
-    return it->second[index];
+    const u32 handle = it->second[index];
+    // 影子身份登记：捕获激活期间引用的纹理按 (file,index) 在影子侧取身份
+    // 句柄（未登记文件的可见标记语义由 DrawCapture::texture 自带）。
+    if (capture_on_) capture_handles_.emplace(handle, capture_shadow.texture(file, index));
+    return handle;
+}
+
+bool GraphicsDevice::capture_begin(const char* path) {
+    if (capture_on_) return false;
+    if (!capture_shadow.open_output(path)) {
+        error = capture_shadow.error().empty() ? "draws capture open failed"
+                                               : capture_shadow.error();
+        return false;
+    }
+    capture_handles_.clear();
+    capture_frames_ = 0;
+    capture_shadow.begin_frame(0);
+    capture_on_ = true;
+    // 精灵层号钩子目标（捕获构建经 AnmRenderer TH13_DRAW_SPRITE 消费）。
+    th13::draw_capture = &capture_shadow;
+    return true;
+}
+
+void GraphicsDevice::capture_finish() noexcept {
+    if (!capture_on_) return;
+    capture_on_ = false;
+    if (th13::draw_capture == &capture_shadow) th13::draw_capture = nullptr;
+    capture_shadow.close_output();
 }
 
 bool GraphicsDevice::select_target(const AnmResource* file, u32 index) {

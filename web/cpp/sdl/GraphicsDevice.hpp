@@ -5,6 +5,7 @@
 
 #include "../game/ZunGraphics.hpp"
 #include "../game/TextureImage.hpp"
+#include "../game/DrawCapture.hpp"
 #include "../../../portable/sdl/Renderer.hpp"
 
 #include <map>
@@ -26,6 +27,27 @@ public:
     static constexpr u32 screen = 1, depth = 2;
     std::string error;
     u32 render_scale = 1;
+
+    // ---- DrawCapture 影子（web 语义清单确定性导出；M0 门禁奠基）----
+    // 运行时激活（th13_debug_capture_begin）：逐调用转发语义状态、逐提交
+    // 转发 op，与 oracle/harness 候选同 schema（draw-contract.md）。状态策略：
+    // ①pipeline 在提交时从 backend.state 整体快照——pipeline() 按引用返回的
+    // 语义对影子的等价物（引用无法双写；backend.state.pipeline 是唯一真值，
+    // 已核无旁路写点）；②矩阵/布局/视口/纹理绑定按虚调用转发（全部状态写
+    // 均经虚接口）；③帧界 = present()（clear_device_texture + end_frame +
+    // 次帧 begin_frame），帧尾 stale 层口径由 SceneDisplay/render_loading 的
+    // capture_stale_layer(56) 定位（harness render_frame 同点位）。
+    // 精灵层号钩子（AnmRenderer TH13_DRAW_SPRITE）需捕获构建
+    // （TH13_WEB_CAPTURE=1 → -DTH13_DRAW_CAPTURE）；非捕获构建激活时层号
+    // 恒 -100，仅供粗诊断。
+    DrawCapture capture_shadow;
+    bool capture_begin(const char* path);
+    void capture_finish() noexcept;
+    void capture_stale_layer(i32 layer) noexcept {
+        if (capture_on_) capture_shadow.set_stale_layer(layer);
+    }
+    bool capture_active() const noexcept { return capture_on_; }
+
     // 表现插值通道占位（PresentationFrame 分期接入；当前直接透传）。
     struct PresentationStub {
         bool enabled = false;
@@ -56,32 +78,67 @@ public:
             ++it->second.revision;
         }
     }
-    void bind_texture(u32 handle) override { backend.state.texture = handle; }
+    void bind_texture(u32 handle) override {
+        backend.state.texture = handle;
+        if (capture_on_) capture_shadow.bind_texture(capture_texture(handle));
+    }
     touhou::graphics::PipelineState& pipeline() override { return backend.pipeline(); }
     void set_layout(touhou::graphics::VertexLayout layout) override {
         backend.state.layout = touhou::graphics::attributes(layout);
+        if (capture_on_) capture_shadow.set_layout(layout);
     }
     void set_matrix(touhou::graphics::MatrixKind kind, const Matrix4& matrix) override {
         backend.transform(kind, matrix.m);
+        if (capture_on_) capture_shadow.set_matrix(kind, matrix);
     }
     void triangles(u32 count, const void* data, u32 stride) override {
         backend.draw_batch(count, data, stride);
+        if (capture_on_) {
+            capture_submit();
+            capture_shadow.triangles(count, data, stride);
+        }
     }
     void primitives(touhou::graphics::Topology kind, u32 count, const void* data,
                     u32 stride) override {
         backend.draw(kind, count, data, stride);
+        if (capture_on_) {
+            capture_submit();
+            capture_shadow.primitives(kind, count, data, stride);
+        }
     }
     bool select_target(const AnmResource*, u32) override;
     bool clear_target(u32, const GraphicsViewport*) override;
     bool clear_depth(const GraphicsViewport*) override;
-    void set_viewport(const GraphicsViewport& v) override { viewport(v); }
+    void set_viewport(const GraphicsViewport& v) override {
+        viewport(v);
+        if (capture_on_) capture_shadow.set_viewport(v);
+    }
     void viewport(const GraphicsViewport& v) {
         backend.viewport({v.x, v.y, v.width, v.height, v.near_depth, v.far_depth});
     }
     void clear(u32 color, bool clear_depth = true) {
         backend.clear(clear_depth ? 3 : 1, color, 1, 0);
     }
-    void present() { backend.present(screen); }
+    void present() {
+        backend.present(screen);
+        if (capture_on_) {
+            capture_shadow.clear_device_texture();  // 0x45d2f0:49 帧尾 SetTexture(0,0)
+            capture_shadow.end_frame();
+            capture_shadow.begin_frame(++capture_frames_);
+        }
+    }
+
+private:
+    bool capture_on_ = false;
+    u32 capture_frames_ = 0;
+    std::map<u32, u32> capture_handles_;  // 设备句柄 → 影子句柄（texture() 登记）
+    // 提交时快照：backend.state.pipeline → 影子（pipeline() 引用语义的等价物）。
+    void capture_submit() { capture_shadow.pipeline() = backend.state.pipeline; }
+    // 影子句柄解析：未登记（捕获开始前装载/绑定）按 0 = tex null 可见暴露。
+    u32 capture_texture(u32 handle) {
+        const auto it = capture_handles_.find(handle);
+        return it == capture_handles_.end() ? 0 : it->second;
+    }
 };
 
 }  // namespace th13::sdl
