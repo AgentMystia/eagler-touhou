@@ -27,6 +27,10 @@ struct StageBattleServices {
     virtual bool bomb_hud(i32 bombs, i32 pieces) = 0;
     virtual bool request_game_over() = 0;
     virtual bool hud_sound(i32 id) = 0;
+    // 敌机死亡回收钩（0x418e00 销毁支路的 ANM 侧）：宿主回收该敌机全部
+    // 槽位 VM（enemies_from_ecl 路径句柄归零防泄漏）。默认空实现——
+    // 无头契约路径（stage1/replay 事件窗）无 ANM 面。
+    virtual void enemy_retire(u32 serial) { (void)serial; }
 };
 
 // 自机弹（垂直直进模型弹；x/y 整值浮点精确步进）。
