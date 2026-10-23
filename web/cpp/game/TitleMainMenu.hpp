@@ -88,7 +88,6 @@ class TitleMainMenu {
     i32 menu_age = -1;  // [wf360] 单调屏龄（substate 切换重置 state.age 的规避）
     void set_item_alpha(i32 item, i32 alpha, bool white = true);  // [轮7] 逐项 poke（white 白条/灰条）
     void boot_fade(i32 frame);                   // [wf360] 15 帧线性入场
-    void advance_selection();                   // [轮7] 交叉序列（每帧）
     void adopt_background_layers();  // [窗A] 背景半张层值按 oracle 实测（§8.3）
     void fade_menu_alphas(i32 step);  // [解剖轮2] Z+10 起灰条透明度衰减 poke
     bool open_menu();     // g361 菜单展开（root0+版本条+全项入场+禁用黑化）
@@ -98,6 +97,9 @@ class TitleMainMenu {
     void enter(i32 entry);
 
 public:
+    // [轮9] 交叉序列推进（绘制回调逐帧驱动——update 侧 poke 被 tick 插值
+    // 覆写，wasi trace 实证；TitleFrame draw 回调经 TitleScene 接线调用）。
+    void advance_selection();
     std::function<bool(i32)> play_sound;
     std::string error;
     TitleMainMenu(TitleState& state, SessionState& progress, TitleSelectionSettings& settings,
