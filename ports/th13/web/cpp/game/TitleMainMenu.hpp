@@ -85,6 +85,8 @@ class TitleMainMenu {
     // [轮7] 选择交叉驱动（绘制侧 poke 序列）
     i32 selection_step = 0, selection_item = 0, selection_previous = 0;
     bool selection_active = false, selection_move = false;
+    bool version_bar_pending = false;  // [f388] ver 延 1 帧创建（oracle f389 首绘）
+    i32 pending_frame_gap = 0;
     i32 menu_age = -1;  // [wf360] 单调屏龄（substate 切换重置 state.age 的规避）
     void set_item_alpha(i32 item, i32 alpha, bool white = true);  // [轮7] 逐项 poke（white 白条/灰条）
     void rearm_grey(i32 item);  // [f371] 灰条入场重挂（旧隐+新尾插，oracle 批序实证）
@@ -92,6 +94,7 @@ class TitleMainMenu {
     void adopt_background_layers();  // [窗A] 背景半张层值按 oracle 实测（§8.3）
     void fade_menu_alphas(i32 step);  // [解剖轮2] Z+10 起灰条透明度衰减 poke
     bool open_menu();     // g361 菜单展开（root0+版本条+全项入场+禁用黑化）
+    bool open_menu_version_bar();  // [f389] ver 延 1 帧创建体（挂起消费）
     bool select_entry();  // interrupt(0,7+cursor) 选中入场
     bool show_menu();     // 全项入场（真机 boot 全员可见，oracle 顶点色实证）
     void dim_disabled();  // 禁用项黑化 alpha160（oracle 0xA0000000）
