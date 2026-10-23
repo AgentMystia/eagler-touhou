@@ -11,8 +11,11 @@ namespace th13 {
 u32 StagePresentation::debug_pass_mask = 0xf;
 
 namespace {
-// 游戏坐标 → ANM 屏幕坐标：+224/+16 基准已由 0x40000 位在底层 adjust_position 统一累加，
-// 此处外部平移增量置 0，杜绝双重叠加。
+// 游戏坐标 → ANM 屏幕坐标：+320/+16 屏幕原点已由 0x40000 位在底层
+// adjust_position 统一累加（th13 .data 双精度常量 0x4ae9f0=320.0 /
+// 0x4ae8e0=16.0——0x466a80/0x468670/0x46f820 族一致；th15 遗产的 224
+// 是 f61 敌机行走位差 96px 的根因，2026-10-23 实测修正），此处外部平移
+// 增量置 0，杜绝双重叠加。
 constexpr float kGameToScreenX = 0.0f, kGameToScreenY = 0.0f;
 // 弹体贴图基准角：贴图朝右时旋转 = 弹角（对屏检验后校准）。
 constexpr float kBulletSpriteForward = 0.0f;
@@ -37,6 +40,16 @@ void StagePresentation::release() {
     }
 }
 
+// 30x/镜像创建点色通道补步：原版这些 VM 在敌机更新趟内创建（0x41fe80
+// case3 与 0x419450 镜像块，均由 0x41a8a0 趟直调），创建趟本身多推进一次
+// 色/α 插值——oracle 实测 f0 VM+0x15c α=6/timer(+0x160)=2 而 port 4/1
+//（f9 第二个环境精灵同症——非装载趟特例，是每次创建的普遍行为）。
+// 仅色/α 两通道：整池 update 会推 world 矩阵（实测破坏 f0 对齐），脚本
+// 与其余通道不动（见 AnmInterpolators::advance_color）。
+void StagePresentation::create_color_step(AnmVm* vm) {
+    if (vm) vm->interpolators.advance_color(vm->visual, animations.rate);
+}
+
 bool StagePresentation::sync(StageBattle& battle, u32 held) {
     if (!error_.empty()) return false;
     auto* stage_resource = animations.resource(banks.stage);
@@ -55,9 +68,12 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
                          : request.file == 1 ? banks.effect
                                              : banks.stage;
         if (request.kind == 0) {
-            if (!animations.create(bank, request.script, -1, 2,
-                                   {request.x, request.y, request.z}, 0, false))
+            const u32 effect_handle =
+                animations.create(bank, request.script, -1, 2,
+                                  {request.x, request.y, request.z}, 0, false);
+            if (!effect_handle)
                 return fail("Effect animation creation failed: " + animations.error);
+            create_color_step(animations.registry.find(effect_handle));
             continue;
         }
         // kind=1：303/306 槽位 VM（0x41fe80 / 0x41b260 case3）——重挂先回收
@@ -85,6 +101,7 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
                                    enemy->mirror_script_base + 7, 2, {}, 0, false);
         if (!handle)
             return fail("Slot animation creation failed: " + animations.error);
+        create_color_step(animations.registry.find(handle));
         if (request.slot == 0) {
             if (AnmVm* vm = animations.registry.find(handle)) {
                 const float w = float(vm->visual.sprite_size.x *
@@ -151,6 +168,7 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
                     if (!handle)
                         return fail("Mirror animation creation failed: " +
                                     animations.error);
+                    create_color_step(animations.registry.find(handle));
                     enemy->mirror_dir = dir;
                 }
                 enemy->mirror_prev_x = enemy->position[0];

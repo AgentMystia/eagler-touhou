@@ -5,10 +5,13 @@ Vec3 v3(const std::array<float,3>& v){return {v[0],v[1],v[2]};}
 Vec2 v2(const std::array<float,2>& v){return {v[0],v[1]};}
 void rgb(u32& color,const std::array<i32,3>& c){color=(color&0xff000000)|u8(c[0])|(u32(u8(c[1]))<<8)|(u32(u8(c[2]))<<16);}
 }
-void AnmInterpolators::advance(AnmVariables& variables,AnmVisualState& visual,float rate)noexcept{
-    if(position.duration){const Vec3 value=v3(position.step(rate));if(visual.flags&0x400)visual.child_anchor=value;else variables.position=value;}
+void AnmInterpolators::advance_color(AnmVisualState& visual,float rate)noexcept{
     if(color.duration)rgb(visual.color,color.step(rate));
     if(alpha.duration)visual.color=(visual.color&0xffffff)|(u32(u8(alpha.step(rate)[0]))<<24);
+}
+void AnmInterpolators::advance(AnmVariables& variables,AnmVisualState& visual,float rate)noexcept{
+    if(position.duration){const Vec3 value=v3(position.step(rate));if(visual.flags&0x400)visual.child_anchor=value;else variables.position=value;}
+    advance_color(visual,rate);
     if(scale.duration){visual.scale=v2(scale.step(rate));visual.flags|=8;}
     if(secondary_scale.duration){visual.secondary_scale=v2(secondary_scale.step(rate));visual.flags|=8;}
     if(uv_scale.duration){visual.uv_scale=v2(uv_scale.step(rate));visual.flags|=0x10;}
