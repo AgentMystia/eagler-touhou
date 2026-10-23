@@ -83,7 +83,7 @@ void TitleMainMenu::adopt_background_layers() {
     if (auto* forest_right = animations.registry.find_child_script(*root, 91, 0))
         forest_right->visual.layer = 22;
     if (auto* overlay_right = animations.registry.find_child_script(*root, 93, 0))
-        overlay_right->visual.layer = 23;
+        overlay_right->visual.layer = 21;
 }
 
 void TitleMainMenu::enter(i32 entry) {
@@ -142,7 +142,7 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
         const i32 menu_at = returning ? 0 : 179;
         if (!returning && state.age.current == menu_at && !open_menu()) return false;
 
-        if (!returning && state.age.current == 169) {
+        if (!returning && state.age.current >= 169) {
             // [窗A 修正] oracle f349/g350：select00 右半自 L23 搬至 L21（与森林
             // title00a 淡入同帧；最后 23 帧 f348/g349、首个 21 帧 f349/g350，
             // 蓝图 §8.3 层搬移现象）。搬移机制（supervisor 逐 VM 置层）未反汇编。

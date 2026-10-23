@@ -122,7 +122,7 @@ bool RunScene::initialize() {
     std::snprintf(msg_name, sizeof msg_name, "st%02d%c.msg", int(progress.stage),
                   'a' + (progress.character & 3));
     std::vector<u8> msg_bytes;
-    if (host.read_asset(msg_name, msg_bytes)) {
+    if (host.read_asset(msg_name, msg_bytes, false)) {
         std::string msg_error;
         if (dialog_file.open(msg_bytes.data(), u32(msg_bytes.size()), msg_error)) {
             dialog_ready = true;
@@ -215,7 +215,7 @@ bool RunScene::draw_scenery(u32 pass) {
     if (pass == 0) {
         renderer.invalidate();
         graphics.pipeline().fogMode = touhou::graphics::FogMode::Linear;
-        if (!graphics.clear_target(0xff000000, nullptr))
+        if (!graphics.clear_target(0xff000000, &viewport))
             return fail("Scenery screen clear failed");
         graphics.set_depth_test(true);
         graphics.set_depth_compare(touhou::graphics::Compare::LessEqual);

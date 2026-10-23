@@ -86,7 +86,7 @@ struct ApplicationState final : TitleScenePlatform, RunSceneServices, RunPausePl
     u32 replay_take_input();  // 每游戏帧恰一次：取当前输入态并推进游标
     void release_run();
     const i32* projection();
-    bool read(const std::string&, std::vector<u8>&);
+    bool read(const std::string&, std::vector<u8>&, bool required = true);
     // TitleScenePlatform
     bool clear_title_overlay() override;
     bool queue_title_music(i32 code, i32 value, const std::string&) override;
@@ -101,8 +101,8 @@ struct ApplicationState final : TitleScenePlatform, RunSceneServices, RunPausePl
     bool request_pause() override;
     bool request_game_over() override;
     bool hud_sound(i32) override;
-    bool read_asset(const std::string& name, std::vector<u8>& bytes) override {
-        return read(name, bytes);
+    bool read_asset(const std::string& name, std::vector<u8>& bytes, bool required = true) override {
+        return read(name, bytes, required);
     }
     bool camera(DrawCamera index, bool refresh) override { return views.camera(index, refresh); }
     ZunGraphics& stage_graphics() override { return graphics; }

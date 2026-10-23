@@ -17,7 +17,7 @@ u32 GameHud::create(i32 bank, i32 script, u32 ordering) {
 }
 
 u32 GameHud::widget(i32 script) {
-    const u32 handle = create(front, script, 4);
+    const u32 handle = create(front, script, 0);
     if (auto* vm = animations.registry.find(handle)) vm->visual.render_flags &= ~0xc000u;
     return handle;
 }
@@ -70,13 +70,13 @@ bool GameHud::initialize(const HudEntryContext& context) {
     if (!root && (root = widget(0)) == 0) return false;
     if (!life_icons[0]) {
         for (u32 i = 0; i < 8; i++) {
-            life_icons[i] = create(front, i32(i) + 30, 4);
+            life_icons[i] = create(front, i32(i) + 30, 0);
             auto* vm = animations.registry.find(life_icons[i]);
             if (!vm) return false;
             vm->visual.render_flags &= ~0xc000u;
         }
         for (u32 i = 0; i < 8; i++) {
-            bomb_icons[i] = create(front, i32(i) + 38, 4);
+            bomb_icons[i] = create(front, i32(i) + 38, 0);
             auto* vm = animations.registry.find(bomb_icons[i]);
             if (!vm) return false;
             vm->visual.render_flags &= ~0xc000u;

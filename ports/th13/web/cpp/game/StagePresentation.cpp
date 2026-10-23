@@ -7,12 +7,13 @@
 
 namespace th13 {
 
-// 调试直绘过滤（默认 4 pass 全开）。
+// 调试直绘过滤（4 pass 全开）。
 u32 StagePresentation::debug_pass_mask = 0xf;
 
 namespace {
-// 游戏坐标 → ANM 屏幕 coordinates（0x46f820 的 bit0 平移：+320/+16）。
-constexpr float kGameToScreenX = 320.0f, kGameToScreenY = 16.0f;
+// 游戏坐标 → ANM 屏幕坐标：+224/+16 基准已由 0x40000 位在底层 adjust_position 统一累加，
+// 此处外部平移增量置 0，杜绝双重叠加。
+constexpr float kGameToScreenX = 0.0f, kGameToScreenY = 0.0f;
 // 弹体贴图基准角：贴图朝右时旋转 = 弹角（对屏检验后校准）。
 constexpr float kBulletSpriteForward = 0.0f;
 }  // namespace
@@ -27,8 +28,13 @@ void StagePresentation::release() {
         if (enemy.vm) animations.release_tree(*enemy.vm);
     enemies_.clear();
     bullets_.clear();
+    for (auto& shot : shots_)
+        if (shot && shot->resource) animations.release_tree(*shot);
     shots_.clear();
-    player_.reset();
+    if (player_) {
+        animations.release_tree(*player_);
+        player_.reset();
+    }
 }
 
 bool StagePresentation::sync(StageBattle& battle, u32 held) {
@@ -251,6 +257,7 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
             const auto& shot = battle.shots[i];
             const i32 script = shot.script;
             if (script >= 0 && vm.source_script != script) {
+                if (vm.resource) animations.release_tree(vm);
                 vm.environment = &animations.scene_environment();
                 vm.object_host = &animations;  // 弹型脚本可 spawn 附属弹子 VM
                 if (!vm.bind(*player_resource, u32(script)))
@@ -264,12 +271,17 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
                 vm.visible = true;
                 vm.visual.flags |= 1;
                 vm.visual.render_flags |= 0x200;
+                vm.visual.set_layer(11);
             }
             vm.visual.translation = {shot.x + kGameToScreenX, shot.y + kGameToScreenY, 0.0f};
             vm.variables.rotation.z = shot.angle;  // 脚本旋转模式 1：贴图随弹向
             if (script >= 0 && vm.resource && vm.tick(random, 1) < 0)
                 return fail("Player shot animation: " + vm.error);
         } else {
+            if (vm.resource) {
+                animations.release_tree(vm);
+                vm = AnmVm{};
+            }
             vm.visible = false;
         }
     }
@@ -285,6 +297,7 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
             player_->object_host = &animations;
             if (!player_->bind(*player_resource, u32(tilt)))
                 return fail("Player animation binding failed: " + player_->error);
+            player_->visual.set_layer(12);
             player_tilt_ = tilt;
         }
         player_->visual.translation = {battle.player_x + kGameToScreenX,

@@ -191,8 +191,15 @@ void StageBattle::fire_shots(i32 frame) {
 void StageBattle::step_shots() {
     for (auto& shot : shots) {
         if (!shot.alive) continue;
-        shot.y -= kShotSpeed;  // 垂直直进（整值步进，无浮点误差）
-        if (shot.y < -32.0f || shot.x < -224.0f || shot.x > 224.0f) shot.alive = false;
+        const float c = std::cos(shot.angle);
+        const float s = std::sin(shot.angle);
+        if (std::abs(c) < 1e-4f && s < -0.99f) {
+            shot.y -= kShotSpeed;  // 垂直直进（整值步进，无浮点误差）
+        } else {
+            shot.x += kShotSpeed * c;
+            shot.y += kShotSpeed * s;
+        }
+        if (shot.y < -32.0f || shot.y > 480.0f || shot.x < -224.0f || shot.x > 224.0f) shot.alive = false;
     }
     size_t keep = 0;
     for (size_t i = 0; i < shots.size(); ++i)
