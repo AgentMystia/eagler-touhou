@@ -768,8 +768,8 @@ struct TitleSession {
             return fail(title->error.empty() ? (title->frame.error.empty() ? animations.error
                                                                            : title->frame.error)
                                              : title->error);
-        // [探针] 截窗 f388-392（raw 389-393）打印层 26 全 VM 清单。
-        if (frame >= 389 && frame <= 393) {
+        // [探针] raw 372-374 + 380-381（截窗 371-373 / 379-380）层 26 清单。
+        if ((frame >= 372 && frame <= 374) || frame == 380 || frame == 381) {
             std::printf("LAYER26 frame=%u:", frame);
             for (auto* vm : animations.registry.layer(26))
                 if (vm) std::printf(" s%d/alpha=%02x/vis=%d", vm->source_script,
