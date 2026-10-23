@@ -81,7 +81,9 @@ private:
     // 提交语境（钩子维护）
     i32 layer_ = -100;
     u32 anchor_ = 0;
-    // 状态影子
+    // 状态影子（管线初始 textureFactor=0 = 真机 D3D 设备初始 TFACTOR，
+    // 蓝图 §8.8，open_output 落定；共享 GraphicsState 缺省 0xffffffff
+    // 非 th13 语义——与 GraphicsDevice::initialize 同一分叉点）。
     touhou::graphics::PipelineState pipeline_{};
     touhou::graphics::VertexLayout layout_ = touhou::graphics::VertexLayout::ScreenColorUv;
     Matrix4 matrices_[4]{};  // World/View/Projection/Texture（MatrixKind 序）
