@@ -164,7 +164,7 @@ bool ApplicationState::initialize(bool device) {
     if (!fonts.initialize() || !audio_device.initialize(device)) return fail(fonts.error);
     environment.raster_scale = float(graphics.render_scale);
     environment.render_target_has_alpha = true;
-    environment.screen_offsets = {32, 16, 224, 16};
+    environment.screen_offsets = {32, 16, 320, 16};
     environment.playfield_origin = {32, 16};
     if (!files.initialize()) return fail(files.error);
     animations.resource_release = [this](const AnmResource& resource) { graphics.unload(resource); };
@@ -219,7 +219,7 @@ void ApplicationState::release_run() {
     environment.paused = false;
     environment.screen_translation = {};
     environment.background_delta = {};
-    environment.screen_offsets = {32, 16, 224, 16};
+    environment.screen_offsets = {32, 16, 320, 16};
     environment.playfield_origin = {32, 16};
     views.configure(environment);
     renderer.invalidate();
