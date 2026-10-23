@@ -768,6 +768,15 @@ struct TitleSession {
             return fail(title->error.empty() ? (title->frame.error.empty() ? animations.error
                                                                            : title->frame.error)
                                              : title->error);
+        // [探针] 截窗 f388-392（raw 389-393）打印层 26 全 VM 清单。
+        if (frame >= 389 && frame <= 393) {
+            std::printf("LAYER26 frame=%u:", frame);
+            for (auto* vm : animations.registry.layer(26))
+                if (vm) std::printf(" s%d/alpha=%02x/vis=%d", vm->source_script,
+                                    vm->visual.color >> 24, int(vm->visible));
+            std::printf("\n");
+            std::fflush(stdout);
+        }
         capture.begin_frame(frame);
         if (scheduler.draw() < 0)
             return fail(!draw_schedule->error.empty() ? draw_schedule->error

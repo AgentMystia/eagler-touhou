@@ -87,6 +87,7 @@ class TitleMainMenu {
     bool selection_active = false, selection_move = false;
     i32 menu_age = -1;  // [wf360] 单调屏龄（substate 切换重置 state.age 的规避）
     void set_item_alpha(i32 item, i32 alpha, bool white = true);  // [轮7] 逐项 poke（white 白条/灰条）
+    void rearm_grey(i32 item);  // [f371] 灰条入场重挂（旧隐+新尾插，oracle 批序实证）
     void boot_fade(i32 frame);                   // [wf360] 15 帧线性入场
     void adopt_background_layers();  // [窗A] 背景半张层值按 oracle 实测（§8.3）
     void fade_menu_alphas(i32 step);  // [解剖轮2] Z+10 起灰条透明度衰减 poke
