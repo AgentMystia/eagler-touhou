@@ -77,8 +77,13 @@ AnmCamera stage_camera(const StageCamera& s, const GraphicsViewport& viewport) n
     // +y（上方）需映到视口上缘，故取景矩阵的视线 y 基（列 1）镜像一次
     // （golden f1242：鸟居（相机上方）位于画面上部——方向实证）。
     for (u32 index : {1u, 5u, 9u, 13u}) out.view.m[index] = float(-out.view.m[index]);
+    // [M0.3 实证修正] 远平面 8000 → 1800：原版 0x43ba20（场景相机构建）
+    // D3DXMatrixPerspectiveFovLH(fov, aspect, 0x41f00000=30.0, 0x44e10000=1800.0)
+    // 字节级实证（近平面 30 原已一致）。aspect = 该相机视口宽高（ctx+0xd8
+    // D3DVIEWPORT9 的 W/H；0x43bbc0 初始化两组视口 {0,0,640,480}/{32,16,384,448}，
+    // 0x404140 绘制遍历按相机组切换——组路由语义待 battle_oracle 捕获后裁决）。
     out.projection =
-        scene_perspective(s.fov, float(float(viewport.width) / float(viewport.height)), 30, 8000);
+        scene_perspective(s.fov, float(float(viewport.width) / float(viewport.height)), 30, 1800);
     out.reference = normalize_scene_vector(cross(s.direction, s.up));
     out.fog_near = s.fog.near_distance;
     out.fog_far = s.fog.far_distance;
