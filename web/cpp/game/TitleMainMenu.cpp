@@ -40,6 +40,34 @@ bool TitleMainMenu::child_interrupt(i32 script, i32 label, bool immediate) {
     return !immediate || animations.tick_instance(*child) >= 0 || fail(animations.error);
 }
 
+// [f371 复验] 灰条入场重挂：oracle 批序灰条在**批尾**（f371 v0=w13@8e、
+// g3 在第 11 枚）——root spawn 序 3..22 的灰 VM 在链首，oracle 侧实际是
+// 入场时旧 VM 隐藏 + 新 VM 尾插（0x46f3f0）的重挂语义。入场曲线由
+// advance_selection 的灰条驱动接管（SCAN 5f 序列）。
+void TitleMainMenu::rearm_grey(i32 item) {
+    auto* root = animations.registry.find(state.handles[resources.main_root]);
+    if (!root) return;
+    auto* grey = animations.registry.find_child_script(*root, item + 3, 0);
+    if (!grey) return;
+    const Vec3 translation = grey->visual.translation;
+    const i32 layer = grey->visual.layer;
+    // 旧灰 VM 隐藏（留池），新 VM 同脚本尾插承接入场。
+    grey->visual.flags &= ~1u;
+    grey->visible = false;
+    auto* vm = animations.create_instance(*grey->resource, item + 3);
+    if (!vm) return;
+    vm->visual.render_flags |= 0x200;
+    vm->visual.translation = translation;
+    vm->visual.layer = layer;
+    vm->creation_parent = grey->creation_parent;
+    vm->rotation_parent = grey->rotation_parent;
+    if (!animations.prime_instance(*vm)) return;
+    vm->ordering = 0;
+    vm->visual.color &= 0x00ffffffu;  // 入场首帧 alpha 0（5f 曲线首值前的隐态）
+    if (!animations.registry.submit(*vm)) return;
+    animations.registry.attach(*vm, *root);
+}
+
 bool TitleMainMenu::sound(i32 id) {
     return play_sound ? play_sound(id) || fail("Title sound request failed")
                       : fail("Title sound service unavailable");
@@ -176,6 +204,9 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
             selection_step = 0;
             selection_move = true;
             selection_active = true;
+            // [f379-380] 移动交叉：新项灰条重挂入场（oracle f379 count 24 双灰
+            // 在场实证——旧灰（前一选中项）留批 + 新灰尾插）。
+            rearm_grey(state.menu.cursor);
         }
         if (pressed & 0x102) {  // Esc/X：跳到末项或直接退出分支
             if (state.menu.cursor == kTitleMainEntries - 1) {
@@ -307,10 +338,12 @@ bool TitleMainMenu::open_menu() {
     return show_menu();
 }
 
-// [轮7] 选择交叉（全绘制侧 poke；child_interrupt(3,7) 实测 pending 被消费
-// 但无可见效果——疑引擎停车中断路径另有语义，登记待查）。曲线全部来自
-// oracle SCAN 实测：灰 in {91,163,214,244,255}(5f)/out {40,10,0}；白 out
-// {142,79,35,8,0}；移动旧白升 {214,244,255}、新白降 {163,91,40,0}。
+// [轮7→f371 复验重写] 选择交叉 = 白条 out/in 与灰条 in/out 的**同帧配对交换**
+// （oracle f371 count=22 → 11 枚 = 10 白 + g3@91 首现；f375 20 = 9 白 + g3@255；
+// f379-380 24 = 交叉期双灰在场）。[轮8「灰条不绘」定案系 up 前缀取样偏差
+// （前缀只覆盖首 3.67 枚，灰条 u=0 列在批尾被截断）——废除。]
+// 曲线全部来自 oracle SCAN 实测：灰 in {91,163,214,244,255}(5f)/out {40,10,0}；
+// 白 out {142,79,35,8,0}；移动旧白升 {214,244,255}、新白降 {163,91,40,0}。
 void TitleMainMenu::advance_selection() {
     if (!selection_active) return;
     static const i32 kGreyIn[5] = {91, 163, 214, 244, 255};
@@ -319,20 +352,26 @@ void TitleMainMenu::advance_selection() {
     static const i32 kOldWhiteRise[4] = {214, 244, 255, 255};
     static const i32 kNewWhiteFall[4] = {163, 91, 40, 0};
     const i32 step = selection_step++;
-    // [轮8 定案] oracle 绘制全窗无灰条 quad（u=0 列缺席）——灰条 VM 驻池
-    // 恒隐，选择交叉为**纯白条**序列（SCAN 的 s3/s5 alpha 上升是 VM 态，
-    // 不达绘制）。移动帧 0x5b/0x28 = 新/旧白条的交叉值。
     if (!selection_move) {
-        // [轮9] oracle f371-381 全序：降 {142,79,35,8,0}（5 帧）→隐（3 帧）→
-        // 回升 {214,244,255}（f379-381）→稳态 255（w13 复入批）。
+        // [轮9] oracle f371-381 白条全序：降 {142,79,35,8,0}（5 帧）→隐（3 帧）
+        // →回升 {214,244,255}（f379-381）→稳态 255（w13 复入批）。
         static const i32 kRise[3] = {214, 244, 255};
-        // oracle f371=0x8e(142) 于武装当帧（step0）；尾回升后稳态 255。
         static const i32 kOut[5] = {142, 79, 35, 8, 0};
-        if (step < 5) set_item_alpha(selection_item, kOut[step], true);
-        else if (step < 8) set_item_alpha(selection_item, 0, true);
-        else if (step < 11) set_item_alpha(selection_item, kRise[step - 8], true);
-        else {
+        // 灰条同帧配对入场（f371 count 22 = 10 白 + g3@91 实证）。
+        if (step < 5) {
+            set_item_alpha(selection_item, kOut[step], true);
+            set_item_alpha(selection_item, kGreyIn[step], false);
+        } else if (step < 8) {
+            set_item_alpha(selection_item, 0, true);
+            set_item_alpha(selection_item, 255, false);
+        } else if (step < 11) {
+            set_item_alpha(selection_item, kRise[step - 8], true);
+            // 回升期灰条同步淡出（SCAN out {40,10,0} 帧位对齐回升 3 帧）。
+            const i32 grey = step - 8 < 2 ? kGreyOut[step - 8] : 0;
+            set_item_alpha(selection_item, grey, false);
+        } else {
             set_item_alpha(selection_item, 255, true);
+            set_item_alpha(selection_item, 0, false);
             selection_active = false;
         }
     } else {
@@ -340,9 +379,14 @@ void TitleMainMenu::advance_selection() {
         if (step < 4) {
             set_item_alpha(old_item, kOldWhiteRise[step], true);
             set_item_alpha(new_item, kNewWhiteFall[step], true);
+            // 移动交叉：旧灰条 out（回白）、新灰条 in（让位给白条）。
+            set_item_alpha(old_item, step < 3 ? kGreyOut[2 - step] : 0, false);
+            set_item_alpha(new_item, step < 3 ? kGreyIn[4 - step] : 255, false);
         } else {
             set_item_alpha(old_item, 255, true);
             set_item_alpha(new_item, 0, true);
+            set_item_alpha(old_item, 0, false);
+            set_item_alpha(new_item, 255, false);
             selection_active = false;
         }
     }
@@ -357,6 +401,9 @@ bool TitleMainMenu::select_entry() {
     selection_active = true;
     selection_move = false;
     selection_item = state.menu.cursor;
+    // [f371] 选中项灰条入场重挂（oracle 批序尾插实证；首帧 alpha 0，曲线
+    // 由 advance_selection 的灰条驱动接管——5f 序列首值 91 于 step0 落）。
+    rearm_grey(selection_item);
     return true;  // 首帧由绘制回调 step0 落 142（oracle f371=0x8e）
 }
 
