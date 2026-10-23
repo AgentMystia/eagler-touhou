@@ -90,6 +90,24 @@ bool RunScene::initialize() {
                      player_state, score_state, nullptr,
                      battle_sht.empty() ? nullptr : battle_sht.c_str()))
         return fail(battle.error().empty() ? "Stage battle load failed" : battle.error());
+    // 敌机句柄化默认路径（2026-10-23 基座治理整改）：ECL 303/306 建池 VM
+    // 入 registry（0x41fe80/case3 同构——oracle 极小环境路径），表现层手工
+    // 敌机段跳过（enemies_from_ecl），敌机销毁回收由 retire_sink 钩承担。
+    // 逃生开关：sim.ecl_slot_anm=false 回退双绘制旧路径。
+    battle.sim.ecl_slot_anm = true;
+    presentation->enemies_from_ecl = true;
+    battle.sim.retire_sink = [this](u32 serial) {
+        // 0x418e00 销毁支路的 ANM 面：回收该敌机全部槽位 VM
+        //（0x470110 语义：retire 树 + 句柄归零）。敌机此刻仍在 sim.enemies
+        //（erase 前调用），按 serial 查槽位句柄。
+        for (const auto& enemy : battle.sim.enemies)
+            if (enemy->serial == serial) {
+                for (u32& handle : enemy->anm_slot_handle)
+                    if (handle && !animations.retire(handle))
+                        fail("Enemy retire animation: " + animations.error);
+                return;
+            }
+    };
     // STD 舞台背景装载：stXX.std 解析 → 引用 ANM（st01wl.anm）入 bank → 图元
     // VM 池绑定（模板复制 + 首 tick）。
     std::vector<u8> bytes;
