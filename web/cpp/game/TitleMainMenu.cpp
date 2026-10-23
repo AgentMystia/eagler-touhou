@@ -309,7 +309,9 @@ void TitleMainMenu::boot_fade(i32) {}
 void TitleMainMenu::fade_menu_alphas(i32 step) {
     auto* root = animations.registry.find(state.handles[resources.main_root]);
     if (!root) return;
-    const i32 alpha = 255 - 13 * step, dimmed = 160 - 8 * step;
+    // [f482 精率] 白条 = 20 帧线性 12.75/帧（oracle f479-498 序列 242/229/216/204
+    // /191… round(255-12.75k) 实证，旧 -13 系近似）；黑条独立 -8/帧。
+    const i32 alpha = i32(255.0f - 12.75f * float(step)), dimmed = 160 - 8 * step;
     for (i32 item = 0; item < kTitleMainEntries; item++) {
         auto* child = animations.registry.find_child_script(*root, item + 13, 0);
         if (!child) continue;
