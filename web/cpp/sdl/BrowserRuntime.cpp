@@ -341,6 +341,16 @@ EMSCRIPTEN_KEEPALIVE void th13_debug_draw_probe(int enable) {
     th13::anm_draw_probe.enabled = enable != 0;
 }
 
+// 渲染统计契约（th15 graphics_stats 同形态；Renderer::Statistics 18 项
+// u32 聚合，布局 = 成员声明序）。浏览器实测断言「每批 glBufferData 整体
+// 替换、无 glBufferSubData 分段流式、直通顶点无重复拷贝」——Mali/Adreno
+// 真机卡顿对策的固化门禁（AGENTS.md 性能检查单）。
+EMSCRIPTEN_KEEPALIVE const unsigned* th13_debug_stats() {
+    return th13::sdl::app
+               ? reinterpret_cast<const unsigned*>(&th13::sdl::app->graphics.backend.stats)
+               : nullptr;
+}
+
 // 探针读数：calls/quads/shapes/strips/glyphs + 按精灵聚合表。
 EMSCRIPTEN_KEEPALIVE const char* th13_debug_draw_report() {
     using namespace th13::sdl;
