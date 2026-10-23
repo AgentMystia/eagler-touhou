@@ -60,6 +60,14 @@ bool GraphicsDevice::initialize() {
     SDL_SetWindowSize(SDL_GL_GetCurrentWindow(), 640 * render_scale, 480 * render_scale);
     backend.state.target = screen;
     backend.state.depth = depth;
+    // th13 设备态分叉点（与 th15 共享件归一后，本作语义落在此处）：
+    // textureFactor 初始 0 = 真机 D3D 设备初始 TFACTOR（oracle 标题窗 idle 期
+    // 全 op tfactor=0 实证；共享缺省 0xffffffff 是 th15 始终显式配置的惰性缺
+    // 省，th13 不经 configure_game 路径，须在设备初装即写真机初始态）。
+    // TFACTOR 为跨帧持续设备态（蓝图 §8.8）；Factor 模式由 AnmRenderer
+    // world_quad 族按 VM 色显式设置（真机 0x4692d0 同位）——configure_game 的
+    // Factor 第二参数在本作不成立（曾致 web 全像素着黑，视觉全灭根因）。
+    backend.pipeline().textureFactor = 0;
     return true;
 }
 

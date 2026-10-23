@@ -102,6 +102,9 @@ bool DrawCapture::open_output(const char* path) {
         fail("cannot open draws output");
         return false;
     }
+    // 设备初装：TFACTOR=0（真机 D3D 初始设备态，蓝图 §8.8；共享 GraphicsState
+    // 缺省 0xffffffff 非 th13 语义，本作不经 configure_game 路径）。
+    pipeline_.textureFactor = 0;
     return true;
 }
 
