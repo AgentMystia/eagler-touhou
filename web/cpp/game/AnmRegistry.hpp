@@ -41,6 +41,7 @@ public:
     bool attach(AnmVm& child,AnmVm& parent);
     std::vector<AnmVm*> children(const AnmVm&)const;
     bool discard(AnmVm&);bool destroy_tree(AnmVm&);
+    void requeue_to_back(AnmVm&);  // [f389] 链尾重排（绘制提交序，oracle 重挂同构）
     bool preserve_embedded_children(AnmVm&);
     bool retire_children(AnmVm&);
     void retire_resource(const AnmResource* resource)noexcept;

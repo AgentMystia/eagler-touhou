@@ -69,6 +69,10 @@ void TitleMainMenu::rearm_grey(i32 item) {
     vm->visual.color = 0x5b000000u | (vm->visual.color & 0xffffffu);
     if (!animations.registry.submit(*vm)) return;
     animations.registry.attach(*vm, *root);
+    // [f389 校准] ver 重挂链尾：rearm 后链序须为 [白条…, g5, ver]——
+    // oracle f389 批形态 = title01 单批（含 g5）+ ver 尾批。
+    if (auto* bar = animations.registry.find(state.version_bar))
+        animations.registry.requeue_to_back(*bar);
 }
 
 bool TitleMainMenu::sound(i32 id) {
@@ -175,6 +179,11 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
         // 见）→ 绘制侧压 0 复刻。可交互仍锚 age191（f372，oracle 实测）。
         const i32 menu_at = returning ? 0 : 179;
         if (!returning && state.age.current == menu_at && !open_menu()) return false;
+        // [f389 校准] ver 延 1 帧创建（open_menu 挂起，此处消费——
+        // oracle f389 首绘 vs port 原 f388）。
+        if (!returning && version_bar_pending && state.age.current == menu_at + 1 &&
+            !open_menu_version_bar())
+            return false;
 
         if (!returning && state.age.current >= 169) {
             // [窗A 修正] oracle f349/g350：select00 右半自 L23 搬至 L21（与森林
@@ -312,6 +321,13 @@ void TitleMainMenu::fade_menu_alphas(i32 step) {
 // 蓝图 §oracle 章登记，待 AnmUpdate 语义裁定后改为保留）。
 // [解剖轮2] Z 序不再销毁字条 VM（解剖 §⑥：转屏后仍在池）——返回路径无需
 // 整树重建，present 复用 + 全项重入场（label 7+k 恢复透明度/可见性）。
+// [f389 校准] ver 的延帧创建体（open_menu 挂起 → update age==menu_at+1 消费）。
+bool TitleMainMenu::open_menu_version_bar() {
+    version_bar_pending = false;
+    state.version_bar = animations.create(resources.version, resources.version_bar, -1, 0);
+    return state.version_bar || fail(animations.error);
+}
+
 bool TitleMainMenu::open_menu() {
     menu_age = 0;
     if (!present(state.handles[resources.main_root])) {
@@ -326,10 +342,11 @@ bool TitleMainMenu::open_menu() {
             if (auto* child = animations.registry.find_child_script(*root, white, 0))
                 child->visual.layer = 26;
     }
-    if (!present(state.version_bar)) {
-        state.version_bar = animations.create(resources.version, resources.version_bar,
-                                              -1, 0);
-        if (!state.version_bar) return fail(animations.error);
+    if (!present(state.version_bar) && !version_bar_pending) {
+        // [f389 校准] ver 延 1 帧创建：open_menu 内挂起（title01 与 ver 的
+        // oracle 首绘帧差 1——f388 vs f389），由 update substate1 的
+        // open_menu_version_bar 消费。
+        version_bar_pending = true;
     }
     // 选中项曾白化续衰减（Z 序）：恢复灰 192（label 28 = rgb→192 4f）。
     if (state.confirmed_entry >= 0 && state.confirmed_entry < kTitleMainEntries &&
