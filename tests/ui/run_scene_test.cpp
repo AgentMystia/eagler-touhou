@@ -86,7 +86,8 @@ struct RunHost final : RunSceneServices {
         lines.push_back(draw.text);
         return true;
     }
-    bool read_asset(const std::string& name, std::vector<u8>& bytes) override {
+    bool read_asset(const std::string& name, std::vector<u8>& bytes,
+                    bool required = true) override {
         const auto found = assets.find(name);
         if (found == assets.end()) return false;
         bytes = found->second;
