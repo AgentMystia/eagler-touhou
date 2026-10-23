@@ -143,7 +143,7 @@ bool TitleFrame::update(const TitleFrameInput& value) {
 // 渲染（非本类所有权），已登记为 harness 镜像同步项。
 void TitleFrame::submit_side_strips() { emit_title_side_strips(animations); }
 
-// [wf290 机制待定] LOGO 翻转族层搬移（蓝图 §8.8）：dump 96-100 全为
+// [wf290 机制待定] LOGO 翻转族层搬移（蓝图 §8.9）：dump 96-100 全为
 // ins_304(25)，oracle 实测 97（TEN DESIRES 3D 翻转）f290-348 绘于 L26、
 // f349（60f 插值完成）即落 L25 并保持（f349-360 L25 n2 0x80ffffff 轨迹
 // 两侧逐位一致）；98 爆闪（97 完成时 spawn，10f 命 f349-358）oracle 全命
