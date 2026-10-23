@@ -52,6 +52,8 @@ public:
     u64 ups() const noexcept { return ups_; }
     u32 zero_op_frames() const noexcept { return zero_frames_; }
     const std::string& error() const noexcept { return error_; }
+    // 已写输出字节偏移（web 影子分块导出：MEMFS 文件按偏移切片拉走）。
+    long output_position() const noexcept { return out_ ? std::ftell(out_) : 0; }
 
     // ---- ZunGraphics（语义状态影子；目标/清屏类不产 op，静默成功）----
     touhou::graphics::PipelineState& pipeline() override { return pipeline_; }

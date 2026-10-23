@@ -80,6 +80,10 @@ bool ApplicationState::prepare_loading() {
              !loading_animations.load(bank.second, bytes.data(), u32(bytes.size())) ||
              !graphics.preload(*loading_animations.resource(bank.second))))
             return fail("Loading artwork: " + loading_animations.error + graphics.error);
+        // 影子身份登记（槽 = 原版 mgr 槽；harness TitleSession read_bank 同式）。
+        if (auto* file = loading_animations.resource(bank.second))
+            graphics.capture_shadow.register_texture(file, 0, u32(file->textures.size()),
+                                                     bank.second);
     }
     return draw_loading(true);
 }
@@ -176,6 +180,10 @@ bool ApplicationState::initialize(bool device) {
         animations.name_resource(bank.second, bank.first);
         if (bank.second == 2) environment.fallback_sprite_resource = animations.resource(2);
         if (!graphics.preload(*animations.resource(bank.second))) return fail(graphics.error);
+        // 影子身份登记（kBanks 槽号即原版 mgr 26 槽表；harness read_bank 同式）。
+        if (auto* file = animations.resource(bank.second))
+            graphics.capture_shadow.register_texture(file, 0, u32(file->textures.size()),
+                                                     bank.second);
     }
     display = std::make_unique<SceneDisplay>(scheduler, animations, environment, graphics, renderer,
                                              views, captions, 2);
@@ -237,6 +245,10 @@ bool ApplicationState::preload_scenery_animation(i32 bank, const std::string& na
     if (!read(name, bytes) || !animations.load(bank, bytes.data(), u32(bytes.size())))
         return fail("Scenery ANM load: " + name + ": " + animations.error);
     animations.name_resource(bank, name);
+    // 影子身份登记：STD 舞台 ANM（st0Nwl）的 mgr 槽未定档（M2.3 捕获面扩展
+    // 时从 oracle 26 槽表回填），暂 -1 窗外标记（可见，不静默）。
+    if (auto* file = animations.resource(bank))
+        graphics.capture_shadow.register_texture(file, 0, u32(file->textures.size()), -1);
     if (!graphics.preload(*animations.resource(bank)))
         return fail("Scenery ANM preload: " + name + ": " + graphics.error);
     return true;
@@ -268,6 +280,11 @@ bool ApplicationState::begin_run() {
          !animations.load(kFrontBank, bytes.data(), u32(bytes.size())) ||
          !graphics.preload(*animations.resource(kFrontBank))))
         return fail("Run front asset: " + animations.error + graphics.error);
+    // 影子身份登记（对局面）：front 槽 = kFrontBank（3）；bullet 槽 = 原版 7、
+    // 关卡 ANIM 名单分段槽 = 10+i、自机 plXX = -1（窗外标记）——harness
+    // DrawsSession::load_banks 同一套口径。
+    if (auto* file = animations.resource(kFrontBank))
+        graphics.capture_shadow.register_texture(file, 0, u32(file->textures.size()), kFrontBank);
     // Stage1 场景资产（Stage2+ 分期）：ANIM 名单顺序合并成单一 bank——
     // ECL 302/303/306 的脚本号即该合并表的全局序号（0x46e0b0/0x46e230 语义）。
     const char* stage_ecl = selected_stage == 1 ? "st01.ecl" : "st01.ecl";
@@ -277,24 +294,37 @@ bool ApplicationState::begin_run() {
     if (!head.open(ecl.data(), u32(ecl.size())) || head.animations.empty())
         return fail("Stage ECL ANIM list unavailable");
     AnmResource stage;
+    std::vector<std::pair<u32, u32>> stage_capture_ranges;  // 影子身份分段（first,count）
     for (const auto& name : head.animations) {
         if (!read(name, bytes)) return fail("Stage ANM missing: " + name);
+        const u32 range_first = u32(stage.textures.size());
         if (!stage.append(bytes.data(), u32(bytes.size())))
             return fail("Stage ANM invalid: " + name);
+        stage_capture_ranges.emplace_back(range_first,
+                                          u32(stage.textures.size()) - range_first);
     }
     if (!animations.adopt(kStageBank, std::move(stage)) ||
         !graphics.preload(*animations.resource(kStageBank)))
         return fail("Stage ANM bank: " + animations.error + graphics.error);
+    if (auto* file = animations.resource(kStageBank))
+        for (u32 index = 0; index < stage_capture_ranges.size(); index++)
+            graphics.capture_shadow.register_texture(file, stage_capture_ranges[index].first,
+                                                     stage_capture_ranges[index].second,
+                                                     i32(10 + index));
     if (!read("bullet.anm", bytes) ||
         !animations.load(kBulletBank, bytes.data(), u32(bytes.size())) ||
         !graphics.preload(*animations.resource(kBulletBank)))
         return fail("Bullet ANM bank: " + animations.error + graphics.error);
+    if (auto* file = animations.resource(kBulletBank))
+        graphics.capture_shadow.register_texture(file, 0, u32(file->textures.size()), 7);
     const char* player_files[4] = {"pl00.anm", "pl01.anm", "pl02.anm", "pl03.anm"};
     const i32 character = progress.character & 3;
     if (!read(player_files[character], bytes) ||
         !animations.load(kPlayerBank, bytes.data(), u32(bytes.size())) ||
         !graphics.preload(*animations.resource(kPlayerBank)))
         return fail("Player ANM bank: " + animations.error + graphics.error);
+    if (auto* file = animations.resource(kPlayerBank))
+        graphics.capture_shadow.register_texture(file, 0, u32(file->textures.size()), -1);
     // 第 4 员 effect=8（kBanks 表 effect.anm 同值）：ECL 307/308 特效 VM 创建源。
     StagePresentation::Banks banks{kStageBank, kBulletBank, kPlayerBank, 8};
     // STD 舞台背景资产名（Stage2+ 分期；Stage1 = st01.std → st01wl.anm）。

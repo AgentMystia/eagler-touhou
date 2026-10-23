@@ -9,12 +9,14 @@
 #include "../../../portable/sdl/FrameCadence.hpp"
 
 #include <SDL3/SDL.h>
+#include <GLES3/gl3.h>
 #include <emscripten.h>
 #include <emscripten/html5.h>
 
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <vector>
 
 EM_JS(void, th13_browser_frame, (int ok, double milliseconds, unsigned ticks), {
     Module["onGameFrame"]?.(ok, milliseconds, ticks);
@@ -400,5 +402,48 @@ EMSCRIPTEN_KEEPALIVE const char* th13_probe_camera(int enable) {
         }
     }
     return report.c_str();
+}
+
+// ---- 语义绘制清单捕获（web DrawCapture 影子；确定性渲染门禁）----
+// th13_debug_capture_begin：<path>（MEMFS，建议 /th13-capture.jsonl）落输出并
+// 激活逐调用转发；帧界 = present()（帧 f 从激活后第 f 次 present 落行）。
+// 精灵层号钩子需捕获构建（TH13_WEB_CAPTURE=1）；非捕获构建层号恒 -100。
+EMSCRIPTEN_KEEPALIVE int th13_debug_capture_begin(const char* path) {
+    using namespace th13::sdl;
+    if (!app || !path) return 0;
+    if (!app->graphics.capture_begin(path)) {
+        last_error = app->graphics.error.empty() ? "draws capture open failed"
+                                                 : app->graphics.error;
+        return 0;
+    }
+    return 1;
+}
+
+// 结束捕获：关闭输出，返回已落帧数。
+EMSCRIPTEN_KEEPALIVE unsigned th13_debug_capture_end() {
+    using namespace th13::sdl;
+    if (!app) return 0;
+    const unsigned frames = unsigned(app->graphics.capture_shadow.frames_out());
+    app->graphics.capture_finish();
+    return frames;
+}
+
+// 已写输出字节偏移（宿主按偏移分块拉取 MEMFS 文件，长窗不驻留整文件）。
+EMSCRIPTEN_KEEPALIVE double th13_debug_capture_tell() {
+    using namespace th13::sdl;
+    return app ? double(app->graphics.capture_shadow.output_position()) : 0;
+}
+
+// 像素采样（GL 层确定性证据）：从当前 WebGL 帧缓冲读 RGBA。坐标系 = GL
+// （原点左下、y 向上）——锚点推导时按 canvas 高 480 换算 y_gl = 479 - y。
+// 须与帧泵同一 JS 任务内调用（后备缓冲合成前内容完整）。
+EMSCRIPTEN_KEEPALIVE unsigned char* th13_debug_read_pixels(int x, int y, int w, int h) {
+    static std::vector<unsigned char> buffer;
+    if (w <= 0 || h <= 0 || w > 4096 || h > 4096) return nullptr;
+    buffer.resize(size_t(w) * size_t(h) * 4);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(x, y, w, h, GL_RGBA, GL_UNSIGNED_BYTE, buffer.data());
+    return buffer.data();
 }
 }  // extern "C"
