@@ -252,6 +252,20 @@ public:
         return true;
     }
     bool hud_sound(i32) override { return true; }
+    // 敌机销毁回收（enemies_from_ecl 路径）：Session 建立后由各模式接线
+    //（回收敌人槽位 VM；draws 窗内敌机会出界自杀，句柄不回收会滞留池内
+    // 继续被层桶绘制，污染捕获面）。
+    th13::AnmManager* retire_animations = nullptr;
+    void enemy_retire(u32 serial) override {
+        if (!retire_animations) return;
+        for (const auto& enemy : session_sim->enemies)
+            if (enemy->serial == serial) {
+                for (auto& handle : enemy->anm_slot_handle)
+                    if (handle) retire_animations->retire(handle);
+                return;
+            }
+    }
+    th13::StageSim* session_sim = nullptr;
     bool game_over = false;
 };
 
@@ -444,6 +458,8 @@ int run_draws(const char* resource_dir, const char* draws_path, unsigned frames,
         31);
     session.presentation->enemies_from_ecl = true;  // 敌机本体 VM 走 ECL 303/306
     session.battle.sim.ecl_slot_anm = true;
+    host.retire_animations = &session.animations;
+    host.session_sim = &session.battle.sim;
     th13::StagePresentation::debug_pass_mask = 4;  // 仅敌机（oracle 窗口径）
     // 无输入窗玩家口径：静态 (192,420)（oracle stage1 env 契约常量；不走
     // battle 自机模型——ECL 瞄准读 sim.player_x/y 默认值即此）。
@@ -540,6 +556,8 @@ int run_draws_replay(const char* replay_path, const char* resource_dir, const ch
         31);
     session.presentation->enemies_from_ecl = true;  // 敌机本体 VM 走 ECL 303/306
     session.battle.sim.ecl_slot_anm = true;
+    host.retire_animations = &session.animations;
+    host.session_sim = &session.battle.sim;
     th13::StagePresentation::debug_pass_mask = 4;
     if (!session.capture.open_output(draws_path)) {
         std::printf("draws-replay output failed: %s\n", session.capture.error().c_str());

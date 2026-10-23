@@ -417,6 +417,10 @@ bool StageSim::step_frame() {
             else entry->tick_gate = false;
         }
         if (remove) {
+            // 敌机销毁（0x418e00 销毁支路）先经宿主回收其槽位 VM 句柄
+            // （enemies_from_ecl 路径的敌机本体 VM 所有权在 registry——
+            // 敌机结构消亡后句柄即悬空，此处回收防泄漏）。
+            if (retire_sink) retire_sink(entry->serial);
             enemies.erase(enemies.begin() + i);  // 0x418e00 else：当场摘链（无 RNG）
             if (i >= enemies.size()) break;
             continue;  // 游标走处理前记下的 next（摘除后恰为当前位置）

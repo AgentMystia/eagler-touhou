@@ -14,6 +14,7 @@
 #include "StageEvent.hpp"
 #include "Types.hpp"
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -248,6 +249,9 @@ public:
     StageDialogHost* dialog_host = nullptr;
     // §7 回放会话才落 boss_op/kill 事件（被动 stage1 窗口流保持 v1 字节不变）。
     bool replay_events = false;
+    // 敌机销毁回收钩（step_frame 摘链前逐敌机调用；交互模式由宿主注入，
+    // 无头契约路径为空——槽位 VM 句柄仅句柄化路径持有）。
+    std::function<void(u32)> retire_sink;
     // 建敌（enmCreate 族与 root 装载共用；含构造内首趟 0x41a8a0）。
     // mirror：0x4183f0:28 的 param2[6]（镜像位，构造趟前置入 flags bit20——
     // 构造趟内 404/405 族按镜像翻转角度）。

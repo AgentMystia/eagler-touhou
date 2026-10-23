@@ -2,8 +2,10 @@
 // 敌机 = ECL 302/303/306 记录的脚本（stage ANM 合并表全局序号）；
 // 敌弹 = bullet.anm 脚本 + 0x4120b0 精灵解析（BulletAppearance 表）；
 // 自机/自机弹 = plXX.anm（脚本 0/1/2 姿态；弹为精灵直贴）。
-// VM 不入 registry（除脚本自派的子体经 object_host 入链），绘制直调
-// AnmRenderer（th15 PlayerDraw/GameDraw 同式），由 RunScene 注册分层回调。
+// 敌机本体 VM 默认经 ECL 303/306 入 registry 句柄池（enemies_from_ecl，
+// 2026-10-23 整改扶正）；弹体/自机弹/自机 VM 仍为表现层自备直绘
+//（th15 PlayerDraw/GameDraw 同式——宿主自备 VM 直调 renderer 是基座允许
+// 的模式），由 RunScene 注册分层回调。
 #pragma once
 
 #include "AnmManager.hpp"
@@ -29,7 +31,10 @@ public:
     // 帧同步（Update pass 内调用）：敌机脚本接线、弹体/自机弹/自机姿态。
     bool sync(StageBattle& battle, u32 held);
     // true = 敌机本体 VM 由 ECL 303/306 创建入池（0x41fe80/case3 同构），
-    // sync 的敌机接线/清理段跳过（draws 对拍模式；web 旧路径 false）。
+    // sync 的敌机接线/清理段跳过。默认路径（2026-10-23 基座治理整改：
+    // RunScene::initialize 置 true——敌机全走 AnmManager 句柄，th15
+    // EnemyAnmHost 桥接模式的 th13 对应物）；false = 表现层手工敌机段
+    // （双绘制回退路径，仅逃生开关）。
     bool enemies_from_ecl = false;
     // 直绘 pass：0=自机弹 1=自机 2=敌机 3=敌弹（调用方保证 Fullscreen 相机）。
     bool draw(u32 pass);
