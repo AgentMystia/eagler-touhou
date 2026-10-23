@@ -63,7 +63,10 @@ void TitleMainMenu::rearm_grey(i32 item) {
     vm->rotation_parent = grey->rotation_parent;
     if (!animations.prime_instance(*vm)) return;
     vm->ordering = 0;
-    vm->visual.color &= 0x00ffffffu;  // 入场首帧 alpha 0（5f 曲线首值前的隐态）
+    // [f379 校准] oracle 输入当帧新灰已入批（f379 count 24 实证）——首帧
+    // alpha 直接落 in 曲线首值 91（0x5b），advance_selection move 分支
+    // step0 的灰条 poke 同帧接管后续帧。
+    vm->visual.color = 0x5b000000u | (vm->visual.color & 0xffffffu);
     if (!animations.registry.submit(*vm)) return;
     animations.registry.attach(*vm, *root);
 }
@@ -376,17 +379,21 @@ void TitleMainMenu::advance_selection() {
         }
     } else {
         const i32 old_item = selection_previous, new_item = selection_item;
-        if (step < 4) {
-            set_item_alpha(old_item, kOldWhiteRise[step], true);
-            set_item_alpha(new_item, kNewWhiteFall[step], true);
-            // 移动交叉：旧灰条 out（回白）、新灰条 in（让位给白条）。
-            set_item_alpha(old_item, step < 3 ? kGreyOut[2 - step] : 0, false);
-            set_item_alpha(new_item, step < 3 ? kGreyIn[4 - step] : 255, false);
+        // [f379-383 oracle 重构] w15 降 5 帧 {163,91,40,10,0}（f382=0a 在场
+        // 锚点）；旧灰 s2 出批（f381 count 22）；新灰入场后**恒驻**
+        // （f383 oracle 20 = 9 白 + g5 实证——选中新项以灰条驻场）。
+        static const i32 kNewWhiteFall5[5] = {163, 91, 40, 10, 0};
+        static const i32 kMoveGreyNew[5] = {91, 163, 214, 244, 255};
+        if (step < 5) {
+            set_item_alpha(old_item, step < 4 ? kOldWhiteRise[step] : 255, true);
+            set_item_alpha(new_item, kNewWhiteFall5[step], true);
+            set_item_alpha(new_item, kMoveGreyNew[step], false);
+            if (step >= 2) set_item_alpha(old_item, 0, false);  // 旧灰 s2 出批
         } else {
             set_item_alpha(old_item, 255, true);
             set_item_alpha(new_item, 0, true);
+            set_item_alpha(new_item, 255, false);  // 新灰满驻（稳态选中项灰条）
             set_item_alpha(old_item, 0, false);
-            set_item_alpha(new_item, 255, false);
             selection_active = false;
         }
     }
