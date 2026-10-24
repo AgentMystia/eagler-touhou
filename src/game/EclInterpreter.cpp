@@ -65,10 +65,10 @@ float global(Enemy& e, int id, bool floating) {
     return e.ry;
   case -9991:
   case -9965:
-    return px / 128.f;
+    return multiplayer::target(e.x,e.y)[0];
   case -9990:
   case -9964:
-    return py / 128.f;
+    return multiplayer::target(e.x,e.y)[1];
   case -9989:
     return aim(e.x, e.y);
   case -9988:
@@ -100,7 +100,8 @@ float global(Enemy& e, int id, bool floating) {
   case -9957:
     return 1;
   case -9944: {
-    const double dx = e.x - px / 128.f, dy = e.y - py / 128.f;
+    const auto p=multiplayer::target(e.x,e.y);
+    const double dx=e.x-p[0],dy=e.y-p[1];
     return float(std::sqrt(dx * dx + dy * dy));
   }
   case -9953:
@@ -115,11 +116,11 @@ float global(Enemy& e, int id, bool floating) {
     return n;
   }
   case -9945:
-    return character * 2 + shot;
+    return pilot().character * 2 + pilot().shot;
   case -9931:
     return float(i32(lastSpawnedEnemyId)); // Native41a41b: signed fild of EnemyManager+78.
   case -9930:
-    return float(power); // Native41a427: signed fild of raw power4b0c48.
+    return float(pilot().resources.power); // Native41a427: signed fild of raw power4b0c48.
   default: {
     auto found = globals.find(id);
     return found == globals.end() ? 0 : found->second.floating();
@@ -134,7 +135,7 @@ i32 globalInt(Enemy& e, int id) {
   if (id == -9931)
     return i32(lastSpawnedEnemyId);
   if (id == -9930)
-    return power; // Native419dba preserves the integer before any float conversion.
+    return pilot().resources.power; // Native419dba preserves the integer before any float conversion.
   if (id >= -9985 && id <= -9982)
     return i32(e.variables[id + 9985]);
   if (auto found = globals.find(id); found != globals.end())
@@ -599,7 +600,7 @@ void command(Enemy& e, Context& c, int op) {
       // Preserve its conditional Pi addition; this branch does not wrap it.
       angle = float(double(randomAngle) * .25);
       const bool third = random.next16() % 3 == 0;
-      if ((e.x < px / 128.f) == third)
+      if ((e.x < pilot().px / 128.f) == third)
         angle = float(double(angle) + pi);
     }
     if (double(e.y) < double(e.clampY) - double(e.clampHeight) * .25)
@@ -763,7 +764,7 @@ void command(Enemy& e, Context& c, int op) {
   }
   case 418: {
     const int index = I(0);
-    if (messageVM.start(messageFiles[character * 2 + shot], index)) {
+    if (messageVM.start(messageFiles[pilot().character * 2 + pilot().shot], index)) {
       messageEvents.clear();
       startMessageAnimations();
       // Native41f900's MSG constructor clears the world before41fc68 stores
@@ -811,7 +812,7 @@ void command(Enemy& e, Context& c, int op) {
     (void)I(2);
     start.difficulty = difficulty;
     start.stage = stageNumber;
-    start.bombActive = playerBomb.active;
+    start.bombActive = pilot().playerBomb.active;
     start.bossX = e.x;
     start.bossY = e.y;
     const int length = rd<i32>(c.pc + 28);
@@ -867,7 +868,7 @@ void command(Enemy& e, Context& c, int op) {
     break;
   }
   case 434: {
-    const int low = I(1), high = I(2), rank = std::clamp(resources.rank, -1024, 1024);
+    const int low = I(1), high = I(2), rank = std::clamp(pilot().resources.rank, -1024, 1024);
     storeInt(c, e, rd<i32>(c.pc + 16),
              i32(u32(low) + u32(i32(i32(u32(high) - u32(low)) * u32(rank + 1024)) / 2048)));
     break;
@@ -984,7 +985,7 @@ void command(Enemy& e, Context& c, int op) {
     break;
   case 514:
   case 517: {
-    const int at = resources.rank < -512 ? 1 : resources.rank < 512 ? 3 : 5;
+    const int at = pilot().resources.rank < -512 ? 1 : pilot().resources.rank < 512 ? 3 : 5;
     if (op == 514) {
       s.speed = F(at);
       s.slow = F(at + 1);
@@ -996,10 +997,10 @@ void command(Enemy& e, Context& c, int op) {
   }
   case 515:
   case 518: {
-    const int at = resources.rank < -600   ? 1
-                   : resources.rank < -200 ? 3
-                   : resources.rank < 200  ? 5
-                   : resources.rank < 600  ? 7
+    const int at = pilot().resources.rank < -600   ? 1
+                   : pilot().resources.rank < -200 ? 3
+                   : pilot().resources.rank < 200  ? 5
+                   : pilot().resources.rank < 600  ? 7
                                            : 9;
     if (op == 515) {
       s.speed = F(at);
@@ -1011,14 +1012,14 @@ void command(Enemy& e, Context& c, int op) {
     break;
   }
   case 516: {
-    const double t = double(resources.rank + 1024) / 2048;
+    const double t = double(pilot().resources.rank + 1024) / 2048;
     s.speed = float(double(F(1)) + (double(F(3)) - F(1)) * t);
     s.slow = float(double(F(2)) + (double(F(4)) - F(2)) * t);
     break;
   }
   case 519: {
     const auto interpolate = [&](i32 low, i32 high) {
-      return int16_t(low + i32(i32(u32(high - low) * u32(resources.rank + 1024)) / 2048));
+      return int16_t(low + i32(i32(u32(high - low) * u32(pilot().resources.rank + 1024)) / 2048));
     };
     s.count = interpolate(I(1), I(3));
     s.layers = interpolate(I(2), I(4));

@@ -56,14 +56,14 @@ special_geometry::AnimationView geometryAnimation(const Enemy& e) {
   return {};
 }
 laser::PlayerCollision collisionPlayer() {
-  return {{px / 128.f, py / 128.f, 0},
-          eb::playerHitboxes[character] * .5f,
-          eb::playerHitboxes[character] * .5f,
-          playerState,
-          invuln,
-          playerFlags,
+  return {{pilot().px / 128.f, pilot().py / 128.f, 0},
+          eb::playerHitboxes[pilot().character] * .5f,
+          eb::playerHitboxes[pilot().character] * .5f,
+          pilot().playerState,
+          pilot().invuln,
+          pilot().playerFlags,
           dialogue > 0,
-          loadouts[character * 2 + shot].hit};
+          loadouts[pilot().character * 2 + pilot().shot].hit};
 }
 } // namespace
 int runEnemyCallback(Enemy& e, int selector) {
@@ -144,7 +144,7 @@ int runEnemyCallback(Enemy& e, int selector) {
 int queryPlayerDamage(const Enemy& target, float x, float y, float width, float height) {
   // 439ee1..439f02 exits BEFORE the shot/source scan when Player+a34
   // has not advanced past+a30. Fractional-speed frames must not award hits.
-  if (playerPreviousStateTicks == playerStateTicks)
+  if (pilot().playerPreviousStateTicks == pilot().playerStateTicks)
     return 0;
   Enemy area;
   area.id = target.id;
@@ -155,7 +155,7 @@ int queryPlayerDamage(const Enemy& target, float x, float y, float width, float 
   int damage = 0;
   // 439ed0 scans256 physical slots. An impact can allocate particles into
   // free slots on either side of this cursor; only later slots are queried.
-  for (int slot = 0; slot < FriendlyCapacity; ++slot)
+  for (int slot = int(multiplayer::currentSeat) * FriendlyPerSeat; slot < int(multiplayer::currentSeat + 1) * FriendlyPerSeat; ++slot)
     if (auto* bullet = friendlySlots[slot]; bullet && bullet->active)
       damage += friendlyProjectileDamage(*bullet, area);
   // 43a1f2 queries Bomb after all physical friendly slots, then43a20a
@@ -170,7 +170,7 @@ int queryPlayerDamage(const Enemy& target, float x, float y, float width, float 
 }
 int customEnemyDamage(Enemy& e) {
   if (e.customDamage == 0)
-    return queryPlayerDamage(e, e.x, e.y, e.hitWidth, e.hitHeight);
+    return multiplayer::allPlayerDamage(e, e.x, e.y, e.hitWidth, e.hitHeight);
   if (e.customDamage != 1) {
     ++unsupported[530];
     return 0;
@@ -178,7 +178,7 @@ int customEnemyDamage(Enemy& e) {
   auto animation = geometryAnimation(e);
   special_geometry::World world;
   world.damageQuery = [&](u32, const special_geometry::DamageArea& area) {
-    return queryPlayerDamage(e, area.center.x, area.center.y, area.width, area.height);
+    return multiplayer::allPlayerDamage(e, area.center.x, area.center.y, area.width, area.height);
   };
   const auto result = special_geometry::hurtSelector1(geometryEnemy(e), animation, world);
   if (animation.present)
@@ -197,7 +197,7 @@ void customEnemyCollision(Enemy& e) {
     if (result.beginMiss)
       playerMissCollision();
     if (result.code == laser::Collision::Graze && (e.flags & 0x200u) && e.age % 3 == 0) {
-      awardPlayerGraze(px / 128.f, py / 128.f);
+      awardPlayerGraze(pilot().px / 128.f, pilot().py / 128.f);
     }
     return;
   }
@@ -221,7 +221,7 @@ void customEnemyCollision(Enemy& e) {
                                  line.transverseSize, line.longitudinalSize);
     return special_geometry::Collision(result);
   };
-  world.playerPosition = [] { return special_geometry::Position{px / 128.f, py / 128.f, 0}; };
+  world.playerPosition = [] { return special_geometry::Position{pilot().px / 128.f, pilot().py / 128.f, 0}; };
   world.graze = [](const special_geometry::Position& position) {
     awardPlayerGraze(position.x, position.y, position.z);
   };

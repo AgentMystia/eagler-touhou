@@ -1,9 +1,10 @@
+import {validateMultiplayerOptions} from './multiplayer.mjs';
 import {allowedPath} from './storage.mjs';
-import {parseReplay} from './replay.mjs';
 import {validateNativeProfile} from './native-profile.mjs';
 
 const boolOptions=['limitPresentationTo60','touchEnabled','doubleTapBombEnabled','alwaysHitbox','thpracEnabled','focusHitboxEnabled','replayViewer'];
-const acceptedOptions=new Set([...boolOptions,'touchMovementMode','touchSensitivity','touchFocusMode','oggDecodeMode','replayPath','debugHarness','thpracLocale']);
+const netplayOptions=['netplayMode','netplayUrl','netplayPlayer','netplayPlayerCount','netplaySeed','netplayDifficulty','netplayInputDelay','netplayInputDelayAuto','netplayAdonisMode','netplayPredictionLimit','netplayPredictionReserve','netplayChallengeMode','netplaySpectator','netplaySpectatorId','netplaySpectatorCount','netplaySpectatorTimeline','netplayIceServers','netplayPreferTurn','netplayLoadouts','multiplayerLocalPlayerVisibility','touchAlwaysHitbox'];
+const acceptedOptions=new Set([...netplayOptions,...boolOptions,'touchMovementMode','touchSensitivity','touchFocusMode','oggDecodeMode','replayPath','debugHarness','thpracLocale']);
 export function runtimeOptions(value={}){
   if(!value||typeof value!=='object'||Array.isArray(value))throw Error('运行配置无效');
   for(const key of Object.keys(value))if(!acceptedOptions.has(key))throw Error('此版本未支持的运行配置：'+key);
@@ -18,6 +19,8 @@ export function runtimeOptions(value={}){
   if(value.thpracLocale!==undefined&&!['ja-JP','en-US','zh-CN'].includes(value.thpracLocale))throw Error('练习工具语言无效');
   if(value.replayPath!==undefined&&!savePath(value.replayPath).toLowerCase().endsWith('.rpy'))throw Error('录像路径无效');
   if(value.debugHarness!==undefined&&value.debugHarness!==null)throw Error('诊断工具需要独立诊断构建');
+  if(value.netplayMode||value.replayViewer)validateMultiplayerOptions(value);
+  if(value.thpracEnabled)throw Error('TH12 多人版不启用 THPrac');
   return {...value,limitPresentationTo60:value.limitPresentationTo60??true};
 }
 export function savePath(value){
@@ -25,8 +28,8 @@ export function savePath(value){
   const path=allowedPath(value.startsWith('/savesth12/')?value:'/savesth12/'+value);
   if(path.toLowerCase().endsWith('/web-profile.json'))throw Error('此文件属于浏览器内部记录');return path;
 }
-function importedFile(path,bytes){
-  if(path.toLowerCase().endsWith('.rpy')){parseReplay(bytes);return;}
+async function importedFile(path,bytes,api){
+  if(path.toLowerCase().endsWith('.rpy')){await api.validateReplay(bytes);return;}
   validateNativeProfile(path,bytes);
 }
 export function managedCommandHandler(api){
@@ -44,7 +47,11 @@ export function managedCommandHandler(api){
       await api.resources(resources);await api.configure({options,music:message.music,language,runtimePack:message.runtimePack??null});configured=true;return {};
     }
     case 'resources':await api.resources(message.resources);return {};
-    case 'launch':if(!configured)throw Error('请先配置游戏');if(api.running())throw Error('游戏已启动');await api.launch();return {};
+    case 'prepare-room':if(!configured)throw Error('请先配置游戏');return api.prepareRoom();
+    case 'return-room':return api.returnRoom();
+    case 'spectator-playback':return api.spectatorPlayback(message);
+    case 'network-cancel':return api.returnRoom();
+    case 'launch':if(!configured)throw Error('请先配置游戏');if(api.running())throw Error('游戏已启动');await api.launch(message);return {};
     case 'keyboard':if(typeof message.code!=='string'||typeof message.down!=='boolean')throw Error('键盘输入无效');api.key(message.code,message.down,message);return {};
     case 'keyboard-clear':api.clearKeyboard();return {};
     case 'touch-cancel':api.cancelTouch();return {};
@@ -74,7 +81,7 @@ export function managedCommandHandler(api){
       const path=savePath(message.path);
       if(api.running()&&!(api.replayViewer?.()&&path.toLowerCase().endsWith('.rpy')))throw Error('请先退出游戏再导入文件');
       if(!Array.isArray(message.bytes)||!message.bytes.length||message.bytes.length>64*1024*1024||message.bytes.some(byte=>!Number.isInteger(byte)||byte<0||byte>255))throw Error('文件大小或字节无效');
-      const bytes=new Uint8Array(message.bytes);importedFile(path,bytes);await api.store.write(path,bytes);await api.store.sync();return {};
+      const bytes=new Uint8Array(message.bytes);await importedFile(path,bytes,api);await api.store.write(path,bytes);await api.store.sync();return {};
     }
     case 'remove':{const path=savePath(message.path);if(api.running()&&!(api.replayViewer?.()&&path.toLowerCase().endsWith('.rpy')))throw Error('请先退出游戏再删除文件');await api.store.remove(path);await api.store.sync();return {};}
     case 'sync':await api.sync();return {};
@@ -91,6 +98,9 @@ export function installManagedShell(api,environment=window,{announceReady=true}=
   environment.addEventListener('message',event=>{
     const message=event.data;
     if(event.source!==environment.parent||event.origin!==environment.location.origin||message?.protocol!=='eagler-touhou/1'||message.game!=='th12'||message.epoch!==epoch||typeof message.command!=='string')return;
+    if(['keyboard','keyboard-clear','touch-controls','touch-cancel','direct-touch'].includes(message.command)){
+      Promise.resolve().then(()=>command(message)).then(result=>{if(typeof message.request==='string')emit({request:message.request,ok:true,...result});}).catch(error=>emit({event:'error',message:error.message}));return;
+    }
     queue=queue.then(async()=>{try{if(!announced)throw Error('运行资源尚未准备');const result=await command(message);if(typeof message.request==='string')emit({request:message.request,ok:true,...result});}catch(error){if(typeof message.request==='string')emit({request:message.request,ok:false,error:error.message});else emit({event:'error',message:error.message});}});
   });
   emit.ready=()=>{if(announced)return;announced=true;emit({event:'ready',saveRoot:'/savesth12'});};

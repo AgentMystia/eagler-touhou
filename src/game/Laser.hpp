@@ -161,6 +161,9 @@ public:
 };
 class Manager {
 public:
+  Manager() = default;
+  Manager(const Manager&);
+  Manager& operator=(const Manager&);
   int spawn(Kind, const Parameters&, World&);
   void tick(World&);
   Laser* find(int);

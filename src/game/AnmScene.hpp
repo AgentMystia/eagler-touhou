@@ -6,6 +6,7 @@ namespace th12::anm_logic {
 enum class Membership { Embedded, Primary, Secondary };
 struct Node {
   uint32_t id = 0, owner = 0, parent = 0;
+  unsigned seat = 0;
   uint64_t key = 0;
   Membership membership = Membership::Primary;
   VM vm;
@@ -29,6 +30,9 @@ class Scene {
   void traverse(std::list<std::shared_ptr<Node>>& list);
 
 public:
+  Scene() = default;
+  Scene(const Scene&);
+  Scene& operator=(const Scene&);
   Registry registry;
   Runtime runtime;
   void reset();

@@ -55,8 +55,8 @@ export class TitleScenes {
   }
   userReplays() {return this.corpus.filter(r=>r.provenance!=='built-in-demo'&&!/^demo\d+\.rpy$/.test(r.id||''));}
   replaySlots(){
-    const files=this.userReplays(),slots=Array.from({length:25},(_,i)=>files.find(r=>r.id===`th12_${String(i+1).padStart(2,'0')}.rpy`)??null);
-    const imported=files.filter(r=>!/^th12_\d\d\.rpy$/i.test(r.id||''));
+    const files=this.userReplays(),slots=Array.from({length:25},(_,i)=>files.find(r=>r.id===`th12_mp_${String(i+1).padStart(2,'0')}.rpy`)??null);
+    const imported=files.filter(r=>!/^th12_mp_\d\d\.rpy$/i.test(r.id||''));
     return slots.concat(Array.from({length:50},(_,i)=>imported[i]??null));
   }
   refreshChoices() {
@@ -78,7 +78,7 @@ export class TitleScenes {
       case 'pause':s.choices=[choice('Return to Game','resume'),choice('Return to Title','title'),...(s.context?.mode==='replay'?[choice('Replay Again','replay-again')]:[choice('Save Replay and Quit','save-exit',s.context?.canSaveReplay===false),choice('Retry','retry')])];break;
       case 'pause-confirm':s.choices=[choice('Yes','yes'),choice('No','no')];break;
       case 'continue':s.choices=[choice('Continue','continue',s.context?.canContinue===false),choice('Return to Title','title'),choice('Save Replay','save-exit',s.context?.canSaveReplay===false),choice('Retry','retry')];break;
-      case 'result-menu':s.choices=[choice('Return to Title','title'),choice('Save Replay','save-exit',s.context?.canSaveReplay===false),choice('Retry','retry')];break;
+      case 'result-menu':s.choices=[choice('Return to Title','title'),choice('Save Replay','save-exit',s.context?.canSaveReplay===false),choice('Retry','retry',s.context?.mode==='multiplayer')];break;
       case 'result':s.choices=[choice('Next','next')];break;
       case 'name':s.choices=s.ranked===false?[choice('Next','end')]:[...NAME_CHARACTERS].map((v,i)=>choice(v,i)).concat([choice('Space','space'),choice('Delete','delete'),choice('End','end')]);break;
       case 'replay-save':s.choices=Array.from({length:25},(_,i)=>choice(`No.${String(i+1).padStart(2,'0')}`,i+1));break;
@@ -154,6 +154,13 @@ export class TitleScenes {
     this.enter('result-menu',0,{context:result,result,failed:!result.clear,nameContext,
       readyAt:fromName?0:11,phase:fromName?'active':'in'});
     if(fromName)this.state.events.push({type:'selection',previous:0,selection:0,resetInterrupt:3,selectionInterrupt:7});
+  }
+  finishMultiplayer(result){
+    this.emit('stopEffects');this.emit('menuMusic',{track:'th10_17',restart:true});
+    const ranking=this.scoreRanking(result);
+    this.enter('name',ranking.ranked?90:0,{result,name:String(this.profile.data?.lastName||'').slice(0,8),nameKind:'score',
+      nameContext:'pause',afterName:'result-menu',context:result,revealAt:10,readyAt:21,...ranking});
+    this.emit('result',{result,needsName:ranking.ranked,nameContext:'pause',afterName:'result-menu'});
   }
   scoreRanking(result,eligible=true){
     const rows=(this.profile.rankings?.(result.character,result.shot,result.difficulty)??[]).slice(0,10);

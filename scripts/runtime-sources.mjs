@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export function runtimeSources(root) {
-  return ['src/core.cpp', ...['src/game', 'src/wasm'].flatMap(folder =>
+  return ['src/core.cpp', ...['src/game', 'src/wasm', 'src/multiplayer'].flatMap(folder =>
     fs.readdirSync(path.join(root, folder)).filter(name => name.endsWith('.cpp'))
       .sort().map(name => folder + '/' + name))];
 }

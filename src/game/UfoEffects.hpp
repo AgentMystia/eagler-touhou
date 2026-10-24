@@ -30,6 +30,9 @@ class UfoEffects {
   bool tick(anm_logic::Scene&, UfoEffectState&);
 
 public:
+  UfoEffects() = default;
+  UfoEffects(const UfoEffects&);
+  UfoEffects& operator=(const UfoEffects&);
   // Reset after the owning Scene is reset, so no old callbacks remain alive.
   void reset();
   void summon(anm_logic::Scene&, float worldX, float worldY, float worldZ = 0);

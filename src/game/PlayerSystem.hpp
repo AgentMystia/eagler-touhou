@@ -2,7 +2,7 @@
 #include "GameTypes.hpp"
 
 namespace th12 {
-extern bool playerFocused; // Native Player+c598, distinct from the raw held key.
+
 bool movementFocus(int held, int totalAge, bool liveEnemies);
 // Original436ba0 clear calls, in their CPU/RNG order. Kind0/1 is Bullet/Laser
 // circle; kind2/3 is Bullet/Laser full clear. Protection means skip/force.

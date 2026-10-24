@@ -99,7 +99,7 @@ bool resolveEnemyInterrupt(Enemy& e, bool executeScript = true) {
   else
     e.flags &= ~0x800000u;
   if (timeout)
-    spellState.onTimeout(playerBomb.active);
+    spellState.onTimeout(multiplayer::anyBomb());
   if (executeScript)
     resetPhase(e, next);
   else {
@@ -122,11 +122,11 @@ void finishEnemyUpdate(Enemy& e) {
   // gate. Enter/leave after ECL, before callbacks and the damage scan.
   // Send the existing slot0 VM an IRQ; do not recreate its ANM or consume RNG.
   if (e.flags & 0x8000000u) {
-    if (playerBomb.active && !(e.flags & 0x10000000u)) {
+    if (multiplayer::anyBomb() && !(e.flags & 0x10000000u)) {
       e.animation = e.bombAnimation;
       animationScene.interrupt(enemyAnimationKey(e.id, 0), e.animation);
       e.flags |= 0x10000001u;
-    } else if (!playerBomb.active && (e.flags & 0x10000000u)) {
+    } else if (!multiplayer::anyBomb() && (e.flags & 0x10000000u)) {
       e.animation = e.bombSavedAnimation;
       animationScene.interrupt(enemyAnimationKey(e.id, 0), e.animation);
       e.flags &= ~0x10000001u;
@@ -143,7 +143,7 @@ void finishEnemyUpdate(Enemy& e) {
   // though the later shield gate prevents HP loss. Shot impact callbacks run.
   if ((e.flags & 0x400000u) && !(e.flags & 0x20u)) {
     const bool shield = spellState.active() && spellState.cardId >= 103 &&
-                        spellState.cardId <= 112 && playerBomb.active && !(playerFlags & 4u);
+                        spellState.cardId <= 112 && multiplayer::anyBomb() && !(pilot().playerFlags & 4u);
     if (shield) {
       if (!e.extraBombShieldAnimation || !animationScene.find(e.extraBombShieldAnimation))
         e.extraBombShieldAnimation = bindScreenAnimation(2, 50, 10);
@@ -162,19 +162,17 @@ void finishEnemyUpdate(Enemy& e) {
     int damage = customEnemyDamage(e);
     if (dialogue)
       damage = 0; // Native413db9 still runs the query and impact callbacks first.
-    if (playerState == 0 || playerState == 2)
-      damage /= 5;
-    if (spellState.active() && spellState.cardId >= 93 && spellState.cardId <= 99 &&
-        (playerBomb.active || invuln || (playerFlags & 2u)) && !(playerFlags & 4u))
-      damage /= 5;
+
+
     const bool spellShield = spellState.active() && spellState.cardId >= 103 &&
-                             spellState.cardId <= 112 && playerBomb.active &&
-                             (e.flags & 0x400000u) && !(playerFlags & 4u);
+                             spellState.cardId <= 112 && multiplayer::anyBomb() &&
+                             (e.flags & 0x400000u) && !(pilot().playerFlags & 4u);
     // Native413e5a tests positive damage before PendingBomb's division.
     // Even a result truncated to0 still takes the first interrupt path.
     const bool hurtQuery = !spellShield && damage > 0;
     if (spellState.pendingBomb())
       damage /= 30;
+    damage = multiplayer::bossDamage(e,damage);
     if (hurtQuery) {
       if (!(e.flags & 0x10u) && !e.immunityTicks && !practice::tool(practice::EnemyInvulnerable)) {
         enemy_life::hurt(e.life, e.lifeRaw, e.lifeThreshold, e.lifeFlags, damage);
@@ -207,7 +205,7 @@ void finishEnemyUpdate(Enemy& e) {
     return;
   if (!(oracleFixtureFlags & 2) && e.active && !(e.flags & (2 | 32 | 0x2000000)) &&
       !e.bodyImmunityTicks) {
-    customEnemyCollision(e);
+    multiplayer::enemyCollision(e);
   }
   synchronizeEnemyAnimations(e);
   synchronizeEnemyHitPresentation(e);
@@ -264,7 +262,6 @@ Enemy* spawn(const std::string& sub, float x, float y, int life, int points, int
   auto p = std::make_unique<Enemy>();
   // Binding needs a unique owner while native+27b4 is not assigned yet.
   // This counter never consumes the gameplay ID sequence.
-  static u32 temporaryEnemyOwner = 0x7fffffffu;
   p->id = temporaryEnemyOwner--;
   p->x = x;
   p->y = y;
@@ -343,7 +340,10 @@ void resetPhase(Enemy& e, const std::string& sub) {
 void dropItems(Enemy& e) {
   const auto ordinary = [](float x, float y, int type, int source) {
     if (type >= 1 && type <= 18)
-      itemManager.spawn(type, {x, y});
+      {
+        const unsigned copies=(type==1||type==3)?multiplayer::options.count:(type==6||type==7)?std::max(1u,multiplayer::options.count-1):1u;
+        for(unsigned n=0;n<copies;++n)itemManager.spawn(type,{x+(float(n)-float(copies-1)*.5f)*8,y});
+      }
     else if (type != 0)
       unsupported[source]++;
   };
@@ -373,7 +373,7 @@ void drop(Enemy& e) {
     // 44af22 reads Enemy+1074 after this Enemy18 movement/hurt query. The
     // UFO19 cached pose is still the preceding frame at this callback.
     ufoManager.position = {e.x, e.y};
-    applyUfoPlan(ufoManager.finish(e.id, resources, e.deathReason));
+    applyUfoPlan(ufoManager.finish(e.id, pilot().resources, e.deathReason));
     ufoManager.notifyEnemyRemoved(e.id, e.deathReason == ufo_system::DeathReason::Dialogue
                                             ? ufo_system::RemovalReason::Dialogue
                                             : ufo_system::RemovalReason::Defeated);

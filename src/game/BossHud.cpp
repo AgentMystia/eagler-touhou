@@ -53,7 +53,7 @@ void tickBossHud() {
     animationScene.position(indicatorKey, float(double(boss->x) + 224.), 480);
     if (auto* node = animationScene.find(indicatorKey)) {
       auto& state = node->vm.control();
-      const float distance = std::abs(float(double(boss->x) - px / 128.f));
+      const float distance = std::abs(float(double(boss->x) - pilot().px / 128.f));
       const uint32_t alpha = boss->x < -192 || boss->x > 192 ? 0u
                              : distance >= 64 ? 255u
                                               : uint32_t(64 - int(double(distance) * -191. / 64.));
@@ -98,7 +98,7 @@ void tickBossHud() {
     if (bossHud.fill > bossHud.target)
       bossHud.fill = bossHud.target;
     const bool moved =
-        bossHud.shifted ? (py / 128.f >= 80 || px > 0) : (py / 128.f <= 64 && px / 128.f < -64);
+        bossHud.shifted ? (pilot().py / 128.f >= 80 || pilot().px > 0) : (pilot().py / 128.f <= 64 && pilot().px / 128.f < -64);
     if (moved) {
       const int interrupt = bossHud.shifted ? 2 : 3;
       for (int i = 0; i < bossHud.remaining && i < 10; ++i)

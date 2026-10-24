@@ -104,6 +104,7 @@ struct BulletWorld : eb::World {
     case eb::AnimationEvent::Retire:
       animationScene.remove(root);
       releaseHostileBullet(state.id);
+      multiplayer::bulletGrazeMasks.erase(state.id);
       return false;
     case eb::AnimationEvent::CancelEffect: {
       const u32 serial = nextDetachedAnimation++;
@@ -132,15 +133,16 @@ struct BulletWorld : eb::World {
   eb::Collision playerCollision(eb::State& state) override {
     if (oracleFixtureFlags & 2)
       return eb::Collision::None;
-    const auto result = eb::collide(state, px / 128.f, py / 128.f, eb::playerHitboxes[character]);
+    if(multiplayer::active) return multiplayer::bulletCollision(state);
+    const auto result = eb::collide(state, pilot().px / 128.f, pilot().py / 128.f, eb::playerHitboxes[pilot().character]);
     // Native437810's outer graze branch precedes every state/dialogue gate.
     if (result == eb::Collision::Graze && !state.grazed) {
-      awardPlayerGraze(px / 128.f, py / 128.f);
+      awardPlayerGraze(pilot().px / 128.f, pilot().py / 128.f);
       state.grazed = true;
     }
     if (result != eb::Collision::Hit)
       return result;
-    if (dialogue || playerState == 2 || playerState == 3 || playerState == 4 || (playerFlags & 2u))
+    if (dialogue || pilot().playerState == 2 || pilot().playerState == 3 || pilot().playerState == 4 || (pilot().playerFlags & 2u))
       return eb::Collision::None;
     // Invulnerability suppresses438370, while437810 still returnsHit and
     // 4099e0 consumes the projectile. The miss effects precede its IRQ1.
@@ -338,8 +340,8 @@ void cancelHostileRectangle(float x, float y, float width, float height, bool co
 }
 
 void tickBullets() {
-  bulletWorld.playerX = px / 128.f;
-  bulletWorld.playerY = py / 128.f;
+  bulletWorld.playerX = pilot().px / 128.f;
+  bulletWorld.playerY = pilot().py / 128.f;
   for (size_t slot = 0; slot < hostileSlots.size(); ++slot) {
     auto* pointer = hostileSlots[slot];
     if (!pointer || !pointer->active)

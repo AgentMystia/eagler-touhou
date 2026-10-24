@@ -60,6 +60,7 @@ void captureCustomGeometry() {
                                 anm_logic::Membership::Embedded})
     for (const auto* pointer : animationScene.chain(membership)) {
       const auto& node = *pointer;
+      multiplayer::Scope owner(node.seat);
       if (node.customGeometry && ufoEffects.owns(node.id)) {
         append(ufoEffects.draw(node), node);
         continue;
@@ -70,7 +71,7 @@ void captureCustomGeometry() {
             append(stageBackgroundEffect.draw(int(column), node.vm.state()), node);
             break;
           }
-        for (const auto& leaf : playerBomb.leaves)
+        for (const auto& leaf : pilot().playerBomb.leaves)
           if (node.key == 0x600000000ull + leaf.id) {
             append(custom_geometry::sanaeBLeaf(leaf, node.vm.state()), node);
             break;

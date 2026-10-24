@@ -147,7 +147,7 @@ void Manager::tick(const FrameView& frame, const EventSink& sink) {
       sink(event);
   };
   const float rate = frame.rate;
-  const auto& p = frame.player;
+  PlayerView p = frame.player;
   const auto move = [&](Entity& e) {
     e.position.x = add(e.position.x, float(double(e.velocity.x) * rate));
     e.position.y = add(e.position.y, float(double(e.velocity.y) * rate));
@@ -187,6 +187,7 @@ void Manager::tick(const FrameView& frame, const EventSink& sink) {
   for (auto& e : entities) {
     if (!e.active())
       continue;
+    if (frame.selectPlayer) frame.selectPlayer(e, p);
     if (e.state == State::DelayedPoint) {
       if (--e.delay < 0) {
         e.state = State::Automatic;

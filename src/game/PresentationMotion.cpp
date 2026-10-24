@@ -24,8 +24,8 @@ void lineage(std::ostream& out,const anm_logic::Node& node,int depth=0){
 const std::string& capturePresentationMotion(){
   std::ostringstream out;out<<std::setprecision(9);
   out<<"{\"version\":1,\"epoch\":"<<presentation::epoch<<",\"frame\":"<<frame
-     <<",\"playerState\":"<<playerState<<",\"focusId\":";
-  const auto* focus=animationScene.find(playerFocusAnimation);
+     <<",\"playerState\":"<<pilot().playerState<<",\"focusId\":";
+  const auto* focus=animationScene.find(pilot().playerFocusAnimation);
   out<<(focus?focus->id:0)<<",\"backgroundRevision\":"<<stageState.presentationRevision
      <<",\"owners\":[";
   bool comma=false;
@@ -35,7 +35,7 @@ const std::string& capturePresentationMotion(){
     if(comma)out<<',';comma=true;
     out<<"{\"id\":"<<id<<",\"revision\":"<<revision<<",\"position\":["<<x<<','<<y<<','<<z<<"],\"kind\":\""<<kind<<"\"}";
   };
-  owner(0xffff0000u,px/128.f+224,py/128.f+16,0,presentation::revision(0xffff0000u)*8u+uint32_t(playerState),"player");
+  owner(0xffff0000u,pilot().px/128.f+224,pilot().py/128.f+16,0,presentation::revision(0xffff0000u)*8u+uint32_t(pilot().playerState),"player");
   for(const auto& pointer:enemies){const auto& e=*pointer;if(e.active)
     owner(e.id,e.x+224,e.y+16,e.z,presentation::revision(e.id)+
       (e.isUfo?presentation::revision(0xfffd0001u)+presentation::revision(0xfffd0003u):0),"enemy");}
@@ -46,7 +46,7 @@ const std::string& capturePresentationMotion(){
   for(const auto& item:itemManager.entities)if(item.active())
     owner(0x20000000u+item.id,item.position.x+224,item.position.y+16,0,
       (presentation::revision(0x20000000u+item.id)+presentation::revision(0x30000000u+item.id)+presentation::revision(0x40000000u+item.id))*16u+uint32_t(item.state),"item");
-  for(const auto& visual:playerBomb.visuals)if(visual.active){
+  for(const auto& visual:pilot().playerBomb.visuals)if(visual.active){
     const bool sweep=visual.bank==1&&visual.script==24;
     owner(0x50000000u+visual.id,sweep?0:visual.x+224,sweep?0:visual.y+16,0,uint32_t(visual.interrupt),"bomb");
   }
@@ -83,7 +83,7 @@ const std::string& capturePresentationMotion(){
       else if((node.owner>>28)==0xbu)meshKind="laser";
       else if(s.mode==9)meshKind="spell-ring";
       else if(s.mode==13)meshKind="ufo-fill";
-      else for(const auto& leaf:playerBomb.leaves)if(node.key==0x600000000ull+leaf.id){meshKind="leaf";break;}
+      else for(const auto& leaf:pilot().playerBomb.leaves)if(node.key==0x600000000ull+leaf.id){meshKind="leaf";break;}
       out<<"{\"id\":"<<node.id<<",\"owner\":"<<node.owner<<",\"motionOwner\":"<<motionOwner
          <<",\"parent\":"<<node.parent<<",\"lineage\":[";lineage(out,node);
       out<<"],\"local\":["<<s.x+s.offsetX<<','<<s.y+s.offsetY<<','<<s.z+s.offsetZ
@@ -121,19 +121,19 @@ const std::array<uint32_t,17>& capturePresentationMotionBinary(){
   static std::vector<uint32_t> lineages;
   static std::array<uint32_t,17> header;
   owners.clear();nodes.clear();lasers.clear();lineages.clear();
-  const auto* focus=animationScene.find(playerFocusAnimation);
+  const auto* focus=animationScene.find(pilot().playerFocusAnimation);
   std::unordered_set<uint32_t> seen;
   const auto owner=[&](uint32_t id,float x,float y,float z,uint32_t revision,uint32_t kind){
     if(seen.insert(id).second)owners.push_back({id,revision,kind,{x,y,z}});
   };
-  owner(0xffff0000u,px/128.f+224,py/128.f+16,0,presentation::revision(0xffff0000u)*8u+uint32_t(playerState),0);
+  owner(0xffff0000u,pilot().px/128.f+224,pilot().py/128.f+16,0,presentation::revision(0xffff0000u)*8u+uint32_t(pilot().playerState),0);
   for(const auto& pointer:enemies){const auto& e=*pointer;if(e.active)
     owner(e.id,e.x+224,e.y+16,e.z,presentation::revision(e.id)+(e.isUfo?presentation::revision(0xfffd0001u)+presentation::revision(0xfffd0003u):0),1);}
   for(const auto& b:bullets)if(b.active)
     owner(0x10000000u+b.entityId,b.x+224,b.y+16,0,presentation::revision(0x10000000u+b.entityId)*16u+(b.friendly?uint32_t(b.weapon.phase):uint32_t(b.enemy.phase)),2);
   for(const auto& item:itemManager.entities)if(item.active())
     owner(0x20000000u+item.id,item.position.x+224,item.position.y+16,0,(presentation::revision(0x20000000u+item.id)+presentation::revision(0x30000000u+item.id)+presentation::revision(0x40000000u+item.id))*16u+uint32_t(item.state),3);
-  for(const auto& visual:playerBomb.visuals)if(visual.active){
+  for(const auto& visual:pilot().playerBomb.visuals)if(visual.active){
     const bool sweep=visual.bank==1&&visual.script==24;
     owner(0x50000000u+visual.id,sweep?0:visual.x+224,sweep?0:visual.y+16,0,uint32_t(visual.interrupt),4);
   }
@@ -157,7 +157,7 @@ const std::array<uint32_t,17>& capturePresentationMotionBinary(){
       else if(const auto* effect=ufoEffects.state(n.id))meshKind=effect->kind==UfoEffectKind::Trail?2:3;
       else if((n.owner>>28)==0xbu)meshKind=4;
       else if(s.mode==9)meshKind=5;else if(s.mode==13)meshKind=6;
-      else for(const auto& leaf:playerBomb.leaves)if(n.key==0x600000000ull+leaf.id){meshKind=7;break;}
+      else for(const auto& leaf:pilot().playerBomb.leaves)if(n.key==0x600000000ull+leaf.id){meshKind=7;break;}
       const uint32_t offset=lineages.size();const auto* a=&n;
       for(int depth=0;a&&depth<=16;++depth){lineages.push_back(a->id);lineages.push_back(a->vm.presentationRevision());const auto at=animationScene.nodes().find(a->parent);a=at==animationScene.nodes().end()?nullptr:at->second.get();}
       nodes.push_back({n.id,n.owner,motionOwner,n.parent,{s.x+s.offsetX,s.y+s.offsetY,s.z+s.offsetZ},{s.engineX,s.engineY,s.engineZ},continuousFields(n),s.flags,
@@ -168,7 +168,7 @@ const std::array<uint32_t,17>& capturePresentationMotionBinary(){
     if(s.kind==laser::Kind::Timed&&(s.parameters.flags&1))if(const auto* boss=primaryBoss()){followOwner=boss->id;followRevision=presentation::revision(boss->id);}
     lasers.push_back({0xb0000000u+s.serialId,presentation::revision(0xb0000000u+s.serialId),s.presentationTopology,uint32_t(s.kind),uint32_t(s.phase),uint32_t(s.cursor),uint32_t(s.nodes.size()),followOwner,followRevision,s.age.value});
   }
-  header={2,presentation::epoch,uint32_t(frame),uint32_t(playerState),focus?focus->id:0,stageState.presentationRevision,
+  header={2,presentation::epoch,uint32_t(frame),uint32_t(pilot().playerState),focus?focus->id:0,stageState.presentationRevision,
     uint32_t(reinterpret_cast<uintptr_t>(owners.data())),uint32_t(owners.size()),sizeof(Owner),uint32_t(reinterpret_cast<uintptr_t>(nodes.data())),uint32_t(nodes.size()),sizeof(Node),
     uint32_t(reinterpret_cast<uintptr_t>(lasers.data())),uint32_t(lasers.size()),sizeof(Laser),uint32_t(reinterpret_cast<uintptr_t>(lineages.data())),uint32_t(lineages.size())};
   return header;

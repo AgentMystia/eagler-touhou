@@ -247,12 +247,12 @@ void beforeTick(int& held,int& pressed){
   if (profileEnabled&&!playback) {
     applyToolInput(held,pressed);
     if (toolFlags&447u) modified=true;
-    if (tool(AutoBomb)&&playerState==4&&playerStateTicks<8&&bombs>0) {held|=2;pressed|=2;}
+    if (tool(AutoBomb)&&pilot().playerState==4&&pilot().playerStateTicks<8&&pilot().resources.bombs>0) {held|=2;pressed|=2;}
   }
   resolved_input[0]=held;resolved_input[1]=pressed;
 }
 const int32_t* resolvedInput(){return resolved_input;}
-void afterTick(){recordToolTick(previousHeld);}
+void afterTick(){recordToolTick(pilot().previousHeld);}
 const TrackerInfo& trackerInfo(){return tracker;}
 #if defined(TH12_ENABLE_THPRAC) && TH12_ENABLE_THPRAC
 eagler::thprac::PracticeSpeed& speedSettings(){return speed;}

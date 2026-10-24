@@ -4,6 +4,13 @@
 
 namespace th12 {
 UfoEffects ufoEffects;
+UfoEffects::UfoEffects(const UfoEffects& other) { *this = other; }
+UfoEffects& UfoEffects::operator=(const UfoEffects& other) {
+  if (this == &other) return *this;
+  serial_ = other.serial_; states_.clear();
+  for (const auto& [id, state] : other.states_) states_[id] = std::make_shared<UfoEffectState>(*state);
+  return *this;
+}
 namespace {
 constexpr uint64_t EffectKeyBase = 0x7900000000000000ull;
 constexpr float Pi = 3.1415927410125732f, Tau = 6.2831854820251465f;
@@ -69,10 +76,12 @@ anm_logic::Node* UfoEffects::bind(anm_logic::Scene& scene,
   node->customGeometry = true;
   effect->nodeId = node->id;
   states_[node->id] = effect;
-  node->beforeTick = [this, &scene, effect] {
-    const bool ended = tick(scene, *effect);
-    if (ended)
-      states_.erase(effect->nodeId);
+  node->beforeTick = [this, &scene, id = node->id] {
+    const auto found = states_.find(id);
+    if (found == states_.end()) return true;
+    const auto state = found->second;
+    const bool ended = tick(scene, *state);
+    if (ended) states_.erase(id);
     return ended;
   };
   return node;

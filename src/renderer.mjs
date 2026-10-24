@@ -452,7 +452,7 @@ export class Renderer {
     for(const text of fpsTextDescriptors(fps))poses.push({nativeText:text,drawPriority:text.drawPriority,clip:0,order:poses.length});
     if(fps.stageClear){const text=stageClearText(h,logicalPoses,fps.practice);if(text)poses.push({nativeText:text,drawPriority:69,clip:0,order:poses.length});}
     const transition=stageTransitionPose(logicalBackground?.transition);if(transition)poses.push(transition);
-    const add=(name,id,age,x,y,angle,scale,variant,options)=>{const {alpha,drawPriority,clipped,...sampling}=options,owner=Number.isInteger(sampling.entityId)?sampling.entityId:0;let child=0;for(const a of this.animations.sampleAll(name,id,age,variant,sampling))poses.push({a,x,y,angle,scale,alpha,drawPriority,clipped,owner,presentationKey:owner?'sample:'+owner+':'+id+':'+child++:undefined,order:poses.length});};
+    const add=(name,id,age,x,y,angle,scale,variant,options)=>{const {alpha,drawPriority,clipped,...sampling}=options,owner=Number.isInteger(sampling.entityId)?sampling.entityId:0;let child=0;for(const a of this.animations.sampleAll(name,id,age,variant,sampling)){if(fps.multiplayer&&name==='front'&&id===0&&a.script>=8&&a.script<=12)continue;poses.push({a,x,y,angle,scale,alpha,drawPriority,clipped,owner,presentationKey:owner?'sample:'+owner+':'+id+':'+child++:undefined,order:poses.length});}};
     for(let i=0;i<count;i++){
       const k=i*stride,x=f[k],y=f[k+1],angle=f[k+2],scale=f[k+3],animation=v[k+5],kind=v[k+6],color=v[k+7],age=v[k+8],entityId=stride>=12?v[k+9]>>>0:0,interrupt=stride>=12?v[k+10]:0,alpha=stride>=12?f[k+11]:1;
       records.push({x,y,owner:entityId,bank:v[k+4],animation,kind,color,age,interrupt});
@@ -461,8 +461,8 @@ export class Renderer {
       const options={entityId,seed:entityId?entityId&65535:0x1234,alpha,...(interrupt?{interrupt}: {}),...(kind===1?{drawPriority:31,clipped:true}:kind===3?{drawPriority:27,clipped:true}:kind===4?{drawPriority:24,clipped:true}:{})};
       if(kind===12)poses.push({a:{layer:12},x,y,angle,scale,width:alpha,start:color>>>0,end:animation>>>0,beamTrail:true,order:poses.length});
       else if(kind===13)poses.push({a:{layer:13},x,y,angle,scale,alpha:1,start:color>>>0,end:animation>>>0,trail:true,order:poses.length});
-      else if(kind===4||kind===5||kind===2||kind===7)add(player,animation,age,x,y,angle,scale,null,options);
-      else if(kind===6){const {alpha:opacity,...sampling}=options,a=this.animations.sample(player,animation,age,null,sampling);if(a)poses.push({a,x,y,angle,scale,alpha:opacity,beam:true,owner:entityId,presentationKey:'beam:'+entityId,order:poses.length});}
+      else if(kind===4||kind===5||kind===2||kind===7)add(v[k+4]>=4?'pl0'+(v[k+4]-4):player,animation,age,x,y,angle,scale,null,options);
+      else if(kind===6){const {alpha:opacity,...sampling}=options,a=this.animations.sample(v[k+4]>=4?'pl0'+(v[k+4]-4):player,animation,age,null,sampling);if(a)poses.push({a,x,y,angle,scale,alpha:opacity,beam:true,owner:entityId,presentationKey:'beam:'+entityId,order:poses.length});}
       else if(kind===1){const type=this.atlases.bullet.types?.[Math.floor(color/16)],variant=type?.colors[color%16];if(type)add('bullet',stride>=12?animation:type.script,age,x,y,angle,scale,variant,options);}
       else if(kind===3)add('bullet',animation>=165?animation:166+color,age,x,y,angle,scale,null,options);
       else {const bank=v[k+4],name=bank===0?'bullet':bank===1?'enemy':bank===2?'stgenm'+stageSuffix:bank===3?'stgenm'+stageSuffix+'m':null;if(name&&this.atlases[name])add(name,animation,age,x,y,angle,scale,null,options);}
@@ -478,13 +478,40 @@ export class Renderer {
     //41d560 reinitializes stage HUD slots, but the front0 frame survives.
     add('front',0,fps.hudAge??frame,0,0,0,1,null,{alpha:1,clipped:false});
     for(const rectangle of bossHealthRectangles(bossHud))poses.push({rectangle,drawPriority:44,clip:2,order:poses.length});
-    poses.push({hudCounters:true,drawPriority:69,clipped:false,order:poses.length});
-    for(let i=0;i<8;i++){add('front',13+i,frame,0,0,0,1,null,{alpha:1,drawPriority:59,clipped:false,interrupt:fragmentInterrupt(i,h[5],h[21])});add('front',21+i,frame,0,0,0,1,null,{alpha:1,drawPriority:59,clipped:false,interrupt:fragmentInterrupt(i,h[6],h[22])});}
+    if(fps.multiplayer){
+      const text=(value,x,y,font=2,alignX=1)=>poses.push({nativeText:{text:value,x,y,font,alignX},drawPriority:69,clip:0,order:poses.length});
+      text(groupedNumber(h[3]),620,72,3,2);text(groupedNumber(h[40]??h[3]),620,48,3,2);
+      for(const p of fps.multiplayer.players){
+        const y=104+p.seat*80;
+        text((p.seat===fps.localSeat?'* ':'')+(p.seat+1)+'P'+(p.ghost?' GHOST':''),428,y-14,1);
+        for(const [script,dy]of [[8,y-102],[10,y+24-126],[9,y+48-150]])add('front',script,frame,0,dy,0,1,null,{alpha:p.ghost ? .55 : 1,drawPriority:59,clipped:false,entityId:'label-'+p.seat+'-'+script});
+        for(let i=0;i<8;i++){
+          add('front',13+i,frame,0,y-102,0,1,null,{alpha:p.ghost ? .55 : 1,drawPriority:59,clipped:false,interrupt:fragmentInterrupt(i,Math.max(0,p.lives),p.lifeFragments),entityId:'life-'+p.seat+'-'+i});
+          add('front',21+i,frame,0,y+24-126,0,1,null,{alpha:p.ghost ? .55 : 1,drawPriority:59,clipped:false,interrupt:fragmentInterrupt(i,p.bombs,p.bombFragments),entityId:'bomb-'+p.seat+'-'+i});
+        }
+        text((p.power/100).toFixed(2)+' / '+(p.maxPower/100).toFixed(2),620,y+50,2,2);
+        const transfer=p.lifeTaps>=3?'L '+p.lifeTaps+'/5':p.powerTaps>=3?'P '+p.powerTaps+'/5':null;
+        if(transfer)poses.push({nativeText:{text:transfer,x:p.x+224,y:p.y,alignX:0,font:2},drawPriority:45,clip:2,order:poses.length});
+      }
+      const local=fps.multiplayer.players.find(p=>p.seat===fps.localSeat)??fps.multiplayer.players[0],base=104+fps.multiplayer.players.length*80;
+      add('front',12,frame,0,base-174,0,1,null,{alpha:1,drawPriority:59,clipped:false});text(groupedNumber(Math.floor(local.pointValue/100/10)*10),620,base+2,3,2);
+      add('front',11,frame,0,base+24-198,0,1,null,{alpha:1,drawPriority:59,clipped:false});text(groupedNumber(local.graze),620,base+26,3,2);
+    }else{
+      poses.push({hudCounters:true,drawPriority:69,clipped:false,order:poses.length});
+      for(let i=0;i<8;i++){add('front',13+i,frame,0,0,0,1,null,{alpha:1,drawPriority:59,clipped:false,interrupt:fragmentInterrupt(i,h[5],h[21])});add('front',21+i,frame,0,0,0,1,null,{alpha:1,drawPriority:59,clipped:false,interrupt:fragmentInterrupt(i,h[6],h[22])});}
+    }
     if(h.length>25&&!logicalPoses.some(p=>p.a.name==='front'&&(p.owner>>>16)===0xfffe))for(let i=0;i<3;i++){const color=h[23+i]|0;add('front',80,frame,0,0,0,1,null,{alpha:1,drawPriority:44,clipped:true,interrupts:[7+i,color?9+color:13,color?2:3]});}
     add('front',69+h[19],frame,0,0,0,1,null,{alpha:1,clipped:false});
     const nativeMotion=fps.presentationContinuity===false?null:readCorePresentationMotion(core),playerState=core._th12_player_state?.()??nativeMotion?.playerState;
-    if(fps.alwaysHitbox&&playerState===1&&!logicalPoses.some(p=>p.owner===0xffff0020)){
-      poses.push(...alwaysHitboxPoses(this.animations,frame,h[1]+224,h[2]+16));
+    const localOwner=0xffff0000+(fps.localSeat??0)*256;
+    if(fps.alwaysHitbox&&playerState===1&&!logicalPoses.some(p=>p.owner===localOwner+32)){
+      const local=fps.multiplayer?.players?.find(p=>p.seat===fps.localSeat);
+      if(!fps.multiplayer||local&&!local.ghost)poses.push(...alwaysHitboxPoses(this.animations,frame,(local?.x??h[1])+224,(local?.y??h[2])+16).map(p=>({...p,owner:localOwner})));
+    }
+    const local=fps.multiplayer?.players?.find(p=>p.seat===fps.localSeat);
+    if(local&&!local.ghost&&fps.localPlayerVisibility){
+      for(const [l,t,r,b]of [[-7,-7,-3,-6],[3,-7,7,-6],[-7,6,-3,7],[3,6,7,7]])
+        poses.push({rectangle:{bounds:[local.x+224+l,local.y+16+t,local.x+224+r,local.y+16+b],argb:0xc0ffffff},owner:localOwner,drawPriority:24,clip:1,order:poses.length});
     }
     // These pose wrappers were created for this capture. Annotate them before
     // publishing the immutable endpoint; older endpoints and appearances stay intact.

@@ -25,5 +25,5 @@ struct AdaptedMotion {
     result={px-ox,py-oy,mode,mode==2&&(px!=ox||py!=oy)};return true;
   }
 };
-extern AdaptedMotion adaptedMotion;
+
 }

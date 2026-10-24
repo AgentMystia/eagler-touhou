@@ -7,7 +7,7 @@ void resetFriendlyPool() {
 }
 int reserveFriendlySlot() {
   // Original439660 always scans the fixed array from slot0, without a cursor.
-  for (int slot = 0; slot < FriendlyCapacity; ++slot)
+  for (int slot = int(multiplayer::currentSeat) * FriendlyPerSeat; slot < int(multiplayer::currentSeat + 1) * FriendlyPerSeat; ++slot)
     if (!friendlySlots[slot] || !friendlySlots[slot]->active)
       return slot;
   return -1;

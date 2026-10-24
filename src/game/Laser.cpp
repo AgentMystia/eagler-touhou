@@ -4,6 +4,21 @@
 #include <limits>
 
 namespace th12::laser {
+Manager::Manager(const Manager& other) { *this = other; }
+Manager& Manager::operator=(const Manager& other) {
+  if (this == &other) return *this;
+  objects_.clear(); serial_ = other.serial_;
+  for (const auto& source : other.objects_) {
+    std::unique_ptr<Laser> next;
+    switch (source->state.kind) {
+      case Kind::Moving: next = std::make_unique<MovingLaser>(); break;
+      case Kind::Timed: next = std::make_unique<TimedLaser>(); break;
+      case Kind::Curve: next = std::make_unique<CurveLaser>(); break;
+    }
+    next->state = source->state; objects_.push_back(std::move(next));
+  }
+  return *this;
+}
 namespace {
 constexpr float pi = 3.1415927410125732f, tau = 6.2831854820251465f;
 float fadd(float a, float b) {

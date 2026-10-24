@@ -61,6 +61,8 @@ struct Entity {
   bool hintActive = false; // A collected hint's detached ANM can outlive this slot.
   int hintScript = 211, hintInterrupt = 0;
   uint32_t hintGeneration = 0;
+  int recipient = -1, collector = -1;
+  bool gift = false;
   bool active() const { return state != State::Inactive; }
   bool visible() const { return active() && state != State::DelayedPoint; }
   Kind kind() const { return Kind(type); }
@@ -91,6 +93,7 @@ struct FrameView {
   // Native426ecb..426f3f: tick enabled body/secondary, then update hint pose,
   // before the item clock advances. Pickups/releases/expired slots skip this tail.
   std::function<void(const Entity&)> animate;
+  std::function<void(Entity&, PlayerView&)> selectPlayer;
 };
 enum class EventKind {
   CollectOrdinary,

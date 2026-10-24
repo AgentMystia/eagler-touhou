@@ -200,6 +200,7 @@ struct Projectile {
   pw::State weapon{};
   int hitAnimation = 0, hitCallback = 0, spawnCallback = 0;
   int physicalSlot = -1; // Hostile0..1999 or Player's friendly0..255 physical slot.
+  unsigned ownerSeat = 0;
 };
 
 } // namespace th12

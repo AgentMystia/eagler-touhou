@@ -8,8 +8,8 @@ int th12_diagnostic_build() { return 1; }
 const char* th12_diagnostic_state() { return th12::captureState().c_str(); }
 int th12_diagnostic_state_size() { return int(th12::snapshotBuffer.size()); }
 void th12_oracle_fixture(int flags) { th12::oracleFixtureFlags = flags & 15; }
-void th12_set_initial(int x, int y, int power, int lives, int bombs, int score) {
-  th12::setInitial(x, y, power, lives, bombs, score);
+void th12_set_initial(int x, int y, int powerValue, int livesValue, int bombsValue, int score) {
+  th12::setInitial(x, y, th12::pilot().resources.power, th12::pilot().resources.lives, th12::pilot().resources.bombs, score);
 }
 void th12_set_replay_economy(int piv, int lifeFragments, int bombFragments, int red, int blue,
                            int green, int rank) {

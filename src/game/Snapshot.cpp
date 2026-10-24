@@ -258,7 +258,7 @@ void snapshotBombVisual(std::ostream& out, const pw::BombVisual& v) {
       << ',' << v.x << ',' << v.y << ',' << v.angle << ',' << v.active << ']';
 }
 void snapshotBomb(std::ostream& out) {
-  const auto& b = playerBomb;
+  const auto& b = pilot().playerBomb;
   out << "{\"loadout\":" << b.loadout << ",\"active\":" << b.active << ",\"age\":" << b.age
       << ",\"previousAge\":" << b.previousAge << ",\"tailAge\":" << b.tailAge << ",\"position\":["
       << b.x << ',' << b.y << "],\"speedMultiplier\":" << b.speedMultiplier << ",\"visuals\":[";
@@ -526,27 +526,27 @@ const std::string& captureState() {
   out << "],\"bossHud\":" << captureBossHud()
       << ",\"music\":{\"track\":" << stageNumber * 2 - (bossMusic ? 0 : 1)
       << ",\"serial\":" << musicSerial << "},\"fixtureFlags\":" << oracleFixtureFlags
-      << ",\"frame\":" << frame << ",\"input\":{\"held\":" << previousHeld
-      << "},\"player\":{\"xFixed\":" << px << ",\"yFixed\":" << py << ",\"state\":" << playerState
-      << ",\"stateAge\":" << playerStateTicks << ",\"invulnerability\":" << invuln
-      << ",\"deathWindow\":" << deathWindow << ",\"graze\":" << graze
-      << ",\"focused\":" << playerFocused << ",\"focusAnimation\":" << playerFocusAnimation
+      << ",\"frame\":" << frame << ",\"input\":{\"held\":" << pilot().previousHeld
+      << "},\"player\":{\"xFixed\":" << pilot().px << ",\"yFixed\":" << pilot().py << ",\"state\":" << pilot().playerState
+      << ",\"stateAge\":" << pilot().playerStateTicks << ",\"invulnerability\":" << pilot().invuln
+      << ",\"deathWindow\":" << pilot().deathWindow << ",\"graze\":" << pilot().graze
+      << ",\"focused\":" << pilot().playerFocused << ",\"focusAnimation\":" << pilot().playerFocusAnimation
       << ",\"replayInitialGlobals\":";
   snapshotArray(out, replayStageGlobals);
-  out << ",\"fireFrame\":" << shotSchedule.frame << ",\"character\":" << character
-      << ",\"shot\":" << shot << ",\"body\":[" << playerMotion.bodyAnimation << ','
-      << playerMotion.bodyAge << ',' << playerMotion.previousDx << "],\"options\":[";
-  for (int i = 0; i < playerMotion.count; i++) {
+  out << ",\"fireFrame\":" << pilot().shotSchedule.frame << ",\"character\":" << pilot().character
+      << ",\"shot\":" << pilot().shot << ",\"body\":[" << pilot().playerMotion.bodyAnimation << ','
+      << pilot().playerMotion.bodyAge << ',' << pilot().playerMotion.previousDx << "],\"options\":[";
+  for (int i = 0; i < pilot().playerMotion.count; i++) {
     if (i)
       out << ',';
-    const auto& o = playerMotion.options[i];
+    const auto& o = pilot().playerMotion.options[i];
     out << '[' << o.x << ',' << o.y << ',' << o.age << ']';
   }
-  out << "],\"bomb\":[" << playerBomb.loadout << ',' << playerBomb.active << ',' << playerBomb.age
-      << ',' << playerBomb.previousAge << ',' << playerBomb.x << ',' << playerBomb.y
+  out << "],\"bomb\":[" << pilot().playerBomb.loadout << ',' << pilot().playerBomb.active << ',' << pilot().playerBomb.age
+      << ',' << pilot().playerBomb.previousAge << ',' << pilot().playerBomb.x << ',' << pilot().playerBomb.y
       << "],\"damageSources\":[";
   bool comma = false;
-  for (const auto& s : playerDamageSources.sources)
+  for (const auto& s : pilot().playerDamageSources.sources)
     if (s.flags & 1) {
       if (comma)
         out << ',';
@@ -556,7 +556,7 @@ const std::string& captureState() {
           << s.angle << ',' << s.ticks << ',' << s.previousTicks << ',' << s.damage << ','
           << s.accumulated << ',' << s.limit << ',' << s.cadence << ',' << s.flags << ']';
     }
-  out << "],\"damageSourceNextId\":" << playerDamageSources.nextId << ",\"bombState\":";
+  out << "],\"damageSourceNextId\":" << pilot().playerDamageSources.nextId << ",\"bombState\":";
   snapshotBomb(out);
   out << "},\"message\":";
   snapshotMessage(out);
@@ -729,10 +729,10 @@ const std::string& captureState() {
         << e.attractionSpeed << ',' << e.aggregateSpeed << ',' << e.near << ',' << e.aggregateKind
         << ',' << e.bucketA << ',' << e.bucketB << ',' << e.multiplier << ']';
   }
-  out << "],\"economy\":{\"resources\":[" << resources.power << ',' << resources.maxPower << ','
-      << resources.powerStep << ',' << resources.scoreStored << ',' << resources.pointValueStored
-      << ',' << resources.maxPointValueStored << ',' << resources.lives << ',' << resources.bombs
-      << ',' << resources.lifeFragments << ',' << resources.bombFragments << ',' << resources.rank
+  out << "],\"economy\":{\"resources\":[" << pilot().resources.power << ',' << pilot().resources.maxPower << ','
+      << pilot().resources.powerStep << ',' << pilot().resources.scoreStored << ',' << pilot().resources.pointValueStored
+      << ',' << pilot().resources.maxPointValueStored << ',' << pilot().resources.lives << ',' << pilot().resources.bombs
+      << ',' << pilot().resources.lifeFragments << ',' << pilot().resources.bombFragments << ',' << pilot().resources.rank
       << "],\"ufoColors\":";
   snapshotArray(out, ufoManager.inventory.colors);
   out << ",\"inventory\":[" << ufoManager.inventory.count << ','

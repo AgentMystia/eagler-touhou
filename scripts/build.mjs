@@ -16,10 +16,16 @@ fs.mkdirSync(outputDirectory,{recursive:true});
 // State, poses and resolved motion are also used by the normal game/recording
 // path. Dedicated verifier hooks and partial-world setters are separate.
 const exports=['_malloc','_free','_th12_load_ecl','_th12_load_msg','_th12_select_stage','_th12_load_sht','_th12_start','_th12_state','_th12_state_size','_th12_tick','_th12_draw','_th12_draw_ptr','_th12_draw_stride','_th12_draw_version','_th12_hud','_th12_hud_size'];
+exports.push(...['configure','connect','spectator_connect','start','restart','pump','step','stop','error','status','calibration_status','rollback_status','hash','state','stage_needed','stage_begin','stage_loaded','sounds','sounds_count','sounds_clear','replay_encode','replay_data','replay_validate','replay_load','replay_frames','replay_rewind','paced_elapsed','spectator_state','spectator_control'].map(name=>'_th12_mp_'+name));
 if(diagnostic)exports.push('_th12_diagnostic_build','_th12_diagnostic_state','_th12_diagnostic_state_size','_th12_oracle_fixture','_th12_set_initial','_th12_set_replay_economy','_th12_unsupported','_th12_rng16','_th12_rng32');
 const cache=path.join(root,'artifacts/emscripten-cache');fs.mkdirSync(cache,{recursive:true});
 const temporary=path.join(root,'artifacts/emscripten-temp',diagnostic?'diagnostic-core':'core');fs.mkdirSync(temporary,{recursive:true});
 const thprac=process.env.TH12_THPRAC==='1',sharedSourceFiles={},buildFlags=[],sharedSources=[];
+const commonRoot=path.resolve(root,'../../common');
+function sharedInputs(folder){for(const entry of fs.readdirSync(path.join(commonRoot,folder),{withFileTypes:true})){const name=folder+'/'+entry.name;if(entry.isDirectory())sharedInputs(name);else sharedSourceFiles[name]=createHash('sha256').update(fs.readFileSync(path.join(commonRoot,name))).digest('hex');}}
+for(const folder of ['include/eagler/netplay','src/netplay','include/eagler/gameplay','browser'])sharedInputs(folder);
+buildFlags.push('-DTH12_MULTIPLAYER=1','-I'+path.join(commonRoot,'include'),'-I'+path.join(root,'src/multiplayer'));
+for(const name of fs.readdirSync(path.join(commonRoot,'src/netplay')).filter(n=>n.endsWith('.cpp')))sharedSources.push(path.join(commonRoot,'src/netplay',name));
 buildFlags.push('-DTH12_DIAGNOSTIC='+(diagnostic?'1':'0'));
 if(thprac){
   const pin=JSON.parse(fs.readFileSync(path.join(root,'integration/common-dependency.json'),'utf8'));
@@ -53,10 +59,10 @@ exports.push('_th12_practice_enabled','_th12_practice_reset','_th12_practice_con
 exports.push('_th12_practice_input');
 exports.push('_th12_practice_damage_begin','_th12_practice_damage_reset','_th12_practice_damage_transition','_th12_practice_damage_load','_th12_practice_damage_stage','_th12_practice_damage_stage_words','_th12_practice_damage_state','_th12_practice_damage_state_size');
 exports.push('_th12_load_spell_history','_th12_spell_history','_th12_spell_history_size');
-const result=spawnSync(python,[compiler,...runtimeSources(root),...sharedSources,...buildFlags,'-std=c++20','-O2','-o',path.join(outputDirectory,'core.mjs'),'-sMODULARIZE=1','-sEXPORT_ES6=1','-sENVIRONMENT='+environment,'-sALLOW_MEMORY_GROWTH=1','-sINITIAL_MEMORY=33554432','-sEXPORTED_FUNCTIONS='+JSON.stringify(exports),'-sEXPORTED_RUNTIME_METHODS='+JSON.stringify(['HEAPU8','HEAPU16','HEAPU32','HEAPF32']),'-sASSERTIONS=1'],{cwd:root,stdio:'inherit',env:{...process.env,EM_CACHE:cache,EMSDK_PYTHON:python,EMCC_TEMP_DIR:temporary,TMP:temporary,TEMP:temporary,TMPDIR:temporary,PATH:path.dirname(python)+path.delimiter+process.env.PATH}});
+const result=spawnSync(python,[compiler,...runtimeSources(root),...sharedSources,...buildFlags,'-std=c++20','-O2','-o',path.join(outputDirectory,'core.mjs'),'-sMODULARIZE=1','-sEXPORT_ES6=1','-sENVIRONMENT='+environment,'-sALLOW_MEMORY_GROWTH=1','-sINITIAL_MEMORY=33554432','-sSTACK_SIZE=4194304','-sSTACK_OVERFLOW_CHECK=2','-sEXPORTED_FUNCTIONS='+JSON.stringify(exports),'-sEXPORTED_RUNTIME_METHODS='+JSON.stringify(['HEAPU8','HEAPU16','HEAPU32','HEAPF32']),'-sASSERTIONS=1'],{cwd:root,stdio:'inherit',env:{...process.env,EM_CACHE:cache,EMSDK_PYTHON:python,EMCC_TEMP_DIR:temporary,TMP:temporary,TEMP:temporary,TMPDIR:temporary,PATH:path.dirname(python)+path.delimiter+process.env.PATH}});
 if(result.status!==0)process.exit(result.status||1);
 const sources=runtimeSourceFiles(root);
 const sourceFiles=Object.fromEntries(sources.map(name=>[name,createHash('sha256').update(fs.readFileSync(path.join(root,name))).digest('hex')]));
 const sourceSha256=createHash('sha256').update(JSON.stringify({sourceFiles,sharedSourceFiles})).digest('hex');
 const artifacts=Object.fromEntries(['core.mjs','core.wasm'].map(name=>{const bytes=fs.readFileSync(path.join(outputDirectory,name));return [name,{bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')}];}));
-fs.writeFileSync(path.join(outputDirectory,'build.json'),JSON.stringify({version:'0.3.0-cpp',builtAt:new Date().toISOString(),compiler:'emscripten-'+version,environment,diagnostic,diagnosticApi:diagnostic?1:null,features:{thprac,languages:false,focusHitbox:false},sourceSha256,sourceFiles,sharedSourceFiles,artifacts},null,2)+'\n');
+fs.writeFileSync(path.join(outputDirectory,'build.json'),JSON.stringify({version:'0.3.0-cpp',builtAt:new Date().toISOString(),compiler:'emscripten-'+version,environment,diagnostic,diagnosticApi:diagnostic?1:null,features:{multiplayer:true,thprac,languages:true,focusHitbox:false},sourceSha256,sourceFiles,sharedSourceFiles,artifacts},null,2)+'\n');

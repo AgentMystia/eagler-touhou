@@ -37,8 +37,11 @@ void applyUfoPlan(const ufo_system::RewardPlan& plan) {
 
 void tickUfo() {
   const auto hooks = ufoHooks();
+  int teamPower=multiplayer::active?pilot().resources.maxPower:pilot().resources.power;
+  if(multiplayer::active) for(unsigned s=0;s<multiplayer::options.count;++s)
+    if(multiplayer::operable(s)) teamPower=std::min(teamPower,multiplayer::pilots[s].resources.power);
   const auto result = ufoManager.tick(
-      {power, stageNumber, primaryBoss() != nullptr, dialogue > 0, gameSpeed, resources.powerStep}, hooks);
+      {teamPower, stageNumber, primaryBoss() != nullptr, dialogue > 0, gameSpeed, pilot().resources.powerStep}, hooks);
   if (result.spawned)
     practice::recordUfoSummoned(ufoManager.kind == -1 ? 3 : ufoManager.kind - 1);
   for (const auto& action : result.actions)
@@ -59,24 +62,30 @@ void tickItems(bool focus) {
   itemFrame.rate = gameSpeed;
   itemFrame.animate = itemPresentationTick;
   itemFrame.player =
-      item_system::PlayerView::native(character, {px / 128.f, py / 128.f}, focus, playerState);
+      item_system::PlayerView::native(pilot().character, {pilot().px / 128.f, pilot().py / 128.f}, focus, pilot().playerState);
   itemFrame.ufo = ufoManager.view(hooks);
   itemFrame.dialogue = dialogue > 0;
   itemFrame.inventoryColors = &ufoManager.inventory.colors;
   itemFrame.inventoryCount = &ufoManager.inventory.count;
+  if(multiplayer::active)itemFrame.selectPlayer=multiplayer::itemPlayer;
   itemManager.tick(itemFrame, [&](const item_system::Event& event) {
+    const int collector=event.entity.collector;
+    multiplayer::Scope owner(collector>=0?unsigned(collector):0);
+    itemFrame.player=item_system::PlayerView::native(pilot().character,{pilot().px/128.f,pilot().py/128.f},pilot().playerFocused,pilot().playerState);
+    const int oldScore=pilot().resources.scoreStored,oldRank=pilot().resources.rank;
     itemPresentationEvent(event);
     using K = item_system::EventKind;
     switch (event.kind) {
     case K::CollectOrdinary: {
-      const auto before = resources;
-      item_system::collectOrdinary(resources, event.entity, itemFrame.player);
+      const auto before = pilot().resources;
+      if(event.entity.type==4||event.entity.type==5)multiplayer::collectSharedPiece(event.entity.type);
+      else item_system::collectOrdinary(pilot().resources, event.entity, itemFrame.player);
       const int type = event.entity.type;
       // 422d70 displays front45 when the award overflows the power cap.
       const int powerAward = type == 3 ? before.powerStep : type == 8 ? before.maxPower : 0;
       if (before.power < before.maxPower && before.power + powerAward > before.maxPower)
         showFullPowerNotice();
-      if (type == 3 || type == 8 || before.power / before.powerStep != power / resources.powerStep)
+      if (type == 3 || type == 8 || before.power / before.powerStep != pilot().resources.power / pilot().resources.powerStep)
         sound_system::queue.play(13, event.entity.position.x);
       if ((type == 6 && before.lives < 8) ||
           (type == 4 && before.lives < 8 && before.lifeFragments >= 4)) {
@@ -93,9 +102,9 @@ void tickItems(bool focus) {
     case K::CollectAggregate:
       sound_system::queue.play(39, event.entity.position.x);
       {
-        const int previous = power / resources.powerStep;
-        item_system::collectAggregate(resources, event.entity);
-        for (int level = previous; level < power / resources.powerStep; ++level)
+        const int previous = pilot().resources.power / pilot().resources.powerStep;
+        item_system::collectAggregate(pilot().resources, event.entity);
+        for (int level = previous; level < pilot().resources.power / pilot().resources.powerStep; ++level)
           sound_system::queue.play(13, event.entity.position.x);
       }
       sound_system::queue.play(38, event.entity.position.x);
@@ -104,7 +113,7 @@ void tickItems(bool focus) {
     case K::CollectToken:
       practice::recordUfoCollected(event.value);
       sound_system::queue.play(38, event.entity.position.x);
-      applyUfoPlan(ufoManager.collectToken({event.value, event.entity.position}, resources));
+      applyUfoPlan(ufoManager.collectToken({event.value, event.entity.position}, pilot().resources));
       eventBits |= 64;
       break;
     case K::Absorbed:
@@ -112,11 +121,13 @@ void tickItems(bool focus) {
       applyUfoPlan(ufoManager.absorb(event.entity.type, stageNumber));
       break;
     case K::RankDelta:
-      resources.addRank(event.value);
+      pilot().resources.addRank(event.value);
       break;
     default:
       break;
     }
+    multiplayer::syncScore(oldScore);
+    if(event.entity.type!=4&&event.entity.type!=5)multiplayer::syncRank(oldRank);
   });
 }
 

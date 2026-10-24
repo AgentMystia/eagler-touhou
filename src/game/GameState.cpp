@@ -3,8 +3,8 @@
 
 namespace th12 {
 std::array<Loadout, 6> loadouts;
-PlayerMotion playerMotion;
-ShotSchedule shotSchedule;
+
+
 Random random;
 Random displayRandom{0x1234, 0};
 anm_logic::Scene animationScene;
@@ -13,7 +13,7 @@ std::deque<std::unique_ptr<Enemy>> enemies;
 std::deque<Projectile> bullets;
 item_system::Manager itemManager;
 ufo_system::Manager ufoManager;
-item_system::ResourceState resources;
+
 std::array<message_system::File, 6> messageFiles;
 message_system::VM messageVM;
 spell_system::State spellState;
@@ -36,25 +36,23 @@ void recordRuntimeFault(uint32_t system, uint32_t code) {
 Program program;
 std::unordered_map<int, Value> globals;
 std::array<u32, 3> phasePlayerCounters{};
-int frame = 0, character = 0, shot = 0, difficulty = 1, stageNumber = 1, px = 0, py = 51200,
-    graze = 0;
+int frame = 0, difficulty = 1, stageNumber = 1;
 int backgroundFrame = 0;
 float gameSpeed = 1;
 bool backgroundVisible = true;
 stage_logic::Program stageProgram;
 stage_logic::State stageState;
-int &power = resources.power, &lives = resources.lives, &bombs = resources.bombs,
-    &score = resources.scoreStored;
-int invuln = 120, deathWindow = 0, bombTimer = 0, previousHeld = 0, fireFrame = 0, eventBits = 0,
-    dialogue = 0, spell = 0, ended = 0;
-int playerState = 1, playerStateTicks = 0;
-float playerStateTime = 0, playerInvulnerabilityTime = 120, playerTotalTime = 0;
-int playerPreviousStateTicks = -1;
-u32 playerFlags = 0;
+int score = 0;
+int eventBits = 0, dialogue = 0, spell = 0, ended = 0;
+
+
+
+
 std::array<int, 4> replayStageGlobals{};
-uint64_t playerFocusAnimation = 0;
+
 int oracleFixtureFlags = 0; // Explicit partial-world diagnostics only; normal runtime stays zero.
 u32 nextEnemyId = 1, nextProjectileId = 1, nextItemId = 1;
+u32 temporaryEnemyOwner = 0x7fffffffu;
 u32 lastSpawnedEnemyId = 0;
 
 } // namespace th12

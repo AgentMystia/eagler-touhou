@@ -18,7 +18,7 @@ const int32_t* th12_practice_input(){return th12::practice::resolvedInput();}
 void th12_practice_enabled(int enabled) { th12::practice::setEnabled(enabled!=0); }
 void th12_practice_reset(int clearTools) { th12::practice::reset(clearTools!=0); }
 int th12_practice_configure(const int32_t* words,int count) { return th12::practice::configure(words,count)?1:0; }
-int th12_practice_start(int c,int shot,int difficulty,int seed) { return th12::practice::start(c,shot,difficulty,seed); }
+int th12_practice_start(int c,int shotValue,int difficulty,int seed) { return th12::practice::start(c,shotValue,difficulty,seed); }
 int th12_practice_prepare_replay(int difficulty) { return th12::practice::prepareReplay(difficulty)?1:0; }
 void th12_practice_replay(int replay) { th12::practice::setReplay(replay!=0); }
 void th12_practice_tools(int mask) { th12::practice::setTools(uint32_t(mask)); }
@@ -28,7 +28,7 @@ const char* th12_practice_state() { return th12::practice::snapshot().c_str(); }
 int th12_practice_state_size() { return th12::practice::snapshotSize(); }
 int th12_practice_boss_music() { return th12::practice::bossMusic()?1:0; }
 int th12_practice_everlasting_bgm() { return th12::practice::everlastingBgm()?1:0; }
-int th12_practice_damage_begin(int replay,int practice,int c,int shot) { return th12::practice::damage::begin(replay!=0,practice!=0,c,shot)?1:0; }
+int th12_practice_damage_begin(int replay,int practice,int c,int shotValue) { return th12::practice::damage::begin(replay!=0,practice!=0,c,shotValue)?1:0; }
 void th12_practice_damage_reset() { th12::practice::damage::reset(); }
 int th12_practice_damage_transition(int from,int to) { return th12::practice::damage::armTransition(from,to)?1:0; }
 int th12_practice_damage_load(const int32_t* words,int count) { return th12::practice::damage::load(words,count)?1:0; }
@@ -41,14 +41,15 @@ const void* th12_presentation_motion_binary() { return th12::capturePresentation
 int th12_presentation_motion_size() { return int(th12::presentationMotionBuffer.size()); }
 void th12_motion(int mode,int x,int y) {
   if(mode<0||mode>4||std::abs(int64_t(x))>0x100000||std::abs(int64_t(y))>0x100000)mode=0;
-  th12::adaptedMotion.begin(mode,x,y);
+  th12::pilot().adaptedMotion.begin(mode,x,y);
 }
-const int32_t* th12_motion_result() { return th12::adaptedMotion.result.data(); }
-int th12_player_state() { return th12::playerState; }
+const int32_t* th12_motion_result() { return th12::pilot().adaptedMotion.result.data(); }
+int th12_player_state() { th12::multiplayer::Scope seat(th12::multiplayer::active?th12::multiplayer::options.local:0); return th12::pilot().playerState; }
 int th12_player_instance() { return int(th12::phasePlayerCounters[0]); }
 float th12_player_speed(int focused) {
-  const auto& s=th12::loadouts[th12::character*2+th12::shot];
-  return (focused?s.focus:s.speed)*th12::playerBomb.speedMultiplier*th12::gameSpeed;
+  th12::multiplayer::Scope seat(th12::multiplayer::active?th12::multiplayer::options.local:0);
+  const auto& s=th12::loadouts[th12::pilot().character*2+th12::pilot().shot];
+  return (focused?s.focus:s.speed)*th12::pilot().playerBomb.speedMultiplier*th12::gameSpeed;
 }
 int th12_load_spell_history(const int32_t* words, int count) { return th12::loadSpellHistory(words, count) ? 1 : 0; }
 const char* th12_spell_history() { return th12::captureSpellHistory().c_str(); }
@@ -221,15 +222,17 @@ int th12_draw() {
     if (b.active)
       drawState.push_back(
           {b.x + 224, b.y + 16, b.angle + pi / 2,
-           b.friendly && b.type == 2 ? b.hitHeight / 448.f : 1, b.friendly ? 3 : 2,
+           b.friendly && b.type == 2 ? b.hitHeight / 448.f : 1, b.friendly ? 4 + multiplayer::pilots[b.ownerSeat].character : 2,
            b.friendly ? b.animation : b.enemy.animation, b.friendly ? (b.type == 2 ? 6 : 2) : 1,
            b.type * 16 + b.color, b.friendly ? b.weapon.visualAge : b.enemy.visualAge,
            0x10000000u + b.entityId, b.friendly ? b.weapon.interrupt : b.enemy.interrupt});
-  for (const auto& v : playerBomb.visuals)
+  for(unsigned seat=0;seat<(multiplayer::active?multiplayer::options.count:1);++seat) {
+  multiplayer::Scope owner(seat);
+  for (const auto& v : pilot().playerBomb.visuals)
     if (v.active)
-      drawState.push_back({v.x + 224, v.y + 16, v.angle, 1, v.bank, v.script, 7, 0, v.age,
+      drawState.push_back({v.x + 224, v.y + 16, v.angle, 1, 4 + v.bank, v.script, 7, 0, v.age,
                            0x50000000u + v.id, v.interrupt});
-  for (const auto& trail : playerBomb.trails) {
+  for (const auto& trail : pilot().playerBomb.trails) {
     if (trail.kind == 13)
       if (const auto* node = animationScene.find(0x600000000ull + trail.id);
           node && node->customGeometry)
@@ -245,6 +248,7 @@ int th12_draw() {
            int(b.color), trail.kind, int(a.color), 0, 0x60000000u + trail.id * 16 + u32(i), 0,
            trail.kind == 12 ? trail.width : 1.f});
     }
+  }
   }
   for (const auto& i : itemManager.entities)
     if (i.visible()) {
@@ -262,17 +266,20 @@ int th12_draw() {
         drawState.push_back({i.position.x + 224, i.position.y + 16, 0, 1, 2, i.hintScript, 3,
                              i.type, 0, 0x40000000u + i.id, i.hintInterrupt, i.alpha});
     }
-  if (!deathWindow) {
-    for (int i = 0; i < playerMotion.count; i++) {
-      const auto& o = playerMotion.options[i];
-      drawState.push_back({o.x / 128.f + 224, o.y / 128.f + 16, 0, 1, 3,
-                           PlayerMotion::optionScripts[character * 2 + shot], 5, 0, o.age,
-                           0xffff0001u + u32(i)});
+  for(unsigned seat=0;seat<(multiplayer::active?multiplayer::options.count:1);++seat) {
+  multiplayer::Scope owner(seat);
+  if (!pilot().deathWindow && !pilot().ghost) {
+    for (int i = 0; i < pilot().playerMotion.count; i++) {
+      const auto& o = pilot().playerMotion.options[i];
+      drawState.push_back({o.x / 128.f + 224, o.y / 128.f + 16, 0, 1, 4 + pilot().character,
+                           PlayerMotion::optionScripts[pilot().character * 2 + pilot().shot], 5, 0, o.age,
+                           pilot().owner() + 1u + u32(i)});
     }
   }
-  if (!deathWindow && (!invuln || frame % 6 < 3))
-    drawState.push_back({px / 128.f + 224, py / 128.f + 16, 0, 1, 3, playerMotion.bodyAnimation, 4,
-                         0, playerMotion.bodyAge, 0xffff0000u});
+  if (!pilot().deathWindow && (!pilot().invuln || frame % 6 < 3))
+    drawState.push_back({pilot().px / 128.f + 224, pilot().py / 128.f + 16, 0, 1, 4 + pilot().character, pilot().playerMotion.bodyAnimation, 4,
+                         0, pilot().playerMotion.bodyAge, pilot().owner()});
+  }
   return drawState.size();
 }
 const void* th12_draw_ptr() {
@@ -311,6 +318,7 @@ int th12_background_visible() {
 }
 const float* th12_hud() {
   using namespace th12;
+  multiplayer::Scope seat(multiplayer::active?multiplayer::options.local:0);
   int n = 0;
   for (auto& p : enemies)
     n += !p->hidden;
@@ -319,13 +327,13 @@ const float* th12_hud() {
     missing += v;
   auto* boss = primaryBoss();
   hud = {float(frame),
-         px / 128.f,
-         py / 128.f,
+         pilot().px / 128.f,
+         pilot().py / 128.f,
          float(double(score) * 10),
-         float(power),
-         float(lives),
-         float(bombs),
-         float(graze),
+         float(pilot().resources.power),
+         float(pilot().resources.lives),
+         float(pilot().resources.bombs),
+         float(pilot().graze),
          float(th12::random.seed),
          float(th12::random.calls),
          float(n),
@@ -334,20 +342,20 @@ const float* th12_hud() {
          float(ended),
          float(eventBits),
          float(missing),
-         float(bombTimer),
-         float(character),
-         float(shot),
+         float(pilot().bombTimer),
+         float(pilot().character),
+         float(pilot().shot),
          float(difficulty),
-         float(resources.pointValueStored),
-         float(resources.lifeFragments),
-         float(resources.bombFragments),
+         float(pilot().resources.pointValueStored),
+         float(pilot().resources.lifeFragments),
+         float(pilot().resources.bombFragments),
          float(ufoManager.inventory.colors[0]),
          float(ufoManager.inventory.colors[1]),
          float(ufoManager.inventory.colors[2]),
          float(ufoManager.kind),
          float(ufoManager.age),
          ufoManager.fill,
-         float(resources.rank),
+         float(pilot().resources.rank),
          float(ufoManager.bucketA),
          float(ufoManager.bucketB),
          float(boss ? boss->maxLife : 0),

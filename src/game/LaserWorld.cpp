@@ -10,9 +10,10 @@ uint64_t laserAnimationKey(u32 serial, laser::Role role) {
 }
 
 class GameLaserWorld final : public laser::World {
+  uint8_t grazers_=0;
 public:
   float gameRate() const override { return gameSpeed; }
-  laser::Vec3 playerPosition() const override { return {px / 128.f, py / 128.f, 0}; }
+  laser::Vec3 playerPosition() const override { return {pilot().px / 128.f, pilot().py / 128.f, 0}; }
   bool bossPosition(laser::Vec3& p) const override {
     if (auto* boss = primaryBoss()) {
       p = {boss->x, boss->y, 0};
@@ -23,6 +24,9 @@ public:
   laser::Collision lineCollision(const laser::Vec3& p, float angle, float halfWidth,
                                  float length) override;
   void graze(const laser::Vec3& position) override {
+    if(multiplayer::active){for(unsigned seat=0;seat<multiplayer::options.count;++seat)if(grazers_&(1u<<seat)){
+      multiplayer::Scope owner(seat);awardPlayerGraze(pilot().px/128.f,pilot().py/128.f,0);
+    }return;}
     awardPlayerGraze(position.x, position.y, position.z);
   }
   void bindAnimation(laser::Laser& object, laser::Role role,
@@ -140,13 +144,14 @@ laser::Collision GameLaserWorld::lineCollision(const laser::Vec3& p, float angle
                                                float length) {
   if (oracleFixtureFlags & 2)
     return laser::Collision::None;
+  if(multiplayer::active) return multiplayer::laserCollision(p,angle,halfWidth,length,&grazers_);
   laser::PlayerCollision player;
   player.position = playerPosition();
-  player.hitWidth = player.hitHeight = eb::playerHitboxes[character] * .5f;
-  player.state = playerState;
-  player.invulnerability = invuln;
+  player.hitWidth = player.hitHeight = eb::playerHitboxes[pilot().character] * .5f;
+  player.state = pilot().playerState;
+  player.invulnerability = pilot().invuln;
   player.dialogue = dialogue > 0;
-  player.flags = playerFlags;
+  player.flags = pilot().playerFlags;
   const auto result = laser::collidePlayerLine(p, angle, halfWidth, length, player);
   if (result.beginMiss)
     playerMissCollision();

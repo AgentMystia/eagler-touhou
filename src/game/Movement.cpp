@@ -4,7 +4,8 @@
 
 namespace th12 {
 float aim(float x, float y) {
-  return float(std::atan2(double(py / 128.f - y), double(px / 128.f - x)));
+  const auto p=multiplayer::target(x,y);
+  return float(std::atan2(double(p[1]-y),double(p[0]-x)));
 }
 float normalize(float angle) {
   while (angle > pi)

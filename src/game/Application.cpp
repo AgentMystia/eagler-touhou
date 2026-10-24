@@ -25,15 +25,16 @@ void tickGameplay(int held, int pressed) {
   tickStage();
   tickCameraEffects();
   practice::beforeTick(held, pressed);
-  tickPlayer(held, pressed);
-  adaptedMotion.finish();
-  tickBomb();
+  if (multiplayer::active) multiplayer::tickPlayers(); else tickPlayer(held, pressed);
+  pilot().adaptedMotion.finish();
+  if (multiplayer::active) multiplayer::tickBombs(); else tickBomb();
   tickEnemies();
   tickUfo();
   tickLasers();
   tickBullets();
   tickItems(held & 8);
   tickSpell();
+  if (multiplayer::active) multiplayer::tickRules();
   bullets.erase(std::remove_if(bullets.begin(), bullets.end(), [](auto& b) { return !b.active; }),
                 bullets.end());
   refreshHostilePointers();
@@ -50,10 +51,10 @@ void tickGameplay(int held, int pressed) {
   animationScene.collect();
   animationScene.tickPrimary();
   animationScene.collect();
-  if (animationScene.registry.bank(0))
-    buildPlayerBombTrails();
-  else
-    tickPlayerBombEffects();
+  for (unsigned seat=0;seat<(multiplayer::active?multiplayer::options.count:1);++seat) {
+    multiplayer::Scope owner(seat);
+    if (animationScene.registry.bank(0)) buildPlayerBombTrails(); else tickPlayerBombEffects();
+  }
   enemies.erase(std::remove_if(enemies.begin(), enemies.end(), [](auto& e) { return !e->active; }),
                 enemies.end());
   ++frame;

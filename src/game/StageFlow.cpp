@@ -16,17 +16,17 @@ std::string stageFlowSnapshotBuffer;
 
 SessionCarry captureSessionCarry() {
   SessionCarry carry;
-  carry.resources = resources;
+  carry.resources = pilot().resources;
   carry.inventory = ufoManager.inventory;
   carry.nativeGlobals = replayStageGlobals;
-  carry.nativeGlobals[2] = playerFocused ? 1 : 0;
-  carry.nativeGlobals[3] = graze;
+  carry.nativeGlobals[2] = pilot().playerFocused ? 1 : 0;
+  carry.nativeGlobals[3] = pilot().graze;
   carry.displayRandom = displayRandom;
-  carry.x = px;
-  carry.y = py;
-  carry.graze = graze;
+  carry.x = pilot().px;
+  carry.y = pilot().py;
+  carry.graze = pilot().graze;
   carry.seed = random.seed;
-  carry.focused = playerFocused;
+  carry.focused = pilot().playerFocused;
   return carry;
 }
 
@@ -37,7 +37,7 @@ void setFullGameMode(bool practice) {
   fullGameFlow.status = FullGameStatus::Playing;
   fullGameFlow.stage = stageNumber;
   fullGameFlow.practice = practice;
-  fullGameFlow.replay = spellState.replayWallClock;
+  fullGameFlow.replay = spellState.replayWallClock && !multiplayer::active;
   fullGameFlow.continueCount = std::clamp(replayStageGlobals[0], 0, 9);
 }
 
@@ -131,8 +131,9 @@ int startNextStage() {
   const auto total = flow.totalFrames;
   if (!practice::damage::armTransition(flow.stage, stageNumber))
     return 0;
-  startGame(character, shot, difficulty, carry.seed, nullptr, &carry);
+  startGame(pilot().character, pilot().shot, difficulty, carry.seed, nullptr, &carry);
   setFullGameMode(false);
+  spellState.replayWallClock=true;
   fullGameFlow.entryFadeAge = 0;
   fullGameFlow.totalFrames = total;
   fullGameFlow.recordHeader = carry;
@@ -162,7 +163,7 @@ int continueFullGame() {
   initial.seed = random.seed;
   initial.displayRandom = displayRandom;
   initial.nativeGlobals[0] = count;
-  startGame(character, shot, difficulty, initial.seed, nullptr, &initial);
+  startGame(pilot().character, pilot().shot, difficulty, initial.seed, nullptr, &initial);
   setFullGameMode(false);
   fullGameFlow.totalFrames = total;
   fullGameFlow.recordHeader = initial;

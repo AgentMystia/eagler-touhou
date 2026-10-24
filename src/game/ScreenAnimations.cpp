@@ -136,7 +136,7 @@ void messageCommand(const message_system::Command& command) {
     break;
   case 1: {
     static constexpr int scripts[] = {31, 30, 28};
-    messageAnimationKeys[0] = bindScreenAnimation(4 + character, scripts[character]);
+    messageAnimationKeys[0] = bindScreenAnimation(4 + pilot().character, scripts[pilot().character]);
     break;
   }
   case 2: {
@@ -179,7 +179,7 @@ void messageCommand(const message_system::Command& command) {
   case 13: {
     static constexpr int scripts[3][3] = {{28, 29, 30}, {27, 28, 29}, {25, 26, 27}},
                          sprites[3][3] = {{43, 51, 59}, {42, 50, 58}, {43, 51, 59}};
-    messagePortraitSprites(messageAnimationKeys[0], scripts[character], sprites[character],
+    messagePortraitSprites(messageAnimationKeys[0], scripts[pilot().character], sprites[pilot().character],
                            command.integer());
     break;
   }

@@ -49,11 +49,11 @@ pw::DamageSource sourceAt(const int32_t* w){
   s.flags=uint32_t(w[16]);s.remainingTime=floating(w[17]);return s;
 }
 bool capture(int stage,SavedStage& saved){
-  SavedStage next;next.present=true;next.state.nextId=playerDamageSources.nextId;
+  SavedStage next;next.present=true;next.state.nextId=pilot().playerDamageSources.nextId;
   if(!next.state.nextId)return fail("Damage-source ID generation wrapped; snapshot unavailable");
   next.words={int32_t(Magic),Version,stage,int32_t(next.state.nextId),0,SourceWords};
   std::unordered_set<uint32_t> ids;int count=0;
-  for(const auto& s:playerDamageSources.sources)if(s.flags&1u){
+  for(const auto& s:pilot().playerDamageSources.sources)if(s.flags&1u){
     if(!validSource(s)||s.id>=next.state.nextId||!ids.insert(s.id).second)return fail("Live ReimuA damage-source fields cannot be serialized safely");
     next.state.sources[size_t(count++)]=s;append(next.words,s);
   }
@@ -71,7 +71,7 @@ bool armTransition(int from,int to){
   owner.carryFrom=owner.carryTo=0;
   if(!applicable())return true;
   if(from<1||from>5||to!=from+1||owner.currentStage!=from)return fail("Damage-source carry is not an adjacent live stage transition");
-  owner.carry=playerDamageSources;owner.carryFrom=from;owner.carryTo=to;return true;
+  owner.carry=pilot().playerDamageSources;owner.carryFrom=from;owner.carryTo=to;return true;
 }
 EntryResult onBirth(int stage){
   failure.clear();owner.result=EntryResult::NotApplicable;
@@ -81,19 +81,19 @@ EntryResult onBirth(int stage){
   // A real stage transition retains actual source slots. It never substitutes
   // a saved replay snapshot for already active live sources (native source's
   // early-return guard). Dead parent Bomb/beam VMs are not resurrected.
-  if(carry&&!hasActive(playerDamageSources))playerDamageSources=owner.carry;
+  if(carry&&!hasActive(pilot().playerDamageSources))pilot().playerDamageSources=owner.carry;
   owner.carryFrom=owner.carryTo=0;owner.carry={};owner.currentStage=stage;
   if(stage==1||stage==7)return owner.result;
   auto& saved=owner.stages[size_t(stage-2)];
   if(owner.replay){
-    if(hasActive(playerDamageSources))return owner.result=EntryResult::PreservedTransition;
+    if(hasActive(pilot().playerDamageSources))return owner.result=EntryResult::PreservedTransition;
     if(!saved.present){
       fail("This replay has no versioned portable ReimuA damage-source snapshot for the selected stage");
       return owner.result=EntryResult::Unavailable;
     }
     // Source TH12 copies only recorded active entries, compacted in order,
     // after establishing that no existing active sources own a transition.
-    playerDamageSources=saved.state;return owner.result=EntryResult::Restored;
+    pilot().playerDamageSources=saved.state;return owner.result=EntryResult::Restored;
   }
   if(!capture(stage,saved))return owner.result=EntryResult::Invalid;
   return owner.result=EntryResult::Recorded;

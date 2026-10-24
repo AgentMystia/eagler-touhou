@@ -5,8 +5,8 @@
 namespace th12 {
 namespace {
 std::array<std::array<spell_system::Record, 7>, 128> history{};
-bool enabled() { return fullGameFlow.status != FullGameStatus::Disabled; }
-int loadout() { return character * 2 + shot; }
+bool enabled() { return !multiplayer::active && fullGameFlow.status != FullGameStatus::Disabled; }
+int loadout() { return pilot().character * 2 + pilot().shot; }
 bool validCard(int id) { return id >= 0 && id < 128; }
 } // namespace
 std::string spellHistorySnapshotBuffer;

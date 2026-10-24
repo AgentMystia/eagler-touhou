@@ -19,8 +19,8 @@ void tickMessage(int held, int pressed) {
       // Native420aa4 returns to the practice results before final bonuses.
       // Legacy standalone/replay mode retains its established award behavior.
       if (!fullGamePractice() || practice::tool(practice::AllClearBonus))
-        stage_award::add(score, stage_award::final(stageNumber, difficulty, power, lives, bombs,
-                                                   resources.pointValueStored));
+        stage_award::add(score, stage_award::final(stageNumber, difficulty, pilot().resources.power, pilot().resources.lives, pilot().resources.bombs,
+                                                   pilot().resources.pointValueStored));
       ended = 1;
     }
   });

@@ -1,3 +1,5 @@
+import {createMultiplayerRuntime} from '../src/multiplayer.mjs';
+import {inspectMultiplayerReplay} from '../src/multiplayer-replay.mjs';
 import createCore from './runtime/core.mjs';
 import {Renderer} from '../src/renderer.mjs';
 import {TitleScenes} from '../src/title-scenes.mjs';
@@ -14,7 +16,6 @@ import {SoundPlayer,nativeMusicGain} from '../src/sound-player.mjs';
 import {readCoreSoundEvents} from '../src/sound-events.mjs';
 import {parseReplay,replayInputEnded} from '../src/replay.mjs';
 import {startReplayStage} from '../src/replay-session.mjs';
-import {ReplayWorkspace} from '../src/replay-workspace.mjs';
 import {ReplayRecorder,defaultReplayConfig} from '../src/replay-recorder.mjs';
 import {createFrameRateMeter} from '../src/fps-presentation.mjs';
 import {decodeSpellTitle} from '../src/spell-presentation.mjs';
@@ -35,6 +36,7 @@ const $=id=>document.getElementById(id),canvas=$('screen'),keys=new Set(),hostKe
 const assets=new RuntimeAssets(),keyDown=code=>keys.has(code)||hostKeys.has(code);
 const managedInput=new ManagedInput(),touch=new TouchInput();
 let previousPresentation=null,currentPresentation=null;
+let multiplayer=null,multiplayerResult=false,roomPreview=false,roomOwned=false,launchSerial=0;
 let presentationInterval=TICK;
 const presentationCadence=new PresentationCadence();
 let replayWorkspace=null,viewerMusic={id:null,ticks:0};
@@ -51,8 +53,8 @@ function notice(text=''){$('notice').textContent=text;}
 function fail(error){if(fatalError)return;fatalError=true;busy=true;audio.musicPaused=true;audio.pendingTrack=null;++audio.request;audio.music?.stop();audio.effects?.stop();clearKeys();notice('运行中断：'+error.message);console.error(error);emit({event:'error',message:error.message});}
 function clearKeys({touchToo=true,practiceToo=true,preserveFocus=false}={}){keys.clear();hostKeys.clear();if(assets.managed)managedInput.clear();if(touchToo)touch.cancel({preserveFocus});if(practiceToo)practiceUI?.cancel();model?.clearKeys();previousUI=previousPadUI=pendingKeys=pendingPressed=0;if(session)session.previous=0;accumulator=0;last=performance.now();meter.reset(last);resetGamePresentation();}
 function resetGamePresentation(){previousPresentation=currentPresentation=null;renderer?.resetPresentation();}
-function interpolateGamePresentation(){return !runtimeOptions.limitPresentationTo60&&presentationCadence.fastFrames===4&&needsPresentationInterpolation(presentationInterval,logicalStep);}
-function gamePresentationOptions(){return {presentationContinuity:interpolateGamePresentation(),currentFps:meter.value,hudAge:session?.hudAge??0,scoreLowDigit:session?.continues??0,alwaysHitbox:!!runtimeOptions.alwaysHitbox,disableMaster:!!(core._th12_practice_ui_behavior?.()&1),stageClear:readJSON('stage_flow').status==='stage-clear',practice:session?.mode==='practice'||session?.replay?.practice,recordedFps:session?.replay?.recordedFps(session.stage,session.cursor)??null};}
+function interpolateGamePresentation(){if(multiplayer?.active)return false;return !runtimeOptions.limitPresentationTo60&&presentationCadence.fastFrames===4&&needsPresentationInterpolation(presentationInterval,logicalStep);}
+function gamePresentationOptions(){return {presentationContinuity:interpolateGamePresentation(),currentFps:meter.value,hudAge:session?.hudAge??0,scoreLowDigit:session?.continues??0,alwaysHitbox:!!runtimeOptions.alwaysHitbox,multiplayer:multiplayer?.active?multiplayer.state():null,localSeat:runtimeOptions.netplaySpectator||runtimeOptions.replayViewer?-1:runtimeOptions.netplayPlayer??0,localPlayerVisibility:!!runtimeOptions.multiplayerLocalPlayerVisibility,disableMaster:!!(core._th12_practice_ui_behavior?.()&1),stageClear:readJSON('stage_flow').status==='stage-clear',practice:session?.mode==='practice'||session?.replay?.practice,recordedFps:session?.replay?.recordedFps(session.stage,session.cursor)??null};}
 function captureGamePresentation(){if(!session||!ready)return;previousPresentation=currentPresentation;currentPresentation=renderer.capturePresentation(core,gamePresentationOptions());}
 function drawGamePresentation(interpolate=false){if(!currentPresentation)captureGamePresentation();if(currentPresentation)renderer.renderPresentation(previousPresentation,currentPresentation,interpolate&&interpolateGamePresentation()?Math.min(1,accumulator/logicalStep):1);}
 function updatePracticeUI(){
@@ -83,7 +85,7 @@ function touchState(){
     fast:playing?core._th12_player_speed(0):0,slow:playing?core._th12_player_speed(1):0,keyFocused:ready&&keyDown(profile.settings.keyMap.focus)};
 }
 function pointerPosition(x,y){const rect=canvas.getBoundingClientRect();return {x:(x-rect.left)*640/rect.width,y:(y-rect.top)*480/rect.height};}
-function hostPointer(message){if(!ready||busy||runtimeOptions.replayViewer)return;const x=message.x*innerWidth,y=message.y*innerHeight,id='host:'+message.id;if(practicePointer({...message,x,y,id}))return;const point=pointerPosition(x,y);touch.pointer({...message,...point,id},touchState());}
+function hostPointer(message){if(!ready||busy||roomPreview||runtimeOptions.replayViewer)return;const x=message.x*innerWidth,y=message.y*innerHeight,id='host:'+message.id;if(practicePointer({...message,x,y,id}))return;const point=pointerPosition(x,y);touch.pointer({...message,...point,id},touchState());}
 
 function input(){
   const map=profile.settings.keyMap,held=(name,defaults=[])=>keyDown(map[name])||defaults.some(keyDown);
@@ -354,6 +356,10 @@ function replayMetadata(replay,extra={}){
     ...(date&&Number.isFinite(date.getTime())?{date:date.toISOString()}:{} )};
 }
 async function saveReplay(action){
+  if(multiplayerResult){
+    const saved=await multiplayer.saveAs(action.slot,action.name);lastReplay={id:saved.id,bytes:saved.bytes};$('export-replay').hidden=false;
+    corpus=corpus.filter(f=>f.id!==saved.id);corpus.push(multiplayerReplayMetadata(saved.bytes,{id:saved.id}));model.setCorpus(corpus);notice('多人录像已保存，可导出 .rpy');return;
+  }
   if(!session?.recorder||!action.result?.canSaveReplay)return;
   const state=practiceBridge.snapshot(),practice=session.practiceMetadata?{...session.practiceMetadata,assisted:session.practiceMetadata.assisted||state.assisted}:state.assisted?createPracticeMetadata({...state.params,mode:0,stage:session.stage-1},{assisted:true}):null;
   session.recorder.setWebExtensions({practice,damage:damageSources.metadata()});
@@ -366,7 +372,7 @@ async function actions(){
     if(action.type==='start')await begin(action);
     else if(action.type==='playReplay')await playReplay(action.id,action.stage);
     else if(action.type==='demo')await playReplay(action.id,undefined,'demo');
-    else if(action.type==='returnTitle')returnTitle();
+    else if(action.type==='returnTitle'){if(multiplayerResult)await returnMultiplayerRoom();else returnTitle();}
     else if(action.type==='loadingIndicator')loadingScreen.showIndicator();
     else if(action.type==='menuMusic'){
       if(action.musicRoom){profile.unlockMusic(action.track);await profile.save();}
@@ -383,7 +389,7 @@ async function actions(){
     else if(action.type==='practiceReset'){practiceBridge.reset();damageSources.reset();}
     else if(action.type==='saveName')await recordRunOnce(action.result,action.name);
     else if(action.type==='saveReplay')await saveReplay(action);
-    else if(action.type==='saveExit'){stopMusic();completeRun(false,{saveOnly:true});}
+    else if(action.type==='saveExit'){stopMusic();if(multiplayerResult)model.openReplaySave(pendingResult,profile.data.lastName,'pause');else completeRun(false,{saveOnly:true});}
     else if(action.type==='result'){
       if(action.needsName===false)await recordRunOnce(action.result);
     }else if(action.type==='continue'){
@@ -403,20 +409,39 @@ function choices(){
 }
 function present(){
   const scene=model.state.scene;canvas.dataset.scene=scene;canvas.dataset.stage=String(session?.stage??0);canvas.dataset.replayCursor=String(session?.cursor??0);
-  if(['playing','demo'].includes(scene)&&session){drawGamePresentation(!runtimeOptions.replayViewer||!replayWorkspace.paused&&!replayWorkspace.seeking&&replayWorkspace.rate>0);if(scene==='demo'&&model.state.age>=3540)renderer.renderMenu([],[],null,{overlay:true,shade:Math.min(1,(model.state.age-3540)/60)});}
+  if(['playing','demo'].includes(scene)&&session){drawGamePresentation();if(scene==='demo'&&model.state.age>=3540)renderer.renderMenu([],[],null,{overlay:true,shade:Math.min(1,(model.state.age-3540)/60)});}
   else if(ending){ending.render(renderer,meter.value);}
   else{
     if(session&&(['pause','pause-confirm','continue','result-menu','result','name'].includes(scene)||scene==='replay-save'&&model.state.nameContext==='pause'))drawGamePresentation();
     presentation.render(model.state,meter.value);
   }
-  if(session&&!session.replay)core._th12_set_wall_time(performance.now());choices();practiceUI?.render();
+  if(session&&!session.replay&&!multiplayer?.active)core._th12_set_wall_time(performance.now());choices();practiceUI?.render();
 }
 function tick(){
+  if(roomPreview){model.actions.length=0;model.state.age=Math.min(600,model.state.age);model.tick({held:0,pressed:0});presentation.tick(model.state);return;}
   updatePracticeUI();
   const sampled=input(),controller=padInput(),pad=controller.value;
   // Outside-window menu gestures must reach THPrac before its keyboard
   // capture blocks the title menu. Widget-owned pointers never enter TouchInput.
   const touched=touch.sample(touchState(),{arrows:!!((sampled.held|pad)&0xf0)});
+  if(multiplayer?.active){
+    if(multiplayerResult){
+      const ui=sampled.ui|pad|touched.held,pressed=sampled.pressed|(pad&~previousPadUI)|touched.pressed;previousPadUI=pad;
+      model.tick({held:ui,pressed});presentation.tick(model.state);return;
+    }
+    const held=sampled.held|pad|touched.held|((sampled.ui&0x80000)?0x1000:0)|((sampled.ui&0x200000)?0x2000:0);
+    multiplayer.tick({held,pause:!!((sampled.ui|pad|touched.held)&256),motion:touched.motion}).forEach(effect);
+    const world=multiplayer.state();
+    if(world.paused){
+      const scene=world.menuConfirm?'pause-confirm':'pause';
+      if(model.state.scene!==scene){model.enter(scene,world.menuSelection,{context:{mode:'multiplayer',canSaveReplay:true},pauseSelection:world.menuAction,pauseAction:['resume','title','save-exit','retry'][world.menuAction],readyAt:0,phase:'active'});pauseAudio();}
+      model.state.events=model.state.selection!==world.menuSelection?[{type:'selection'}]:[];
+      model.state.selection=world.menuSelection;++model.state.age;presentation.tick(model.state);
+    }else if(['pause','pause-confirm'].includes(model.state.scene)){model.enter('playing',0,{readyAt:0});presentation.tick(model.state);void resumeAudio().catch(fail);}
+    if(session){const h=hud();session.hudAge++;session.clock=h[0];session.stage=h[39];session.cursor=globalThis.__eaglerNetplayLanFrame??0;}
+    const serial=core._th12_music_serial();if(serial!==audio.musicSerial){audio.musicSerial=serial;const track=musicIndex[core._th12_music_track()]?.id;if(track)playMusic(track).catch(fail);}
+    if(!busy&&captureThisTick)captureGamePresentation();return;
+  }
   if(practiceUI?.tick(pad|sampled.ui|touched.held)){presentation.tick(model.state);updatePracticeUI();return;}
   updatePracticeUI();
   if(controller.capturing){previousPadUI=0;model.tick({held:0,pressed:0});presentation.tick(model.state);return;}
@@ -441,27 +466,28 @@ function frame(now){
   try{if(!fatalError){
     loadingScreen?.advance(elapsed);
     if(loadingScreen?.startup||loadingScreen?.waiting){loadingScreen.renderBase(meter.value);}
-    else if(ready&&!busy&&runtimeOptions.replayViewer){
+    else if(ready&&!busy&&runtimeOptions.replayViewer&&!multiplayer?.active){
       replayWorkspace?.update(elapsed,now);logicalStep=TICK;accumulator=(replayWorkspace?.credit??0)*TICK;
       if(loadingScreen.waiting)loadingScreen.renderBase(meter.value);else{present();loadingScreen.renderOverlay();}
     }else if(ready&&!busy){
       const toolSpeed=runtimeOptions.thpracEnabled&&session&&model.state.scene==='playing',fast=keyDown(profile.settings.keyMap.skip)||keyDown('ControlRight')||!!(previousPadUI&512),shoot=keyDown(profile.settings.keyMap.shoot)||!!(previousPadUI&1),slow=keyDown(profile.settings.keyMap.focus)||keyDown('ShiftRight')||!!(previousPadUI&8);
       const rate=!toolSpeed&&session?.replay&&model.state.scene==='playing'&&fast&&!shoot?4:1;
       logicalStep=toolSpeed?1000*practiceBridge.interval({replay:!!session.replay,fast,slow,debug:keyDown('Space')}):session?.replay&&model.state.scene==='playing'&&slow?TICK*4:TICK;
-      if(session?.replay&&model.state.scene==='playing'&&shoot)logicalStep=Math.min(logicalStep,TICK/4);accumulator+=elapsed*rate;
+      if(session?.replay&&model.state.scene==='playing'&&shoot)logicalStep=Math.min(logicalStep,TICK/4);accumulator+=(multiplayer?.pace(elapsed)??elapsed)*rate;
       for(let count=0;accumulator>=logicalStep&&count<Math.min(240,Math.max(8,Math.ceil(TICK/logicalStep)*8)*rate)&&!busy;count++){accumulator-=logicalStep;captureThisTick=needsPresentationCapture(accumulator,logicalStep,interpolateGamePresentation());tick();if(model.actions.length){busy=true;actions().catch(fail).finally(()=>{if(!fatalError)busy=false;last=performance.now();accumulator=0;});break;}}
       if(loadingScreen.waiting)loadingScreen.renderBase(meter.value);else{present();loadingScreen.renderOverlay();}
     }else if(ready){present();loadingScreen.renderOverlay();}
   }}catch(error){fail(error);}
   if(ready&&launched){
     renderedFrames++;maxFrameGap=Math.max(maxFrameGap,elapsed);
-    if(!firstFrame){firstFrame=true;emit({event:'first-frame'});healthAt=now;renderedFrames=0;maxFrameGap=0;}
+    if(!firstFrame){firstFrame=true;emit({event:'first-frame',launchSerial});healthAt=now;renderedFrames=0;maxFrameGap=0;}
     if(now-healthAt>=1000){emit({event:'frame-health',fps:renderedFrames*1000/(now-healthAt),maxGapMs:maxFrameGap});emit({event:'audio-health',backend:'WebAudio',contextState:audio.context?.state??'uninitialized',musicMode:runtimeMusic,voices:audio.effects?.voices.size??0});healthAt=now;renderedFrames=0;maxFrameGap=0;}
   }
   requestAnimationFrame(frame);
 }
 function eventKey(code,down,source='local'){
-  if(!ready)return;
+  if(!ready||roomPreview)return;
+  if(multiplayer?.active&&multiplayer.readOnly){if(down&&code==='Escape')void returnMultiplayerRoom().catch(fail);return;}
   if(runtimeOptions.replayViewer){if(down)audioReady().catch(error=>notice('音频：'+error.message));return;}
   if(practiceUI?.key(code,down,{repeat:down&&practiceUI.keys.has(code)})){updatePracticeUI();return;}
   const sourceKeys=source==='host'?hostKeys:keys,wasHeld=keyDown(code);
@@ -479,7 +505,7 @@ function eventKey(code,down,source='local'){
 window.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target?.tagName))return;if(assets.managed&&managedInput.key(e,true,'physical',eventKey)){e.preventDefault();return;}const code=keyboardCode(e);if(code==='F1'||['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','Enter','Escape','Tab','Backspace','F12'].includes(code))e.preventDefault();if(code)eventKey(code,true);});
 window.addEventListener('keyup',e=>{if(assets.managed&&managedInput.key(e,false,'physical',eventKey)){e.preventDefault();return;}const code=keyboardCode(e);if(code)eventKey(code,false);});
 for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])window.addEventListener(type,event=>{
-  if(!ready||busy||runtimeOptions.replayViewer)return;
+  if(!ready||busy||roomPreview||runtimeOptions.replayViewer)return;
   if(type==='pointerdown')try{canvas.setPointerCapture(event.pointerId);}catch{}
   if(type==='pointerdown')audioReady().catch(error=>notice('音频：'+error.message));
   if(practicePointer({id:'local:'+event.pointerId,type:type==='pointercancel'?'cancel':type.slice(7),x:event.clientX,y:event.clientY,button:event.button,pointerType:event.pointerType})){event.preventDefault();return;}
@@ -490,13 +516,13 @@ for(const type of ['pointerdown','pointermove','pointerup','pointercancel'])wind
 canvas.addEventListener('lostpointercapture',event=>{const id='local:'+event.pointerId;if(touch.points.has(id))touch.release(id,true);practiceUI?.pointer({type:'cancel',id});});
 window.addEventListener('wheel',event=>{if(practiceUI?.wheel(event))event.preventDefault();},{passive:false});
 window.addEventListener('blur',()=>{clearKeys();if(assets.managed)syncRuntime().catch(fail);});
-document.addEventListener('visibilitychange',()=>{backgrounded=document.hidden;clearKeys();if(backgrounded){if(runtimeOptions.replayViewer)replayWorkspace?.background();else if(ready&&model.state.scene==='playing'){model.openPause(resultData(false));pauseAudio();}suspendBrowserAudio();syncRuntime().catch(fail);}else restoreBrowserAudio().catch(fail);});
+document.addEventListener('visibilitychange',()=>{backgrounded=document.hidden;clearKeys();if(backgrounded){if(runtimeOptions.replayViewer)replayWorkspace?.background();else if(!multiplayer?.active&&!roomPreview&&ready&&model.state.scene==='playing'){model.openPause(resultData(false));pauseAudio();}suspendBrowserAudio();syncRuntime().catch(fail);}else restoreBrowserAudio().catch(fail);});
 window.addEventListener('pagehide',()=>{backgrounded=true;clearKeys();replayWorkspace?.background();suspendBrowserAudio();syncRuntime().catch(console.error);});
 window.addEventListener('pageshow',()=>{backgrounded=document.hidden;if(!backgrounded)restoreBrowserAudio().catch(fail);});
 canvas.addEventListener('webglcontextlost',event=>{event.preventDefault();clearKeys();audio.music?.stop();stopEffects();fail(Error('图形环境已失效，请退出并重新启动游戏'));});
 $('fullscreen').onclick=()=>{if(document.fullscreenElement)document.exitFullscreen();else document.querySelector('.viewport').requestFullscreen();};
-$('manual').onclick=()=>{if(runtimeOptions.replayViewer)return;if(session&&model.state.scene==='playing'){model.openPause(resultData(false));}model.key('F1',true);};
-$('import').onchange=async()=>{try{const file=$('import').files[0];if(!file)return;if(file.size>64*1024*1024)throw Error('录像过大');const b=new Uint8Array(await file.arrayBuffer()),r=parseReplay(b),id='th12_import_'+Date.now()+'.rpy';await store.write('/savesth12/replay/'+id,b);corpus.push(replayMetadata(r,{id}));model.setCorpus(corpus);notice('录像已导入，可从 Replay 选择');}catch(error){notice(error.message);}finally{$('import').value='';}};
+$('manual').onclick=()=>{if(runtimeOptions.replayViewer||multiplayer?.active||roomPreview)return;if(session&&model.state.scene==='playing'){model.openPause(resultData(false));}model.key('F1',true);};
+$('import').onchange=async()=>{try{const file=$('import').files[0];if(!file)return;if(file.size>64*1024*1024)throw Error('录像过大');const b=new Uint8Array(await file.arrayBuffer()),r=multiplayerReplayMetadata(b),id='th12_mp_import_'+Date.now()+'.rpy';await store.write('/savesth12/replay/'+id,b);corpus.push({...r,id});model.setCorpus(corpus);notice('录像已导入，可从 Replay 选择');}catch(error){notice(error.message);}finally{$('import').value='';}};
 $('export-replay').onclick=()=>{if(!lastReplay)return;const url=URL.createObjectURL(new Blob([lastReplay.bytes],{type:'application/octet-stream'})),a=document.createElement('a');a.href=url;a.download=lastReplay.id;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 
 async function initialize(){
@@ -519,20 +545,13 @@ async function initialize(){
     try{return replayMetadata(parseReplay(await bytes('/replays/'+encodeURIComponent(fixture.id))),fixture);}
     catch(error){console.warn('录像信息读取失败 '+fixture.id+': '+error.message);return fixture;}
   }));
-  for(const path of await store.list())if(/^\/savesth12\/replay\/[^/]+\.rpy$/i.test(path))try{const b=await store.read(path),r=parseReplay(b),id=path.split('/').at(-1);corpus=corpus.filter(f=>f.id!==id);corpus.push(replayMetadata(r,{id}));}catch(error){console.warn(error.message);}
+  for(const path of await store.list())if(/^\/savesth12\/replay\/[^/]+\.rpy$/i.test(path))try{const b=await store.read(path),id=path.split('/').at(-1);corpus=corpus.filter(f=>f.id!==id);corpus.push(multiplayerReplayMetadata(b,{id}));}catch(error){console.warn(error.message);}
   practiceBridge=new PracticeBridge(core);damageSources=new DamageSourceBridge(core);practiceUI=new PracticeOverlay({bridge:practiceBridge,canvas,onError:fail,onMenuAction:action=>model.practiceAction(action),onRetry:()=>{model.openPause(resultData(false));model.state.readyAt=0;model.quickRetry();}});
-  if(runtimeOptions.replayViewer)runtimeOptions={...runtimeOptions,thpracEnabled:true};
+  // Multiplayer Replay uses the same native cooperative driver as live rooms.
   practiceUI.configure({enabled:!!runtimeOptions.thpracEnabled&&!runtimeOptions.replayViewer,coreEnabled:!!runtimeOptions.thpracEnabled,locale:runtimeOptions.thpracLocale??'ja-JP'});
   await practiceUI.initialize(assets.fonts);
   if(runtimeOptions.thpracEnabled&&!practiceBridge.snapshot().enabled)throw Error('当前构建未包含 THPrac，请重新生成完整适配版');
   model=new TitleScenes({profile,corpus,settings:profile.settings,musicTracks:resources.musicComments,practiceEnabled:!!runtimeOptions.thpracEnabled,practiceLocale:runtimeOptions.thpracLocale??'ja-JP'});presentation=new TitlePresentation(renderer,resources,profile);
-  if(runtimeOptions.replayViewer)replayWorkspace=new ReplayWorkspace({
-    read:path=>store.read(path),state:()=>({stage:session?.stage??0,cursor:session?.cursor??0}),busy:()=>busy||backgrounded||terminated||fatalError,
-    open:async(replay,stage)=>{await begin({mode:'replay',character:replay.character,shot:replay.shot,difficulty:replay.difficulty,stage},replay);model.enter('playing',0,{readyAt:0});captureGamePresentation();},
-    transition:viewerStage,step:()=>{gameTick({held:0});captureGamePresentation();},
-    resetTime:()=>{last=performance.now();accumulator=0;},silence:()=>{stopEffects();pauseAudio();},transport:viewerTransport,
-    report:playback=>emit({event:'runtime-info',playback}),error:fail,
-  });
   // Start the title transport during initialization, including hosts that do
   // not publish a shared AudioContext. Later pointer/key gestures can resume
   // a context suspended by browser autoplay policy without entering a menu.
@@ -540,18 +559,77 @@ async function initialize(){
   await loadingScreen.waitForStartup();await actions();loadingScreen.endStartup();ready=true;last=performance.now();meter.reset(last);accumulator=0;
   if(!assets.managed)window.__th12Game={ready:()=>ready,state:()=>({scene:model.view(),session:session?{mode:session.mode,stage:session.stage,cursor:session.cursor}:null,flow:session?readJSON('stage_flow'):null}),profile:()=>profile.data,start:settings=>{model.run={...settings};model.enter('playing',0,{readyAt:0});return begin(settings);},model:()=>model,present};
 }
-async function syncRuntime(){if(launched&&profile){if(core&&!session?.replay&&!runtimeOptions.replayViewer)await saveProfile();else await profile.save();}await store?.sync();}
-async function launchRuntime(){
+async function syncRuntime(){if(multiplayer?.active){await multiplayer.save();await store?.sync();return;}if(roomPreview){await store?.sync();return;}if(launched&&profile){if(core&&!session?.replay&&!runtimeOptions.replayViewer)await saveProfile();else await profile.save();}await store?.sync();}
+function multiplayerReplayMetadata(bytes,extra={}){
+  const p=core._malloc(bytes.length);if(!p)throw Error('读取多人录像时内存不足');
+  let meta;try{core.HEAPU8.set(bytes,p);meta=inspectMultiplayerReplay(bytes,{validate:()=>!!core._th12_mp_replay_validate(p,bytes.length)});}finally{core._free(p);}
+  const local=meta.loadouts[meta.recordedPlayer];return {...extra,...local,name:meta.name,score:meta.score,scoreStored:meta.score/10,
+    timestamp:meta.timestamp,date:new Date(meta.timestamp*1000).toISOString(),difficulty:meta.difficulty,clear:meta.completed,
+    finalStage:meta.completed?8:meta.chapters.at(-1).stage,
+    mode:'multiplayer',stages:meta.chapters.map(c=>({number:c.stage})),continues:0,slowdown:0};
+}
+async function finishMultiplayerRun(){
+  const world=multiplayer.state();if(world.returnRequested)return returnMultiplayerRoom();
+  multiplayerResult=true;stopEffects();pauseAudio();clearKeys();
+  const flow=readJSON('stage_flow'),clear=['ending','result'].includes(flow.status);
+  pendingResult={mode:'multiplayer',character:session.character,shot:session.shot,difficulty:session.difficulty,stage:world.stage,
+    score:world.score,scoreStored:world.score/10,timestamp:Math.floor(Date.now()/1000),date:new Date().toISOString(),
+    playSeconds:flow.totalFrames/60,clear,continues:0,continueCount:0,canContinue:false,canSaveReplay:true,ranked:true,slowdown:0};
+  model.run={...session};
+  if(world.saveRequested)model.openReplaySave(pendingResult,profile.data.lastName,'pause');
+  else model.finishMultiplayer(pendingResult);
+}
+async function multiplayerStage(stage,loadout){
+  busy=true;loadingScreen.startResources();
+  try{
+    const selected=loadout??runtimeOptions.netplayLoadouts?.[runtimeOptions.netplayPlayer??0]??{character:0,shot:0};
+    localization?.setContext({stage,...selected});
+    await prepareStage(stage);resetGamePresentation();
+    session={mode:'multiplayer',...selected,difficulty:runtimeOptions.netplayDifficulty??1,stage,cursor:0,clock:0,hudAge:0,continues:0};
+  }finally{loadingScreen.completeResources();busy=false;last=performance.now();accumulator=0;}
+}
+async function initializeMultiplayer(){
+  if(ready)return;
+  localization??=await prepareLocalization();localization.activate();assets.localization=localization;
+  await initialize();
+  const response=await fetch(new URL('./manifest.json',import.meta.url));if(!response.ok)throw Error('多人 Runtime 清单缺失');
+  multiplayer=createMultiplayerRuntime({core,manifest:await response.json(),getOptions:()=>runtimeOptions,emit,
+    loadStage:multiplayerStage,onError:fail,onExit:finishMultiplayerRun,store:()=>store});
+  window.__th12Runtime={core,multiplayer,status:()=>Array.from(new Uint32Array(core.HEAPU8.buffer,core._th12_mp_status(),24)),state:()=>multiplayer.state(),scene:()=>model.state.scene,
+    menu:()=>({scene:model.state.scene,selection:model.state.selection,age:model.state.age,ready:model.ready()})};
+}
+async function prepareMultiplayerRoom(){
+  roomOwned=true;roomPreview=true;await initializeMultiplayer();launched=false;
+  // Populate every stage resource cache at room entry. Loading does not tick
+  // gameplay, consume its seed or change the animated title menu.
+  const stage=runtimeOptions.netplayDifficulty===4?7:1;await prepareStage(stage);session=null;
+  model.returnTitle();model.actions.length=0;clearKeys();return {presented:true};
+}
+async function returnMultiplayerRoom(){
+  await multiplayer?.save();multiplayer?.stop();multiplayerResult=false;session=null;ending=null;clearKeys();
+  model.returnTitle();model.actions.length=0;roomPreview=roomOwned;launched=false;firstFrame=false;
+  await playMusic('th12_01');emit({event:'room-menu',launchSerial});return {presented:true};
+}
+async function launchRuntime(message={}){
   if(terminated)throw Error('此运行会话已结束，请从启动器重新打开');
-  if(launched)throw Error('游戏已启动');launched=true;firstFrame=false;
-  try{localization??=await prepareLocalization();localization.activate();assets.localization=localization;await initialize();if(runtimeOptions.replayPath){if(runtimeOptions.replayViewer)await replayWorkspace.command({action:'open',path:runtimeOptions.replayPath.startsWith('/savesth12/')?runtimeOptions.replayPath:'/savesth12/'+runtimeOptions.replayPath});else{const id=runtimeOptions.replayPath.split('/').at(-1);await playReplay(id);model.enter('playing',0,{readyAt:0});}}emit({event:'runtime-info',renderer:'WebGL2',architecture:'C++20 / WebAssembly',version:'0.3.0-cpp',integration:'manual-acceptance-pending',language:localization.language,completeAdapter:false});}
-  catch(error){launched=false;throw error;}
+  if(multiplayer?.active)throw Error('游戏已启动');
+  launchSerial=Number(message.launchSerial)||0;await initializeMultiplayer();
+  multiplayerResult=false;roomPreview=false;launched=true;firstFrame=false;clearKeys();
+  try{
+    if(runtimeOptions.replayViewer){
+      if(!runtimeOptions.replayPath){notice('请在启动器录像列表选择多人录像');return;}
+      await multiplayer.openReplay(runtimeOptions.replayPath.startsWith('/savesth12/')?runtimeOptions.replayPath:'/savesth12/'+runtimeOptions.replayPath);
+    }else await multiplayer.launch();
+    model.enter('playing',0,{readyAt:0});model.actions.length=0;
+    audio.musicSerial=core._th12_music_serial();await playMusic(stageMusic[session.stage]);captureGamePresentation();
+    emit({event:'runtime-info',renderer:'WebGL2',architecture:'C++20 / WebAssembly',multiplayer:true,language:localization.language});
+  }catch(error){launched=false;console.error(error);throw error;}
 }
 async function bootstrap(){
-  if(!assets.managed){await launchRuntime();return;}
+  if(!assets.managed){roomPreview=true;await initializeMultiplayer();return;}
   document.documentElement.dataset.managed='true';
   emit=installManagedShell({
-    get store(){return store;},running:()=>launched,replayViewer:()=>!!runtimeOptions.replayViewer,configure:async settings=>{
+    get store(){return store;},running:()=>!!multiplayer?.active,replayViewer:()=>!!runtimeOptions.replayViewer,configure:async settings=>{
       const installed=new Map(),pack=settings.runtimePack;
       if(pack){
         if(!Array.isArray(pack.files)||pack.files.length>256)throw Error('语言包安装列表无效');
@@ -566,8 +644,8 @@ async function bootstrap(){
       const provider=await prepareLocalization({language:settings.language,manifest:pack?.manifest,readFile:path=>installed.get(path),fontReady:installRuntimeFonts(assets.fonts)});
       localization?.deactivate();localization=provider;assets.localization=provider;runtimeOptions=settings.options;runtimeMusic=settings.music;touch.configure(runtimeOptions);
     },
-    resources:async items=>{await assets.install(items,message=>emit(message));await installRuntimeFonts(assets.fonts);},launch:launchRuntime,
-    playback:message=>{if(!ready||!runtimeOptions.replayViewer||!replayWorkspace)throw Error('请先打开录像工作区');return replayWorkspace.command(message);},
+    resources:async items=>{await assets.install(items,message=>emit(message));await installRuntimeFonts(assets.fonts);},launch:launchRuntime,prepareRoom:prepareMultiplayerRoom,returnRoom:returnMultiplayerRoom,spectatorPlayback:message=>multiplayer.spectatorCommand(message),validateReplay:async bytes=>{await initializeMultiplayer();return multiplayer.inspect(bytes);},
+    playback:async message=>{await initializeMultiplayer();const result=await multiplayer.playback(message);if(message.action==='open'){roomPreview=false;launched=true;firstFrame=false;clearKeys();model.enter('playing',0,{readyAt:0});model.actions.length=0;captureGamePresentation();}return result;},
     key:(code,down,message)=>{if(!managedInput.key(message,down,message.inputSource==='physical'?'physical':'virtual',eventKey))eventKey(keyboardCode(message),down,'host');},clearKeyboard:()=>{clearKeys({touchToo:false,practiceToo:false});practiceUI?.clearKeyboard();},cancelTouch:()=>{touch.cancel();practiceUI?.cancel();},
     touch:message=>{touch.controls(message,ready&&!busy?touchState():{key:'inactive',kind:'menu',instance:'',ready:false});practiceUI?.mobilePanels(message);updatePracticeUI();},pointer:hostPointer,practicePointer,sync:syncRuntime,
   },window,{announceReady:false});

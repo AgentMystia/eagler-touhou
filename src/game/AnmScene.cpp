@@ -1,8 +1,21 @@
 // Native registered VM ownership and saved-successor traversal.
 #include "AnmScene.hpp"
+#include "Multiplayer.hpp"
 #include "PresentationTracking.hpp"
 
 namespace th12::anm_logic {
+Scene::Scene(const Scene& other) { *this = other; }
+Scene& Scene::operator=(const Scene& other) {
+  if (this == &other) return *this;
+  primary_.clear(); secondary_.clear(); embedded_.clear(); roots_.clear(); nodes_.clear();
+  registry = other.registry; runtime = other.runtime; nextId_ = other.nextId_; executing_ = nullptr;
+  for (const auto& [id, node] : other.nodes_) nodes_[id] = std::make_shared<Node>(*node);
+  for (const auto& [key, node] : other.roots_) roots_[key] = nodes_.at(node->id);
+  for (const auto& node : other.primary_) primary_.push_back(nodes_.at(node->id));
+  for (const auto& node : other.secondary_) secondary_.push_back(nodes_.at(node->id));
+  for (const auto& node : other.embedded_) embedded_.push_back(nodes_.at(node->id));
+  return *this;
+}
 
 Runtime Scene::runtimeFor(Node& node) {
   Runtime result = runtime;
@@ -10,6 +23,7 @@ Runtime Scene::runtimeFor(Node& node) {
   result.spawnChild = [this, &node](const ChildRequest& request) {
     auto child = std::make_shared<Node>();
     child->id = nextId_++;
+    child->seat=node.seat;
     child->owner = request.detached ? 0 : node.owner;
     child->parent = request.detached ? 0 : node.id;
     child->detached = request.detached;
@@ -64,6 +78,7 @@ Runtime Scene::runtimeFor(Node& node) {
 }
 
 void Scene::tickNode(Node& node) {
+  multiplayer::Scope owner(node.seat);
   if (!node.alive)
     return;
   if (node.beforeTick && node.beforeTick()) {
@@ -173,6 +188,7 @@ Node* Scene::bind(uint64_t key, uint32_t owner, int bank, int script, Membership
   node->key = key;
   node->owner = owner;
   node->membership = membership;
+  node->seat = multiplayer::currentSeat;
   node->spriteRemap = std::move(remap);
   node->viewportX = viewportX;
   node->viewportY = viewportY;

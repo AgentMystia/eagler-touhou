@@ -5,13 +5,14 @@
 #include "Presentation.hpp"
 #include "Snapshot.hpp"
 #include "SoundQueue.hpp"
+#include "Multiplayer.hpp"
 
 namespace th12 {
 
 extern Program program;
 extern std::array<Loadout, 6> loadouts;
-extern PlayerMotion playerMotion;
-extern ShotSchedule shotSchedule;
+
+
 extern Random random, displayRandom;
 extern anm_logic::Scene animationScene;
 extern u32 nextDetachedAnimation;
@@ -19,12 +20,12 @@ extern std::deque<std::unique_ptr<Enemy>> enemies;
 extern std::deque<Projectile> bullets;
 extern item_system::Manager itemManager;
 extern ufo_system::Manager ufoManager;
-extern item_system::ResourceState resources;
+
 extern std::array<message_system::File, 6> messageFiles;
 extern message_system::VM messageVM;
 extern spell_system::State spellState;
-extern pw::Manager playerDamageSources;
-extern pw::BombState playerBomb;
+
+
 extern std::array<uint64_t, 7> spellAnimationKeys;
 extern std::array<uint64_t, 8> messageAnimationKeys;
 extern std::vector<uint64_t> messageAnimationOwners;
@@ -41,23 +42,22 @@ void recordRuntimeFault(uint32_t system, uint32_t code);
 extern std::unordered_map<int, Value> globals;
 // EnemyManager+10/+14/+18, exposed as ECL−9949/−9948/−9947.
 extern std::array<u32, 3> phasePlayerCounters;
-extern int frame, character, shot, difficulty, stageNumber, px, py, graze;
+extern int frame, difficulty, stageNumber;
 extern int backgroundFrame;
 extern float gameSpeed; // Original global4b2ed0, set by ECL447.
 extern bool backgroundVisible;
 extern stage_logic::Program stageProgram;
 extern stage_logic::State stageState;
 extern eb::World& bulletWorld;
-extern int &power, &lives, &bombs, &score;
-extern int invuln, deathWindow, bombTimer, previousHeld, fireFrame, eventBits, dialogue, spell,
-    ended;
-extern int playerState, playerStateTicks, oracleFixtureFlags;
-extern float playerStateTime, playerInvulnerabilityTime, playerTotalTime;
-extern int playerPreviousStateTicks; // Player+a30, damage query cadence gate.
-extern u32 playerFlags;
+extern int score;
+extern int eventBits, dialogue, spell, ended;
+extern int oracleFixtureFlags;
+
+
+
 extern std::array<int, 4> replayStageGlobals;
-extern uint64_t playerFocusAnimation;
-extern u32 nextEnemyId, nextProjectileId, nextItemId;
+
+extern u32 nextEnemyId, nextProjectileId, nextItemId, temporaryEnemyOwner;
 extern u32 lastSpawnedEnemyId;
 extern std::function<void(Projectile&)> friendlyBirthHook, friendlyHitHook;
 extern std::function<void(Projectile&, int, bool)> friendlyInterruptHook;

@@ -161,7 +161,7 @@ void draw_practice(){
       }
       ImGui::SliderInt(label(practice_TH_LIFE),&params.life,0,9);ImGui::SliderInt(label(practice_TH_LIFE_FRAGMENT),&params.life_fragment,0,3);
       ImGui::SliderInt(label(practice_TH_BOMB),&params.bomb,0,9);ImGui::SliderInt(label(practice_TH_BOMB_FRAGMENT),&params.bomb_fragment,0,2);
-      char power[24];std::snprintf(power,sizeof power,"%d.%02d",params.power/100,params.power%100);ImGui::SliderInt(label(practice_TH_POWER),&params.power,0,400,power);
+      char pilot().resources.power[24];std::snprintf(pilot().resources.power,sizeof pilot().resources.power,"%d.%02d",params.power/100,params.power%100);ImGui::SliderInt(label(practice_TH_POWER),&params.power,0,400,pilot().resources.power);
       combo(label(practice_TH12_UFO_SIDE),&params.ufo_side,practice_group_TH_SIDE_SELECT);
       combo(label(practice_TH12_VENTRA_1),&params.ventra_1,practice_group_TH12_VENTRA_SELECT);
       if(params.ventra_1)combo(label(practice_TH12_VENTRA_2),&params.ventra_2,practice_group_TH12_VENTRA_SELECT);else params.ventra_2=params.ventra_3=0;
@@ -200,7 +200,7 @@ void draw_overlay(){
     constexpr auto flags=ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse|ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoResize|ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoSavedSettings|ImGuiWindowFlags_NoInputs|ImGuiWindowFlags_NoFocusOnAppearing|ImGuiWindowFlags_NoNav;
     if(Mobile::begin(Mobile::Information,"Tracker###th12-thprac-tracker",flags,locale)){
       const auto& tracker=trackerInfo();const auto* diffs=selection(practice_group_IGI_DIFF);const auto* players=selection(practice_group_IGI_PL_12);
-      char title[128];std::snprintf(title,sizeof title,"%s (%s)",diffs[std::clamp(th12::difficulty,0,4)],players[std::clamp(th12::character*2+th12::shot,0,5)]);
+      char title[128];std::snprintf(title,sizeof title,"%s (%s)",diffs[std::clamp(th12::difficulty,0,4)],players[std::clamp(th12::pilot().character*2+th12::pilot().shot,0,5)]);
       ImGui::SetCursorPosX((ImGui::GetWindowWidth()-ImGui::CalcTextSize(title).x)*.5f);ImGui::TextUnformatted(title);ImGui::Columns(2);
       auto counter=[](const char* const* name,int value){ImGui::TextUnformatted(label(name));ImGui::NextColumn();ImGui::Text("%8d",value);ImGui::NextColumn();};
       counter(practice_THPRAC_INGAMEINFO_MISS_COUNT,tracker.misses);counter(practice_THPRAC_INGAMEINFO_BOMB_COUNT,tracker.bombs);
