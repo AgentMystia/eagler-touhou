@@ -2,6 +2,7 @@
 // 未实现指令一律置 sim->error 并返回 -2（harness 非零退出）——不静默吞掉契约缺口。
 #include "StageSim.hpp"
 
+#include "BulletAppearance.hpp"
 #include "StageMath.hpp"
 
 #include <cmath>
@@ -141,11 +142,41 @@ int StageCommands::execute(EclContext& c, u16 op) {
                 {file, script, e.position[0], e.position[1], e.position[2]});
         return 0;
     }
-    case 313:
-    case 316:
+    case 313:   // anmFlip（case7 @ 0x41b903）：槽 VM 重挂 script_base+5
+    case 316: { // anmFlipDelta（case0xa @ 0x41b98f）：script_base+arg1+5
+        // 原版不读脚本参数：arg0 = slot（316 另 arg1 = delta），脚本号 =
+        // 敌机+0x26c（case3/306 slot0 记录的挂接脚本，port 代理
+        // e.anm_script[0]）+5（316 再 +delta），文件 = 302 选定的 +0x260。
+        // 两 case 汇入 0x41b93c 共享尾（与 306 同构）：0x470110 回收旧槽 VM
+        // → 0x4243e0 模板拷贝+立即 tick+0x46f4a0 主池头插 → 句柄写回敌机
+        // +0x120 槽数组 → slot0 刷新 +0x3f30/0x3f34 尺寸（(vm+0x84)×(vm+0x64)
+        // /(vm+0x80)×(vm+0x60)）；层 = [+0x278]+7。不动 0x200000 镜像门与
+        // +0x264..0x270（仅 306 写 / 318 清）。st01 MBoss2 与 st01bs Boss/
+        // Boss1/Boss2/BossCard1-4 全部经此翻转敌机槽 0 演出 VM。
+        if (sim.anm_effects_noop) return 0;  // 事件契约：headless oracle NOOP 同源
+        i32 slot = 0;
+        if (!resolve_int(c, 0, slot)) {
+            sim.error_ = c.error.empty() ? "anmFlip slot" : c.error;
+            return -2;
+        }
+        i32 delta = 0;
+        if (op == 316 && !resolve_int(c, 1, delta)) {
+            sim.error_ = c.error.empty() ? "anmFlip delta" : c.error;
+            return -2;
+        }
+        if (sim.ecl_slot_anm && slot >= 0 && slot < 4) {
+            // e.anm_script[0] 的 -1 是 port 清槽标记；原版 +0x26c 为构造零基
+            //（st01/st01bs 所有 313/316 前均有 306 slot0 挂接，未挂接路径
+            // 不在窗口内，按零基近似并保留此注释）。
+            const i32 base = e.anm_script[0] >= 0 ? e.anm_script[0] : 0;
+            sim.anm_effects.push_back({e.anm_file, base + delta + 5, 0, 0, 0,
+                                        1, u16(op), slot, e.serial});
+        }
+        return 0;
+    }
     case 319:
     case 554:
-        return 0;  // ANM/演出族：一次性特效/镜位翻转，视觉分期接入，无事件
+        return 0;  // ANM 插值族/关卡 logo：0x41b400/0x42adc0，视觉分期接入
 
     // ---------- 400 族：运动 ----------
     case 400:
@@ -516,16 +547,56 @@ int StageCommands::execute(EclContext& c, u16 op) {
     case 505:
         e.flags &= ~0x40000u;
         return 0;
-    case 506:
-    case 507:
-    case 508:
-    case 509:
-    case 510:
-        return 0;  // drop 族：无事件
+    case 506: {  // dropClear（0x41b260 case 0x2c：memset +0x3F6C, 0x3c）
+        e.drop_main = 0;
+        for (i32& slot2 : e.drop_extra) slot2 = 0;
+        e.drop_area[0] = e.drop_area[1] = 0;
+        return 0;
+    }
+    case 507: {  // dropExtra（case 0x2d：drop[id] = count，id 0 = 主道具槽）
+        i32 id = 0, count = 0;
+        if (!resolve_int(c, 0, id) || !resolve_int(c, 1, count)) {
+            sim.error_ = c.error;
+            return -2;
+        }
+        if (id == 0) {
+            e.drop_main = count;
+        } else if (id >= 1 && id <= 14) {
+            e.drop_extra[id - 1] = count;
+        } else {
+            sim.error_ = "dropExtra id outside table";
+            return -2;
+        }
+        return 0;
+    }
+    case 508: {  // dropArea（case 0x2e：散布幅度 x/y → 0xFEA/0xFEB）
+        float x = 0, y = 0;
+        if (!resolve_float(c, 0, x) || !resolve_float(c, 1, y)) {
+            sim.error_ = c.error;
+            return -2;
+        }
+        e.drop_area[0] = x;
+        e.drop_area[1] = y;
+        return 0;
+    }
+    case 509:  // dropItems（case 0x2f：(mode & 0x30) != 0x20 → 按表掉落）
+        if ((sim.mode_flags & 0x30u) != 0x20u) sim.drop_table(e);
+        return 0;
+    case 510: {  // dropMain（case 0x30：主道具 kind → 0xFDA）
+        i32 kind = 0;
+        if (!resolve_int(c, 0, kind)) {
+            sim.error_ = c.error;
+            return -2;
+        }
+        e.drop_main = kind;
+        return 0;
+    }
     case 511: {  // lifeSet（0x41d34c：整型解析，×3 槽 + 0x3f58=7×life）
         i32 life = 0;
         if (resolve_int(c, 0, life)) {
             e.life = float(life);
+            e.spell_base_life = life;
+            e.spell_life = life * 7;
             if (sim.replay_events) {
                 const i32 args[1] = {life};
                 sim.sink.boss_op(e.serial, 511, args, 1, "");
@@ -583,11 +654,55 @@ int StageCommands::execute(EclContext& c, u16 op) {
         if (e.serial == sim.boss_main_serial && sim.boss_nonspell_frame < 0)
             sim.boss_nonspell_frame = i32(sim.frame);
         if (sim.replay_events) sim.sink.boss_op(e.serial, 513, nullptr, 0, "");
+        e.invulnerable = 0;
         return 0;
-    case 515:
+    case 515: {
+        i32 frames = 0;
+        if (!resolve_int(c, 0, frames)) {
+            sim.error_ = c.error;
+            return -2;
+        }
+        e.invulnerable = frames;
+        return 0;
+    }
+    case 537:
+    case 538:
+    case 539: {  // 0x41e4xx spell family: ids vary with the selected difficulty
+        i32 id = 0, duration = 0, bonus = 0;
+        if (!resolve_int(c, 0, id) || !resolve_int(c, 1, duration) ||
+            !resolve_int(c, 2, bonus)) {
+            sim.error_ = c.error;
+            return -2;
+        }
+        // pfVar11[7] = byte length; encrypted bytes begin at instruction+32.
+        const u32 length = ins->argument<u32>(3);
+        if (ins->length < 32 || length > u32(ins->length - 32)) {
+            sim.error_ = "spell name outside ECL instruction";
+            return -2;
+        }
+        e.spell_name.clear();
+        u8 key = 0x77, increment = 7;
+        const u8* bytes = reinterpret_cast<const u8*>(ins) + 32;
+        for (u32 n = 0; n < length; ++n) {
+            const u8 decoded = bytes[n] ^ key;
+            if (!decoded) break;
+            e.spell_name.push_back(char(decoded));
+            key = u8(key + increment);
+            increment = u8(increment + 0x10);
+        }
+        e.spell_id = id + (op == 537 ? 0 : sim.diff - (op == 539 ? 2 : 1));
+        e.spell_active = true;
+        e.spell_life = i32(e.life) * 7;
+        e.invulnerable = 0;  // shared caseD_33 tail of spell/timerReset
+        return 0;
+    }
+    case 523:
+        e.spell_active = false;
+        e.spell_id = -1;
+        e.spell_name.clear();
+        return 0;
     case 516:
     case 517:
-    case 523:
     case 524:
     case 527:
     case 540:
@@ -599,15 +714,17 @@ int StageCommands::execute(EclContext& c, u16 op) {
     case 562:
     case 638:
         return 0;  // 计时/音效/符卡/掉落等：无事件
-    case 514: {  // setInterrupt（0x41e262）：{t1,t2,name} 记入 vm+0x5234+id*16
+    case 514: {  // setInterrupt（0x41e262 → 0x421880）：{id,life,time,label}
         i32 id = 0;
         if (!resolve_int(c, 0, id)) {
             sim.error_ = c.error;
             return -2;
         }
         i32 t1 = 0, t2 = 0;
-        resolve_int(c, 1, t1);
-        resolve_int(c, 2, t2);
+        if (!resolve_int(c, 1, t1) || !resolve_int(c, 2, t2)) {
+            sim.error_ = c.error;
+            return -2;
+        }
         // 名字参数（arg3 起的 {len, name} 尾串——指令名区原样）
         std::string name;
         const EclInstruction* i = c.instruction;
@@ -616,6 +733,17 @@ int StageCommands::execute(EclContext& c, u16 op) {
             const char* bytes = reinterpret_cast<const char*>(i) + 16 + 4 * 4;
             name.assign(bytes, strnlen(bytes, length ? length - 1 : 0));
         }
+        // 0x41e31c writes the HP threshold; 0x421880 installs the timeout
+        // and BOTH labels only for nonnegative thresholds.
+        if (id >= 0 && id < 8) {
+            auto& slot = e.interrupts[u32(id)];
+            slot.life = t1;
+            if (t1 >= 0) {
+                slot.timeout = t2;
+                slot.health_label = name;
+                slot.timeout_label = name;
+            }
+        }
         if (id == 0) e.interrupt_label = name;  // 525 中断跳转用（id 0）
         if (sim.replay_events) {
             const i32 args[3] = {id, t1, t2};
@@ -623,7 +751,7 @@ int StageCommands::execute(EclContext& c, u16 op) {
         }
         return 0;
     }
-    case 521: {  // 死亡中断标签（0x41e33f：写 vm+0x5240+id*16）
+    case 521: {  // timeout override（0x41e33f：写 vm+0x5240+id*16）
         i32 id = 0;
         if (!resolve_int(c, 0, id)) {
             sim.error_ = c.error;
@@ -636,6 +764,7 @@ int StageCommands::execute(EclContext& c, u16 op) {
             const char* bytes = reinterpret_cast<const char*>(i) + 16 + 4 * 2;
             name.assign(bytes, strnlen(bytes, length ? length - 1 : 0));
         }
+        if (id >= 0 && id < 8) e.interrupts[u32(id)].timeout_label = name;
         if (sim.replay_events) {
             const i32 args[1] = {id};
             sim.sink.boss_op(e.serial, 521, args, 1, name.c_str());
@@ -731,9 +860,11 @@ int StageCommands::execute(EclContext& c, u16 op) {
         *dest = sim.find_by_script_id(id) ? 1 : 0;
         return 0;
     }
-    case 561:  // die（0x41b437 含死亡环弹，环弹不在事件集）——敌机死亡
+    case 561: {  // die（0x41b260 case 0x60 → 0x417ad0：按 ECL 掉落表产道具）
+        sim.drop_table(e);
         e.dead = true;
         return -1;
+    }
 
     // ---------- 600 族：弹幕发射器 ----------
     case 600: {  // etNew（0x41d573）
@@ -815,13 +946,61 @@ int StageCommands::execute(EclContext& c, u16 op) {
         return -2;
     }
     case 608:
-    case 609:
-    case 610:
-    case 611:
-    case 612:
-        return 0;  // etSound/etEx：仅存储（出生后行为，不在事件集）
+        return 0;  // etSound：发射音（0x263/0x264 变体），不在事件集
+    case 609:   // etExSet（0x41df90）：写入 et 槽扩展行为队列
+    case 610:   // etExSet2（0x262 变体）：多两个整型参数位
+    case 611:   // etEx（0x263）：base 位改读敌机侧待写块计数
+    case 612: {  // etEx2（0x264）：同 611 + 两整型位
+        // 0x41df90: arg0 is ALWAYS the emitter. 609/610 explicitly select
+        // one of 18 queue entries; 611/612 use its append cursor. Treating
+        // arg1 as an emitter made BossCard3's explicit entries 8/9 fail.
+        // Layout: four floats, four ints, op, flags, padding (44 bytes).
+        i32 slot = 0, index = 0;
+        if (!resolve_int(c, 0, slot) || slot < 0 || slot >= 8) {
+            sim.error_ = "etEx args";
+            return -2;
+        }
+        const bool append = op == 611 || op == 612;
+        const bool extended = op == 610 || op == 612;
+        u32 argument = 1;
+        if (append) index = i32(e.et[slot].ex_next);
+        else if (!resolve_int(c, argument++, index)) {
+            sim.error_ = c.error;
+            return -2;
+        }
+        if (index < 0 || index >= 18) {
+            sim.error_ = "etEx queue index";
+            return -2;
+        }
+        StageEt::Ex& item = e.et[slot].ex[index];
+        i32 flags = 0, ex_op = 0;
+        if (!resolve_int(c, argument++, flags) || !resolve_int(c, argument++, ex_op)) {
+            sim.error_ = c.error;
+            return -2;
+        }
+        item.flags = u32(flags);
+        item.op = u32(ex_op);
+        const u32 count = extended ? 4 : 2;
+        for (u32 n = 0; n < count; ++n) {
+            i32 value = 0;
+            if (!resolve_int(c, argument++, value)) {
+                sim.error_ = c.error;
+                return -2;
+            }
+            item.args[4 + n] = float(value);
+        }
+        for (u32 n = 0; n < count; ++n)
+            if (!resolve_float(c, argument++, item.args[n])) {
+                sim.error_ = c.error;
+                return -2;
+            }
+        e.et[slot].ex_next = u32(index + 1);
+        return 0;
+    }
     case 613:
-        for (auto& slot : e.et) slot.reset();
+        // 0x41b260 case0x6b -> 0x411df0 + 0x430300: clear live
+        // bullets/lasers, NOT the enemy's emitter configurations.
+        sim.clear_bullets();
         return 0;
     case 614: {  // etCopy（0x41d61a）
         i32 to = 0, from = 0;
@@ -833,9 +1012,27 @@ int StageCommands::execute(EclContext& c, u16 op) {
         sim.error_ = "etCopy args";
         return -2;
     }
-    case 615:
-    case 616:
-        return 0;  // etCancel/Clear：弹体不在事件集
+    case 615:  // etCancel（0x4114f0(pos, radius, 1)：场内弹转换取消道具）
+    case 616: {  // etClear（0x4114f0(pos, radius, 0) + 0x4302a0 转换点登记）
+        float radius = 0;
+        if (!resolve_float(c, 0, radius)) {
+            sim.error_ = c.error;
+            return -2;
+        }
+        sim.cancel_bullets_radius(e, radius, op == 615);
+        return 0;
+    }
+    case 627: {  // etDist: emitter+0x24, consumed by fire_et's radial spawn
+        i32 slot = 0;
+        float distance = 0;
+        if (!resolve_int(c, 0, slot) || !resolve_float(c, 1, distance) ||
+            slot < 0 || slot >= 8) {
+            sim.error_ = c.error.empty() ? "etDist args" : c.error;
+            return -2;
+        }
+        e.et[slot].spin = distance;
+        return 0;
+    }
     case 624: {  // etSpeedD（0x41da32）：按 DIFF 选参
         i32 slot = 0;
         if (!resolve_int(c, 0, slot) || slot < 0 || slot >= 8) {
@@ -939,7 +1136,8 @@ int StageCommands::create_enemy(EclContext& c, u16 op) {
     return 0;
 }
 
-// etOn（0x41d6b1 + 0x40ffe0 + 0x40e840）：按槽状态合成出生参数逐发产事件。
+// etOn（0x41d6b1 + 0x40ffe0 + 0x40e840）：按槽状态合成出生参数后交给
+// StageSim::emit_et（ways/count 循环、单弹出生、队列消费与 RNG 次序）。
 int StageCommands::fire_et(EclContext& c, StageEnemy& e) {
     StageSim& sim = *this->sim;
     i32 slot = 0;
@@ -949,139 +1147,24 @@ int StageCommands::fire_et(EclContext& c, StageEnemy& e) {
     }
     StageEt& et = e.et[slot];
     // 出生点：absolute[2] <= 0.9 → 相对（偏移 + 敌机主位置）；否则绝对 + 偏移。
+    float spawn[3];
     if (et.absolute[2] <= 0.9f) {
-        et.spawn[0] = et.offset[0] + e.position[0];
-        et.spawn[1] = et.offset[1] + e.position[1];
-        et.spawn[2] = et.offset[2] + e.position[2];
+        spawn[0] = et.offset[0] + e.position[0];
+        spawn[1] = et.offset[1] + e.position[1];
+        spawn[2] = et.offset[2] + e.position[2];
     } else {
-        et.spawn[0] = et.absolute[0] + et.offset[0];
-        et.spawn[1] = et.absolute[1] + et.offset[1];
-        et.spawn[2] = et.absolute[2] + et.offset[2];
+        spawn[0] = et.absolute[0] + et.offset[0];
+        spawn[1] = et.absolute[1] + et.offset[1];
+        spawn[2] = et.absolute[2] + et.offset[2];
     }
-    // 瞄准角（0x443f60：出生点 → 玩家，重合取 π/2）。
-    const float dy = sim.player_y - et.spawn[1];
-    const float dx = sim.player_x - et.spawn[0];
+    // 瞄准角（0x443f60：出生点 → 玩家，重合取 π/2）；0x40ffe0 在循环外算一次。
+    const float dy = sim.player_y - spawn[1];
+    const float dx = sim.player_x - spawn[0];
     const float aim = (dy == 0.0f && dx == 0.0f)
                           ? 1.5707964f
                           : float(std::atan2(static_cast<double>(dy), static_cast<double>(dx)));
-
-    const i32 ways = et.ways;
-    const i32 count = et.count;
-    const i32 mode = et.aim;
-    // 0x40e840 角合成全程 x87 80 位（double 近似）；f32 常量提升后参与：
-    // 6.2831855f = 6.283185482025146484375、3.1415927f = 3.1415927410125732421875。
-    const double kTwoPiF = static_cast<double>(6.2831855f);
-    const double kPiF = static_cast<double>(3.1415927f);
-    const double aim_d = aim;
-    for (i32 way = 0; way < ways; ++way) {
-        // 路间速率（0x40e840 开头，80 位中间 → f32 落点 node+0xb88）。
-        float speed = et.speed1;
-        if (ways >= 2)
-            speed = static_cast<float>(et.speed1 - (et.speed1 - et.speed2) *
-                                                      static_cast<double>(way) /
-                                                      static_cast<double>(ways - 1));
-        for (i32 idx = 0; idx < count; ++idx) {
-            double angle = 0;
-            switch (mode) {
-            case 0:
-            case 1: {
-                if ((count & 1) == 0)
-                    angle = et.angle2 * 0.5 + static_cast<double>(idx / 2) * et.angle2;
-                else
-                    angle = static_cast<double>((idx + 1) / 2) * et.angle2;
-                angle = angle + 0.0;
-                if (idx & 1) angle = angle * -1.0;
-                if (mode == 0) angle = angle + aim_d;
-                angle = et.angle1 + angle;
-                break;
-            }
-            case 2:
-            case 3:
-                // 0x40e950..0x40e988 精确求值序：aim+0 落 f32 → idx*2π/count 相加后
-                // 再落 f32 → 与 80 位的 angle2*way+angle1 求和 → 尾部双重 wrap。
-                {
-                    const float base = mode == 2 ? aim : 0.0f;
-                    const double spoke = static_cast<double>(idx) * kTwoPiF /
-                                         static_cast<double>(count);
-                    const float mid = static_cast<float>(spoke + base);
-                    angle = (et.angle2 * static_cast<double>(way) + et.angle1) +
-                            static_cast<double>(mid);
-                }
-                break;
-            case 4:
-                angle = aim_d;
-                angle = et.angle2 * static_cast<double>(way) + et.angle1 +
-                        static_cast<double>(idx) * kTwoPiF / static_cast<double>(count) +
-                        kPiF / static_cast<double>(count) + angle;
-                break;
-            case 5:
-                angle = et.angle2 * static_cast<double>(way) + et.angle1 +
-                        static_cast<double>(idx) * kTwoPiF / static_cast<double>(count) +
-                        kPiF / static_cast<double>(count);
-                break;
-            case 6:
-                angle = et.angle2 +
-                        sim.random.unit() * static_cast<double>(et.angle1 - et.angle2);
-                break;
-            case 7:
-                speed = static_cast<float>(sim.random.unit() *
-                                               static_cast<double>(et.speed1 - et.speed2) +
-                                           et.speed2);
-                angle = et.angle2 * static_cast<double>(way) + et.angle1 +
-                        static_cast<double>(idx) * kTwoPiF / static_cast<double>(count);
-                break;
-            case 8:
-                angle = et.angle2 +
-                        sim.random.unit() * static_cast<double>(et.angle1 - et.angle2);
-                speed = static_cast<float>(sim.random.unit() *
-                                               static_cast<double>(et.speed1 - et.speed2) +
-                                           et.speed2);
-                break;
-            case 9:
-            case 10: {
-                if ((count & 1) == 0)
-                    angle = et.angle2 * 0.5 + static_cast<double>(way / 2) * et.angle2;
-                else
-                    angle = static_cast<double>((way + 1) / 2) * et.angle2;
-                angle = angle + static_cast<double>(idx) * kTwoPiF / static_cast<double>(count);
-                if (way & 1) angle = angle * -1.0;
-                if (mode == 9) angle = angle + aim_d;
-                angle = et.angle1 + angle;
-                break;
-            }
-            default:
-                angle = et.angle1;
-                break;
-            }
-            // 0x40e840 尾：FUN_00472e90(acc, 0)（传参落 f32）→ FUN_00472f30（再落）。
-            const float stored = wrap_angle(wrap_angle(static_cast<float>(angle)));
-            float x = et.spawn[0], y = et.spawn[1];
-            // z：0x40e840 写入 spawn z 后无条件覆写 0x3dcccccd（渲染层常量），
-            // 事件口径恒 0.1f；spin（et[9]）只作用于 x/y（0x40e840 尾段）。
-            const float z = 0.1f;
-            if (et.spin != 0.0f) {
-                float ox = 0, oy = 0;
-                polar_xy(stored, et.spin, ox, oy);
-                x = x + ox;
-                y = y + oy;
-            }
-            sim.sink.bullet_spawn(e.serial, u32(slot), u32(way), u32(idx), x, y, z, stored, speed,
-                                  et.sprite, et.subtype);
-            if (sim.interactive) {
-                // 交互模式同源产弹体实体（直进；无 RNG、无事件，契约不受影响）。
-                StageBullet bullet;
-                bullet.x = x;
-                bullet.y = y;
-                bullet.z = z;
-                bullet.angle = stored;
-                bullet.speed = speed;
-                bullet.sprite = et.sprite;
-                bullet.subtype = et.subtype;
-                sim.bullets.push_back(bullet);
-            }
-        }
-    }
-    return 0;
+    sim.emit_et(et, e.serial, u32(slot), spawn, aim);
+    return sim.error_.empty() ? 0 : -2;
 }
 
 }  // namespace th13

@@ -8,16 +8,24 @@
 
 namespace th13 {
 
-// th13 TitleScreen 数值待 supervisor 反汇编锚定（0x44e600 对应物，蓝图 §五-8）：
-// 现沿 th15 世代枚举位，Quit=2 与 StartGame=2 同值冲突是有意保留的现状，
-// TitleFrame/ApplicationState 以 screen==Quit 区分（待锚后回填）。
+// th13 TitleScreen 数值（supervisor 0x44c570 case 表逐项锚定）：
+// Main=1、Quit/StartGame=2（同值冲突是有意保留的现状，TitleFrame/ApplicationState
+// 以 screen==Quit 区分）、Option=3（case 3 → 0x44dd00，MenuExtras 实证）、
+// 难度=5 对应物 450fb0（th13 沿 th15 位 6，待回填）、
+// 角色=7（同上）、Replay=11 = case b → 0x4525b0（p58 反编译实证）、
+// MusicRoom=13 = case d → 0x4554f0（MenuExtras 实证）、Manual=16 = case 10
+// → 0x455330（MenuExtras 实证；真实 help 查看器归宿主，wrapper≠完成）。
 enum class TitleScreen : i32 {
     Initialize = 0,
     Main = 1,
     Quit = 2,
     StartGame = 2,
+    Option = 3,
     Difficulty = 6,
     Character = 7,
+    Replay = 11,
+    MusicRoom = 13,
+    Manual = 16,
 };
 
 struct TitleSelectionSettings {
@@ -35,6 +43,13 @@ struct TitleState {
     i32 return_reason = 1;
     i32 confirmed_entry = -1;  // Z 确认的主菜单项（转屏后隐藏时间线仍需定位该项）
     u32 start_effect = 0;
+    // [R3-M] Replay 屏（0x4525b0）状态：扁平选中序持久化（DAT_004dc674 语义，
+    // 自 case0 恢复 row=%25 / page=/25、case3 启动拍写回）；网页导入完成槽位
+    // 提示（宿主 import 成功 → 菜单 substate2 消费并选中）；ascii.anm s19 粒子
+    // 根句柄（title.anm s104 徽记走 handles[104]，析构经 handles 表）。
+    i32 replay_index = 0;
+    i32 replay_import_hint = -1;
+    u32 replay_ascii_root = 0;
 
     TitleState() { age.set(0); }
 

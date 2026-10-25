@@ -15,6 +15,7 @@ struct RunPausePlatform {
     virtual ~RunPausePlatform() = default;
     virtual bool sound(i32) = 0;
     virtual bool suspend_music() = 0;
+    virtual bool resume_music() { return true; }
     virtual bool restart_run() = 0;        // pending_destination = 13
     virtual bool return_to_title() = 0;    // pending_destination = 4
 };
@@ -26,7 +27,7 @@ class RunPause final : private PauseMenuServices {
     AnmManager& animations;
     AnmEnvironment& environment;
     RunPausePlatform& platform;
-    i32 front;
+    i32 front, text;
     bool fail(const std::string&);
     // PauseMenuServices
     bool sound(i32) override;
@@ -38,7 +39,7 @@ public:
     PauseFrame frame;
     std::string error;
     RunPause(SessionState&, AnmManager&, AnmEnvironment&, RunPausePlatform&, FrameScheduler&,
-             i32 front_bank);
+             i32 front_bank, i32 text_bank = 0);
     ~RunPause();
     RunPause(const RunPause&) = delete;
     RunPause& operator=(const RunPause&) = delete;

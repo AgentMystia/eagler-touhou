@@ -43,6 +43,16 @@ class GameRandom {
 public:
     explicit GameRandom(uint16_t seed = 0) : seed_(seed) {}
 
+    void reseed(uint16_t seed) { seed_ = seed; }
+
+    // 0x449070:40-42 恢复语义：种子 ← stage 头 +0x02 戳，并把本对象的调用
+    // 计数清零。原版只对 0x4dc324（game RNG）清计数（_DAT_004dc328=0），
+    // 0x4dc31c（ANM/畸变侧）只写种子不清计数——调用方据此分别选用两个入口。
+    void reseed_restore(uint16_t seed) {
+        seed_ = seed;
+        index_ = 0;
+    }
+
     uint32_t next() {
         const uint16_t a = static_cast<uint16_t>((seed_ ^ 0x9630u) - 0x6553u);
         const uint16_t step = static_cast<uint16_t>((a >> 14) + a * 4);

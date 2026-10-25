@@ -37,6 +37,9 @@ struct ReplayStage {
     u32 frame_count = 0;  // 头 +0x04
     u32 blob_size = 0;    // 头 +0x08
     u32 score = 0;        // 头 +0x1C
+    // 完整 0xC4 stage 头原样字节：0x449070 恢复路径复制头 +0x14 起 0x58 字节
+    // 至 DAT_004be7b8（头内偏移=全局位置），回放开局必须以此为准而非默认值。
+    std::vector<u8> header;
     std::vector<u8> input;   // 6×frame_count 字节
     std::vector<u8> events;  // 每 30 帧 1 字节慢速率（原版 FPS，0xff 截断）
     ReplayFrame frame(u32 index) const;
@@ -60,6 +63,10 @@ public:
     i32 score = 0, character = 0, shot_type = 0, rank = 0, practice_stage = 0;
     float slow_rate = 0.0f;
     u32 stage_count = 0;
+    // 解压流 [0,0x74) 顶层头原样字节：0x448c40:67 单独 malloc 的独立块；
+    // 0x447900 case 1 装备序从其 +0x5c/0x60/0x64 读出写全局（恢复源，禁止
+    // 字段级伪造）。
+    std::vector<u8> top_header;
     std::vector<ReplayStage> stages;
     std::vector<std::string> user_blocks;  // USER 文本块（首块=摘要，次块=备注）
 

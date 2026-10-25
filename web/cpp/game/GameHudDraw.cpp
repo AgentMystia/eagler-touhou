@@ -1,5 +1,11 @@
-// GameHud 文本 pass：hi-score/score、残机/灵击碎片、灵力（th15 GameHudDraw.cpp
-// 的增量逼近与两段字号照搬；灵力按 th13 x.xx /4.00，power_step=100）。
+// GameHud 文本 pass：hi-score/score、残机/灵击碎片、灵力、最大得点、Graze。
+// 坐标/颜色/字号按原版 0x427910 逐项对齐：
+//   hi(620,44) ff808080 / score(620,66) ffffffff 右对齐（0x427910:155-176）
+//   碎片(576±7,122) (576,160) scale 0.6（0x427910:178-201）
+//   Power(540,216) 大字 + (560,223) 小数 + (574,216) "/N." + (606,223) "00"
+//   色 ffff8030（0x427910:203-229）
+//   maxPoint(620,238) ff40c0ff 右对齐（0x427910:230-238）
+//   Graze(620,260) ff808080 右对齐（0x427910:239-246）
 #include "GameHud.hpp"
 
 #include <algorithm>
@@ -12,7 +18,7 @@ template <typename... T>
 std::string format(const char* pattern, T... values) {
     char text[256];
     std::snprintf(text, sizeof(text), pattern, values...);
-    return text;
+    return std::string(text);
 }
 
 u32 alpha(u32 color, u32 source) { return (color & 0xffffff) | (source & 0xff000000); }
@@ -55,6 +61,9 @@ void GameHud::update_score() {
 }
 
 bool GameHud::draw(const HudDrawContext& context, HudDrawServices& services) {
+    // 灵界计值显示（0x42b030）随帧刷新；只消费 SessionState.ending_points
+    //（DAT_004be808 灵界计，单一状态，不另建 HUD 私有计量）。
+    if (!update_trance()) return false;
     HudTextStyle style;
     const auto text = [&](float x, float y, const std::string& value) {
         if (services.hud_text({{x, y, 0}, style, value})) return true;
@@ -71,33 +80,69 @@ bool GameHud::draw(const HudDrawContext& context, HudDrawServices& services) {
     style.color = alpha(0xff808080, root_vm->visual.color);
     style.font = 4;
     style.alignment = 2;
-    if (!text(620, 42, score_number(u32(progress.high_score), progress.high_score_extra)))
+    if (!text(620, 44, score_number(u32(progress.high_score), progress.high_score_extra)))
         return false;
     style.color = alpha(0xffffffff, root_vm->visual.color);
-    if (!text(620, 64, score_number(u32(displayed_score), progress.continues))) return false;
-    // 残机/灵击碎片：右对齐小字号。
+    if (!text(620, 66, score_number(u32(displayed_score), progress.continues))) return false;
+    // 残机/灵击碎片：0x427910:156-194。残机分母 = 0x4bb994[be7fc]
+    //（首命 8，0x43d330 每命递增）；灵击分母固定 8（0x427f02 push $8）。
+    // 哨兵 9999999 → "---/---"（0x427910:170/187），且残机 x 左移 7
+    //（0x427910:156-162）。此前把 max_point≥999999 当哨兵是误接线。
     style.alignment = style.vertical_alignment = 1;
     style.scale = {.6f, .6f};
-    if (!text(576, 120, format("%3d", player.life_pieces))) return false;
-    if (!text(597, 120, format("/%d", 5))) return false;
-    if (!text(576, 158, format("%3d", player.bomb_pieces))) return false;
-    if (!text(597, 158, format("/%d", 5))) return false;
-    // 灵力：x.xx /4.00 两段字号（整数段大字号、小数段小字号）。
+    const i32 life_threshold = life_piece_threshold(progress.life_piece_threshold_index);
+    const float life_x = 576.f - (life_threshold >= 100 ? 7.f : 0.f);
+    if (life_threshold >= 999999) {
+        if (!text(life_x, 122, "---/---")) return false;
+        if (!text(576, 160, "---/---")) return false;
+    } else {
+        if (!text(life_x, 122, format("%3d", player.life_pieces))) return false;
+        if (!text(life_x + 21, 122, format("/%d", life_threshold))) return false;
+        if (!text(576, 160, format("%3d", player.bomb_pieces))) return false;
+        if (!text(597, 160, format("/%d", 8))) return false;
+    }
+    // 灵力：x.xx /4.00 两段字号（整数段大字号、小数段小字号），y=216/223。
     if (!player.power_step) {
         error = "HUD power step is zero";
         return false;
     }
     style.color = alpha(0xffff8030, root_vm->visual.color);
     style.scale = {1, 1};
-    if (!text(540, 182, format("%d.", player.power / player.power_step))) return false;
+    if (!text(540, 216, format("%d.", player.power / player.power_step))) return false;
     style.scale = {.6f, .6f};
-    if (!text(560, 189,
+    if (!text(560, 223,
               format("%.2d", wrapping_mul(player.power % player.power_step, 100) / player.power_step)))
         return false;
     style.scale = {1, 1};
-    if (!text(574, 182, format("/%d.", player.max_power / player.power_step))) return false;
+    if (!text(574, 216, format("/%d.", player.max_power / player.power_step))) return false;
     style.scale = {.6f, .6f};
-    if (!text(606, 189, "00")) return false;
+    if (!text(606, 223, "00")) return false;
+    // 最大得点（0x4be7dc/100 的十位对齐显示）与 Graze。
+    // 0x427910:227-228 在功率段后重设 0x19184=2（右对齐）；此前沿用碎片段的
+    // 居中 1，Normal 开局 10,000 以 620 为中心溢出屏右缘（battle-f300 实证）。
+    style.alignment = 2;
+    style.scale = {1, 1};
+    style.color = alpha(0xff40c0ff, root_vm->visual.color);
+    if (!text(620, 238,
+              grouped_number(u32(progress.max_point / 100 - (progress.max_point / 100) % 10))))
+        return false;
+    style.color = alpha(0xff808080, root_vm->visual.color);
+    if (!text(620, 260, grouped_number(u32(progress.graze)))) return false;
+    // Boss 计时文本（0x427910:253-274）：'.' 与百分秒锚定数字 VM 位置
+    //（ascii script2/3 dump：208/220,39）+16/-7；'.' 字体 4、百分秒 0.6 缩放。
+    if (boss_hud.timer_visible()) {
+        style.alignment = style.vertical_alignment = 0;
+        style.color = alpha(boss_hud.timer_digit_color(), root_vm->visual.color);
+        style.font = 4;
+        style.scale = {1, 1};
+        if (!text(boss_hud.timer_text_x(), boss_hud.timer_text_y(), ".")) return false;
+        style.scale = {.6f, .6f};
+        if (!text(boss_hud.timer_text_x() + 8.f, boss_hud.timer_text_y() + 6.f,
+                  format("%.2d", boss_hud.timer_centiseconds())))
+            return false;
+        style.scale = {1, 1};
+        style.font = 0;
+    }
     return true;
 }
 

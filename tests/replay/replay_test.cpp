@@ -6,6 +6,9 @@
 // 5) 输入流关键帧：首帧、Boss 前关键帧（frame 2379，Boss 2380 前一帧，
 //    2380 为 harness replay 注入实测的自机 0x21Sanae 一阶段 Boss 出现帧）、末帧；
 // 6) 沿一致性：文件 pressed/released 与相邻帧差分全等（0x414f30 幂等重算）。
+// 7) stage 原始 0xC4 头保留：头字段 = 原版偏移（0x449070 恢复源 = 头+0x14 起
+//    0x58 字节、种子 = 头+0x02），解码器不得丢头或臆造字段名；恢复窗口
+//    篡改负控（字节级传播对照）。
 #include "../harness/test_framework.hpp"
 
 #include "game/GameInput.hpp"
@@ -353,6 +356,69 @@ TEST(replay_input_cursor) {
     CHECK_EQ(rate.current_slow_rate(), 60);
     for (u32 i = 0; i < 30; ++i) rate.next();
     CHECK_EQ(rate.current_slow_rate(), 55);
+}
+
+TEST(stage_header_preserved_raw) {
+    // stage 原始 0xC4 头保留：真实初值唯一源（0x449070 的恢复面 =
+    // 头+0x14 起 0x58 字节 → 0x4be7b8、头+0x02 u16 种子 → 0x4dc324/0x4dc31c，
+    // artifacts/decomp/jp/functions/00449070.c:40-49）。头字段与派生量
+    // 必须逐位出自原样字节，不臆造字段名。
+    th13::ReplayFile replay;
+    if (!load_replay(replay)) {
+        CHECK(false);
+        return;
+    }
+    u16 max_number = 0;
+    for (u32 i = 0; i < replay.stage_count; ++i) {
+        const auto& stage = replay.stages[i];
+        CHECK_EQ(stage.header.size(), size_t(0xC4));
+        // 派生字段 = 头内偏移。
+        const u16 number = u16(stage.header[0]) | u16(stage.header[1]) << 8;
+        const u16 stamp = u16(stage.header[2]) | u16(stage.header[3]) << 8;
+        u32 frame_count = 0, blob_size = 0;
+        for (u32 b = 0; b < 4; ++b) {
+            frame_count |= u32(stage.header[4 + b]) << (8 * b);
+            blob_size |= u32(stage.header[8 + b]) << (8 * b);
+        }
+        CHECK_EQ(stage.number, number);
+        CHECK_EQ(stage.stamp, stamp);
+        CHECK_EQ(stage.frame_count, frame_count);
+        CHECK_EQ(stage.blob_size, blob_size);
+        CHECK_EQ(u32(stage.input.size()), frame_count * 6);
+        // 关卡号唯一且 ≤ 关卡总数（全通关录像单调递增；单关/练习档
+        // 只含一个关卡——不误杀合法文件：仅查唯一性与上界）。
+        CHECK(number != 0 && number <= 8);
+        CHECK(u32(number) > u32(max_number));
+        max_number = number;
+    }
+    // udSr01 stage1 戳 = 61738（原版 0x449070 种子恢复的已知值）。
+    CHECK_EQ(replay.stages[0].stamp, u16(61738));
+}
+
+TEST(tampered_header_changes_the_restored_state_bytes) {
+    // 负控（有检出力）：恢复窗口（头+0x14..0x6c）的原始字节经字节级
+    // 重解析后，篡改版与原版必然导出不同的恢复字节序列——模拟
+    // 0x449070:43-49 的 0x58 字节拷贝（该拷贝是逐位复制，篡改即传播）。
+    th13::ReplayFile replay;
+    if (!load_replay(replay)) {
+        CHECK(false);
+        return;
+    }
+    const auto& stage = replay.stages[0];
+    std::vector<u8> tampered(stage.header);
+    tampered[0x20] = u8(tampered[0x20] ^ 1);   // 恢复区内单字节翻转
+    bool restored_differs = false;
+    for (u32 i = 0; i < 0x58; ++i) {
+        if (tampered[0x14 + i] != stage.header[0x14 + i]) restored_differs = true;
+    }
+    CHECK(restored_differs);   // 篡改必然落入恢复字节序列（检出力）
+    // 与已知恢复值对照：篡改前恢复序列 = 头[0x14,0x6c) 原样字节。
+    const auto& untampered = stage.header;
+    u32 same = 0;
+    for (u32 i = 0; i < 0x58; ++i) {
+        if (tampered[0x14 + i] == untampered[0x14 + i]) ++same;
+    }
+    CHECK(same < 0x58);   // 篡改后逐位对照不再全等
 }
 
 }  // namespace

@@ -34,9 +34,12 @@ struct HudHarness {
         }
     } sink;
     HudHarness() {
-        // front bank：root(0) + 脚本 1..45（30–37 残机、38–45 灵击）。
-        auto bank = synthetic_anm(8, trivial_scripts(46));
+        // front bank：root(0) + 残机 30–37 + 灵击 38–45 + 难度 79/85 + 灵界计
+        // 171（GameHud.cpp 生产语义要求夹具自带 171，不吞错）。
+        auto bank = synthetic_anm(8, trivial_scripts(172));
         CHECK(load_bank(manager, 3, bank));
+        // ascii bank：boss 计时数字 VM（script2/3，0x425170:181-287 池模板）。
+        CHECK(load_bank(manager, 2, synthetic_anm(302, trivial_scripts(46))));
         CHECK(hud.initialize(HudEntryContext{}));
     }
 };
@@ -48,10 +51,12 @@ i32 pending(const AnmManager& manager, u32 handle) {
 
 TEST(life_icons_interrupt_layout) {
     HudHarness harness;
-    // 3 残机 + 2 碎片：图标 0-2 满(2)、图标 3 碎片(7+2)、图标 4-7 空(3)。
+    // 3 残机 + 2 碎片：图标 0-2 满(2)、图标 3 碎片档、图标 4-7 空(3)。
+    // 档位 = (pieces*5)/threshold+7（0x42ae90:34-40；threshold=0x4bb994[be7fc]
+    // 首项 8，SessionState.hpp 表实证）：(2*5)/8+7 = 8。
     CHECK(harness.hud.life(3, 2));
     for (int i = 0; i < 3; i++) CHECK_EQ(pending(harness.manager, harness.hud.life_icons[i]), 2);
-    CHECK_EQ(pending(harness.manager, harness.hud.life_icons[3]), 9);
+    CHECK_EQ(pending(harness.manager, harness.hud.life_icons[3]), 8);
     for (int i = 4; i < 8; i++) CHECK_EQ(pending(harness.manager, harness.hud.life_icons[i]), 3);
     CHECK(harness.hud.life(8, 0));  // 满 8：全满，无碎片位
     for (int i = 0; i < 8; i++) CHECK_EQ(pending(harness.manager, harness.hud.life_icons[i]), 2);
@@ -62,7 +67,8 @@ TEST(bomb_icons_interrupt_layout) {
     HudHarness harness;
     CHECK(harness.hud.bombs(2, 4));
     for (int i = 0; i < 2; i++) CHECK_EQ(pending(harness.manager, harness.hud.bomb_icons[i]), 2);
-    CHECK_EQ(pending(harness.manager, harness.hud.bomb_icons[2]), 11);  // 7+4 碎片
+    // 0x42af60:38：(4*6)/8+7 = 10（灵击分母固定 8）。
+    CHECK_EQ(pending(harness.manager, harness.hud.bomb_icons[2]), 10);
     for (int i = 3; i < 8; i++) CHECK_EQ(pending(harness.manager, harness.hud.bomb_icons[i]), 3);
     CHECK(!harness.hud.bombs(-1, 0));
 }
@@ -101,7 +107,8 @@ TEST(hud_text_draw_pass_paints_power_and_pieces) {
     for (const auto& line : harness.sink.lines) {
         if (line == "3.") has_power_integer = true;
         if (line == "42") has_power_fraction = true;
-        if (line == "/5") has_pieces = true;
+        // 碎片分母 = 阈值表首项 8（0x4bb994 .data 实证，SessionState.hpp）。
+        if (line == "/8") has_pieces = true;
     }
     CHECK(has_power_integer);
     CHECK(has_power_fraction);

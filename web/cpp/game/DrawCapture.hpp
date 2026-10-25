@@ -29,7 +29,14 @@ public:
     void register_texture(const AnmResource* file, u32 first, u32 count, i32 slot);
 
     bool open_output(const char* path);   // false 时 error() 有值
-    void close_output() noexcept;
+    bool close_output() noexcept;
+    bool legacy_harness() const noexcept {
+#ifdef __EMSCRIPTEN__
+        return false;
+#else
+        return true;
+#endif
+    }
     void begin_frame(u32 frame);          // 帧界：viewport 保留（同 oracle 影子）
     bool end_frame();                     // 落一行 JSONL（含末尾 \n）
     // 帧尾 SetTexture(0,0)（0x45d2f0:49 的移植侧镜像）：设备侧纹理清空

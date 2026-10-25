@@ -27,6 +27,11 @@ struct TitleFrameServices : TitleFramePlatform {
     // [轮9] 主菜单选择交叉的绘制回调推进（update 侧 poke 被 tick 插值覆写
     // ——wasi trace 实证，poke 必须 tick 后/绘制前执行）。
     virtual void advance_main_menu_selection() {}
+    // [R3-M] Replay 屏动态文字的绘制回调入队（0x452c30 ASCII 队列等价通道；
+    // 仅 Replay 屏被调用，false = 入队失败帧错误）。
+    virtual bool draw_title_replay_texts() { return true; }
+    // [r4-M2] 音楽室列表/注释文本队列（0x4554f0 值域；仅 MusicRoom 屏调用）。
+    virtual bool draw_title_music_room_texts() { return true; }
 };
 
 // @R 边条 ×4 场景级常量提交（oracle at-r-strips.md；标题期与 boot 装载幕共用——

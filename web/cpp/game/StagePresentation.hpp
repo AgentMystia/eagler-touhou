@@ -1,7 +1,7 @@
 // Stage1 战斗表现层：把 StageSim/StageBattle 的状态同步为 ANM VM 并直绘。
 // 敌机 = ECL 302/303/306 记录的脚本（stage ANM 合并表全局序号）；
 // 敌弹 = bullet.anm 脚本 + 0x4120b0 精灵解析（BulletAppearance 表）；
-// 自机/自机弹 = plXX.anm（脚本 0/1/2 姿态；弹为精灵直贴）。
+// 自机/自机弹 = plXX.anm（脚本 0..4 姿态；弹为精灵直贴）。
 // 敌机本体 VM 默认经 ECL 303/306 入 registry 句柄池（enemies_from_ecl，
 // 2026-10-23 整改扶正）；弹体/自机弹/自机 VM 仍为表现层自备直绘
 //（th15 PlayerDraw/GameDraw 同式——宿主自备 VM 直调 renderer 是基座允许
@@ -40,7 +40,7 @@ public:
     bool draw(u32 pass);
     void release();  // 场景卸载：销毁敌机子树（外部 VM 归还 registry 外部表）
     const std::string& error() const { return error_; }
-    // 画面诊断：敌机/敌弹/自机弹/自机 VM 清单（脚本/精灵/尺寸/缩放/位置）。
+    // 画面诊断：敌机/敌弹/自机弹/自机/神霊 VM 清单（脚本/精灵/尺寸/缩放/位置）。
     std::string debug_report() const;
     // 调试直绘过滤：bit0..3 = 自机弹/自机/敌机/敌弹；默认全开。
     static u32 debug_pass_mask;
@@ -51,6 +51,35 @@ private:
         i32 script = -1;
         std::unique_ptr<AnmVm> vm;
     };
+    // 神霊池视觉：槽位 ↔ registry 句柄一一对应（0x438730 槽 [0x16] 句柄域）。
+    // 脚本 = kind*6+1（出生 bit0==0）/ kind*6+4（bit0==1，trance 期产件），
+    // 合并 stage bank（enemy.anm 局部序＝合并表序，镜像对结构即原版双形态）；
+    // 层 -1（脚本 ins_304 置 8）；出生位 = 钳制后 pos；逐帧同步 +0x574 语义
+    //（0x438730 位移尾）；收集/回收即 retire（0x418330/0x422b20 的 0x20 隐藏
+    // 等价呈现）。
+    bool sync_item_spirits(StageBattle& battle);
+    std::array<u32, ItemManager::kSpiritCapacity> spirit_handles_{};
+    // 道具池视觉（0x42f020 两次模板拷贝的运行时实证，r4/items
+    // item_vm_observer：模板池按 bullet.anm 局部脚本号索引）：
+    // type N(1..9) → VM1 = bullet.anm script 89+N（sprite 459+N 道具本体，
+    // 脉冲族），VM2 = script 98+N（sprite 468+N 静态副体）；层 = 模板层 0。
+    bool sync_items(StageBattle& battle);
+    std::array<u32, ItemManager::kItemCapacity> item_handles_{};
+    std::array<u32, ItemManager::kItemCapacity> item_side_handles_{};
+    // 妖梦斩击池视觉（0x40cb50 生成支路 → pl03.anm script 19/20）：
+    // slot 0..59 ↔ 句柄一一对应（ctx+0x610 anm id 区）；slot=-1（cursor
+    // 越界写）= 仅视觉、无战斗槽，挂 youmu_slash_extra_。VM 生命由脚本自灭
+    // （op1）→ set_vm(alive=false) 清槽；rotation.z 回填 = ins_119 抽后值。
+    bool sync_youmu_slash(StageBattle& battle);
+    std::array<u32, YoumuBomb::kSlots> youmu_slash_handles_{};
+    std::vector<u32> youmu_slash_extra_;
+    // file≥2 合并 stage bank 的文件内局部脚本号 → 合并全局号偏移
+    //（0x4243e0 用 file_table[e.anm_file] 文件对象 + 局部脚本；append 保
+    // 留文件局部 source_id，表内升序 → 回绕即文件边界）。
+    const std::vector<i32>& stage_file_offsets();
+    i32 stage_script_global(i32 file, i32 script);
+    std::vector<i32> stage_file_offsets_;
+    const AnmResource* stage_offsets_source_ = nullptr;
     struct BulletSlot {
         std::unique_ptr<AnmVm> vm;
         i32 script = -1;
@@ -75,6 +104,18 @@ private:
     std::vector<BulletSlot> bullets_;
     std::vector<std::unique_ptr<AnmVm>> shots_;
     std::unique_ptr<AnmVm> player_;
+    // 00442960 / 00444df0：判定点和卫星本体是管理器中的真实 VM，
+    // 不在直绘 pass 再画一次。位置只读战斗单一状态，生命周期由句柄池回收。
+    u32 focus_handle_ = 0;
+    std::array<u32, 8> option_handles_{}, full_option_handles_{}, bomb_orb_handles_{};
+    std::array<bool, 8> bomb_orb_exploding_{};
+    std::vector<u32> player_effect_handles_;
+    i32 option_character_ = -1, option_count_ = -1;
+    bool full_options_ = false;
+    bool sync_player_effects(const StageBattle&);
+    u32 create_player_effect(i32 bank, i32 script, i32 layer, u32 ordering,
+                             const Vec3& position);
+    bool end_player_effect(u32& handle, bool retire);
     i32 player_script_ = -1, player_tilt_ = 0;
     i32 player_shot_sprite_;
     std::string error_;

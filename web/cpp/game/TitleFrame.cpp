@@ -60,6 +60,15 @@ TitleFrame::TitleFrame(TitleState& s, SessionState& p, TitleFrameServices& h, Fr
             }
         }
         frame.host.advance_main_menu_selection();
+        // [R3-M] Replay 屏动态文字（0x452c30）：Draw 优先级 2 逐帧入队，本帧
+        // 由 AsciiFrame（78）消费；失败即帧错误（与 update 侧同口径）。
+        if (i32(frame.state.screen) == i32(TitleScreen::Replay) &&
+            !frame.host.draw_title_replay_texts())
+            return i32(FrameAction::Error);
+        // [r4-M2] 音楽室列表/注释（0x4554f0 文本队列值域）：同通道逐帧入队。
+        if (i32(frame.state.screen) == i32(TitleScreen::MusicRoom) &&
+            !frame.host.draw_title_music_room_texts())
+            return i32(FrameAction::Error);
         frame.submit_side_strips();
         return i32(FrameAction::Continue);
     };
@@ -127,6 +136,21 @@ bool TitleFrame::update(const TitleFrameInput& value) {
     case 7:  // Character
         if (!menu()) return false;
         break;
+    case 3:  // Option（0x44c570 case 3 → 0x44dd00；数字 VM 刷新在 update 内）
+        if (!menu()) return false;
+        break;
+    case 11:  // Replay（0x44c570 case b → 0x4525b0）
+        callbacks[1].enabled = true;
+        if (!menu()) return false;
+        break;
+    case 13:  // 音楽室（0x44c570 case d → 0x4554f0；列表/注释走 Draw 文本队列）
+        callbacks[1].enabled = true;
+        if (!menu()) return false;
+        break;
+    case 16:  // マニュアル（0x44c570 case 10 → 0x455330；supervisor 不碰输入，
+              // help 查看器绘制/翻页全宿主侧）
+        if (!menu()) return false;
+        break;
     default:
         break;
     }
@@ -170,7 +194,10 @@ void TitleFrame::adopt_logo_layers() {
 }
 
 void emit_title_side_strips(AnmManager& animations) {
-    if (!draw_capture) return;
+    // Explicit legacy headless adapter only. The web device never installs this
+    // pointer: title @R composition has not been reconstructed and must not be
+    // manufactured in a trace (or rendered as opaque white strips).
+    if (!draw_capture || !draw_capture->legacy_harness()) return;
     auto* text = animations.resource(0);  // text.anm 常驻槽 0（Application kBanks）
     if (!text) return;
     struct Strip {

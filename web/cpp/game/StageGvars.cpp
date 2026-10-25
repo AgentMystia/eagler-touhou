@@ -53,10 +53,19 @@ bool StageGvars::integer(i32 id, i32& value) {
         return true;
     }
     case -9960:  // RANK
-        value = 3;
+        value = sim.rank;
         return true;
     case -9959:  // DIFF
-        value = 3;
+        value = sim.diff;
+        return true;
+    case -9954:  // LIFE (+0x5138 in the enemy ECL manager)
+        value = e ? i32(e->life) : 0;
+        return true;
+    case -9953:
+    case -9952:
+    case -9951:
+    case -9950:  // EASY/NORMAL/HARD/LUNATIC flags, distinct from RANK
+        value = sim.diff == id + 9953;
         return true;
     case -9957:
         value = 1;
@@ -167,8 +176,19 @@ bool StageGvars::floating(i32 id, float& value) {
         return true;
     }
     case -9960:
+        value = float(sim.rank);
+        return true;
     case -9959:
-        value = 3.0f;
+        value = float(sim.diff);
+        return true;
+    case -9954:
+        value = e ? e->life : 0.0f;
+        return true;
+    case -9953:
+    case -9952:
+    case -9951:
+    case -9950:
+        value = float(sim.diff == id + 9953);
         return true;
     case -9957:
         value = 1.0f;

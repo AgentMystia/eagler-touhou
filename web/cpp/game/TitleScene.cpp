@@ -6,17 +6,23 @@ TitleScene::TitleScene(SessionState& p, TitleSelectionSettings& choice, AnmManag
                        TitleScenePlatform& h, FrameScheduler& schedule, TitleSceneResources bank)
     : progress(p), settings(choice), animations(a), host(h), scheduler(schedule), resources(bank),
       main(state, p, choice, a, bank), difficulty(state, p, choice, a, bank),
-      character(state, p, choice, a, *this, bank), frame(state, p, *this, schedule, a) {
+      character(state, p, choice, a, *this, bank), replay(state, a, h, bank),
+      option(state, a, h, option_volumes, bank), music_room(state, h), manual(state, h),
+      frame(state, p, *this, schedule, a) {
     state.screen = TitleScreen::Initialize;
     state.flags = 0;
     main.play_sound = [this](i32 id) { return host.sound(id); };
     difficulty.play_sound = [this](i32 id) { return host.sound(id); };
+    replay.play_sound = [this](i32 id) { return host.sound(id); };
+    option.play_sound = [this](i32 id) { return host.sound(id); };
+    music_room.play_sound = [this](i32 id) { return host.sound(id); };
 }
 
 TitleScene::~TitleScene() {
     for (auto& handle : state.handles) animations.retire(handle);
     animations.retire(state.version_bar);
     animations.retire(state.start_effect);
+    animations.retire(state.replay_ascii_root);  // [R3-M] ascii s19 粒子根
     // 析构 bank 清单（蓝图 §五-12）：title=16 / title_v=17 / help=19（help 补漏）。
     for (const i32 bank : {resources.title, resources.version, resources.help})
         animations.retire_resource(bank);
@@ -48,17 +54,45 @@ bool TitleScene::start_game(i32 stage) {
     return host.start_game(stage);
 }
 
+bool TitleScene::character_cleared(i32 character, i32 difficulty) {
+    // [r4-M] clear-tag 可见门数据源转发（TitleMenuServices → 宿主持久进度）。
+    return host.character_cleared(character, difficulty);
+}
+
 void TitleScene::advance_main_menu_selection() { main.advance_selection(); }
+
+bool TitleScene::draw_title_replay_texts() {
+    // Replay 屏动态文字：TitleFrame Draw 回调（优先级 2，先于全部 ANM 层）逐帧
+    // 入队，AsciiFrame（Draw 78）同帧消费——原版 supervisor 0x452c30 的 ASCII
+    // 队列通道等价路径。
+    return check(replay.draw_texts(host), replay.error);
+}
+
+bool TitleScene::draw_title_music_room_texts() {
+    // [r4-M2] 音楽室列表/注释：同 Replay 文本队列通道（0x4554f0 值域）。
+    return check(music_room.draw_texts(host), music_room.error);
+}
 
 bool TitleScene::update_title_menu(TitleScreen screen, const TitleFrameInput& value) {
     input = value;
     switch (screen) {
     case TitleScreen::Main:
         return check(main.update(value.pressed, value.repeated), main.error);
+    case TitleScreen::Option:
+        // 屏值 3（0x44c570 case 3 → 0x44dd00）：Option 屏驱动。
+        return check(option.update(value.pressed, value.repeated), option.error);
     case TitleScreen::Difficulty:
         return check(difficulty.update(value.pressed, value.repeated), difficulty.error);
     case TitleScreen::Character:
         return check(character.update(value.pressed, value.repeated), character.error);
+    case TitleScreen::Replay:
+        return check(replay.update(value.pressed, value.repeated), replay.error);
+    case TitleScreen::MusicRoom:
+        // 屏值 13（0x44c570 case d → 0x4554f0）：音楽室驱动。
+        return check(music_room.update(value.pressed, value.repeated), music_room.error);
+    case TitleScreen::Manual:
+        // 屏值 16（0x44c570 case 10 → 0x455330）：マニュアル supervisor wrapper。
+        return check(manual.update(value.pressed, value.repeated), manual.error);
     default:
         return check(false, "Unsupported title scene menu");
     }

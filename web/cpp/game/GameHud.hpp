@@ -4,7 +4,9 @@
 #pragma once
 
 #include "AnmManager.hpp"
+#include "BossPresentation.hpp"
 #include "SessionState.hpp"
+#include "SpellPresentation.hpp"
 #include "HudFrameData.hpp"
 #include "HudDrawData.hpp"
 
@@ -34,12 +36,27 @@ public:
     Timer frame_age{0, 0, 0, 0, 0};
     i32 displayed_score = 0, score_increment = 0;
     std::string error;
-    // th13 特有（本轮不做，仅留占位）：灵界槽，见 docs/plans/ui-base.md §五。
-    u32 trance_gauge = 0, trance_frame = 0;
+    // th13 灵界计（agauge）：0x425170 FUN_0046f820(script 0xab=171) 建
+    // 根 VM 存 stage ctx+0x11c，紧接着调 0x42b030 刷新；子 script172-175
+    // 由 171 ins_500 spawn（front.anm 实 dump：ins_400(-196,448)）。
+    // 值显示 0x42b030：172 标签 2(g>=200)/3、173 scale.x+uv_scale.x =
+    // floor(g/200)/3、175 同式取 g%200/200 且 offset.x=frac*16；174 不写。
+    // interrupt 标签：172: 2(亮)/3(灭)/4(满亮)/5(暗)、173-175: 4(亮)/5(暗)。
+    // 显示层只持根句柄；172-175 子 VM 经 registry.find_child_script 定位，
+    // 值/激活状态全部来自 SessionState（DAT_004be808 / be830 bit0x100），
+    // 不在此另存计量。
+    u32 gauge_main = 0;
+    i32 trance_skull_label = 0;
+    // Boss/符卡面（0x4265a0/0x413270 族；bank 常量 = Application kBanks/
+    // kFrontBank：ascii=2、effect=8、stage=4）。宿主经 HudFrameContext.boss
+    // 供给每帧视图；文本面并入 draw()。
+    BossPresentation boss_hud;
+    SpellPresentation spell_hud;
 
     GameHud(AnmManager& a, SessionState& p, HudPlayerState& s, HudScoreState& v, i32 front_bank,
             i32 ascii_bank)
-        : animations(a), progress(p), player(s), score(v), front(front_bank), ascii(ascii_bank) {
+        : animations(a), progress(p), player(s), score(v), front(front_bank), ascii(ascii_bank),
+          boss_hud(a, {front_bank, ascii_bank, 8}), spell_hud(a, {4}) {
         frame_age.set(0);
     }
 
@@ -55,7 +72,7 @@ public:
         frame_age.set(0);
         displayed_score = score.score;
     }
-    void update_trance() noexcept {}  // 神灵/灵界分期（AddressMap.hpp spirit 条目）
+    bool update_trance();  // 0x42b030 值→172/173/175 显示映射（无状态副作用）
 };
 
 }  // namespace th13

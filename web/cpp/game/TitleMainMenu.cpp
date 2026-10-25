@@ -131,14 +131,47 @@ void TitleMainMenu::enter(i32 entry) {
         state.change_screen(TitleScreen::Difficulty);
         state.menu.push();
         settings.saved_difficulty = progress.difficulty;
-        state.menu.count = 5;  // 家内安全/無病息災/交通安全/學業成就/やめる
+        // 0x450fb0：Rank Select 光标项数 = 4（EASY..LUNATIC；extra 分支另计），
+        // 原版无“やめる”行——旧 5 项/やめる行为废除。
+        state.menu.count = 4;
         state.menu.select(settings.configured_difficulty);
+        break;
+    case TitleMainEntry::Replay:
+        // 0x44c570 case0 iVar7==2 进 Replay 屏（0x44e2xx）：+0x30=10、cursor=4
+        // （返回定位）、光标 push、screen=0xb。flags|=2 同开局路径（对局/回放
+        // 返回不再走 180 帧 intro）。
+        state.flags |= 2u;
+        state.menu.push();
+        state.menu.count = kTitleMainEntries;
+        state.menu.select(i32(TitleMainEntry::Replay));
+        state.change_screen(TitleScreen::Replay);
         break;
     case TitleMainEntry::Quit:
         state.change_screen(TitleScreen::Quit);
         break;
+    case TitleMainEntry::Option:
+        // 0x44c570 case 3 → 0x44dd00（Option 屏，屏值 3）。光标栈 push/pop 与
+        // 行光标归 0 由 TitleOptionsMenu::open/leave 自管对合（0x73190/0x731d0）；
+        // flags|=2 同 Replay（离主菜单返回不再走 180 帧 intro）。
+        state.flags |= 2u;
+        state.change_screen(TitleScreen::Option);
+        break;
+    case TitleMainEntry::MusicRoom:
+        // 0x44c570 case d → 0x4554f0（音楽室，屏值 13）。光标栈 push/曲数入
+        // count/光标归 0 全由 TitleMusicRoomMenu case0 自管（depth==0 兜底即
+        // 主菜单进入路径）；case3 leave() pop 还原 + 恢复标题曲 th13_00。
+        state.flags |= 2u;
+        state.change_screen(TitleScreen::MusicRoom);
+        break;
+    case TitleMainEntry::Manual:
+        // 0x44c570 case 10 → 0x455330（マニュアル，屏值 16）。supervisor 不
+        // 消费输入：查看器开面/轮询/收面全经 TitleManualPlatform（真实 help
+        // viewer 宿主未接 = open 如实失败）；case1 结束位 → 回 Main。
+        state.flags |= 2u;
+        state.change_screen(TitleScreen::Manual);
+        break;
     default:
-        // Replay/PlayerData/MusicRoom/Option/Manual 等入口：真机有画面，本轮不实现
+        // PlayerData/MusicRoom/Manual 等入口：真机有画面，本轮不实现
         // （确认音已在按键处播放，不切屏；蓝图「未实现」清单登记）。
         break;
     }
@@ -162,9 +195,15 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
             adopt_background_layers();
         }
         const bool returning = (state.flags & 2u) != 0;
+        // LOGO 复位根 95（dump L24155：spawn 99+96+100，无 94 的 110f 延迟）建后
+        // 存进 94 槽——present/handles[94] 语义统一为「LOGO 树当前根」。
         if (!present(state.handles[resources.logo_root])) {
             const i32 logo = returning ? resources.logo_restore_root : resources.logo_root;
             if (!create(logo)) return false;
+            if (logo != resources.logo_root) {
+                state.handles[resources.logo_root] = state.handles[logo];
+                state.handles[logo] = 0;
+            }
         }
         state.change_substate(1);
         if (returning) open_menu();
@@ -274,11 +313,19 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
             // [f483 复验] oracle title_logo 末日 f483（Z+14，本帧仍有 op）、
             // f484 起无——retire 于 age==15（末日+1，与 ver 同型 off-by-one）。
             animations.retire(state.handles[resources.logo_root]);
+            // retire 后必须清槽：返回主菜单时 present(hs[94]) 才不会把已死
+            // handle 误判为存活而跳过 create(95) 复位根（dump L24155：95 =
+            // 99+96+100 静止 LOGO，无 110f 延迟）——旧残留 logo 的根因。
+            state.handles[resources.logo_root] = 0;
         }
-        if (state.age.current == 18 && state.handles[resources.background_root]) {
-            // [f489] oracle Z+18 对背景根发 label 3（亮化：403(255)+408(60,
-            // 0,192) 调色起点——f489 rgb=68=第 2 步值反推）。
-            animations.interrupt(state.handles[resources.background_root], 3, false);
+        if (state.age.current == 20 && state.handles[resources.background_root]) {
+            // [f489 复验修正] oracle select00 右半亮化：f489 首绘步值 rgb 68
+            // （f486-488 恒 64，Z=f469 → Z+20；408(60,0,192) 步值 68 起 +2/帧）。
+            // port 的 interrupt(immediate=false) pending 当帧消费落第 1 步 66
+            // ——true 值是首绘 68：改 immediate=true（中断即时 tick 至标签体
+            // 首步，408 计步同帧起算），与 ver label1 的 off-by-one 同族根因
+            // （插值首帧 tick 相位），不挪 age。
+            animations.interrupt(state.handles[resources.background_root], 3, true);
         }
         if (state.age.current >= 9 && state.age.current <= 30) fade_menu_alphas(state.age.current - 9);
         if (state.age.current > 19) enter(state.menu.cursor);

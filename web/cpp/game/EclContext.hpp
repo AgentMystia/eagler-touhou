@@ -76,6 +76,16 @@ public:
     GameRandom* random = nullptr;  // 指令 93 随机源（原版 0x472e10 → 0x472c90 游戏侧 RNG）
     std::array<EclInterpolation, 8> interpolators{};
     std::array<const EclInstruction*, 8> interpolation_targets{};
+    // Slot layout of the ENEMY-owned interrupt table (0x5234 + id*16).
+    // 514 registers {life threshold, enemy-age timeout, health label, timeout label}.
+    // 521 overrides ONLY the timeout label (+0x5240), not the health label.
+    // ECL thread time is not the timeout clock: wait/goto can rewind it forever.
+    struct Interrupt {
+        i32 life = -1;  // +0x5234; negative = inactive
+        i32 timeout = 0;  // +0x5238; zero = no timeout
+        std::string health_label;  // +0x523c
+        std::string timeout_label;  // +0x5240
+    };
     std::string error;
 
     // 取参（0x478e60 整型 / 0x478ee0 浮点，判定已对反汇编逐条核对）：

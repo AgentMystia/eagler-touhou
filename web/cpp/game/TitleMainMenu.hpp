@@ -18,8 +18,9 @@
 namespace th13 {
 
 // th13 主菜单条目（顺序 = title01.png 字条行序，位图辨认；语义标注见上）。
-// 本轮链路仅实现 StartGame(0) → 难度 → 角色 → 开局；Quit(9) 出退出请求；
-// 其余入口 enter() 播确认音后不切屏（真机有画面，蓝图「未实现」清单登记）。
+// 链路：StartGame(0) → 难度 → 角色 → 开局；Replay(4) → Replay 屏（TitleReplayMenu）；
+// Quit(9) 出退出请求；其余入口 enter() 播确认音后不切屏（真机有画面，蓝图
+// 「未实现」清单登记）。
 enum class TitleMainEntry : i32 {
     StartGame = 0,
     ExtraStart = 1,   // 无存档禁用（oracle：↓ 一次 0→2 跳过）
@@ -56,8 +57,9 @@ struct TitleSceneResources {
     // bank2 script18 克隆（RNG 槽 10010-10012 自算位置/漂移）；难度子脚本
     // 23-48 真机不建（解剖实证，root1 方案作废——旧 rank_row_* 字段一并废除）。
     i32 difficulty_tree = 123;    // 难度屏根（子 83,84,113-121）
-    i32 difficulty_badge = 101;   // 固定徽记（translation {160,170}，自驱滑入）
-    i32 difficulty_cursor = 119;  // 光标（0x473210 移动器缓动序列，解剖 §②）
+    i32 difficulty_badge = 101;   // 徽记对 101/102：dump L24277/L24293，自带 (-256,8)→(32,8) 20f 滑入，不加平移
+    i32 difficulty_cursor = 119;  // root123 子脚本119 = 暗 NORMAL 行（rank00 sprite96）；
+                                  // 原版无独立光标 VM，行标签 7/17+cursor 驱动全部行。
     i32 difficulty_particle = 18; // 神霊粒子模板（ascii bank2 script18）
     i32 background_root = 89;     // 背景根（spawn 92,93,91,90；内建 110f/170f 时序）
     i32 logo_root = 94;           // LOGO 首入场根（110f 延迟翻转，oracle g291 实证）
@@ -66,7 +68,14 @@ struct TitleSceneResources {
     i32 portrait_base = 125;      // 立绘 125+角色号（label 7/12/17/22+角色号）
     i32 weapon_base = 135;        // 通常武器图标 135+角色号（同上标签族）
     i32 weapon_base_ex = 139;     // EX 武器图标 139+角色号
-    i32 weapon_selector_base = 131;  // 武器选择框 131+k（用途待锚定）
+    i32 clear_tag_base = 131;  // [r4-M 锚定] 角色 clear 标签 131+c（0x451450：
+                               // score_data+0x56dc*c+0x7e4+diff*4==0 → 00470030
+                               // 递归清子树可见位；旧名 weapon_selector_base）
+    // [R3-M] Replay 屏（0x4525b0）：s104 徽记（dump title.txt L7193：sprite82、
+    // ins_304(26)、(-256,8)→(32,8) 20f 滑入、label1 滑出）；ascii.anm s19 粒子根
+    //（dump ascii.txt L1075：持续 spawn s18）。
+    i32 replay_badge = 104;
+    i32 replay_particle_root = 19;
 };
 
 class TitleMainMenu {

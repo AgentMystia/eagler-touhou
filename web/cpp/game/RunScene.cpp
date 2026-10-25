@@ -7,20 +7,22 @@ namespace th13 {
 namespace {
 // 场景回调优先级（th13 原版调度位待锚定；先按 th15 同族布局取值）：
 // 更新 20（标题 6 与暂停 11 之间），HUD 文本 76（动画层 75 之后、字幕 78 之前）。
-// 战斗直绘穿插 AnmDrawSchedule 各层：自机 12（层 4 区）/自机弹 17（层 6 区）/
+// 战斗直绘穿插 AnmDrawSchedule 各层：自机 23（00441e5a→00443df0）/
+// 自机弹 20（原版 layer9；不能在 priority14 的背景合成之前绘制）/
 // 敌机 19（层 8 同拍）/敌弹 43（层 20 之后，注册晚于动画层回调故同值仍靠后）。
 // STD 舞台背景两组均在动画层 0（优先级 5）之前：背景组 3 / 前景组 4
 // （th15 StageDrawFrame 3/6 的 th13 排位：层 0 前置约束下压缩到 3/4）。
 constexpr i32 kRunUpdatePriority = 20;
 constexpr i32 kRunTextPriority = 76;
-constexpr std::array<i32, 4> kStageDrawPriorities = {12, 17, 19, 43};
+constexpr std::array<i32, 4> kStageDrawPriorities = {20, 23, 19, 43};
 constexpr std::array<i32, 2> kSceneryDrawPriorities = {3, 4};
 }  // namespace
 
 RunScene::RunScene(SessionState& p, HudPlayerState& player, HudScoreState& score,
                    AnmManager& manager, AnmRenderer& scene_view, AnmEnvironment& e,
                    RunSceneServices& h, FrameScheduler& f, StagePresentation::Banks banks,
-                   i32 front, i32 ascii, i32 scenery_bank, const std::string& std_name)
+                   i32 front, i32 ascii, i32 scenery_bank, const std::string& std_name,
+                   GameRandom* shared_random)
     : progress(p),
       animations(manager),
       scene_renderer(scene_view),
@@ -30,8 +32,11 @@ RunScene::RunScene(SessionState& p, HudPlayerState& player, HudScoreState& score
       player_state(player),
       score_state(score),
       hud(animations, p, player, score, front, ascii),
+      battle(shared_random),
       presentation(std::make_unique<StagePresentation>(animations, scene_renderer, banks,
                                                        kPlayerShotSprite)),
+      msg_presentation(std::make_unique<MsgPresentation>(
+          animations, MsgPresentation::Banks{banks.player, banks.stage})),
       scenery_bank(scenery_bank),
       scenery_std(std_name),
       post_flow(p, player, score, *this) {
@@ -70,6 +75,7 @@ RunScene::~RunScene() {
     for (auto& callback : callbacks) scheduler.remove(callback);
     for (auto& draw : stage_draws) scheduler.remove(draw.callback);
     for (auto& draw : scenery_draws) scheduler.remove(draw.callback);
+    if (msg_presentation) msg_presentation->release_all();  // 对话立绘/名牌 VM 归还
     if (presentation) presentation->release();
 }
 
@@ -86,7 +92,11 @@ bool RunScene::initialize() {
     provider.host = &host;
     provider.sim = &battle.sim;
     provider.anim_list = &battle.sim.anim_list;
-    if (!battle.load(provider, "st01.ecl", 1 << (progress.difficulty & 3), host, progress,
+    // 关卡 ECL 名（stage 表 0x4bb4f0 行 +0x8；换关 0xc 后 Application 已按
+    // DAT_004be81c 装载 st0N.ecl/std，此处取同表同款——非首关不再误装 st01）。
+    char stage_ecl[16];
+    std::snprintf(stage_ecl, sizeof stage_ecl, "st%02d.ecl", int(progress.stage));
+    if (!battle.load(provider, stage_ecl, 1 << (progress.difficulty & 3), host, progress,
                      player_state, score_state, nullptr,
                      battle_sht.empty() ? nullptr : battle_sht.c_str()))
         return fail(battle.error().empty() ? "Stage battle load failed" : battle.error());
@@ -149,6 +159,14 @@ bool RunScene::initialize() {
             return fail("Stage msg invalid: " + std::string(msg_name) + ": " + msg_error);
         }
     }
+    // 对话立绘 bank/脚本绑定（stage 表 0x4bb4f0 行 + ECL ANIM 名单全局号换算）：
+    // 只在 msg 资产存在时绑定；失败即场景错误（不静默降级成无立绘对话）。
+    if (dialog_ready && !msg_presentation->bind_stage_scripts(
+                            int(progress.stage), battle.sim.anim_list,
+                            [this](const std::string& name, std::vector<u8>& bytes) {
+                                return host.read_asset(name, bytes);
+                            }))
+        return fail("Dialog presentation bind: " + msg_presentation->error);
     hud.prepare_stage_assets();
     if (!hud.initialize(HudEntryContext{})) return fail(hud.error);
     return true;
@@ -162,13 +180,29 @@ bool RunScene::update() {
     if (progress.scene_flags & 0x70u) return true;
     progress.stage_frame++;
     age.tick(&progress.rate);
-    GameInput input;
-    input.held = input_held;
-    input.pressed = input_pressed;
-    input.repeated = input_repeated;
+    // 0x448200:21,35 + 0x414f30：唯一 GameInput 实例（BrowserRuntime 采样、
+    // 按游戏帧 cadence update 恰一次、Application::step 传入）——本场景直接
+    // 消费该实例的 held/pressed/released/repeated/long_held，不自持第二实例
+    //（task 卡 stage1-replay-runtime 禁止 P3；原版 0x4e49f0 全局单对象同构）。
+    // 跨场景 previous 连续性由实例生命周期自然携带（BrowserRuntime 全局），
+    // 菜单持键进关的首帧沿与原版一致。暂停/覆盖层冻结帧门内本函数早退不消费；
+    // 宿主照常逐帧推进实例，门后恢复消费当前帧值（原版 00414f30 无条件逐帧
+    // 语义由宿主侧承接）。测试直调 update() 未先 controls() 时消费零输入。
+    static const GameInput kNoInput{};
+    const GameInput& input = input_frame ? *input_frame : kNoInput;
     if (!battle.step(input)) return fail(battle.error());
     // 对话解释器（0x4265a0 每帧驱动：ECL 步进后同帧推进；Z 边沿 = bit0）。
-    if (dialog.active()) dialog.step((input_pressed & 0x01u) != 0);
+    // 推进键面（0x428ae0:122-129）：Z 持续位 0x1、Ctrl 0x200（快进）、Enter
+    // 0x80000 与 opcode 11 放行共用；持续帧数 = GameInput.duration（0x42b3f0
+    // 的 0x4e49f0+0x194+key*4 同构）。
+    if (dialog.active()) {
+        MsgAdvance advance;
+        advance.z_pressed = (input.pressed & 0x01u) != 0;
+        advance.held = input.held;
+        advance.z_frames = input.duration[0];
+        advance.ctrl_frames = input.duration[9];
+        dialog.step(advance);
+    }
     // Boss 登场变暗推进：boss 槽存活（midboss 同走 512 setBoss）→ 30 帧淡入
     // 0.6 α；消失反向淡出。事件流实证：2381 MBoss spawn 与 setBoss 同帧。
     if (battle.sim.boss() != nullptr) {
@@ -178,8 +212,24 @@ bool RunScene::update() {
     }
     if (scenery && !scenery->update(animations, environment, progress.rate))
         return fail(scenery->error.empty() ? "Stage scenery update failed" : scenery->error);
-    if (!presentation->sync(battle, input_held)) return fail(presentation->error());
-    hud.update(HudFrameContext{}, host);
+    if (!presentation->sync(battle, input.held)) return fail(presentation->error());
+    // Boss HUD 每帧视图装配（HudFrameContext.boss；0x4265a0 驱动面，RunScene
+    // 装配契约）：可证字段接实值，未锚定缺口保持默认并登记，不伪造。
+    BossFrameInput boss_view;
+    boss_view.boss = battle.sim.boss();           // mgr+0x5c 槽 0
+    boss_view.dialog_active = dialog.active();    // ctx+0x198 对话进行中
+    boss_view.player_x = battle.player_x;         // DAT_004c22c4+0x5b8 世界位
+    boss_view.player_y = battle.player_y;         // +0x5bc
+    boss_view.boss_life =
+        boss_view.boss ? i32(boss_view.boss->life) : 0;  // +0x5138 int 口径
+    boss_view.trance_mode = trance_active(progress);     // DAT_004c2178+0x7c bit1
+    // 【缺口登记，非功能完成】boss_leaving（mgr+0x7c bit0）；timer_seconds
+    // 符卡时长（-1 = 无计时，锚定前不倒计时）；life_initial（<=0 环隐藏，
+    // 锚定前 boss 环不显示）；markers ratio（ECL 540/527）。
+    HudFrameContext frame;
+    frame.dialogue = boss_view.dialog_active;
+    frame.boss = boss_view.boss ? &boss_view : nullptr;
+    hud.update(frame, host);
     hud.update_score();
     // 覆盖层/通关演出推进（0x43dbc0 行为子集 + GameInf 0x4000 路径）。
     post_flow.update();
@@ -189,23 +239,52 @@ bool RunScene::update() {
 void RunScene::open_dialog(i32 entry) {
     // 0x428820 else 分支：已有对话先销毁（+0x198 换手），再开新 entry。
     if (!dialog_ready) return;
+    if (msg_presentation) msg_presentation->release_all();
     std::string dialog_error;
     if (!dialog.open(dialog_file, u32(entry), *this, dialog_error))
         fail("Dialog entry " + std::to_string(entry) + ": " + dialog_error);
 }
 
-void RunScene::msg_bgm(i32) {
-    // BGM 族（opcode 2/19/20/31——stage 表 0x64/0x2c/难度门/0x68 曲名）：
-    // 音频接线属 Application 层 TODO（本阶段对话乐句切换不生效）。
+void RunScene::msg_bgm(i32 opcode) {
+    // 0x428ae0 jump table（0x429c7c）逐 handler 实证分派——旧「BGM 族」注释
+    // 仅对 19 成立（p58-dialogue 纠正）：
+    //   2（0x429335）右立绘：entry<2 或无 Boss 对 = 中Boss 对（stage 表
+    //     +0x6c/+0x70），否则 Boss 对（+0x64/+0x68）；
+    //   19（0x4299df → 0x43ae40(1, stage+0x2c)）Boss 曲：播关首预载槽 1
+    //     （0x42b990:215 载入；Application.begin_run 侧预载）；
+    //   20（0x429a94）名牌 VM：stage 表 +0x54/+0x58 缺席用 +0x5c/+0x60；
+    //   31（0x42948c）右立绘 Boss 对无条件。
+    if (!msg_presentation) return;
+    switch (opcode) {
+    case 2:
+        if (!msg_presentation->side_portrait(dialog.state().entry))
+            fail("Dialog side portrait: " + msg_presentation->error);
+        break;
+    case 19:
+        if (!host.queue_music(2, 1, "")) fail("Boss music queue failed");
+        break;
+    case 20:
+        if (!msg_presentation->nameplate())
+            fail("Dialog nameplate: " + msg_presentation->error);
+        break;
+    case 31:
+        if (!msg_presentation->boss_side_portrait())
+            fail("Dialog boss portrait: " + msg_presentation->error);
+        break;
+    default:
+        break;
+    }
 }
 
 void RunScene::msg_portrait_load() {
-    // opcode 1：按角色装载对话立绘 bank（0x4c0aa0 + be7b8*4）——视觉阶段
-    // 随结算窗 oracle 一起锚定（TODO）。
+    // opcode 1（0x429285）：自机立绘根 VM——玩家 plXX bank 脚本表
+    // 0x4c0aa0[be7b8]（EXE 实读 = 29,34,30,28）。
+    if (msg_presentation && !msg_presentation->player_portrait(progress.character & 3))
+        fail("Dialog player portrait: " + msg_presentation->error);
 }
 
 void RunScene::msg_boss_battle() {
-    // opcode 22/27 → 0x43af70（Boss 战设置）：battle 侧接线 TODO。
+    // opcode 22/27 → 0x43af70（Boss 战设置）：battle 侧接线 TODO（Boss 域）。
 }
 
 void RunScene::msg_stage_clear() {
@@ -213,23 +292,98 @@ void RunScene::msg_stage_clear() {
     post_flow.on_stage_clear();
 }
 
+// ——追加可视化通知钩子（0x428ae0 逐 handler 证据；见 MsgPresentation.hpp）——
+
+void RunScene::msg_portrait_interrupt(i32 opcode, i32 label) {
+    // 13/14（0x4298d4/0x4298e8）：label = arg+0x11 的 0x46fca0 立即中断——
+    // 表情切换；13 打左（自机立绘）、14 打右（Boss 立绘）。
+    if (!msg_presentation) return;
+    const bool ok = opcode == 0x0d ? msg_presentation->interrupt_player(label)
+                                   : msg_presentation->interrupt_side(label);
+    if (!ok) fail("Dialog portrait interrupt: " + msg_presentation->error);
+}
+
+void RunScene::msg_speaker_switch(i32 opcode) {
+    // 7（0x429641）：左 label2 亮、右 label3 暗；8（0x4296ee）：左 3、右 2。
+    if (!msg_presentation) return;
+    const bool ok = opcode == 0x08 ? msg_presentation->interrupt_player(3) &&
+                                         msg_presentation->interrupt_side(2)
+                                   : msg_presentation->interrupt_side(3) &&
+                                         msg_presentation->interrupt_player(2);
+    if (!ok) fail("Dialog speaker switch: " + msg_presentation->error);
+}
+
+void RunScene::msg_release(i32 opcode) {
+    // 4/23（0x4295cf/0x4295a9）左槽；5/24（0x4295e9/0x4295bc）右槽含名牌；
+    // 6/18（0x42960c/0x429250）名牌 + 文本区（port 单名牌槽 + dialog 行块）。
+    if (!msg_presentation) return;
+    switch (opcode) {
+    case 0x04:
+    case 0x17:
+        msg_presentation->release_player();
+        break;
+    case 0x05:
+    case 0x18:
+        msg_presentation->release_side();
+        break;
+    case 0x06:
+    case 0x12:
+        msg_presentation->release_nameplates();
+        break;
+    default:
+        break;
+    }
+    if (!msg_presentation->error.empty())
+        fail("Dialog release: " + msg_presentation->error);
+}
+
+void RunScene::msg_music_fade(i32 opcode) {
+    // 0x43af70 曲命令 5 淡出：opcode 22 常数 2.0s（0x4aed90 实读；关 6 分支
+    // 0x4aea74 = 8.0s）、27 取指令 arg 浮点（st0N[a-d] 未用 27，arg 未透传
+    // 该钩子——登记 HANDOFF）。
+    (void)opcode;
+    if (!host.queue_music(5, progress.stage == 6 ? 8 : 2, ""))
+        fail("Dialog music fade queue failed");
+}
+
+void RunScene::msg_advance_blip() {
+    // opcode 11 计声放行（0x460bc0(ctx,0)）：原版 voice 0 提示音。
+    if (!host.hud_sound(0)) fail("Dialog advance sound failed");
+}
+
+void RunScene::msg_dialog_end() {
+    // entry 终止（0x4265a0 当帧销毁）：全部对话 VM 释放（原版对话对象销毁
+    // 连带 +0x40/+0x44/+0x5c 槽位回收）。
+    if (msg_presentation) {
+        msg_presentation->release_all();
+        if (!msg_presentation->error.empty())
+            fail("Dialog end release: " + msg_presentation->error);
+    }
+}
+
 bool RunScene::draw_stage(u32 pass) {
     if (!error.empty()) return false;
+    // Original game sprites are centered in the offscreen @R surface. The
+    // supervisor's text84 pass later samples128..512 to screen32..416.
+    // Do not translate either these vertices or their full-screen camera.
     if (!host.camera(DrawCamera::Fullscreen, false)) return fail("Stage camera unavailable");
     if (!presentation->draw(pass)) return fail(presentation->error());
     return true;
 }
 
 bool RunScene::draw_scenery(u32 pass) {
-    // STD 舞台背景：pass 0 = 全屏黑清屏 + 雾色清屏 + 层 0-7 背景组；
-    // pass 1 = 层 8-11 前景组。原版 3D 取景为全屏（golden 左边带随场景明暗
-    // 变化实证：游戏区外左侧仍见 3D 背景，右侧/上下为 front.anm 框架覆盖）。
+    // STD 背景两组先画入640x480的原版中间 @R，而不是最终游戏框的
+    // 384x448 viewport。PlayfieldTargets/text84只把中央128..512合成到
+    // 屏幕32..416；不能从中间背景的边带推断最终framebuffer画面。
     // 两组均以恢复全屏 2D 相机/关雾收尾（后续 AnmDrawSchedule 层 0 起继承）。
     if (!error.empty()) return false;
     if (!scenery || !scenery->ready()) return true;
     auto& graphics = host.stage_graphics();
     auto& renderer = scene_renderer;
-    const GraphicsViewport viewport{0, 0, environment.screen_width, environment.screen_height, 0, 1};
+    // 0x4dcaf4 STD 相机视口（43bbc0: 4dcbcc..4dcbd8 = {116,2,408,476}）：
+    // 原版 STD 取景按 408x476（aspect≈0.857），非全屏 4:3。黑/雾清屏与 STD
+    // 绘制同用该视口（r4/render/integration.md 第二批 patch A）。
+    const GraphicsViewport viewport{116, 2, 408, 476, 0, 1};
     if (pass == 0) {
         renderer.invalidate();
         graphics.pipeline().fogMode = touhou::graphics::FogMode::Linear;
@@ -251,8 +405,8 @@ bool RunScene::draw_scenery(u32 pass) {
         graphics.set_depth_compare(touhou::graphics::Compare::Always);
         graphics.set_depth_mask(false);
         if (boss_dim > 0) {
-            // Boss 变暗黑幕：仅游戏区（128,16)-(512,464)，浮点几何与游戏区
-            // 边界一致；纯色 Strip 直交（无纹理，漫色一阶）。
+            // Boss 黑幕仍在中间 @R 的128..512域；与后续text84相同的
+            // 源裁剪区，最终落到32..416。这里改32反而会少覆盖右侧。
             auto& state = graphics.pipeline();
             state.blend = true;
             state.sourceBlend = touhou::graphics::BlendFactor::SourceAlpha;

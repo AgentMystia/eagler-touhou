@@ -108,11 +108,13 @@ bool DrawCapture::open_output(const char* path) {
     return true;
 }
 
-void DrawCapture::close_output() noexcept {
+bool DrawCapture::close_output() noexcept {
     if (out_) {
-        std::fclose(out_);
+        if (std::fflush(out_) != 0) fail("draws flush failed");
+        if (std::fclose(out_) != 0) fail("draws close failed");
         out_ = nullptr;
     }
+    return error_.empty();
 }
 
 void DrawCapture::begin_frame(u32 frame) {
@@ -152,7 +154,7 @@ bool DrawCapture::end_frame() {
     out += ",\"ops\":[";
     out += line_;
     out += "]}\n";
-    if (std::fwrite(out.data(), 1, out.size(), out_) != out.size()) {
+    if (std::fwrite(out.data(), 1, out.size(), out_) != out.size() || std::fflush(out_) != 0) {
         fail("draws write failed");
         return false;
     }

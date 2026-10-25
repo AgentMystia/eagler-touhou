@@ -19,6 +19,15 @@ struct TitleMenuServices {
     virtual bool sound(i32) = 0;
     virtual bool begin_transition(u32& animation) = 0;
     virtual bool start_game(i32 stage) = 0;
+    // [r4-M] 角色 clear-tag 可见门数据源（原版 0x451450 case0→1 一次性判定：
+    // score_data + 0x56dc*character + 0x7e4 + difficulty*4 == 0 → 00470030
+    // 递归隐藏 script 131+character）。默认 false = 未通关（零进度全隐藏，
+    // 与原版无存档行为一致）；真实持久字段由宿主覆盖（MenuExtras 数据源）。
+    virtual bool character_cleared(i32 character, i32 difficulty) {
+        (void)character;
+        (void)difficulty;
+        return false;
+    }
 };
 
 class TitleDifficultyMenu {
@@ -35,7 +44,7 @@ class TitleDifficultyMenu {
     void finish_menu_hides();     // [解剖] 主菜单 Z+21 隐藏时间线（非选中隐/选中白化/白条闪）
     void advance_choreography();  // [解剖] 每帧：光标缓动/徽记下滚/粒子/白条与选中衰减
     void spawn_particles(i32 count);  // ascii18 克隆（脚本自算位置漂移，RNG 对拍）
-    void retire_difficulty();     // 退场回收 + 背景右半层复位
+    void retire_difficulty();     // 徽记101退场 + 背景右半层复位（root label1 已在 Esc 帧发）
     void choose_character() noexcept;
     void return_main();
 
@@ -59,7 +68,9 @@ class TitleCharacterMenu {
     TitleMenuServices& host;
     bool check(bool, const char*);
     bool visual(bool);
-    bool enter_portrait(i32 character, i32 label);  // 129 子树立绘/武器联动
+    bool character_interrupt(i32 character, i32 label, bool immediate);
+    bool exit_portrait(i32 character, i32 label);   // 0x46fca0：immediate 退场
+    bool enter_portrait(i32 character, i32 label);  // 0x46fc30：pending 入场
     void return_difficulty();
 
 public:

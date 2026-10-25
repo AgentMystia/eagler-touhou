@@ -78,16 +78,32 @@ struct AnmEffectRequest {
 };
 
 // et 发射器槽（0xE0 float 状态的行为子集，事件相关的字段）。
+// 原版 et 槽基 = 敌机 + slot*0x380；标量区 [0x570,0x950) 为 etNew 的 memset 区
+// （0x40e840 以 et+0x570 为参数块基读写）。ex 队列 = param 块 +0x28 起
+// （18 × 0x2C 字节），609-612 写入、601 etOn 时整块拷入弹体 +0xbd8。
 struct StageEt {
     u32 sprite = 0, subtype = 0;       // et[0]/et[1]（602 etSprite）
     float spawn[3] = {0, 0, 0};        // et[2..4]（etOn 时写）
     float angle1 = 0, angle2 = 0;      // et[5]/et[6]（604 etAngle）
     float speed1 = 2.0f, speed2 = 0;   // et[7]/et[8]（605 etSpeed）
     float spin = 0;                    // et[9]（出生自旋半径）
-    i16 count = 0, ways = 1;           // +0x364/+0x366（606 etCount）
+    // etNew 默认 dword[0x235] = 0x00010001（0x41b260 case 0x61 的
+    // 9.18369e-41 denormal 位型）→ count(short)=1、ways(short)=1。
+    i16 count = 1, ways = 1;           // +0x364/+0x366（606 etCount）
     i16 aim = 0;                       // +0x368（607 etAim 模式）
     float offset[3] = {0, 0, 0};       // vm+0xF6C+slot*3（603 etOffset）
     float absolute[3] = {0, 0, 0};     // vm+0xF9C+slot*3（absolute[2] > 0.9 走绝对出生）
+    // etEx（609-612，0x41b260 case 0x6a → 0x40ffe0 发射时拷入弹体 +0xbd8）的
+    // 行为队列。队列每项 0x2c：+0x00..+0x0C 浮点参数 args[0..3]、+0x10..+0x1C
+    // 整型参数（args[4..7] 位型存储）、+0x20 op、+0x24 flags。op 是位型行为号，
+    // 消费语义见 0x40f030（弹体侧 process_bullet_queue）：flags==0 的项在
+    // bb4 含任何活跃行为位时阻塞（串行），flags!=0 的项在 op 位未活跃时继续。
+    struct Ex {
+        u32 op = 0;                    // 队列 op id（位型：1/2/4/8/0x10/0x40/…）
+        u32 flags = 0;
+        float args[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    } ex[18];                           // 0xc6 dwords / 0x2c bytes per entry
+    u32 ex_next = 0;  // enemy+0xf5c + emitter*4: 611/612 append cursor（609/610 同步写）
     void reset();                      // 600 etNew 默认（0x41d573）
 };
 
@@ -114,6 +130,32 @@ struct StageEnemy {
     // 比后续敌机多空转一个完整帧（oracle 探针实证 time 序 1,1,2,3）。
     bool tick_gate = false;
     std::string interrupt_label;  // 514 setInterrupt（id 0）注册的标签
+    // Manager state belongs to the enemy, not to any one async ECL thread.
+    std::array<EclContext::Interrupt, 8> interrupts{};
+    i32 invulnerable = 0;  // +0x3fd0; 515 setInvuln / 513 reset
+    bool spell_active = false;  // +0x3f64 bit0
+    i32 spell_base_life = 0, spell_life = 0;  // +0x3f50 / +0x3f58 (7x)
+    i32 spell_id = -1;
+    std::string spell_name;  // decrypted original cp932 bytes
+    i32 phase_life_remaining = 0, phase_life_threshold = 0;  // +0x5140/+0x5148
+    bool phase_timed_out = false;  // +0x521c bit25
+    // ---- ECL 掉落表（506-510，敌机 +0x3F68 区；0x417ad0/0x417b10 消费）----
+    // main = dword 0xFDA（510 dropMain / 507 id 0：死亡时产 1 个该 kind 的
+    // 道具）；extra[k] = dword 0xFDB+k（507 dropExtra id k+1）：散落 kind
+    // k+1 的数量（k = 0..13）；area = 0xFEA/0xFEB（508 dropArea 散布幅度，
+    // 构造/506 后为 0）。561 die / 509 dropItems 按表产道具并清表。
+    i32 drop_main = 0;
+    i32 drop_extra[14] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    float drop_area[2] = {0, 0};
+    // ---- 命中/积分灵域（0x419a90；I 模块伤害池路径消费）----
+    // pending_damage = mgr+0x28 命中池（伤害帧写入、下一帧敌机更新入命，
+    // G 状态流 f96/f98 池实证）；spirit_accum/spirit_threshold = +0x3f60/
+    // +0x3ffc（积分灵累计对阈值）；hit_anim_timer = +0x4004 命中演出计时
+    // （伤害帧置 30，>19 门控积分灵产出；递减点未单独取证，按帧递减）。
+    float pending_damage = 0;
+    float spirit_accum = 0;
+    i32 spirit_threshold = 0;
+    i32 hit_anim_timer = 0;
     // ---- 交互模式的 ANM 接线记录（无头 oracle 契约不读这些字段）----
     // 302 anmSelect：敌机当前 ANM 文件槽（st01：2=enemy.anm、3=st01enm.anm）。
     i32 anm_file = 0;
@@ -145,14 +187,95 @@ struct StageEnemy {
     i32 mirror_script_base = 1;
 };
 
-// 交互模式的弹体实体（fire_et 事件同源的直进弹；无头路径不产实体）。
+// 交互模式的弹体实体（fire_et 事件同源；无头路径不产实体）。
+// 基础运动 = 原版 0x40db10 尾部：pos += 速度向量（0x412510 的
+// polar(speed, angle) 出生向量）。
+// etEx 行为队列（0x40ffe0 发射时 0xc6 int 拷贝入弹体 +0xbd8）按 0x40f030
+// 的串行状态机消费（出生时一次 + 每帧一次），已接 st01 全部用到的 op：
+//   0x1 减速突进（0x410230）、0x2 透明占位、0x4 steer/accel（0x4102b0）、
+//   0x8 螺旋加速（0x410520）、0x10 减停-转向循环（0x4105d0）、
+//   0x40 边界反弹（0x410a80 + 0x4107f0/0x4108b0/0x410960/0x4109f0）、
+//   0x200 变弹型（0x40f030 case 0x200）、0x400 立即激活（0x411380）、
+//   0x2000 子弹发射（0x40f79a，下一条作为角度/条数描述符被双跳消费）、
+//   0x4000 透明占位、0x100000 命中位翻转、0x80000000 帧等待（0x40f030
+//   case 0x80000000 + 0x40db10 内联倒数）。
+// 每帧行为派发顺序 = 0x40ddb5..0x40dea7：op1 → op4 → 0x200000（未用）→
+// op8 → 0x10 → 0x40 → 0x20000（未用）→ 0x80000（未用）→ 0x100（未用）→
+// wait 位内联块；全部在 pos += vel 之前。
 struct StageBullet {
     float x = 0, y = 0, z = 0, angle = 0, speed = 0;
-    u32 sprite = 0, subtype = 0;  // etSprite 的 (类型, 颜色)
+    float vel[3] = {0, 0, 0};   // +0xB7C/+0xB80/+0xB84：每帧位移向量
+    u32 sprite = 0, subtype = 0;  // etSprite 的 (类型, 颜色)（0x200 可改写）
+    // +0xB90/+0xB94：弹型表 +0x104（0x40e840 出生写；op 0x200 变更弹型时
+    // 0x40f030:502-503 重写）。两轴同值。0x444140 以 *0x1 参与命中/擦弹
+    // 半径平方；0x443fd0 以 *0.5 参与玩家矩形 AABB。
+    float hit_size[2] = {4.0f, 4.0f};
+    // +0x20：碰撞/判定控制位（0x40e840:183-188 出生写 = 0x2|0x10；
+    // 0x40db10 按 bit1 碰撞门、bit4 圆形/矩形选择、bit6 尺寸缩放分支）。
+    u32 flags = 0x12;
+    float hit_scale = 1.0f;  // +0x1324（出生 1.0；bit6 分支乘弹体尺寸）
     bool alive = true;
+    bool grazed = false;  // +0x20 bit2：0x40db10:229-231 的每弹一次擦弹位
+    // ---- etEx 行为状态机（0x40f030 / 0x40db10）----
+    StageEt::Ex ex[18];          // +0xBD8 起 0xc6 int 出生拷贝
+    i32 ex_cursor = 0;           // +0xBD0：当前消费项（出生 = 种子项，st01 恒 0）
+    u32 behavior_flags = 0;      // +0xBB4：已激活行为位（池清零语义）
+    u16 state = 1;               // +0xBBE：1 活跃 / 2 延迟首帧（种子 op==2）/ 4 已消
+    u32 source_enemy = 0;        // 事件口径：发射者敌机 serial（子弹发射同源）
+    i32 delay = 0;               // +0x4C8：出场延迟计数（op 0x400 写 1，仅表现）
+    // op 4 通道（0x4102b0 语义）：steer 向量（0x40f030 case4 以
+    // 0x412510 = polar(resolved_target, step) 预计算）、时长与计时。
+    float steer[3] = {0, 0, 0};  // f60/f64/f68（case4 写 steer xy，z 恒 0）
+    i32 ex4_duration = 0;        // f6c
+    i32 ex4_timer = 0;           // f3c（FUN_004016c0(0)：int=0）
+    // op 1 通道（0x410230）：ef4 int 计时，ef8 float（速率 1，与 int 同步）。
+    i32 ex1_timer = 0;
+    // op 8 通道（0x410520 语义，f94/f98/fb4/f84）。
+    float ex8_speed_delta = 0;  // f94
+    float ex8_angle_delta = 0;  // f98
+    i32 ex8_duration = 0;       // fb4
+    i32 ex8_timer = 0;          // f84
+    // op 0x10 通道（0x4105d0；spawn 写 fdc/fe0/ffc/1000/1004/1008/100c）。
+    float ex10_speed = 0;       // fdc：转向后的恢复速度
+    float ex10_angle = 0;       // fe0：目标角（mode 依 f6）
+    i32 ex10_duration = 0;      // ffc
+    i32 ex10_repeats = 0;       // 1000（i5）
+    i32 ex10_count = 0;         // 1004：已完成转向次数
+    i32 ex10_mode = 0;          // 1008（f6）
+    i32 ex10_timer = 0;         // fcc
+    float ex10_time = 0;        // fd0（float 计时，速率 1）
+    // op 0x40 通道（0x410a80；spawn 写 1024/102c/1030/1044/1048/1050）。
+    float ex40_speed = 0;       // 1024（<-990 不覆盖）
+    float ex40_w = 448.0f;      // 102c（i5 bit5 未置时默认 448）
+    float ex40_h = 448.0f;      // 1030
+    i32 ex40_bounces = 0;       // 1044
+    i32 ex40_limit = 0;         // 1048（i4）
+    u32 ex40_mode = 0;          // 1050（i5：bit1 顶、bit2 底、bit8 右、bit4 左、bit10 只计数）
+    // op 0x80000000 等待通道（0x40f030 case + 0x40de74 内联倒数）。
+    i32 wait_timer = 0;         // 1058（int = i4-1，倒计镜像）
+    float wait_time = 0;        // 105c（float = i4，>0 期间阻塞队列恢复）
+    // op 0x800000 出生快照（0x1264..0x1274；op 0x10 mode 2/3 消费）。
+    float saved_speed = 0, saved_angle = 0, saved_pos[3] = {0, 0, 0};
 };
 
 class StageSim;
+
+// 道具宿主接口（掉落/消弹转换的同步调用面；由 ItemManager 实现，StageBattle
+// 注入）。对应原版 0x42f020（普通/取消道具）与 0x438ec0（带分值道具，
+// 内部按 item 序号 %4 选象限并各抽 1 次 signed_unit + 1 次 unit）。
+// 即时同步调用以保持原版 RNG 次序（0x417b10/0x4114f0 的抽次不可延迟）。
+struct StageItemHost {
+    virtual ~StageItemHost() = default;
+    // 0x42f020(pos, kind, angle, speed)：kind 1..9 常规/取消道具（无 RNG）、
+    // kind 9 = 取消道具。angle/speed 由调用方给（掉落/消弹 = -π/2, 2.2）。
+    virtual void spawn_item(float x, float y, float z, i32 kind, float angle, float speed) = 0;
+    // 0x438ec0(mgr, kind0, kind, pos, base_speed, 1e-45)：kind = 0..4
+    // （ECL 掉落 10..14 减 10），每次调用抽 signed_unit（象限角）+ unit
+    // （速度 = unit*3.5 + base_speed）；pos 先按 x∈[-192,192]、y∈[0,384] 钳制。
+    virtual void spawn_value_item(i32 kind, float x, float y, float z, float base_speed) = 0;
+    // 0x4302a0：616 etClear 的转换点登记（道具管理侧决定语义）。
+    virtual void on_et_clear(float x, float y, float z) = 0;
+};
 
 // 对话系统宿主接口（ins_518/519 的接口位）：原版 0x428820(param>=0) 建
 // 0x1a8 对话对象挂 stage ctx+0x198，519 dialogWait 以 +0x198==0 放行。
@@ -190,7 +313,11 @@ private:
 };
 
 class StageSim {
+    GameRandom owned_random_{0};
+
 public:
+    explicit StageSim(GameRandom* shared_random = nullptr)
+        : random(shared_random ? *shared_random : owned_random_) {}
     // resource_dir：含 st01.ecl/default.ecl/st01bs.ecl 与 ANM 名单核验的 raw 目录。
     bool load(const char* resource_dir, const char* event_path, const char* stage = nullptr);
     // 交互模式装载：资源经 provider 供给（浏览器侧读 /assets），难度位 =
@@ -209,7 +336,9 @@ public:
 
     // 供 commands/gvars 使用的会话状态
     EclProgram program;
-    GameRandom random{0};       // 种子契约见 event-contract.md §2【待校准】
+    // Production shares the original single game RNG with ANM. Standalone
+    // harnesses own one RNG; references never mirror/copy a second state.
+    GameRandom& random;
     StageGvars gvars;
     StageCommands commands;
     StageEventSink sink;
@@ -235,6 +364,7 @@ public:
     i32 difficulty_rank = 0x08;
     i32 diff = 3;             // DIFF（DAT_004be7c4 语义：0=E 1=N 2=H 3=L）；
                               // 535/536/548/624/625 的选参下标（begin 时取掩码尾零）
+    i32 rank = 0;             // independent DAT_004be7cc; original .data initial value
 
     StageEnemy* find_by_script_id(i32 id);  // 0x417f40（id 0 → null）
     StageEnemy* boss() const;
@@ -252,6 +382,12 @@ public:
     // 敌机销毁回收钩（step_frame 摘链前逐敌机调用；交互模式由宿主注入，
     // 无头契约路径为空——槽位 VM 句柄仅句柄化路径持有）。
     std::function<void(u32)> retire_sink;
+    // 道具宿主（掉落/消弹转换；StageBattle 注入 ItemManager，可空 = 无道具
+    // 且不抽道具 RNG——原版空池同义，事件契约路径保持空）。
+    StageItemHost* items = nullptr;
+    // DAT_004be830 的移植代理（509 dropItems 的 (flags & 0x30) != 0x20 门）。
+    // 初值 0 = 常规对局（掉落执行）；0x20 态未被任何调用方建模。
+    u32 mode_flags = 0;
     // 建敌（enmCreate 族与 root 装载共用；含构造内首趟 0x41a8a0）。
     // mirror：0x4183f0:28 的 param2[6]（镜像位，构造趟前置入 flags bit20——
     // 构造趟内 404/405 族按镜像翻转角度）。
@@ -264,14 +400,36 @@ public:
     void clear_bullets() {
         for (auto& bullet : bullets) bullet.alive = false;
     }
+    // ---- etEx 行为队列（0x40f030 / 0x40db10 / 0x40f79a / 0x4114f0）----
+    // 消费弹体 ex 队列到首个阻塞项（op 0 / flags 门 / op 位已活跃）。
+    // spawn_time=true 时为 0x40e840 尾的出生消费（事件窗 RNG 次序敏感）。
+    void process_bullet_queue(StageBullet& bullet, bool spawn_time);
+    // 0x40db10 的弹体每帧更新（状态机 + 行为派发 + 位移 + 出界回收）。
+    void advance_bullets();
+    // 0x417ad0/0x417b10：按敌机 ECL 掉落表产道具（items 为空时仅抽表内
+    // 固定的 RNG 次数，与原版空道具池语义一致）。
+    void drop_table(StageEnemy& enemy);
+    // 0x4114f0：615/616 半径消弹；spawn_cancel = 615（场内弹产取消道具）。
+    void cancel_bullets_radius(const StageEnemy& enemy, float radius, bool spawn_cancel);
+    // 0x40ffe0/0x40e840 的发射内核：按 et 视图逐 (way, idx) 产事件与弹体
+    // （StageCommands::fire_et 与 etEx op 0x2000 子弹发射共用）。
+    // slot = 事件口径的发射器号（601 的实参；0x2000 子发射按 oracle 的
+    // et 指针回退口径恒 0）。ex_seed = 弹体 ex 队列起始项（601 恒 0 =
+    // et dword 0x23A 默认；0x2000 子弹 = 打包 i4 的 byte0）。
+    void emit_et(const StageEt& et, u32 enemy_serial, u32 slot, const float spawn[3], float aim,
+                 u32 ex_seed = 0);
 
 private:
+    // 0x40db10 的逐帧行为派发（op1/op4/op8/0x10/0x40/wait），行为可能改写
+    // vel/angle/speed，位移随后统一做。
+    void step_bullet_behaviors(StageBullet& bullet);
     // 0x41a8a0：0x80000 门内干活（积分 → ECL），与 run() 的门/清位配合复刻
     // 0x418e00:19-20 的逐敌机节拍。
     void tick_enemy(StageEnemy& enemy);
+    // 0x4218f0: health threshold first, then the first timed slot; never ECL time.
+    bool interrupt_enemy(StageEnemy& enemy);
     void integrate(StageEnemy& enemy);   // 0x419450 + 0x419950 子集
     bool in_bounds(StageEnemy& enemy);   // 0x419450 出界自杀
-    void advance_bullets();              // 交互模式直进弹步进 + 出界回收
     u32 spawned_ = 0;
     u32 next_serial_ = 0;
 };
