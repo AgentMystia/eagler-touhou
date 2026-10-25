@@ -3,8 +3,18 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
 import {PresentationCadence,PresentationLimiter,needsPresentationCapture} from '../src/presentation-cadence.mjs';
-import {installManagedShell,runtimeOptions} from '../src/managed-shell.mjs';
+import {installManagedShell,managedCommandHandler,runtimeOptions} from '../src/managed-shell.mjs';
 import {ManagedInput} from '../src/managed-input.mjs';
+
+test('reconfiguration preserves the local display limit when omitted',async()=>{
+  const settings=[],handler=managedCommandHandler({running:()=>false,resources:async()=>{},configure:async value=>settings.push(value)});
+  await handler({command:'configure',music:'none',language:'ja',options:{limitPresentationTo60:false}});
+  await handler({command:'configure',music:'none',language:'ja',options:{}});
+  assert.equal(settings.at(-1).options.limitPresentationTo60,false);
+  await handler({command:'configure',music:'none',language:'ja',options:{limitPresentationTo60:true}});
+  await handler({command:'configure',music:'none',language:'ja',options:{}});
+  assert.equal(settings.at(-1).options.limitPresentationTo60,true);
+});
 
 test('managed protocol: authenticates navigation, serializes resources and configures before launch',async()=>{
   const messages=[],calls=[];let listener,finish;
@@ -71,7 +81,7 @@ test('a saturated catch-up budget still publishes a fresh game picture on every 
     const context={terminated:false,backgrounded:false,fatalError:false,last:0,accumulator:0,presentationInterval:0,presentationCadence:new PresentationCadence(),
       runtimeOptions:{limitPresentationTo60:false},presentationLimiter:new PresentationLimiter(),TICK:1000/60,meter:{frame(){}},loadingScreen:{advance(){},renderOverlay(){}},
       ready:true,busy:false,session:null,model:{actions:[],state:{scene:'playing'}},profile:{settings:{keyMap:{}}},
-      keyDown:()=>false,previousPadUI:0,logicalStep:1000/60,captureThisTick:false,launched:false,multiplayer:null,
+      keyDown:()=>false,previousPadUI:0,logicalStep:1000/60,captureThisTick:false,launched:false,
       needsPresentationCapture,interpolateGamePresentation:()=>false,
       tick(){ticks++;if(context.captureThisTick)captured=ticks;},present(){pictures.push(captured);},
       requestAnimationFrame(){},fail(error){throw error;}};
