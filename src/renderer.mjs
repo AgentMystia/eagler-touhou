@@ -508,7 +508,7 @@ export class Renderer {
     // Ordinary 60 Hz callers retain current-endpoint rendering.
     return this.renderPresentation(null,this.capturePresentation(core,{...fps,presentationContinuity:false}),1);
   }
-  renderPresentation(previous,current,interpolationAlpha=1){
+  renderPresentation(previous,current,interpolationAlpha=1,live={}){
     const endpoint=interpolatePresentation(previous,current,interpolationAlpha),{hud:h,backgroundVisible,screenShake,hasStageSurface}=endpoint,
       source=this.stageBackgrounds.get(endpoint.stage),background=source&&endpoint.logicalBackground!==current.logicalBackground&&endpoint.logicalBackground?.loaded
         ?source.geometry(endpoint.logicalBackground.frame,endpoint.logicalBackground):endpoint.background;
@@ -527,8 +527,10 @@ export class Renderer {
         else{p=shakePresentation(p,roundedShake);poseShake=p.screenShake;}
       }
       if(p.clip!==currentClip){this.flush();if(p.clip){g.enable(g.SCISSOR_TEST);if(p.clip===2)g.scissor(13,0,422,480);else g.scissor(32,16,384,448);}else g.disable(g.SCISSOR_TEST);currentClip=p.clip;}
-      if(p.nativeText)this.nativeText(p.nativeText,poseShake);else if(p.hudCounters)this.hudCounters(h);else if(p.rectangle){const {bounds:[left,top,right,bottom],argb}=p.rectangle,color=argbRgba(argb);this.solidTriangles([[left,top],[right,top],[right,bottom],[left,bottom]].map(([x,y])=>({x,y,color})),[0,1,2,0,2,3],0);}else if(p.mesh)this.mesh(p,p.drawPriority<42?roundedShake:zeroOffset);else if(p.laser)this.laserSegment(p);else if(p.dialogue)this.dialogueLine(p);else if(p.beamTrail)this.beamTrail(p.x,p.y,p.angle,p.scale,p.width,p.start,p.end);else if(p.trail)this.trail(p.x,p.y,p.angle,p.scale,p.start,p.end,p.alpha);else if(p.beam){const s=this.atlases[p.a.name].sprites[p.a.sprite];if(s)this.region(p.a.name,s.entry,s.x,s.y,s.w,s.h,p.x,p.y-448*p.scale/2,448*p.scale,14*p.a.sy,-Math.PI/2,p.a.alpha*p.alpha,[p.a.r,p.a.g,p.a.b],p.a.blend,{nativeMode:1,screenShake:poseShake,presentationOffset:p.presentationOffset});}else this.state(p.a,p.x,p.y,p.angle,p.scale,p.alpha,poseShake,p.presentationOffset);
+      if(p.nativeText){if(p.nativeText.kind!=='current-fps'||!Number.isFinite(live.currentFps))this.nativeText(p.nativeText,poseShake);}else if(p.hudCounters)this.hudCounters(h);else if(p.rectangle){const {bounds:[left,top,right,bottom],argb}=p.rectangle,color=argbRgba(argb);this.solidTriangles([[left,top],[right,top],[right,bottom],[left,bottom]].map(([x,y])=>({x,y,color})),[0,1,2,0,2,3],0);}else if(p.mesh)this.mesh(p,p.drawPriority<42?roundedShake:zeroOffset);else if(p.laser)this.laserSegment(p);else if(p.dialogue)this.dialogueLine(p);else if(p.beamTrail)this.beamTrail(p.x,p.y,p.angle,p.scale,p.width,p.start,p.end);else if(p.trail)this.trail(p.x,p.y,p.angle,p.scale,p.start,p.end,p.alpha);else if(p.beam){const s=this.atlases[p.a.name].sprites[p.a.sprite];if(s)this.region(p.a.name,s.entry,s.x,s.y,s.w,s.h,p.x,p.y-448*p.scale/2,448*p.scale,14*p.a.sy,-Math.PI/2,p.a.alpha*p.alpha,[p.a.r,p.a.g,p.a.b],p.a.blend,{nativeMode:1,screenShake:poseShake,presentationOffset:p.presentationOffset});}else this.state(p.a,p.x,p.y,p.angle,p.scale,p.alpha,poseShake,p.presentationOffset);
     }
-    this.flush();g.disable(g.SCISSOR_TEST);return [...h];
+    this.flush();g.disable(g.SCISSOR_TEST);
+    for(const text of fpsTextDescriptors({currentFps:live.currentFps}))this.nativeText(text);
+    this.flush();return [...h];
   }
 }

@@ -69,27 +69,27 @@ test('replay stage changes enable clear ticks and reset only the incoming fade',
  assert.deepEqual(calls,[[0,0],[0,1],[1,0]]);
 });
 
-for(const replay of [null,{practice:false,stages:[{number:1},{number:2}]}])test(`stage-clear prefetch and ${replay?'Replay':'live'} transition keep the loading overlay closed`,async()=>{
+for(const replay of [null,{practice:false,stages:[{number:1},{number:2}]}])test(`stage-clear prefetch and ${replay?'Replay':'live'} transition retain the battle picture during resource installation`,async()=>{
  const source=readFileSync(new URL('../site/game.mjs',import.meta.url),'utf8'),calls=[];
  let release;const gate=new Promise(resolve=>release=resolve);
  const session={mode:replay?'replay':'story',stage:1,character:0,shot:0,difficulty:1,replay,
   recorder:{finishStage:()=>calls.push('finish')},cursor:123};
- const context={session,busy:false,fatalError:false,last:0,accumulator:20,performance:{now:()=>123},
+ const held={frame:123};const context={currentPresentation:held,session,busy:false,fatalError:false,last:0,accumulator:20,performance:{now:()=>123},
   readJSON:()=>({status:'stage-clear',nextStage:2}),loader:{prepare:()=>{calls.push('prefetch-core');return gate;}},
-  renderer:{prepareStage:(n,o)=>{calls.push(['prefetch-background',n,o.activate]);return gate;}},
+  renderer:{renderPresentation:(previous,current)=>{assert.equal(current,held);calls.push('held HUD');},prepareStage:(n,o)=>{calls.push(['prefetch-background',n,o.activate]);return gate;}},
   audio:{context:null},runtimeMusic:'none',fail:error=>{throw error;},
   localization:{setContext:()=>calls.push('localize')},prepareStage:async n=>{calls.push(['install',n]);},
   resetGamePresentation:()=>calls.push('reset'),touch:{cancel(){}},recordStage:()=>calls.push('record'),
   profile:{recordStageClear(){},recordStageEntry(){},unlockMusic(){}},saveProfile:()=>new Promise(()=>{}),
   core:{_th12_score_stored:()=>123,_th12_start_next_stage:()=>1,_th12_practice_damage_transition:()=>1,_th12_music_serial:()=>0,_th12_music_track:()=>0},
   musicIndex:[{id:'stage2'}],stageMusic:[null,'stage1','stage2'],playMusic:async()=>{},captureGamePresentation:()=>calls.push('capture'),
-  initializeReplayStage:(r,p,o)=>calls.push(['replay',p.number,o.fadeIn]),loadingScreen:{startResources:()=>calls.push('loading'),completeResources(){}},meter:{reset(){}}};
+  initializeReplayStage:(r,p,o)=>calls.push(['replay',p.number,o.fadeIn]),loadingScreen:{startResources:({renderBase})=>renderBase(),completeResources(){}},meter:{reset(){}}};
  const warmFrom=source.indexOf('function warmNextStage('),warmTo=source.indexOf('\nasync function prepareStage(',warmFrom);
- const nextFrom=source.indexOf('async function nextStage('),nextTo=source.indexOf('\nfunction resultData(',nextFrom);
+ const nextFrom=source.indexOf('function holdStagePresentation('),nextTo=source.indexOf('\nfunction resultData(',nextFrom);
  const functions=runInNewContext(source.slice(warmFrom,warmTo)+source.slice(nextFrom,nextTo)+';({warmNextStage,nextStage})',context);
  functions.warmNextStage();functions.warmNextStage();assert.equal(calls.filter(n=>n==='prefetch-core').length,1);
  assert.equal(session.stage,1);assert.equal(session.cursor,123);assert(!calls.includes('reset'));
- const crossing=functions.nextStage();assert(context.busy);assert.equal(session.stage,1);
+ const crossing=functions.nextStage();assert(context.busy);assert.equal(session.stage,1);assert(calls.includes('held HUD'));
  assert(!calls.some(n=>Array.isArray(n)&&n[0]==='install'));
  release();await crossing;assert.equal(session.stage,2);assert.equal(session.cursor,0);assert.equal(context.busy,false);
  assert(!calls.includes('loading'));assert(calls.includes('capture'));

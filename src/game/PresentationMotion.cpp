@@ -12,8 +12,8 @@ namespace th12 {
 std::string presentationMotionBuffer;
 void collectPresentationRevisions() {
   // IDs are not reused within a stage. Retired owners cannot participate in
-  // interpolation again; retaining them would make every rollback copy grow
-  // with the total shots fired rather than the current world.
+  // interpolation again. Reclaim their revision entries so storage follows
+  // the active world rather than the total shots fired during a stage.
   static std::vector<uint32_t> live;
   live.clear();
   for (const auto& [id,node] : animationScene.nodes()) if (node->owner) live.push_back(node->owner);
