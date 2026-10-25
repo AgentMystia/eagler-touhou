@@ -1,5 +1,5 @@
-// 标题场景状态（裁剪自 th15 TitleState：仅留 Main/Difficulty/Character/StartGame/Quit，
-// Replay/MusicRoom/Manual/Records/PlayerData/Practice/Demo 不做，docs/plans/ui-base.md §三）。
+// 标题场景状态：Main/Difficulty/Character/Practice Stage/Replay/Options 等
+// 共用光标历史。SpellPractice/PlayerData/Demo 入口尚未实现。
 // TitleScreen 数值暂沿 th15 世代枚举位；th13 supervisor（0x44e600 对应物）锚定后回填。
 #pragma once
 
@@ -23,6 +23,7 @@ enum class TitleScreen : i32 {
     Option = 3,
     Difficulty = 6,
     Character = 7,
+    Stage = 8,  // 0x44c570 case8 -> 0x451cb0 (Practice Stage Select)
     Replay = 11,
     MusicRoom = 13,
     Manual = 16,
@@ -30,6 +31,7 @@ enum class TitleScreen : i32 {
 
 struct TitleSelectionSettings {
     i32 configured_difficulty = 1, saved_difficulty = 0, preferred_character = 0;
+    i32 practice_stage = 0;  // DAT_004bb4c0, zero-based row in the six-stage menu.
 };
 
 struct TitleState {

@@ -6,19 +6,30 @@ TitleScene::TitleScene(SessionState& p, TitleSelectionSettings& choice, AnmManag
                        TitleScenePlatform& h, FrameScheduler& schedule, TitleSceneResources bank)
     : progress(p), settings(choice), animations(a), host(h), scheduler(schedule), resources(bank),
       main(state, p, choice, a, bank), difficulty(state, p, choice, a, bank),
-      character(state, p, choice, a, *this, bank), replay(state, a, h, bank),
+      character(state, p, choice, a, *this, bank),
+      stage(state, p, choice, a, *this, bank), replay(state, a, h, bank),
       option(state, a, h, option_volumes, bank), music_room(state, h), manual(state, h),
       frame(state, p, *this, schedule, a) {
     state.screen = TitleScreen::Initialize;
     state.flags = 0;
     main.play_sound = [this](i32 id) { return host.sound(id); };
+    main.extra_unlocked = [this](i32 character) { return host.extra_unlocked(character); };
     difficulty.play_sound = [this](i32 id) { return host.sound(id); };
     replay.play_sound = [this](i32 id) { return host.sound(id); };
     option.play_sound = [this](i32 id) { return host.sound(id); };
     music_room.play_sound = [this](i32 id) { return host.sound(id); };
+    stage_text_draw.owner = this;
+    stage_text_draw.enabled = true;
+    stage_text_draw.run = [](void* owner) {
+        auto& scene = *static_cast<TitleScene*>(owner);
+        return scene.check(scene.stage.draw_texts(scene.host), scene.stage.error) ? 1 : 5;
+    };
+    check(scheduler.add(stage_text_draw, FramePass::Draw, 2) >= 0,
+          "Practice stage text callback registration failed");
 }
 
 TitleScene::~TitleScene() {
+    scheduler.remove(stage_text_draw);
     for (auto& handle : state.handles) animations.retire(handle);
     animations.retire(state.version_bar);
     animations.retire(state.start_effect);
@@ -59,6 +70,15 @@ bool TitleScene::character_cleared(i32 character, i32 difficulty) {
     return host.character_cleared(character, difficulty);
 }
 
+bool TitleScene::extra_unlocked(i32 character) {
+    // Extra 行解锁门转发（0x44c570 case0 +0x5c40 bit1 → 宿主 FileStore 持久位）。
+    return host.extra_unlocked(character);
+}
+
+bool TitleScene::practice_stage_played(i32 character, i32 difficulty, i32 stage) {
+    return host.practice_stage_played(character, difficulty, stage);
+}
+
 void TitleScene::advance_main_menu_selection() { main.advance_selection(); }
 
 bool TitleScene::draw_title_replay_texts() {
@@ -73,6 +93,28 @@ bool TitleScene::draw_title_music_room_texts() {
     return check(music_room.draw_texts(host), music_room.error);
 }
 
+bool TitleScene::restore_practice_selection() {
+    if (!returns_to_practice_selection(progress, 1, false))
+        return check(false, "Invalid Practice return session");
+    settings.configured_difficulty = progress.difficulty;
+    settings.preferred_character = progress.character;
+    settings.practice_stage = progress.starting_stage - 1;
+    state.menu.depth = state.menu.disabled_count = 0;
+    state.menu.count = kTitleMainEntries;
+    state.menu.select(i32(TitleMainEntry::PracticeStart));
+    state.menu.push();
+    state.menu.count = 4;
+    state.menu.select(progress.difficulty);
+    state.menu.push();
+    state.menu.count = kTitleCharacterRows;
+    state.menu.select(progress.character + kTitleCharacterFirst);
+    state.menu.push();
+    state.menu.count = 6;
+    state.menu.select(settings.practice_stage);
+    state.change_screen(TitleScreen::Stage);
+    return true;
+}
+
 bool TitleScene::update_title_menu(TitleScreen screen, const TitleFrameInput& value) {
     input = value;
     switch (screen) {
@@ -85,6 +127,8 @@ bool TitleScene::update_title_menu(TitleScreen screen, const TitleFrameInput& va
         return check(difficulty.update(value.pressed, value.repeated), difficulty.error);
     case TitleScreen::Character:
         return check(character.update(value.pressed, value.repeated), character.error);
+    case TitleScreen::Stage:
+        return check(stage.update(value.pressed, value.repeated), stage.error);
     case TitleScreen::Replay:
         return check(replay.update(value.pressed, value.repeated), replay.error);
     case TitleScreen::MusicRoom:

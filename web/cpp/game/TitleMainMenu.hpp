@@ -18,7 +18,8 @@
 namespace th13 {
 
 // th13 主菜单条目（顺序 = title01.png 字条行序，位图辨认；语义标注见上）。
-// 链路：StartGame(0) → 难度 → 角色 → 开局；Replay(4) → Replay 屏（TitleReplayMenu）；
+// 链路：StartGame(0) → 难度 → 角色 → 开局；Practice(2) → 难度 → 角色 → 六关选择；
+// Replay(4) → Replay 屏（TitleReplayMenu）；
 // Quit(9) 出退出请求；其余入口 enter() 播确认音后不切屏（真机有画面，蓝图
 // 「未实现」清单登记）。
 enum class TitleMainEntry : i32 {
@@ -108,12 +109,17 @@ class TitleMainMenu {
     bool show_menu();     // 全项入场（真机 boot 全员可见，oracle 顶点色实证）
     void dim_disabled();  // 禁用项黑化 alpha160（oracle 0xA0000000）
     void enter(i32 entry);
+    bool extra_gate();  // Extra 行解锁门（宿主存档；0x44c570 case0 +0x5c40 bit1）
 
 public:
     // [轮9] 交叉序列推进（绘制回调逐帧驱动——update 侧 poke 被 tick 插值
     // 覆写，wasi trace 实证；TitleFrame draw 回调经 TitleScene 接线调用）。
     void advance_selection();
     std::function<bool(i32)> play_sound;
+    // Extra 行解锁门数据源（原版 0x44c570 case0 读 +0x5c40 bit1；写点 =
+    // 0x416130 通关落档链置 0x1b26b+char*2 bit0x10。宿主 FileStore 持久位，
+    // 未接 = 缺省禁用，与原版无存档一致）。
+    std::function<bool(i32)> extra_unlocked;
     std::string error;
     TitleMainMenu(TitleState& state, SessionState& progress, TitleSelectionSettings& settings,
                   AnmManager& animations, TitleSceneResources resources)

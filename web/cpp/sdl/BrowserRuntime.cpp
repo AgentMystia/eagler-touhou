@@ -184,6 +184,17 @@ EMSCRIPTEN_KEEPALIVE unsigned th13_phase() {
 
 EMSCRIPTEN_KEEPALIVE unsigned th13_frame() { return th13::sdl::app ? th13::sdl::app->frames : 0; }
 
+// 只读会话模式探针（Practice 网页验证用；不写状态/不泵帧）。无 app 按 0：
+// run_mode_flags 位面 = SessionState 原样；practice_mode 非零 = Practice 入口
+// 已排队。
+EMSCRIPTEN_KEEPALIVE unsigned th13_run_mode_flags() {
+    return th13::sdl::app ? unsigned(th13::sdl::app->progress.run_mode_flags) : 0u;
+}
+
+EMSCRIPTEN_KEEPALIVE int th13_practice_mode() {
+    return th13::sdl::app ? th13::sdl::app->progress.practice_mode : 0;
+}
+
 EMSCRIPTEN_KEEPALIVE const int* th13_probe_state() {
     using namespace th13::sdl;
     return app ? app->projection() : nullptr;
@@ -266,9 +277,15 @@ EMSCRIPTEN_KEEPALIVE int th13_replay_import_hint() {
 // 最近导入失败文案（= replay_import_error()；空串 = 无失败）。页面壳导入
 // 失败 note 优先读此值而非应用级 th13_error()：解码失败只落菜单 Import 行
 // 语义，不走 fail()——坏 .rpy 不中断会话（原版导入失败仅行内错误）。
+// ApplicationState::replay_import_error() 按值返回 std::string，指针若指向
+// 临时量会在 UTF8ToString 读取前悬垂——落函数级 static 快照（本文件既有
+// 持久存续范式，如 th13_debug_layer_report 的 report），导入成功时应用侧
+// clear 后此快照同样回到空串。
 EMSCRIPTEN_KEEPALIVE const char* th13_replay_import_error() {
     using namespace th13::sdl;
-    return app ? app->replay_import_error().c_str() : "";
+    static std::string error;
+    error = app ? app->replay_import_error() : std::string{};
+    return error.c_str();
 }
 
 // ---- 回放调试会话（th13-debug.html 无头取帧专用）----

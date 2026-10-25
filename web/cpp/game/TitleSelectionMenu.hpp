@@ -9,6 +9,7 @@
 #include "TitleAnimations.hpp"
 #include "TitleMainMenu.hpp"
 #include "SessionState.hpp"
+#include "HudDrawData.hpp"
 
 #include <functional>
 
@@ -19,6 +20,12 @@ struct TitleMenuServices {
     virtual bool sound(i32) = 0;
     virtual bool begin_transition(u32& animation) = 0;
     virtual bool start_game(i32 stage) = 0;
+    // 0x451cb0: score + character*0x56dc + 0x7fd + (stage+rank*8)*8.
+    // Missing progress is locked, not an invented Stage 1 unlock.
+    virtual bool practice_stage_played(i32 character, i32 difficulty, i32 stage) {
+        (void)character; (void)difficulty; (void)stage;
+        return false;
+    }
     // [r4-M] 角色 clear-tag 可见门数据源（原版 0x451450 case0→1 一次性判定：
     // score_data + 0x56dc*character + 0x7e4 + difficulty*4 == 0 → 00470030
     // 递归隐藏 script 131+character）。默认 false = 未通关（零进度全隐藏，
@@ -26,6 +33,12 @@ struct TitleMenuServices {
     virtual bool character_cleared(i32 character, i32 difficulty) {
         (void)character;
         (void)difficulty;
+        return false;
+    }
+    // Extra 行解锁门（原版 0x44c570 case0 +0x5c40 bit1；写点 0x416130 通关
+    // 落档 0x1b26b+char*2 bit0x10）。默认 false = 无解锁存档禁用，同原版缺档。
+    virtual bool extra_unlocked(i32 character) {
+        (void)character;
         return false;
     }
 };
@@ -80,6 +93,27 @@ public:
         : state(s), progress(p), settings(settings), animations(a),
           visuals(s, a, resources.title, resources.ascii), resources(resources), host(host) {}
     bool update(u32 pressed, u32 repeated);
+};
+
+// Practice Stage Select: 0x451cb0, six rows, locked rows remain navigable.
+class TitleStageMenu {
+    TitleState& state;
+    SessionState& progress;
+    TitleSelectionSettings& settings;
+    AnmManager& animations;
+    TitleAnimations visuals;
+    TitleMenuServices& host;
+    bool check(bool, const char*);
+    bool available(i32 stage);
+
+public:
+    std::string error;
+    TitleStageMenu(TitleState& s, SessionState& p, TitleSelectionSettings& choice,
+                   AnmManager& a, TitleMenuServices& h, TitleSceneResources resources)
+        : state(s), progress(p), settings(choice), animations(a),
+          visuals(s, a, resources.title, resources.ascii), host(h) {}
+    bool update(u32 pressed, u32 repeated);
+    bool draw_texts(HudDrawServices&);
 };
 
 // 角色菜单行位（root2 子脚本 49-55，推定：1-4 为可选角色，0/5 为 EX/LUNATIC

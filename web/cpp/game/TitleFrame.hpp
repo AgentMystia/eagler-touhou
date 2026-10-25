@@ -24,6 +24,7 @@ struct TitleFramePlatform {
 
 struct TitleFrameServices : TitleFramePlatform {
     virtual bool update_title_menu(TitleScreen, const TitleFrameInput&) = 0;
+    virtual bool restore_practice_selection() { return false; }
     // [轮9] 主菜单选择交叉的绘制回调推进（update 侧 poke 被 tick 插值覆写
     // ——wasi trace 实证，poke 必须 tick 后/绘制前执行）。
     virtual void advance_main_menu_selection() {}

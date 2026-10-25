@@ -104,6 +104,15 @@ void TitleMainMenu::dim_disabled() {
     if (child) child->visual.color = 0xA0000000u;
 }
 
+// Extra 行解锁门（0x44c570 case0：+0x5c40 bit1 非 0 = 解锁；写点 0x416130
+// 通关落档 0x1b26b+char*2 bit0x10，任一角色普通难度通关置位）。宿主未接 =
+// 禁用（原版无存档行为）。0x416150 无全角色判定——任一角色位即开。
+bool TitleMainMenu::extra_gate() {
+    for (i32 character = 0; character < 4; ++character)
+        if (extra_unlocked && extra_unlocked(character)) return true;
+    return false;
+}
+
 // [窗A 修正] 背景半张层值按 oracle 实测落码（蓝图 §8.3 层偏移现象；机制 =
 // supervisor 逐 VM 置层推定，反汇编待锚）。oracle 证据（title-draws.jsonl）：
 //   f349/g350 起 title00a 左半(entry1)@L23、右半(entry2)@L22（dump ins_304 为
@@ -127,6 +136,12 @@ void TitleMainMenu::adopt_background_layers() {
 void TitleMainMenu::enter(i32 entry) {
     switch (TitleMainEntry(entry)) {
     case TitleMainEntry::StartGame:
+    case TitleMainEntry::PracticeStart:
+        // 0x44da63 / 0x44dac8 -> 0x449360: Start=0, Practice=1 << 4.
+        // Extra also uses mode 0 (difficulty 4); it is not Practice mode 1.
+        progress.run_mode_flags = (progress.run_mode_flags & ~0x30u) |
+            (entry == i32(TitleMainEntry::PracticeStart) ? 0x10u : 0u);
+        progress.practice_mode = 0;  // GameInf is configured only on launch.
         state.flags |= 2u;  // 离开主菜单：返回时不再走 180 帧 intro
         state.change_screen(TitleScreen::Difficulty);
         state.menu.push();
@@ -183,8 +198,10 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
     case 0: {
         state.menu.count = kTitleMainEntries;
         state.menu.wrapping = true;
-        // Extra Start 无存档数据禁用（真机 scoreth13.dat 缺省行为，oracle ↓ 0→2 跳过）。
-        if (!state.menu.disable(i32(TitleMainEntry::ExtraStart)))
+        state.menu.disabled_count = 0;  // Rebuild per-screen gates, not duplicate on each cancel.
+        // Extra Start 门（0x44c570 case0 +0x5c40 bit1）：无解锁存档禁用
+        //（真机缺省行为，oracle ↓ 0→2 跳过）。
+        if (!extra_gate() && !state.menu.disable(i32(TitleMainEntry::ExtraStart)))
             return fail(state.menu.error);
         // 真机 boot：无提示幕。标题任务使能帧（=g181）建背景+LOGO 根（oracle：
         // g181 起 select00 两半、g291 LOGO 翻转 = script94 内建 110f 延迟、
@@ -206,7 +223,7 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
             }
         }
         state.change_substate(1);
-        if (returning) open_menu();
+        if (returning && !open_menu()) return false;
         [[fallthrough]];
     }
     case 1: {
@@ -220,7 +237,7 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
         if (!returning && state.age.current == menu_at && !open_menu()) return false;
         // [f389 校准] ver 延 1 帧创建（open_menu 挂起，此处消费——
         // oracle f389 首绘 vs port 原 f388）。
-        if (!returning && version_bar_pending && state.age.current == menu_at + 1 &&
+        if (version_bar_pending && state.age.current == menu_at + 1 &&
             !open_menu_version_bar())
             return false;
 
@@ -232,13 +249,15 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
                 if (auto* overlay = animations.registry.find_child_script(*root, 93, 0))
                     overlay->visual.layer = 21;
         }
-        if (state.age.current == kTitleBootIntroFrames + kTitleMenuReadyDelay) {
+        const i32 ready_at = returning ? kTitleMenuReadyDelay :
+            kTitleBootIntroFrames + kTitleMenuReadyDelay;
+        if (state.age.current == ready_at) {
             // [轮7] 交叉武装提前一帧（oracle grey3 于 f371 首绘 alpha=0x5b=
             // 中断后第 1 tick——port 中断 tick 才执行标签体、alpha 写在次 tick，
             // 故武装于 190）。白条淡出同帧起（f371=0x8e=142 实测）。
             if (!select_entry()) return false;
         }
-        if (state.age.current >= kTitleBootIntroFrames + kTitleMenuReadyDelay)
+        if (state.age.current >= ready_at)
             state.change_substate(2);
         break;
     }
@@ -394,6 +413,12 @@ bool TitleMainMenu::open_menu_version_bar() {
 
 bool TitleMainMenu::open_menu() {
     menu_age = 0;
+    // Submenus have hidden the old rows. Recreate their script-driven entry
+    // state on return rather than leaving a live-but-invisible menu tree.
+    if ((state.flags & 2u) && present(state.handles[resources.main_root])) {
+        animations.retire(state.handles[resources.main_root]);
+        state.handles[resources.main_root] = 0;
+    }
     if (!present(state.handles[resources.main_root])) {
         if (!create(resources.main_root)) return false;
         auto* root = animations.registry.find(state.handles[resources.main_root]);

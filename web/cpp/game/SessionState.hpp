@@ -19,7 +19,7 @@ struct SessionState {
     u32 scene_flags = 0;
     bool new_run = true;
     // ---- S3 对局终了链路（results-overlay-anatomy.md / results-flow.md）----
-    // DAT_004be830：bit4-5 = mode（0=故事 1=Extra 2=符卡练习 3=Overdrive 同 2 类）、
+    // DAT_004be830：bit4-5 = mode（0=故事/Extra 1=关卡练习 2=符卡练习）、
     // bit6 = 演示回放；0x42cd40 以 (flags>>4)&3 取 mode、&0x30==0x20 门符卡练习。
     u32 run_mode_flags = 0;
     // GameInf+0x74 模式参数（0=常规 1=练习）：非 0 时关终改走结算A（0x43e5a0）。
@@ -65,6 +65,31 @@ struct SessionState {
     // （demo-original-live/passive-audio-obs/stage1-check2.png 实证）。
     i32 life_piece_threshold_index = 0;
 };
+
+// Original 0x42b990:70-72 records stage-played only for an ordinary run.
+// Replay/Practice/Spell/Extra must not manufacture Practice unlocks.
+inline bool records_practice_stage(const SessionState& state, bool replay) noexcept {
+    return !replay && state.practice_mode == 0 && (state.run_mode_flags & 0x70u) == 0 &&
+        state.character >= 0 && state.character < 4 &&
+        state.difficulty >= 0 && state.difficulty < 4 &&
+        state.stage >= 1 && state.stage <= 6;
+}
+
+// Returns-to-title from a real Practice run re-enters Stage Select (original
+// 0x414fc0(4) keeps DAT_004dc670 at its pre-title value: 0x450fb0 case2→0x451450
+// case2 only when dc670==4, written by 0x451cb0:159 on the way in). Covers both
+// pause-menu Exit (0x43e780:209) and GameOver Continue-menu exit (0x43fa90:
+// 549-552 / 0x440960 exit-to-title) — all issue the same scene request 4.
+// Ordinary-run, replay/demo and cold-boot returns keep their existing paths:
+// dc670 is 1/2/5/0 there, never 4.
+inline bool returns_to_practice_selection(const SessionState& state, i32 reason,
+                                          bool replay) noexcept {
+    return (reason == 1 || reason == 3) && !replay && state.practice_mode != 0 &&
+        (state.run_mode_flags & 0x70u) == 0x10u &&
+        state.character >= 0 && state.character < 4 &&
+        state.difficulty >= 0 && state.difficulty < 4 &&
+        state.starting_stage >= 1 && state.starting_stage <= 6;
+}
 
 // 0x4bb994 阈值表（EXE .data @0x4bb994 原样）。
 inline constexpr i32 kLifePieceThresholds[8] = {8, 10, 12, 15, 18, 20, 25, 9999999};

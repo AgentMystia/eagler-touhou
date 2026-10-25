@@ -154,6 +154,8 @@ struct ApplicationState final : TitleScenePlatform, RunSceneServices, RunPausePl
     // TitleMenuServices：clear-tag 真实存档门（0x451450 case0 score 块
     // +0x56dc*char+0x7e4+diff*4 != 0；MenuExtras FileStore 数据源，缺档全隐）。
     bool character_cleared(i32 character, i32 difficulty) override;
+    bool extra_unlocked(i32 character) override;
+    bool practice_stage_played(i32 character, i32 difficulty, i32 stage) override;
     // TitleOptionPlatform（Options 屏宿主面，r4/menu-extras 契约 §三）
     void apply_volumes(i32 bgm, i32 effect) override;
     bool persist_options(const TitleOptionVolumes& volumes) override;

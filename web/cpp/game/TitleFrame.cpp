@@ -100,6 +100,16 @@ bool TitleFrame::initialize() {
         callbacks[1].enabled = true;
         return menu();
     };
+    if (reason == 4) {
+        // 0x44c570 -> 0x450fb0/0x451450 return shortcut for Practice only.
+        // Restore the same cursor history as Main -> Rank -> Player -> Stage.
+        if (!check(host.restore_practice_selection(), "Practice selection restore failed"))
+            return false;
+        state.flags |= 2u;
+        state.return_reason = 1;
+        callbacks[1].enabled = true;
+        return menu();
+    }
     if (reason == 0) {
         // 冷启动（真机 boot）：无提示幕，走完整时序——开场 logo 幕 180 帧后
         // 标题展开、菜单 intro 180 帧插值（oracle g181/g361/g372 锚点）。
@@ -134,6 +144,7 @@ bool TitleFrame::update(const TitleFrameInput& value) {
         break;
     case 6:  // Difficulty
     case 7:  // Character
+    case 8:  // Practice Stage Select (0x451cb0)
         if (!menu()) return false;
         break;
     case 3:  // Option（0x44c570 case 3 → 0x44dd00；数字 VM 刷新在 update 内）
