@@ -54,6 +54,9 @@ const TH08_MULTIPLAYER_LOADOUTS = Object.freeze([
 ]);
 const TH10_MULTIPLAYER_LOADOUTS = Object.freeze([REIMU_A, REIMU_B, REIMU_C, MARISA_A, MARISA_B, MARISA_C]);
 const TH11_MULTIPLAYER_LOADOUTS = Object.freeze([REIMU_A, REIMU_B, REIMU_C, MARISA_A, MARISA_B, MARISA_C]);
+const TH12_MULTIPLAYER_LOADOUTS = Object.freeze([REIMU_A, REIMU_B, MARISA_A, MARISA_B,
+    Object.freeze({ labelKey: "multiplayer.loadout.sanaeA", glyph: "早", character: 2, shot: 0 }),
+    Object.freeze({ labelKey: "multiplayer.loadout.sanaeB", glyph: "早", character: 2, shot: 1 })]);
 const TH15_MULTIPLAYER_LOADOUTS = Object.freeze(["reimu", "marisa", "sanae", "reisen"].map((name, character) => Object.freeze({ labelKey: `multiplayer.loadout.th15_${name}`, glyph: ["霊", "魔", "早", "鈴"][character], character, shot: 0 })));
 const STANDARD_MULTIPLAYER_DIFFICULTIES = Object.freeze(["Easy", "Normal", "Hard", "Lunatic", "Extra"]);
 const TH07_MULTIPLAYER_DIFFICULTIES = Object.freeze([...STANDARD_MULTIPLAYER_DIFFICULTIES, "Phantasm"]);
@@ -439,6 +442,14 @@ export const PRODUCT_GAMES = Object.freeze({
         touchFire: TOGGLE_TOUCH_FIRE,
         support: Object.freeze({highRefreshRate: true, sourceRepository: "https://github.com/Tweet-META/th12", adaptationNotice: "early-test"}),
         replay: Object.freeze({prefix: "th12"}),
+        multiplayerRuntime: "./runtime/th12/multiplayer/th12.html",
+        multiplayer: Object.freeze({
+            titleKey: "game.title.th12mp", gameplay: "cooperative",
+            inputTiming: Object.freeze({ rollbackLimit: 12, sendPredictionLimit: 12, measuredStartup: true, manualDelayLimit: 9 }),
+            playerCounts: STANDARD_MULTIPLAYER_PLAYER_COUNTS, difficulties: STANDARD_MULTIPLAYER_DIFFICULTIES,
+            loadouts: TH12_MULTIPLAYER_LOADOUTS, peerTransportGlobal: "__th12PeerTransport",
+            spectator: true, titleRoomEntry: false,
+        }),
         features: Object.freeze({thprac: true, languages: true, focusHitbox: false}),
     }),
     th15: Object.freeze({
