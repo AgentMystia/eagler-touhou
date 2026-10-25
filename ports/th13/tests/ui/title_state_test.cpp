@@ -228,21 +228,22 @@ TEST(title_disabled_entries_not_selectable) {
     CHECK(cursor != 1);  // Extra Start（无存档）永不停留（oracle：↓ 一次 0→2）
 }
 
-// 未实现入口（Replay/PlayerData/音乐室/Option/Manual）：Z 播确认音 + 走真机
+// 未实现入口（PlayerData/音乐室/Option/Manual）：Z 播确认音 + 走真机
 // 确认序（label6 闪灭/选中项 label2 飞离/版本条回收）但不切屏、无后续画面
 // （真机有画面，蓝图 §8.5 登记；菜单随之终局——与真机菜单死亡序一致）。
+// [R3-M] Replay(4) 已实现为 Replay 屏（TitleReplayMenu），移出未实现清单。
 TEST(title_unimplemented_entries_confirm_without_switching) {
     TitleHarness harness;
     harness.reach_menu();
-    for (int i = 0; i < 3; i++) harness.frame(0x20);  // 光标 0→2→3→4
-    CHECK_EQ(harness.scene->state.menu.cursor, 4);
+    for (int i = 0; i < 4; i++) harness.frame(0x20);  // 光标 0→2→3→4→5
+    CHECK_EQ(harness.scene->state.menu.cursor, 5);
     const int sounds_before = harness.host.sounds;
-    harness.frame(0x01);  // Z on Replay(4)
+    harness.frame(0x01);  // Z on PlayerData(5)
     CHECK(harness.host.sounds == sounds_before + 1);  // 仅确认音
     CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Main));  // 不切屏
     CHECK_EQ(harness.scene->state.substate, 4);  // 确认序终局（无后续画面）
     harness.frame(0x20);  // 菜单已终局：不再移动
-    CHECK_EQ(harness.scene->state.menu.cursor, 4);
+    CHECK_EQ(harness.scene->state.menu.cursor, 5);
     CHECK(harness.scene->error.empty());
 }
 

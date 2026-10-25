@@ -41,6 +41,15 @@ bool AnmRenderer::material(AnmVm& vm,bool textured){
         // Keep its zero geometry/UVs; selecting a sprite here would change them.
         const u32 texture=graphics.texture(*source,source->sprites[u32(vm.visual.sprite)].texture);if(texture!=bound_texture){flush();bound_texture=texture;graphics.bind_texture(texture);}}
     const auto& v=vm.visual;auto next=graphics.pipeline();const u32 mode=v.blend_mode();next.alphaTest=true;
+    // [原版机制·黑块根因] 原版 ANM quad 全族以 ALPHABLENDENABLE=TRUE 绘制
+    // （oracle title-draws 全窗 blend 三元组实证：mode0=[5,6,1]、mode1=[5,2,1]、
+    // mode2=[5,2,3]、mode3=[2,1,1]——D3D SRCALPHA=5/INVSRCALPHA=6/ONE=2/ZERO=1，
+    // 第三元=eq ADD=1/REVSUB=3；mode3 的 (One,Zero) 也在混合启用下提交）。
+    // th15 共享基座靠 configure_game 预置 blend=true；th13 不经 configure_game
+    // （GraphicsDevice::initialize 仅写真机 TFACTOR=0），缺此位导致 alpha=0
+    // 纹素以不透明黑写入——菜单字条/LOGO/立绘全族黑块的用户可见根因。
+    // 按模式落混合因子+恒开混合位（原版 SetRenderState 语义）。
+    next.blend=true;
     switch(mode){
     case 0:next.sourceBlend=BlendFactor::SourceAlpha;next.destinationBlend=BlendFactor::InverseSourceAlpha;next.blendEquation=BlendEquation::Add;break;
     case 1:next.sourceBlend=BlendFactor::SourceAlpha;next.destinationBlend=BlendFactor::One;next.blendEquation=BlendEquation::Add;break;

@@ -6,9 +6,16 @@
 //   th13-harness stage1 <资源目录> <事件输出路径> [帧数] [stage.ecl]
 //     资源目录需含 st01.ecl 及其 ECLI/ANIM 依赖（artifacts/reference/raw）。
 //   th13-harness replay <rpy 路径> <资源目录> <事件输出路径> [帧数] [stage 索引]
-//     解码原版录像并把输入逐帧注入 StageBattle（0x448200 回放节奏），按
-//     event-contract.md §7 落 player/kill/boss_op 事件；窗口自定（Boss 第一
-//     非符 +300 帧或输入耗尽）。资源目录另需 plXXa.sht（移速源，§7.2）。
+//     同源默认（r4/harness）：解码原版录像，走与网页一致的 RunScene 生产
+//     tick（输入单实例 0x448200 相位 → RunScene::controls → scheduler.update
+//     单调；bank 装载序/RNG 双流镜像 ApplicationState），事件经
+//     StageBattle::open_event_sink 落 player/kill/boss_op 等，窗口自定
+//     （Boss 第一非符 +300 帧或输入耗尽）。资源目录另需 plXXa.sht（§7.2）。
+//     TH13_STATE_LOG=<guest 路径> 时另产对局状态流（th13-state-raw-v1，
+//     逐消费帧采样=battle_oracle.py:1086 契约；字段契约见
+//     oracle/state_compare.py；帧相位 -1 = 装载完成后首帧步进前）。
+//     诊断开关：TH13_FREEZE_AT=<帧>（冻结门自证）、TH13_NO_ECL_SLOT_ANM=1
+//     （ANM sync 负控）——不改评分字段。
 //   th13-harness draws <资源目录> <绘制输出路径> [帧数=3600] [stage.ecl]
 //   th13-harness draws-replay <rpy> <资源目录> <绘制输出路径> [帧数] [stage 索引]
 //     语义绘制清单导出（draw-contract.md v1 移植侧，TH13_DRAW_CAPTURE 构建）：
@@ -31,18 +38,26 @@
 #include <cstdlib>
 #include <cstring>
 
+#include <algorithm>
+#include <cstdio>
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "game/AnmDrawSchedule.hpp"
 #include "game/AnmManager.hpp"
 #include "game/AnmRenderer.hpp"
+#include "game/AsciiFrame.hpp"
+#include "game/AsciiText.hpp"
 #include "game/DrawCapture.hpp"
 #include "game/EclResource.hpp"
 #include "game/GameInput.hpp"
+#include "game/PlayfieldTargets.hpp"
 #include "game/ReplayFile.hpp"
+#include "game/ReplaySession.hpp"
+#include "game/RunScene.hpp"
 #include "game/Rng.hpp"
 #include "game/ScreenViews.hpp"
 #include "game/StageBattle.hpp"
@@ -118,38 +133,267 @@ bool read_whole_file(const std::string& path, std::vector<th13::u8>& out) {
     return got == out.size();
 }
 
-// replay 模式的资源供给与宿主回调（无头：HUD/终局全部记账不打扰）。
-// animation() 同 RunSceneAssets：核验存在并登记 sim.anim_list（begin() 装载
-// 契约 anim_list ≥ 2）。
-class ReplayResources final : public th13::EclResourceProvider {
+// （旧 battle-only 回放路径与 ReplayResources/ReplayHost 已删——r4/harness
+// 同源切换：replay 认证一律走 RunScene 生产 tick，见下方 replay_runscene。）
+
+// ---- TH13_STATE_LOG：对局状态流（th13-state-raw-v1，r3 lockstep 门禁）----
+// 字段/键序与 oracle/battle_oracle.py _write_state_sample 一一对应；帧相位：
+// -1 = 装载完成后、首帧步进前（oracle 的 scene7 首帧/检测帧对应物），0 起
+// 每帧步进后一行。port 只读既有公开状态（StageBattle/HudPlayerState/
+// SessionState/HudScoreState），不改游戏代码；无对应来源的字段原样输出
+// null（spell_id、raw_enemy_manager、raw_globals.004be814——契约见
+// oracle/state_compare.py 模块 docstring，null 字段不进入裁决面）。
+// player_position 与 oracle player+0x5B8/0x5BC 同基（game 坐标，非屏幕系）。
+void state_keys(th13::u16 state, std::string& out) {
+    // oracle REPLAY_INPUT_VK：位→VK；输出按 VK 升序（oracle sorted()）。
+    static constexpr std::pair<th13::u16, int> kBits[] = {
+        {0x01, 0x5A}, {0x02, 0x58}, {0x08, 0x10}, {0x10, 0x26},
+        {0x20, 0x28}, {0x40, 0x25}, {0x80, 0x27}};
+    std::vector<int> keys;
+    for (const auto& bit : kBits)
+        if (state & bit.first) keys.push_back(bit.second);
+    std::sort(keys.begin(), keys.end());
+    out.clear();
+    for (size_t i = 0; i < keys.size(); i++) {
+        out += i ? "," : "";
+        out += std::to_string(keys[i]);
+    }
+}
+
+void write_state_row(std::FILE* log, int frame, const th13::StageBattle& battle,
+                     const th13::SessionState& progress,
+                     const th13::HudPlayerState& player,
+                     const th13::HudScoreState& score, th13::u16 state) {
+    std::string keys;
+    state_keys(state, keys);
+    // %.9g = binary32 精确十进制往返（FLT_DECIMAL_DIG）。
+    std::fprintf(log,
+                 "{\"schema\":\"th13-state-raw-v1\",\"frame\":%d,"
+                 "\"player_position\":[%.9g,%.9g],"
+                 "\"power\":%d,\"power_step\":%d,\"spell_id\":null,"
+                 "\"keys\":[%s],"
+                 "\"raw_globals\":{\"004be7c0\":%d,\"004be7c8\":%d,"
+                 "\"004be810\":%d,\"004be814\":null},"
+                 "\"raw_enemy_manager\":null}\n",
+                 frame, double(battle.player_x), double(battle.player_y),
+                 player.power, player.power_step, keys.c_str(),
+                 score.score, progress.continues, progress.high_score);
+}
+
+
+// ---- RunScene 生产 tick 回放（replay 模式唯一路径；2026-10-25 r4/harness）----
+// 与网页同一机制：ApplicationState::begin_replay_run/begin_run 的 bank 装载序
+// + RunScene::initialize + ApplicationState::step 的每帧序（输入单实例
+// GameInput::update → RunScene::controls → scheduler.update()：副池@9 →
+// RunScene::update@20（0x70 冻结门 → battle.step → dialog → scenery →
+// presentation->sync → hud.update/update_score → post_flow）→ 主池@34）。
+// 无 anm_effects_noop 特例（ecl_slot_anm/enemies_from_ecl 由 initialize 按
+// 生产置位）。事件流经 StageBattle::open_event_sink（events_/set_frame 生产
+// 事件点，player 行为帧内首条）；状态流逐消费帧采样（battle_oracle.py:1086
+// 契约）。自证开关（仅诊断，不改评分字段）：TH13_FREEZE_AT=<帧>（该帧起
+// scene_flags|=0x10：输入照常逐帧消费、战斗冻结、状态行照写值冻结）；
+// TH13_NO_ECL_SLOT_ANM=1（负控：槽位 VM 不建，敌机 anm_slot_handle 恒 0，
+// 与默认正控对照证明 ANM sync 真实执行）。
+class RunSceneHost final : public th13::RunSceneServices {
 public:
     std::string dir;
-    th13::StageSim* sim = nullptr;
-    bool read(const std::string& name, std::vector<th13::u8>& data) override {
-        return read_whole_file(dir + "/" + name, data);
+    th13::AnmManager* animations = nullptr;
+    th13::DrawCapture* graphics = nullptr;
+    th13::AsciiText* captions = nullptr;  // draws 模式接生产文字面；null=纯回放
+    i32 destination = 0;  // 0 = 未请求（PostGameFlow 终局转发记账）
+    bool game_over = false;
+    bool hud_text(const th13::HudTextDraw& value) override {
+        // ApplicationState::hud_text 同款（ApplicationTitle.cpp:9-11）。
+        return captions ? captions->enqueue(value, 0, value.style.shadow) : true;
     }
-    bool animation(u32, const std::string& name) override {
-        std::vector<th13::u8> probe;
-        if (!read_whole_file(dir + "/" + name, probe)) return false;
-        if (sim) sim->anim_list.push_back(name);
-        return true;
-    }
-};
-
-class ReplayHost final : public th13::StageBattleServices {
-public:
+    bool hud_sound(i32) override { return true; }
     bool life_hud(i32, i32) override { return true; }
     bool bomb_hud(i32, i32) override { return true; }
+    bool camera(th13::DrawCamera, bool) override { return true; }
+    bool request_pause() override { return true; }
     bool request_game_over() override {
         game_over = true;
         return true;
     }
-    bool hud_sound(i32) override { return true; }
-    bool game_over = false;
+    bool request_destination(i32 raw) override {
+        destination = raw;
+        return true;  // 生产由 Application 接线换场景；harness 记账并收窗
+    }
+    bool read_asset(const std::string& name, std::vector<th13::u8>& bytes,
+                    bool required) override {
+        if (read_whole_file(dir + "/" + name, bytes)) return true;
+        bytes.clear();
+        return !required;
+    }
+    th13::ZunGraphics& stage_graphics() override { return *graphics; }
+    bool preload_scenery_animation(i32 bank, const std::string& name) override {
+        std::vector<th13::u8> bytes;
+        return animations && read_whole_file(dir + "/" + name, bytes) &&
+               animations->load(bank, bytes.data(), th13::u32(bytes.size()));
+    }
 };
 
-int replay(const char* replay_path, const char* resource_dir, const char* event_path,
-           unsigned frames, unsigned stage_index) {
+// 帧序与 bank 面镜像 ApplicationState（visual → AnmManager；game_random →
+// RunScene → StageBattle/ItemManager；environment.game_rng 同拍 reseed——
+// begin_replay_run 的畸变侧同款）。装载序 = web 完整启动链：text0/sig1/
+// ascii2/effect8/title16/title_v17/help19（Application init）→ front3/
+// stage4 合并/bullet5/player6（begin_run）→ scenery7（initialize 内经
+// preload_scenery_animation）——模板 tick 共享 visual 流，序错即移流。
+struct ReplayRunSession {
+    th13::GameRandom visual;      // ApplicationState.visual（0x4dc31c 位）
+    th13::GameRandom game_random; // ApplicationState.game_random（战斗流）
+    th13::AnmEnvironment environment;
+    th13::AnmManager animations{visual, environment};
+    th13::DrawCapture capture;    // 无头语义面（draws 模式 open_output 记账）
+    th13::AnmRenderer renderer{capture};
+    th13::ScreenViews views{renderer, environment};
+    th13::AsciiText captions{animations, environment};
+    th13::FrameScheduler scheduler;
+    th13::SessionState progress;
+    th13::HudPlayerState player;
+    th13::HudScoreState score;
+    RunSceneHost host;
+    std::unique_ptr<th13::RunScene> run;
+    std::unique_ptr<th13::PlayfieldTargets> playfield;
+    std::unique_ptr<th13::AnmDrawSchedule> draw_schedule;
+    std::unique_ptr<th13::AsciiFrame> caption_frame;
+    std::array<th13::FrameCallback, 2> animation_updates{};  // @9/@34（Application 同款）
+    std::string error;
+    bool fail(const std::string& why) {
+        if (error.empty()) error = why;
+        return false;
+    }
+    void configure_environment() {
+        // web 对局期环境口径（ApplicationState::initialize battle 子集，
+        // DrawsSession 同款已在 draws 窗对拍）。
+        environment.screen_width = 640;
+        environment.screen_height = 480;
+        environment.raster_scale = 1;
+        environment.resolution_scale = 1;
+        environment.render_target_has_alpha = true;
+        environment.screen_offsets = {32, 16, 320, 16};
+        environment.playfield_origin = {32, 16};
+        environment.camera_origin = {0, 0, 1000};
+    }
+    bool read_bank(const char* name, th13::i32 bank, th13::i32 identity_slot = -100) {
+        std::vector<th13::u8> bytes;
+        if (!read_whole_file(host.dir + "/" + name, bytes) ||
+            !animations.load(bank, bytes.data(), th13::u32(bytes.size())))
+            return fail(std::string("ANM load failed: ") + name + ": " + animations.error);
+        // 纹理身份登记：原版 decomp+oracle 元组（Render r4/render/HANDOFF 三轮
+        // 证据）text0/sig1/ascii2/front5/stage6/bullet7/effect8/player9/title16/
+        // help19——标签=原版槽，内部 bank id 不动；未列族（scenery 等）留空
+        // → DrawCapture 引用时显式 port:unregistered 标记，不静默。
+        if (identity_slot != -100)
+            if (auto* file = animations.resource(bank))
+                capture.register_texture(file, 0, th13::u32(file->textures.size()),
+                                         identity_slot);
+        return true;
+    }
+    // begin_run 面装载（Application.cpp:400-451 同序同法）。
+    bool load_run_banks(const th13::ReplayFile& replay_file) {
+        static constexpr std::pair<const char*, th13::i32> init_banks[7] = {
+            {"text.anm", 0},  {"sig.anm", 1},   {"ascii.anm", 2}, {"effect.anm", 8},
+            {"title.anm", 16}, {"title_v.anm", 17}, {"help.anm", 19}};
+        for (const auto& bank : init_banks) {
+            if (!read_bank(bank.first, bank.second, bank.second)) return false;
+            // ApplicationState::prepare_title 同款：ascii(2) 为兜底精灵源
+            //（effect.anm 模板 32 等引用兜底面，无则装载期 tick 失败）。
+            if (bank.second == 2)
+                environment.fallback_sprite_resource = animations.resource(2);
+        }
+        if (!read_bank("front.anm", 3, 5)) return false;  // kFrontBank；原版槽 5
+        // stage 合并 bank（Application.cpp:416-433：ECL ANIM 名单序 append；
+        // 纹理身份 = 原版槽 6 整名单单标签——Render 三轮元组，内部 bank 4）。
+        std::vector<th13::u8> ecl, bytes;
+        char stage_ecl[16];
+        std::snprintf(stage_ecl, sizeof stage_ecl, "st%02d.ecl", int(progress.stage));
+        if (!read_whole_file(std::string(host.dir) + "/" + stage_ecl, ecl))
+            return fail(std::string("Stage ECL missing: ") + stage_ecl);
+        th13::EclResource head;
+        if (!head.open(ecl.data(), th13::u32(ecl.size())) || head.animations.empty())
+            return fail("Stage ECL ANIM list unavailable");
+        th13::AnmResource merged;
+        for (const auto& name : head.animations) {
+            if (!read_whole_file(host.dir + "/" + name, bytes))
+                return fail("Stage ANM missing: " + name);
+            if (!merged.append(bytes.data(), th13::u32(bytes.size())))
+                return fail("Stage ANM append failed: " + name);
+        }
+        if (!animations.adopt(4, std::move(merged)))
+            return fail("Stage ANM bank failed: " + animations.error);  // kStageBank
+        if (auto* file = animations.resource(4))
+            capture.register_texture(file, 0, th13::u32(file->textures.size()), 6);
+        if (!read_bank("bullet.anm", 5, 7)) return false;  // 原版槽 7
+        char player_anm[16];
+        std::snprintf(player_anm, sizeof player_anm, "pl%02d.anm", replay_file.character & 3);
+        if (!read_bank(player_anm, 6, 9)) return false;  // kPlayerBank；原版槽 9
+        return true;
+    }
+    bool register_animation_pools() {
+        animation_updates[0].owner = animation_updates[1].owner = this;
+        animation_updates[0].enabled = animation_updates[1].enabled = true;
+        animation_updates[0].run = [](void* p) {
+            return static_cast<ReplayRunSession*>(p)->animations.update(true)
+                       ? th13::i32(th13::FrameAction::Continue)
+                       : th13::i32(th13::FrameAction::Error);
+        };
+        animation_updates[1].run = [](void* p) {
+            return static_cast<ReplayRunSession*>(p)->animations.update(false)
+                       ? th13::i32(th13::FrameAction::Continue)
+                       : th13::i32(th13::FrameAction::Error);
+        };
+        if (scheduler.add(animation_updates[0], th13::FramePass::Update, 9) < 0 ||
+            scheduler.add(animation_updates[1], th13::FramePass::Update, 34) < 0)
+            return fail("animation pool registration failed");
+        return true;
+    }
+    // 恢复 → bank 面 → RunScene 构造/装载（replay 与 draws-replay 共用；
+    // begin_replay_run→begin_run 同序）。event_path 非空时：initialize 前
+    // open_event_sink（装载趟 frame-0 事件入流；load 不清已开 sink）+
+    // initialize 后幂等重 afirm（Combat r4 幂等版：二次调用仅 set_frame，
+    // 不重开不截断）。调用方随后自行接绘制栈/自证开关。
+    bool assemble(const th13::ReplayFile& replay_file, u32 stage_index,
+                  const th13::ReplayStage& stage, const char* event_path = nullptr) {
+        host.animations = &animations;
+        host.graphics = &capture;
+        configure_environment();
+        progress.stage = i32(stage.number);
+        progress.difficulty = replay_file.rank & 3;
+        progress.character = replay_file.character;
+        th13::ReplayRestoreLog restore_log;
+        std::string restore_error;
+        const th13::ReplayRestoreTarget restore_target{&progress, &player, &score,
+                                                       &game_random, &visual};
+        if (!th13::ReplaySession::restore_stage(replay_file, stage_index, restore_target,
+                                                restore_log, restore_error)) {
+            error = "replay restore failed: " + restore_error;
+            return false;
+        }
+        th13::ReplaySession::emit_log(restore_log);
+        progress.stage = i32(stage.number);  // DAT_004be81c 位（restore 不写）
+        environment.game_rng.reseed(restore_log.seed);
+        if (!load_run_banks(replay_file)) return false;
+        char std_name[16], sht_file[16];
+        std::snprintf(std_name, sizeof std_name, "st%02d.std", int(stage.number));
+        std::snprintf(sht_file, sizeof sht_file, "pl%02d%c.sht", replay_file.character,
+                      replay_file.shot_type == 0 ? 'a' : 'b');
+        run = std::make_unique<th13::RunScene>(
+            progress, player, score, animations, renderer, environment, host, scheduler,
+            th13::StagePresentation::Banks{4, 5, 6, 8}, 3, 2, 7, std_name, &game_random);
+        run->battle_sht = sht_file;
+        if (event_path && !run->battle.open_event_sink(event_path))
+            return fail("event sink open failed: " + run->battle.error());
+        if (!register_animation_pools()) return false;
+        if (!run->initialize()) return fail(run->error);
+        if (event_path && !run->battle.open_event_sink(event_path))  // 幂等重 afirm
+            return fail("event sink reaffirm failed: " + run->battle.error());
+        return true;
+    }
+};
+
+int replay_runscene(const char* replay_path, const char* resource_dir,
+                    const char* event_path, unsigned frames, unsigned stage_index) {
     std::vector<th13::u8> bytes;
     if (!read_whole_file(replay_path, bytes)) {
         std::printf("replay read failed: %s\n", replay_path);
@@ -157,7 +401,7 @@ int replay(const char* replay_path, const char* resource_dir, const char* event_
     }
     th13::ReplayFile replay_file;
     if (!replay_file.decode(bytes.data(), bytes.size())) {
-        std::printf("replay decode failed: %s\n", replay_file.error().c_str());
+        std::printf("replay-runscene decode failed: %s\n", replay_file.error().c_str());
         return 1;
     }
     if (stage_index >= replay_file.stages.size()) {
@@ -166,78 +410,152 @@ int replay(const char* replay_path, const char* resource_dir, const char* event_
         return 1;
     }
     const th13::ReplayStage& stage = replay_file.stages[stage_index];
-    std::printf("replay name=%s rank=%d chara=%d shot=%d score=%d stages=%u\n",
+    std::printf("replay-runscene name=%s rank=%d chara=%d shot=%d stages=%u\n",
                 replay_file.player_name.c_str(), replay_file.rank, replay_file.character,
-                replay_file.shot_type,
-                replay_file.score, unsigned(replay_file.stages.size()));
-    std::printf("replay stage=%u frames=%u events=%u score=%d\n", unsigned(stage.number),
-                unsigned(stage.frame_count), unsigned(stage.events.size()), stage.score);
-
-    ReplayResources provider;
-    provider.dir = resource_dir;
-    ReplayHost host;
-    th13::StageBattle battle;
-    provider.sim = &battle.sim;
-    th13::SessionState progress;
-    th13::HudPlayerState player;
-    th13::HudScoreState score_state;
-    // 注入观察不模拟终局：近似判定下的死亡按无敌复活继续（命数给足）。
-    player.extra_lives = 99;
-    char stage_file[16];
-    std::snprintf(stage_file, sizeof stage_file, "st%02u.ecl", unsigned(stage.number));
-    char sht_file[16];
-    std::snprintf(sht_file, sizeof sht_file, "pl%02d%c.sht", replay_file.character,
-                  replay_file.shot_type == 0 ? 'a' : 'b');
-    battle.sim.anm_effects_noop = true;  // 事件契约：307/308 与 stage1 oracle NOOP 同源
-    if (!battle.load(provider, stage_file, 1 << replay_file.rank, host, progress, player,
-                     score_state, event_path, sht_file)) {
-        std::printf("replay battle load failed: %s\n", battle.error().c_str());
+                replay_file.shot_type, unsigned(replay_file.stages.size()));
+    const auto session = new ReplayRunSession();  // 堆置（RunScene+管理器超栈）
+    session->host.dir = resource_dir;
+    if (!session->assemble(replay_file, stage_index, stage, event_path)) {
+        std::printf("replay-runscene setup failed: %s\n",
+                    session->error.empty() ? session->run->error.c_str() : session->error.c_str());
         return 1;
     }
+    const bool no_ecl_slot_anm = std::getenv("TH13_NO_ECL_SLOT_ANM") != nullptr;
+    if (no_ecl_slot_anm)  // 负控须在 initialize 置位后压回
+        session->run->battle.sim.ecl_slot_anm = false;
+    unsigned freeze_at = 0;
+    if (const char* at = std::getenv("TH13_FREEZE_AT")) freeze_at = unsigned(std::atoi(at));
 
-    // 逐帧注入（0x448200：态 → 0x4e4c08，沿由 0x414f30 幂等重算）。
-    // 窗口：Boss 第一非符（§7.3）+300 帧、输入耗尽或显式帧数上限。
+    std::FILE* state_log = nullptr;
+    if (const char* state_path = std::getenv("TH13_STATE_LOG")) {
+        state_log = std::fopen(state_path, "wb");
+        if (!state_log) {
+            std::printf("replay state log open failed: %s\n", state_path);
+            return 1;
+        }
+        write_state_row(state_log, -1, session->run->battle, session->progress,
+                        session->player, session->score, 0);
+    }
+    // 每帧序 = ApplicationState::step（run 分支）：先消费同一六字节输入
+    //（00448200 每帧相位，冻结帧照常消费——原版输入层与战斗步进解耦），
+    // controls 传同一实例，scheduler.update() 单调（@9 pool → RunScene::update
+    // → @34 pool）。冻结门内 RunScene::update 早退：stage_frame 不进、
+    // battle 不 step；输入照常消费（00448200 相位）。
     th13::ReplayInputCursor cursor(stage);
     th13::GameInput input;
     const u32 total = frames ? th13::u32(frames) : stage.frame_count;
-    u32 done = 0;
-    i32 boss_frame = -1;
-    bool boss_seen = false;
-    bool nonspell_seen = false;
+    u32 consumed = 0, stepped = 0, frozen = 0;
+    unsigned max_with_handles = 0;  // 槽位 VM 峰值（敌机死后 handle 归零，只看存活面）
+    i32 boss_frame = -1, nonspell_frame = -1;
+    bool boss_seen = false, nonspell_seen = false, terminal = false;
     u32 stop_after = 0xFFFFFFFFu;
-    while (done < total && cursor.valid() && !host.game_over) {
+    while (consumed < total && cursor.valid() && !terminal) {
         const th13::ReplayFrame frame = cursor.next();
         input.update(frame.state);
-        if (!battle.step(input)) {
-            std::printf("replay error at frame %u: %s\n", done, battle.error().c_str());
+        session->run->controls(input);
+        if (freeze_at && consumed + 1 >= freeze_at) session->progress.scene_flags |= 0x10u;
+        const u32 frame_before = session->progress.stage_frame;
+        if (session->scheduler.update() < 0) {
+            std::printf("replay-runscene error at frame %u: %s\n", consumed,
+                        session->run->error.empty() ? session->animations.error.c_str()
+                                                    : session->run->error.c_str());
+            if (state_log) std::fclose(state_log);
+            session->run->battle.sim.sink.close();
             return 1;
         }
-        ++done;
-        const bool boss = battle.sim.boss() != nullptr;
-        if (boss && !boss_seen) {
-            boss_seen = true;
-            boss_frame = i32(done) - 1;  // 事件帧域：done-1 = 本步帧号
+        ++consumed;
+        // 采样相位 = oracle 真实契约（battle_oracle.py:1086-1091）：battle
+        // 开始后每个消费帧一行，帧号 = 消费序（冻结帧 battle 不步进但行照
+        // 写、值保持冻结态；oracle 另有 enemy_update_zero_frames 计数证明
+        // 零步进帧在窗外如实存在）。绝不为匹配跳行。
+        if (state_log)
+            write_state_row(state_log, i32(consumed) - 1, session->run->battle,
+                            session->progress, session->player, session->score,
+                            frame.state);
+        if (session->progress.stage_frame == frame_before) {
+            ++frozen;  // 冻结帧：输入已消费，战斗未步进（0x42c550:263 门）
+        } else {
+            ++stepped;
+            unsigned live_handles = 0;
+            for (const auto& enemy : session->run->battle.sim.enemies)
+                for (auto handle : enemy->anm_slot_handle)
+                    if (handle) live_handles++;
+            max_with_handles = std::max(max_with_handles, live_handles);
+            const bool boss = session->run->battle.sim.boss() != nullptr;
+            if (boss && !boss_seen) {
+                boss_seen = true;
+                boss_frame = i32(stepped) - 1;
+            }
+            if (session->run->battle.sim.boss_nonspell_frame >= 0 && !nonspell_seen) {
+                nonspell_seen = true;
+                nonspell_frame = session->run->battle.sim.boss_nonspell_frame;
+                stop_after = consumed + 300;  // 非符锚点 +300 帧（§7.3 同窗）
+            }
         }
-        if (battle.sim.boss_nonspell_frame >= 0 && !nonspell_seen) {
-            nonspell_seen = true;
-            stop_after = done + 300;  // 非符锚点 +300 帧
-        }
-        if (done >= stop_after) break;
-        if (done % 600 == 0)
-            std::printf("replay frame=%u held=%04x x=%.1f y=%.1f enemies=%u slow=%u\n", done,
-                        frame.state, battle.player_x, battle.player_y,
-                        unsigned(battle.sim.enemies.size()), cursor.current_slow_rate());
+        if (session->host.game_over || session->host.destination) terminal = true;
+        if (consumed >= stop_after) break;
+        if (consumed % 600 == 0)
+            std::printf("replay-runscene frame=%u held=%04x x=%.1f y=%.1f stage_frame=%u "
+                        "enemies=%u slow=%u\n",
+                        consumed, frame.state, session->run->battle.player_x,
+                        session->run->battle.player_y, session->progress.stage_frame,
+                        unsigned(session->run->battle.sim.enemies.size()),
+                        cursor.current_slow_rate());
     }
-    std::printf("replay done frames=%u/%u x=%.1f y=%.1f deaths=%d score=%d boss_frame=%d "
-                "nonspell_frame=%d\n",
-                done, unsigned(stage.frame_count), battle.player_x, battle.player_y,
-                player.deaths, score_state.score, boss_frame,
-                battle.sim.boss_nonspell_frame);
-    std::printf("stage1-events-replay frames=%u enemies=%u events=%llu nonspell=%d ok=1\n", done,
-                battle.sim.spawn_count(),
-                static_cast<unsigned long long>(battle.sim.event_count()),
-                battle.sim.boss_nonspell_frame);
-    return 0;
+    if (state_log) std::fclose(state_log);
+    // 事件落盘完整性：显式 close（堆置会话不依赖析构）+ 写失败即败。
+    session->run->battle.sim.sink.close();
+    const bool sink_ok = session->run->battle.sim.sink.ok();
+    const unsigned long long events =
+        static_cast<unsigned long long>(session->run->battle.sim.event_count());
+    std::printf("replay-runscene done consumed=%u/%u stepped=%u frozen=%u events=%llu "
+                "sink_ok=%d x=%.1f y=%.1f deaths=%d score=%d hi=%d boss_frame=%d "
+                "nonspell_frame=%d game_over=%d destination=%d\n",
+                consumed, unsigned(stage.frame_count), stepped, frozen, events,
+                int(sink_ok), session->run->battle.player_x, session->run->battle.player_y,
+                session->player.deaths, session->score.score, session->progress.high_score,
+                boss_frame, nonspell_frame, int(session->host.game_over),
+                int(session->host.destination));
+    if (!sink_ok) {
+        std::printf("replay-runscene FAIL event sink write error\n");
+        return 1;
+    }
+    // ---- 自证（freeze 正控 / ANM sync 正负对照）----
+    int failures = 0;
+    if (freeze_at) {
+        const u32 expect_frozen = total >= freeze_at ? total - freeze_at + 1 : 0;
+        std::printf("SELFTEST-FREEZE freeze_at=%u consumed=%u stepped=%u frozen=%u "
+                    "expect_frozen=%u rows_per_consumed_frame=1\n",
+                    freeze_at, consumed, stepped, frozen, expect_frozen);
+        if (consumed != total || frozen != expect_frozen || stepped != total - expect_frozen) {
+            std::printf("SELFTEST-FREEZE FAIL\n");
+            failures++;
+        } else {
+            std::printf("SELFTEST-FREEZE PASS\n");
+        }
+    }
+    {
+        // ANM sync 正控：表现层每帧 sync 清空 anm_effects（StagePresentation
+        // :297），敌机槽位 VM 经 303/306 建立（存活期 handle != 0；死后归零，
+        // 故断言用峰值）。负控（TH13_NO_ECL_SLOT_ANM=1）：ecl_slot_anm 压回
+        // false → 全程无槽位 VM。
+        const bool drained = session->run->battle.sim.anm_effects.empty();
+        std::printf("SELFTEST-ANMSYNC ecl_slot_anm=%d effects_drained=%d "
+                    "max_with_handles=%u\n",
+                    int(session->run->battle.sim.ecl_slot_anm), int(drained),
+                    max_with_handles);
+        if (!drained) {
+            std::printf("SELFTEST-ANMSYNC FAIL effects not drained\n");
+            failures++;
+        }
+        if (no_ecl_slot_anm ? max_with_handles != 0 : max_with_handles == 0) {
+            std::printf("SELFTEST-ANMSYNC FAIL slot handles\n");
+            failures++;
+        } else {
+            std::printf("SELFTEST-ANMSYNC PASS\n");
+        }
+    }
+    return failures ? 1 : 0;
 }
 
 // ---- 语义绘制清单导出（draw-contract.md v1 移植侧导出器驱动）----
@@ -530,6 +848,14 @@ int run_draws(const char* resource_dir, const char* draws_path, unsigned frames,
 
 int run_draws_replay(const char* replay_path, const char* resource_dir, const char* draws_path,
                      unsigned frames, unsigned stage_index) {
+    // 同源绘制回放（r4/harness）：与 replay 模式同一 ReplayRunSession/RunScene
+    // 生产 tick，绘制面 = 生产 SceneDisplay 的游戏层全链（SceneDisplay.cpp:44-58
+    // 的无头等价：AnmDrawSchedule 31 层 + PlayfieldTargets @R + RunScene 场景
+    // 绘制回调 + AsciiFrame 文字面），scheduler.draw() 单调驱动；GPU present
+    // 换 DrawCapture 记账。不隐藏任何有效 VM（旧契约的 player-bank 遮蔽与
+    // debug_pass_mask=4 局部窗已移除——那是局部诊断面，不能认证严格绘制）。
+    // 帧约：帧 0 = 装载趟渲染（不步进）；帧 f≥1 = 消费输入 f-1 → update →
+    // draw（oracle render_oracle 同窗同帧号）。
     std::vector<th13::u8> bytes;
     if (!read_whole_file(replay_path, bytes)) {
         std::printf("draws-replay read failed: %s\n", replay_path);
@@ -546,97 +872,125 @@ int run_draws_replay(const char* replay_path, const char* resource_dir, const ch
         return 1;
     }
     const th13::ReplayStage& stage = replay_file.stages[stage_index];
-    std::printf("replay name=%s rank=%d chara=%d shot=%d score=%d stages=%u\n",
+    std::printf("draws-replay-runscene name=%s rank=%d chara=%d shot=%d stages=%u\n",
                 replay_file.player_name.c_str(), replay_file.rank, replay_file.character,
-                replay_file.shot_type, replay_file.score, unsigned(replay_file.stages.size()));
-    DrawsSession session;
-    session.configure_environment();
-    DrawsProvider provider;
-    provider.dir = resource_dir;
-    provider.sim = &session.battle.sim;
-    DrawsHost host;
-    th13::SessionState progress;
-    th13::HudPlayerState player;
-    th13::HudScoreState score;
-    player.extra_lives = 99;  // 观察口径：近似判定的死亡不终局（replay 模式同款）
-    progress.difficulty = replay_file.rank & 3;
-    char stage_file[16];
-    std::snprintf(stage_file, sizeof stage_file, "st%02u.ecl", unsigned(stage.number));
-    char sht_file[16];
-    std::snprintf(sht_file, sizeof sht_file, "pl%02d%c.sht", replay_file.character,
-                  replay_file.shot_type == 0 ? 'a' : 'b');
-    char player_anm[16];
-    std::snprintf(player_anm, sizeof player_anm, "pl%02d.anm", replay_file.character & 3);
-    th13::draw_capture = &session.capture;
-    if (!session.battle.load(provider, stage_file, 1 << (replay_file.rank & 3), host, progress,
-                             player, score, nullptr, sht_file)) {
-        std::printf("draws-replay battle load failed: %s\n", session.battle.error().c_str());
+                replay_file.shot_type, unsigned(replay_file.stages.size()));
+    const auto session = new ReplayRunSession();
+    session->host.dir = resource_dir;
+    session->host.captions = &session->captions;  // hud_text 接生产文字面
+    if (!session->assemble(replay_file, stage_index, stage)) {
+        std::printf("draws-replay setup failed: %s\n",
+                    session->error.empty() ? session->run->error.c_str() : session->error.c_str());
         return 1;
     }
-    if (!session.load_banks(provider, player_anm)) {
-        std::printf("draws-replay banks failed: %s\n", session.error.c_str());
+    th13::draw_capture = &session->capture;
+    // 生产绘制栈（Application.cpp:455-458 + SceneDisplay.cpp:28-31 同件）：
+    // views.configure + captions.initialize(2) + AnmDrawSchedule +
+    // AsciiFrame + PlayfieldTargets.initialize(0)。
+    session->views.configure(session->environment);
+    if (!session->captions.initialize(2)) {
+        std::printf("draws-replay captions failed: %s\n", session->captions.error.c_str());
         return 1;
     }
-    session.presentation = std::make_unique<th13::StagePresentation>(
-        session.animations, session.renderer, th13::StagePresentation::Banks{
-                                                   kDrawsStageBank, kDrawsBulletBank,
-                                                   kDrawsPlayerBank, kDrawsEffectBank},
-        31);
-    session.presentation->enemies_from_ecl = true;  // 敌机本体 VM 走 ECL 303/306
-    session.battle.sim.ecl_slot_anm = true;
-    host.retire_animations = &session.animations;
-    host.session_sim = &session.battle.sim;
-    th13::StagePresentation::debug_pass_mask = 4;
-    if (!session.capture.open_output(draws_path)) {
-        std::printf("draws-replay output failed: %s\n", session.capture.error().c_str());
+    session->draw_schedule = std::make_unique<th13::AnmDrawSchedule>(
+        session->scheduler, session->animations, session->renderer, session->capture,
+        session->host);
+    if (!session->draw_schedule->error.empty()) {
+        std::printf("draws-replay schedule failed: %s\n", session->draw_schedule->error.c_str());
         return 1;
     }
-    // 帧号与 oracle 同窗（render_oracle.py run_replay：帧 0..total 共 total+1
-    // 行）：帧 0 = 装载趟渲染；帧 f（≥1）消费输入 f-1 并步进。oracle 侧循环
-    // while frame < total: frame += 1 → 执行帧 1..total，末帧 = total——两侧
-    // 帧→输入映射同构（帧 f ↔ 输入 f-1），本侧此前漏末帧 f=total（off-by-one，
-    // 实测 11064 行 vs oracle 11065 行）。
+    session->caption_frame =
+        std::make_unique<th13::AsciiFrame>(session->scheduler, session->captions,
+                                           session->renderer, session->host);
+    if (!session->caption_frame->error.empty()) {
+        std::printf("draws-replay caption frame failed: %s\n",
+                    session->caption_frame->error.c_str());
+        return 1;
+    }
+    session->playfield = std::make_unique<th13::PlayfieldTargets>(
+        session->scheduler, session->animations, session->renderer, session->capture,
+        session->views);
+    if (!session->playfield->initialize(0)) {
+        std::printf("draws-replay playfield failed: %s\n", session->playfield->error.c_str());
+        return 1;
+    }
+    if (!session->capture.open_output(draws_path)) {
+        std::printf("draws-replay output failed: %s\n", session->capture.error().c_str());
+        return 1;
+    }
+    const auto render_production_frame = [&](unsigned frame) -> bool {
+        if (!session->error.empty()) return false;
+        session->capture.begin_frame(frame);
+        if (session->scheduler.draw() < 0) {
+            session->fail("draw callbacks failed: " +
+                          (!session->draw_schedule->error.empty()
+                               ? session->draw_schedule->error
+                               : !session->caption_frame->error.empty()
+                                     ? session->caption_frame->error
+                                     : session->run->error));
+            return false;
+        }
+        session->renderer.flush();
+        session->capture.clear_device_texture();  // 0x45d2f0:49 帧尾 SetTexture(0,0)
+        return session->capture.end_frame();
+    };
     const unsigned total = frames && frames < stage.frame_count ? frames
                                                                : unsigned(stage.frame_count);
     th13::ReplayInputCursor cursor(stage);
     th13::GameInput input;
-    if (!session.render_frame(0, 0)) {
-        std::printf("draws-replay frame 0 failed: %s\n", session.error.c_str());
+    if (!render_production_frame(0)) {  // 帧 0 = 装载趟渲染（不步进）
+        std::printf("draws-replay frame 0 failed: %s\n", session->error.c_str());
         return 1;
     }
-    for (unsigned frame = 1; frame <= total; frame++) {
+    unsigned drawn = 0;
+    bool terminal = false;
+    for (unsigned frame = 1; frame <= total && !terminal; frame++) {
         if (!cursor.valid()) {
             std::printf("draws-replay input exhausted at frame %u (window %u)\n", frame, total);
+            session->capture.close_output();
             return 1;
         }
         input.update(cursor.next().state);
-        if (!session.battle.step(input)) {
-            std::printf("draws-replay error at frame %u: %s\n", frame,
-                        session.battle.error().c_str());
+        session->run->controls(input);
+        if (session->scheduler.update() < 0) {
+            std::printf("draws-replay update failed at frame %u: %s\n", frame,
+                        session->run->error.empty() ? session->animations.error.c_str()
+                                                    : session->run->error.c_str());
+            session->capture.close_output();
             return 1;
         }
-        if (host.game_over) {
-            std::printf("draws-replay game over at frame %u (window %u)\n", frame, total);
+        if (session->host.game_over || session->host.destination) {
+            // 终局照实：最后一帧仍渲染落盘后收窗报非零，不加命不截绿。
+            render_production_frame(frame);
+            session->capture.close_output();
+            std::printf("draws-replay game over at frame %u (window %u) destination=%d\n",
+                        frame, total, int(session->host.destination));
             return 1;
         }
-        if (!session.render_frame(frame, input.held)) {
-            std::printf("draws-replay error at frame %u: %s\n", frame, session.error.c_str());
+        if (!render_production_frame(frame)) {
+            std::printf("draws-replay render failed at frame %u: %s\n", frame,
+                        session->error.empty() ? session->capture.error().c_str()
+                                               : session->error.c_str());
+            session->capture.close_output();
             return 1;
         }
+        drawn = frame;
         if (frame % 600 == 0)
-            std::printf("draws-replay frame=%u enemies=%u ops=%llu\n", frame,
-                        unsigned(session.battle.sim.enemies.size()),
-                        static_cast<unsigned long long>(
-                            session.capture.quads() + session.capture.ups()));
+            std::printf("draws-replay frame=%u stage_frame=%u enemies=%u ops=%llu\n", frame,
+                        session->progress.stage_frame,
+                        unsigned(session->run->battle.sim.enemies.size()),
+                        static_cast<unsigned long long>(session->capture.quads() +
+                                                        session->capture.ups()));
     }
-    session.capture.close_output();
-    std::printf("port-draws-replay frames=%llu quads=%llu ups=%llu ops=%llu zero=%u\n",
-                static_cast<unsigned long long>(session.capture.frames_out()),
-                static_cast<unsigned long long>(session.capture.quads()),
-                static_cast<unsigned long long>(session.capture.ups()),
-                static_cast<unsigned long long>(session.capture.quads() +
-                                                session.capture.ups()),
-                session.capture.zero_op_frames());
+    session->capture.close_output();
+    std::printf("port-draws-replay frames=%llu drawn=%u/%u quads=%llu ups=%llu ops=%llu "
+                "zero=%u\n",
+                static_cast<unsigned long long>(session->capture.frames_out()), drawn, total,
+                static_cast<unsigned long long>(session->capture.quads()),
+                static_cast<unsigned long long>(session->capture.ups()),
+                static_cast<unsigned long long>(session->capture.quads() +
+                                                session->capture.ups()),
+                session->capture.zero_op_frames());
     return 0;
 }
 
@@ -1015,8 +1369,11 @@ int main(int argc, char** argv) {
                       argc >= 6 ? argv[5] : nullptr);
     if (argc >= 5 && std::strcmp(argv[1], "replay") == 0)
         // replay <rpy> <资源目录> <事件输出> [帧数] [stage 索引]
-        return replay(argv[2], argv[3], argv[4], argc >= 6 ? unsigned(std::atoi(argv[5])) : 0u,
-                      argc >= 7 ? unsigned(std::atoi(argv[6])) : 0u);
+        // 同源默认（r4/harness）：RunScene 生产 tick 唯一路径，事件经
+        // StageBattle::open_event_sink 产出，无 battle-only 绕路。
+        return replay_runscene(argv[2], argv[3], argv[4],
+                               argc >= 6 ? unsigned(std::atoi(argv[5])) : 0u,
+                               argc >= 7 ? unsigned(std::atoi(argv[6])) : 0u);
     if (argc >= 4 && std::strcmp(argv[1], "draws") == 0)
         // draws <资源目录> <绘制输出> [帧数] [stage.ecl]
         return run_draws(argv[2], argv[3], argc >= 5 ? unsigned(std::atoi(argv[4])) : 3600u,

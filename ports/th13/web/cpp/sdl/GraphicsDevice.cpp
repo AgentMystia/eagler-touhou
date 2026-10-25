@@ -22,19 +22,42 @@ void GraphicsDevice::draw_startup_branding(u32 tint) {
         auto pixels = touhou::sdl::startup_branding::load();
         if (pixels.empty()) return;
         startup_credit = next_handle++;
-        auto& image = textures[startup_credit].image;
+        auto& texture = textures[startup_credit];
+        texture.identity = "shell:startup-credit";
+        auto& image = texture.image;
         image.width = 1280;
         image.height = 960;
         image.pitch = 1280 * 4;
         image.format = touhou::graphics::PixelFormat::Bgra8;
         image.pixels = std::move(pixels);
     }
-    touhou::sdl::startup_branding::draw(backend, startup_credit, screen, tint);
+    if (!startup_credit || !(tint >> 24)) return;
+    flush();
+    const auto saved = backend.state;
+    auto& s = backend.state;
+    s.target = screen; s.depth = 0; s.texture = startup_credit;
+    s.viewport = {0, 0, 640, 480, 0, 1};
+    s.layout = touhou::graphics::attributes(touhou::graphics::VertexLayout::ScreenColorUv);
+    s.pipeline = {};
+    auto& p = s.pipeline;
+    using namespace touhou::graphics;
+    p.depthWrite = false; p.blend = true;
+    p.sourceBlend = BlendFactor::SourceAlpha; p.destinationBlend = BlendFactor::InverseSourceAlpha;
+    p.color.operation = p.alpha.operation = ColorOperation::Multiply;
+    p.color.second = p.alpha.second = {ArgumentSource::Diffuse};
+    p.addressU = p.addressV = Address::Clamp;
+    struct Vertex { float x,y,z,w; u32 color; float u,v; };
+    const Vertex quad[] = {{0,0,0,1,tint,0,0},{640,0,0,1,tint,1,0},
+                           {0,480,0,1,tint,0,1},{640,480,0,1,tint,1,1}};
+    primitives(Topology::Strip, 2, quad, sizeof(Vertex));
+    flush(); backend.state = saved;
 }
 
 void GraphicsDevice::release_startup_branding() {
     if (startup_credit) {
-        backend.release(startup_credit);
+        RenderSubmission c{RenderSubmission::Kind::Release, backend.state};
+        c.resource = startup_credit;
+        submit(c);
         textures.erase(startup_credit);
         startup_credit = 0;
     }
@@ -44,6 +67,8 @@ bool GraphicsDevice::initialize() {
     using namespace touhou::graphics;
     for (u32 id : {screen, depth}) {
         textures[id].renderScale = render_scale;
+        textures[id].identity = id == screen ? "device:screen" : "device:depth";
+        textures[id].gpu_content = true;
         auto& image = textures[id].image;
         image.width = 640;
         image.height = 480;
@@ -79,10 +104,14 @@ bool GraphicsDevice::preload(AnmResource& file, bool low_color) {
         const auto& source = file.textures[index];
         Texture texture;
         texture.renderScale = source.kind == AnmTexture::Kind::RenderTarget ? render_scale : 1;
+        texture.identity = "anm:" + source.name + ":entry:" + std::to_string(index);
+        texture.gpu_content = source.kind == AnmTexture::Kind::RenderTarget;
         if (!texture.image.load(source, low_color)) {
             error = "Unable to prepare ANM texture: " + source.name;
             for (const auto id : handles) {
-                backend.release(id);
+                RenderSubmission c{RenderSubmission::Kind::Release, backend.state};
+                c.resource = id;
+                submit(c);
                 textures.erase(id);
             }
             return false;
@@ -90,7 +119,9 @@ bool GraphicsDevice::preload(AnmResource& file, bool low_color) {
         const auto id = next_handle++;
         textures.emplace(id, std::move(texture));
         handles.push_back(id);
-        backend.prepare(id);
+        RenderSubmission c{RenderSubmission::Kind::Prepare, backend.state};
+        c.resource = id;
+        submit(c);
     }
     resources.emplace(&file, std::move(handles));
     return true;
@@ -100,10 +131,15 @@ void GraphicsDevice::unload(const AnmResource& file) {
     presentation.reset();
     auto it = resources.find(&file);
     if (it == resources.end()) return;
-    backend.flush();
+    flush();
     for (u32 id : it->second) {
-        backend.release(id);
+        RenderSubmission c{RenderSubmission::Kind::Release, backend.state};
+        c.resource = id;
+        submit(c);
         textures.erase(id);
+        if (backend.state.texture == id) backend.state.texture = 0;
+        if (backend.state.target == id) backend.state.target = screen;
+        if (backend.state.depth == id) backend.state.depth = depth;
     }
     resources.erase(it);
 }
@@ -114,43 +150,125 @@ u32 GraphicsDevice::texture(const AnmResource& file, u32 index) {
         error = "ANM texture was not preloaded";
         return 0;
     }
-    const u32 handle = it->second[index];
-    // 影子身份登记：捕获激活期间引用的纹理按 (file,index) 在影子侧取身份
-    // 句柄（未登记文件的可见标记语义由 DrawCapture::texture 自带）。
-    if (capture_on_) capture_handles_.emplace(handle, capture_shadow.texture(file, index));
-    return handle;
+    return it->second[index];
 }
 
-bool GraphicsDevice::capture_begin(const char* path) {
-    if (capture_on_) return false;
-    if (!capture_shadow.open_output(path)) {
-        error = capture_shadow.error().empty() ? "draws capture open failed"
-                                               : capture_shadow.error();
-        return false;
-    }
-    capture_handles_.clear();
-    capture_frames_ = 0;
-    capture_shadow.begin_frame(0);
-    capture_on_ = true;
-    // 精灵层号钩子目标（捕获构建经 AnmRenderer TH13_DRAW_SPRITE 消费）。
-    th13::draw_capture = &capture_shadow;
+bool GraphicsDevice::trace_resource(void* owner, u32 id, SubmissionTrace::Resource& r) {
+    auto& device = *static_cast<GraphicsDevice*>(owner);
+    auto it = device.textures.find(id);
+    if (it == device.textures.end()) return false;
+    auto& t = it->second;
+    const auto s = resolve(owner, id);
+    r.surface = {s.width,s.height,u32(s.format),s.pitch,s.renderScale,s.version,s.data,s.size};
+    r.identity = t.identity;
+    r.gpu_content = t.gpu_content;
+    r.revision = t.content_revision;
+    if (!r.gpu_content && s.data && s.size) r.content_hash = t.content_hash.get(r.surface, r.revision);
     return true;
 }
 
-void GraphicsDevice::capture_finish() noexcept {
-    if (!capture_on_) return;
-    capture_on_ = false;
-    if (th13::draw_capture == &capture_shadow) th13::draw_capture = nullptr;
-    capture_shadow.close_output();
+void GraphicsDevice::submit(const RenderSubmission& c) {
+    if (!c.dispatch(backend, submission_trace, trace_resource, this)) error = submission_trace.error();
+    using K = RenderSubmission::Kind;
+    // Record GPU writes after observing input resources. Never label stale CPU
+    // backing pixels as the content of a rendered target.
+    auto written = [&](u32 id) {
+        auto it = textures.find(id);
+        if (it != textures.end()) {
+            ++it->second.content_revision;
+            it->second.gpu_content = true;
+            it->second.content_hash.invalidate();
+        }
+    };
+    if (c.kind == K::Draw || (c.kind == K::Clear && (c.flags & 1))) written(c.state.target);
+    if ((c.kind == K::Draw && c.state.pipeline.depthWrite) || (c.kind == K::Clear && (c.flags & 2))) written(c.state.depth);
+    if (c.kind == K::Present && submission_trace.active()) ++capture_presents_;
+}
+
+void GraphicsDevice::triangles(u32 count, const void* data, u32 stride) {
+    backend.state.stride = stride;
+    RenderSubmission c{RenderSubmission::Kind::Draw, backend.state};
+    c.count = count; c.vertices = data; c.stride = stride; c.direct = true;
+    submit(c);
+}
+
+void GraphicsDevice::primitives(touhou::graphics::Topology topology, u32 count, const void* data, u32 stride) {
+    backend.state.stride = stride;
+    RenderSubmission c{RenderSubmission::Kind::Draw, backend.state};
+    c.topology = topology; c.count = count; c.vertices = data; c.stride = stride;
+    submit(c);
+}
+
+void GraphicsDevice::changed(u32 handle, std::array<u32,4> region) {
+    auto it = textures.find(handle);
+    if (it == textures.end()) { error = "unknown texture update"; return; }
+    flush(); // Finish pending GPU reads before advancing the upload version.
+    auto& t = it->second;
+    RenderSubmission c{RenderSubmission::Kind::Update, backend.state};
+    c.resource = handle; c.previous = t.revision; c.region = region;
+    ++t.revision; ++t.content_revision; t.content_hash.invalidate();
+    // A partial CPU upload cannot qualify previously GPU-written content.
+    if (!region[2] && !region[3]) t.gpu_content = false;
+    submit(c);
+}
+
+bool GraphicsDevice::upload_surface(TextureImage& image, u32& handle) {
+    // 无既有等价面：preload() 只收 AnmResource，pixels() 只暴露已存在句柄。
+    // 这里复用 changed() 的 flush+Update 提交与 revision 生命周期；GPU 侧由
+    // Renderer 经 resolve() 按版本惰性上传（Renderer.cpp surface() 的
+    // glTexImage2D/glTexSubImage2D 路径），不新增上传机制。
+    if (!image.width || !image.height || image.pixels.empty()) {
+        error = "uploaded surface is empty";
+        return false;
+    }
+    if (handle == 0) {
+        handle = next_handle++;
+        auto& t = textures[handle];
+        t.identity = "surface:upload";
+        t.renderScale = 1;
+        t.gpu_content = false;
+    } else {
+        auto it = textures.find(handle);
+        // 只接受本接口先前返回的句柄；屏幕/深度/ANM/startup 句柄一律拒绝，
+        // 防止把外部像素写进其它来源的纹理。
+        if (it == textures.end() || it->second.identity != "surface:upload") {
+            error = "uploaded surface handle is not surface-owned";
+            return false;
+        }
+    }
+    // 设备持有副本：resolve() 在绘制时把设备侧 pixels 交给后端，调用方后续
+    // 改写自己的 TextureImage 不会移动已提交内容。
+    textures[handle].image = image;
+    changed(handle);
+    return error.empty();
+}
+
+bool GraphicsDevice::capture_begin(const char* path) {
+    if (submission_trace.active()) { error = "trace already open"; return false; }
+    capture_presents_ = 0;
+    if (!submission_trace.open(path)) {
+        error = submission_trace.error();
+        submission_trace.close();
+        return false;
+    }
+    return true;
+}
+
+bool GraphicsDevice::capture_finish() noexcept {
+    if (!submission_trace.active()) { error = "trace not open"; return false; }
+    const bool ok = submission_trace.close(capture_presents_);
+    if (!ok) error = submission_trace.error();
+    return ok;
 }
 
 bool GraphicsDevice::select_target(const AnmResource* file, u32 index) {
     const u32 handle = file ? texture(*file, index) : screen;
     if (!handle) return false;
-    backend.flush();
-    backend.state.target = handle;
     const auto& image = textures.at(handle).image;
-    backend.viewport({0, 0, image.width, image.height, 0, 1});
+    RenderSubmission c{RenderSubmission::Kind::Target, backend.state};
+    c.state.target = handle;
+    c.state.viewport = {0, 0, image.width, image.height, 0, 1};
+    submit(c);
     return true;
 }
 
@@ -158,9 +276,10 @@ bool GraphicsDevice::clear_target(u32 color, const GraphicsViewport* rect) {
     if (rect) {
         const i32 box[] = {i32(rect->x), i32(rect->y), i32(rect->x + rect->width),
                            i32(rect->y + rect->height)};
-        backend.clear(3, color, 1, 0, box, 1);
+        RenderSubmission c{RenderSubmission::Kind::Clear, backend.state};
+        c.flags = 3; c.color = color; c.rect = box; submit(c);
     } else {
-        backend.clear(3, color, 1, 0);
+        clear(color);
     }
     return true;
 }
@@ -169,11 +288,25 @@ bool GraphicsDevice::clear_depth(const GraphicsViewport* rect) {
     if (rect) {
         const i32 box[] = {i32(rect->x), i32(rect->y), i32(rect->x + rect->width),
                            i32(rect->y + rect->height)};
-        backend.clear(2, 0, 1, 0, box, 1);
+        RenderSubmission c{RenderSubmission::Kind::Clear, backend.state};
+        c.flags = 2; c.rect = box; submit(c);
     } else {
-        backend.clear(2, 0, 1, 0);
+        RenderSubmission c{RenderSubmission::Kind::Clear, backend.state};
+        c.flags = 2; submit(c);
     }
     return true;
+}
+
+void GraphicsDevice::clear(u32 color, bool depth) {
+    RenderSubmission c{RenderSubmission::Kind::Clear, backend.state};
+    c.flags = depth ? 3 : 1; c.color = color;
+    submit(c);
+}
+
+void GraphicsDevice::present() {
+    RenderSubmission c{RenderSubmission::Kind::Present, backend.state};
+    c.resource = screen;
+    submit(c);
 }
 
 }  // namespace th13::sdl

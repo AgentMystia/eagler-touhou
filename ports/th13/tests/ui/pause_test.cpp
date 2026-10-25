@@ -34,7 +34,13 @@ struct PauseHarness {
     std::unique_ptr<RunPause> pause;
 
     PauseHarness() : host() {
-        CHECK(load_bank(manager, 3, synthetic_anm(8, trivial_scripts(4))));  // front
+        // 数据面与生产对齐（RunPause 16:05 轮原版锚定后 fixture 未随更，属
+        // fixture 不足）：背景 s75 出自常驻 text.anm（bank 0，DAT_004dcc54，
+        // kPauseBackdropScript=75）；front.anm（bank 3）根 132/133/142、
+        // 行条 120-123/154、光标 130/131（0043e504/0043e4f0/0043fb7d 族）。
+        // 断言原样未动。
+        CHECK(load_bank(manager, 0, synthetic_anm(8, trivial_scripts(76))));   // text
+        CHECK(load_bank(manager, 3, synthetic_anm(8, trivial_scripts(155))));  // front
         progress.rate = 1;
         pause = std::make_unique<RunPause>(progress, manager, environment, host, scheduler, 3);
         CHECK(pause->prepare());
