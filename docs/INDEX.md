@@ -1,6 +1,6 @@
 # 文档总表
 
-共 261 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
+共 267 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
 
 项目说明按当前目录重写；许可证保留原文，生成报告由各自工具更新。原有 498 份 Markdown 的逐篇去向见[旧文档去向](history/INDEX.md)。
 
@@ -16,6 +16,7 @@
 | 适配指南 | [docs/adaptation/desktop-20261018.md](adaptation/desktop-20261018.md) | 桌面逐作运行记录 |
 | 适配指南 | [docs/adaptation/input.md](adaptation/input.md) | 键盘、手柄与触控 |
 | 适配指南 | [docs/adaptation/localization.md](adaptation/localization.md) | 语言与练习 |
+| 适配指南 | [docs/adaptation/multiplayer-lifecycle-20261025.md](adaptation/multiplayer-lifecycle-20261025.md) | 合作多人生命周期 ｜ 2026-10-25 |
 | 适配指南 | [docs/adaptation/multiplayer.md](adaptation/multiplayer.md) | 多人接入与规则 |
 | 适配指南 | [docs/adaptation/port-sync.md](adaptation/port-sync.md) | 普通版与多人版同步 |
 | 适配指南 | [docs/adaptation/presentation.md](adaptation/presentation.md) | 画面与声音 |
@@ -74,7 +75,13 @@
 | 作品源码文档 | [ports/th10-mp/docs/DEVELOPMENT.md](../ports/th10-mp/docs/DEVELOPMENT.md) | TH10 多人版开发指南 |
 | 作品源码文档 | [ports/th10/docs/DEVELOPMENT.md](../ports/th10/docs/DEVELOPMENT.md) | TH10 开发指南 |
 | 作品源码文档 | [ports/th11-mp/docs/DEVELOPMENT.md](../ports/th11-mp/docs/DEVELOPMENT.md) | TH11 多人版开发指南 |
+| 作品源码文档 | [ports/th11-mp/docs/records/2026-10-24-display-high-refresh.md](../ports/th11-mp/docs/records/2026-10-24-display-high-refresh.md) | th11 高刷新呈现 ｜ 2026-10-24 |
+| 作品源码文档 | [ports/th11-mp/portable/presentation-lab/CAMPAIGN.md](../ports/th11-mp/portable/presentation-lab/CAMPAIGN.md) | th11 帧间位移巡检 |
+| 作品源码文档 | [ports/th11-mp/portable/presentation-lab/README.md](../ports/th11-mp/portable/presentation-lab/README.md) | th11 Presentation Lab |
 | 作品源码文档 | [ports/th11/docs/DEVELOPMENT.md](../ports/th11/docs/DEVELOPMENT.md) | TH11 开发指南 |
+| 作品源码文档 | [ports/th11/docs/records/2026-10-24-display-high-refresh.md](../ports/th11/docs/records/2026-10-24-display-high-refresh.md) | th11 高刷新呈现 ｜ 2026-10-24 |
+| 作品源码文档 | [ports/th11/portable/presentation-lab/CAMPAIGN.md](../ports/th11/portable/presentation-lab/CAMPAIGN.md) | th11 帧间位移巡检 |
+| 作品源码文档 | [ports/th11/portable/presentation-lab/README.md](../ports/th11/portable/presentation-lab/README.md) | th11 Presentation Lab |
 | 作品源码文档 | [ports/th12/decompiled/README.md](../ports/th12/decompiled/README.md) | TH12 1.00b 反编译索引 |
 | 作品源码文档 | [ports/th12/docs/BUILD.md](../ports/th12/docs/BUILD.md) | 本地构建与原版输入 |
 | 作品源码文档 | [ports/th12/docs/CONTENT_PREPARATION.md](../ports/th12/docs/CONTENT_PREPARATION.md) | 准备自己的 TH12 游戏资源 |
