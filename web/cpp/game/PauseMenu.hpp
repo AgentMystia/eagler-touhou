@@ -8,14 +8,17 @@
 
 namespace th13 {
 
-// 暂停菜单脚本号（th15 用 front 149–152；th13 front.anm 对应脚本待 Ghidra
-// supervisor 锚定后回填，当前值仅保证存在性，ui-base.md §八）。
-constexpr i32 kPauseMenuScript = 0;
+// 0043e504/0043e4f0/0043fb7d 的原版立即数；不是 th15 的脚本号。
+constexpr i32 kPauseMenuScript = 132;
+constexpr i32 kPracticePauseMenuScript = 133;
+constexpr i32 kGameOverMenuScript = 142;
+// 此脚本来自常驻 text.anm（DAT_004dcc54），不是 front.anm 的数字75！
+constexpr i32 kPauseBackdropScript = 75;
 
 struct PauseMenuServices {
     virtual ~PauseMenuServices() = default;
     virtual bool sound(i32) = 0;
-    // 入口动作：0=继续、1=重开（destination 13）、2=回标题（destination 4）。
+    // 原版槽位：0=继续、1=回标题、2=录像、3=设置、4=重试。
     virtual bool finish_selection(i32 entry) = 0;
 };
 
@@ -27,6 +30,9 @@ class PauseMenu {
     bool interrupt(u32, i32, bool immediate = false);
     bool child(i32, i32);
     bool navigate(u32, u32, i32);
+    bool close();
+    bool configure_entries();
+    i32 entry_script(i32) const;
 
 public:
     std::string error;

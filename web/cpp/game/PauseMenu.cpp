@@ -31,47 +31,114 @@ bool PauseMenu::navigate(u32 pressed, u32 repeated, i32 label) {
            (interrupt(state.menu_animation, i32(i16(menu.cursor)) + label) && host.sound(10));
 }
 
+// front132: 120/121/122/154/123；front133: 124/125/126（槽 0/1/4）；
+// front142: 137/138/139/140/141。槽号同时决定 interrupt 7+slot。
+i32 PauseMenu::entry_script(i32 entry) const {
+    if (state.screen == PauseScreen::GameOver) return 137 + entry;
+    if (state.practice) return entry == 4 ? 126 : 124 + entry;
+    constexpr i32 scripts[] = {120, 121, 122, 154, 123};
+    return scripts[entry];
+}
+
+bool PauseMenu::configure_entries() {
+    auto& menu = state.menu;
+    menu.count = 5;
+    menu.wrapping = true;
+    menu.disabled_count = 0;
+    // 录像保存与设置尚未接入；保留原版槽位并用脚本的 disabled 标签显示。
+    for (i32 entry : {2, 3})
+        if (!menu.disable(entry) ||
+            ((!state.practice || state.screen == PauseScreen::GameOver) &&
+             !child(entry_script(entry), 14))) return false;
+    if (state.screen == PauseScreen::GameOver &&
+        (!menu.disable(0) || !child(entry_script(0), 14))) return false;
+    menu.select(state.screen == PauseScreen::GameOver ? 1 : 0);
+    return true;
+}
+
+bool PauseMenu::close() {
+    return interrupt(state.menu_animation, 1) &&
+           interrupt(state.snapshot_animation, 1);
+}
+
 bool PauseMenu::update(u32 pressed, u32 repeated) {
     if (!error.empty()) return false;
     auto& menu = state.menu;
     const i32 age = state.age.current;
     auto phase = [&](i32 next) { state.select_phase(next); };
-    auto close = [&]() { return interrupt(state.menu_animation, 1); };
     switch (state.phase) {
     case 0:  // 入场延迟后展开菜单
         if (age <= 9) break;
         phase(6);
-        menu.count = 3;  // 继续/重开/回标题
-        menu.wrapping = true;
-        if (state.screen == PauseScreen::GameOver) {
-            if (!state.menu.disable(0)) return false;  // Game Over 无「继续」
-            menu.select(1);
-        } else {
-            menu.select(0);
-        }
-        return interrupt(state.menu_animation, 3, true) &&
+        if (!interrupt(state.menu_animation, 3, true) || !configure_entries()) return false;
+        return
                interrupt(state.menu_animation, i32(i16(menu.cursor)) + 7);
     case 6:
         if (!navigate(pressed, repeated, 7)) return false;
         if (pressed & 0x80001) {
             if (!host.sound(7)) return false;
-            if (menu.cursor != 0) {
-                for (i32 script : {123, 132, 144})
-                    if (!child(script, 6)) return false;  // 选中项子脚本收起
+            state.selected_action = menu.cursor;
+            if (menu.cursor == 0 || state.screen == PauseScreen::GameOver) {
+                if (!close()) return false;
+                phase(16);
+            } else {
+                if (!child(entry_script(menu.cursor), 6)) return false;
+                phase(8);  // 原版 0043e780 case5：先闪烁20帧，再打开 Yes/No。
             }
-            phase(16);
-            state.age.set(0);
+            return true;
         }
-        if (pressed & 0x100) {  // Esc：等同「继续」
+        if ((pressed & 0x100) && state.screen == PauseScreen::Pause) {
             if (!close()) return false;
-            menu.select(0);
+            state.selected_action = 0;
             phase(16);
-            state.age.set(0);
+        } else if ((pressed & 0x102) && state.screen == PauseScreen::GameOver) {
+            // GameOver 不能用 Esc 恢复一个已经死亡的对局。
+            menu.select(1);
+            return interrupt(state.menu_animation, 8) && host.sound(9);
+        }
+        break;
+    case 8:
+        if (age < 20) break;
+        if (!interrupt(state.menu_animation, 14, true)) return false;
+        menu.count = 2;
+        menu.disabled_count = 0;
+        menu.select(1);  // 原版默认 No，不能误触重开/回标题。
+        if (!interrupt(state.menu_animation, 16)) return false;
+        phase(9);
+        break;
+    case 9:
+        if (!navigate(pressed, repeated, 15)) return false;
+        if (pressed & 0x80001) {
+            if (!child(menu.cursor == 0 ? 130 : 131, 6) ||
+                !host.sound(menu.cursor == 0 ? 7 : 9)) return false;
+            phase(10);
+        } else if (pressed & 0x102) {
+            if (!host.sound(9)) return false;
+            if (menu.cursor == 0) {
+                menu.select(1);
+                return interrupt(state.menu_animation, 16);
+            }
+            if (!child(131, 6)) return false;
+            phase(10);
+        }
+        break;
+    case 10:
+        if (age < 20) break;
+        if (menu.cursor == 0) {
+            if (!close()) return false;
+            phase(16);
+        } else {
+            const i32 selected = state.selected_action;
+            if (!interrupt(state.menu_animation, 3, true) || !configure_entries()) return false;
+            menu.select(selected);
+            if (!interrupt(state.menu_animation, 7 + selected)) return false;
+            phase(6);
         }
         break;
     case 16:  // 动画收场后执行所选动作
         if (age < 12) break;
-        if (!check(host.finish_selection(menu.cursor), "Pause selected action failed")) return false;
+        if (!check(host.finish_selection(state.selected_action), "Pause selected action failed"))
+            return false;
         state.select(PauseScreen::Inactive);
         break;
     }

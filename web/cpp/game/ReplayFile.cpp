@@ -173,6 +173,7 @@ bool ReplayFile::decode(const u8* data, size_t size) {
 
     // 顶层 0x74 头。
     if (plain.size() < kTopSize) return fail("stage data too small");
+    top_header.assign(plain.begin(), plain.begin() + ptrdiff_t(kTopSize));
     player_name.assign(reinterpret_cast<const char*>(plain.data()), std::size_t(12));
     // 保存侧 0x20 填充至 ≥8 字符（0x4484d0:50-52）：按 NUL 或尾随空格裁剪。
     const auto cut = player_name.find('\0');
@@ -193,6 +194,8 @@ bool ReplayFile::decode(const u8* data, size_t size) {
     for (u32 s = 0; s < stage_count; ++s) {
         if (pos + kStageHeaderSize > plain.size()) return fail("stage header out of range");
         ReplayStage stage;
+        stage.header.assign(plain.begin() + ptrdiff_t(pos),
+                            plain.begin() + ptrdiff_t(pos + kStageHeaderSize));
         stage.number = read_u16(plain.data() + pos);
         stage.stamp = read_u16(plain.data() + pos + 2);
         stage.frame_count = read_u32(plain.data() + pos + 4);

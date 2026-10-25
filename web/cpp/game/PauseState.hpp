@@ -17,6 +17,8 @@ struct PauseState {
     u32 flags = 0;
     u32 menu_animation = 0, snapshot_animation = 0;
     i32 front_bank = -1;
+    bool practice = false;
+    i32 selected_action = 0;
     float saved_rate = 1;
 
     PauseState() {

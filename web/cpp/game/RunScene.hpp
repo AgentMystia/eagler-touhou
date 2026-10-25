@@ -8,6 +8,7 @@
 #include "HudDrawData.hpp"
 #include "HudFrameData.hpp"
 #include "MsgPlayer.hpp"
+#include "MsgPresentation.hpp"
 #include "PostGameFlow.hpp"
 #include "SessionState.hpp"
 #include "StageBattle.hpp"
@@ -21,10 +22,14 @@ namespace th13 {
 
 struct RunSceneServices : HudDrawServices, HudFrameServices, StageBattleServices,
                           AnmDrawServices {
+    // HudFrameServices 与 StageBattleServices 同名同参声明 hud_sound（两侧
+    // 语义同为「宿主播放 HUD 提示音」），多基类名查找二义。此处纯覆写合一：
+    // 单一最终覆写（ApplicationState::hud_sound）同时覆盖两基类槽位。
+    bool hud_sound(i32 id) override = 0;
     virtual bool request_pause() = 0;
     // 对局终了链路的场景请求（raw = DAT_004dcc24 真值：0xc 下一关 / 0xf 结局 /
-    // 4 标题 / 0xa 重试…全表见 results-flow.md §1）。
-    // Application 层接线 TODO：本阶段默认空实现（请求被记录但不生效）。
+    // 4 标题 / 0xa 重试…全表见 results-flow.md §1）→ Application 接线
+    //（PostGamePlatform 经 RunScene 转发到本接口）。
     virtual bool request_destination(i32 raw) {
         (void)raw;
         return false;
@@ -34,6 +39,15 @@ struct RunSceneServices : HudDrawServices, HudFrameServices, StageBattleServices
     // STD 舞台背景支撑：图形设备 / 背景 ANM bank 装载（宿主侧 preload 一体）。
     virtual ZunGraphics& stage_graphics() = 0;
     virtual bool preload_scenery_animation(i32 bank, const std::string& name) = 0;
+    // 对话音乐面（0x43ae40/0x43af70 → AudioDevice 曲命令）：code 2 = 播预载槽
+    // （value = 槽号），code 5 = 淡出（value = 秒）。默认 false = 宿主无音频面
+    //（产品宿主 ApplicationState 覆写；无头测试宿主不受影响）。
+    virtual bool queue_music(i32 code, i32 value, const std::string& name) {
+        (void)code;
+        (void)value;
+        (void)name;
+        return false;
+    }
 };
 
 // 交互装载供给：read_asset → EclResourceProvider（ECL 递归 include + ANIM 名单）。
@@ -78,6 +92,12 @@ class RunScene final : private StageDialogHost, private MsgHost, private PostGam
     std::array<StageDraw, 2> scenery_draws;  // STD 背景（背景组/前景组）
     i32 scenery_bank = -1;
     std::string scenery_std;
+    // 对局输入（0x4e49f0 单一全局输入对象的 port 等价）：唯一 GameInput 实例
+    // 由 BrowserRuntime 采样并按 00448200/00414f30 相位每游戏帧 update 一次，
+    // 经 Application::step 传入本场景（controls 存指针）；本类不自持第二
+    // GameInput 实例（task 卡 stage1-replay-runtime 禁止 P3）。update 前未
+    // controls() 过则消费零输入（仅测试直调路径）。
+    const GameInput* input_frame = nullptr;
     // Boss 登场变暗：boss 槽存活期间游戏区黑幕淡入（golden 2450 实证全暗
     // ≈0.6 α，边带不暗）；2381（MBoss spawn+setBoss 同帧）未见暗 → 30 帧 ramp。
     i32 boss_dim = 0;
@@ -85,6 +105,8 @@ class RunScene final : private StageDialogHost, private MsgHost, private PostGam
     MsgFile dialog_file;
     MsgPlayer dialog;
     bool dialog_ready = false;  // msg 资产缺失时降级为对话缺席（519 即过）
+    // 对话立绘/名牌 VM 面（0x428ae0 opcode 1/2/20/31 可视指令；见 MsgPresentation）。
+    std::unique_ptr<MsgPresentation> msg_presentation;
     PostGameFlow post_flow;
     bool fail(const std::string&);
 
@@ -92,6 +114,8 @@ public:
     // 自机弹精灵（plXX.anm 内 16×16 御札帧；.sht 弹型表接入前的可玩化近似）。
     static constexpr i32 kPlayerShotSprite = 31;
     GameHud hud;
+    // 共享 game RNG 注入（0x4dc324 位）：ECL/弹幕/自机弹出膛/道具掉落同源；
+    // 缺省空 = StageBattle 自持（tests 无头路径不变）。
     StageBattle battle;
     std::unique_ptr<StagePresentation> presentation;
     std::unique_ptr<StageScenery> scenery;  // STD 舞台背景（stXX.std 驱动）
@@ -102,15 +126,12 @@ public:
     RunScene(SessionState&, HudPlayerState&, HudScoreState&, AnmManager&, AnmRenderer&,
              AnmEnvironment&, RunSceneServices&, FrameScheduler&,
              StagePresentation::Banks banks, i32 front_bank, i32 ascii_bank,
-             i32 scenery_bank, const std::string& std_name);
+             i32 scenery_bank, const std::string& std_name,
+             GameRandom* shared_random = nullptr);
     ~RunScene();
     RunScene(const RunScene&) = delete;
     RunScene& operator=(const RunScene&) = delete;
-    void controls(u32 held, u32 pressed, u32 repeated) {
-        input_held = held;
-        input_pressed = pressed;
-        input_repeated = repeated;
-    }
+    void controls(const GameInput& input) { input_frame = &input; }
     bool initialize();
     bool update();
     bool draw();
@@ -124,12 +145,23 @@ private:
     void open_dialog(i32 entry) override;
     bool dialog_active() const override { return dialog.active(); }
     // MsgHost（msg opcode 回调；21 → 0x42cd40 关终了）
-    void msg_bgm(i32 opcode) override;         // BGM 族 TODO（音频接线）
-    void msg_portrait_load() override;         // 立绘 bank TODO（视觉阶段）
-    void msg_boss_battle() override;           // 0x43af70 TODO（Boss 设置接线）
+    void msg_bgm(i32 opcode) override;         // 2/19/20/31 分派（0x429c7c 语义）
+    void msg_portrait_load() override;         // opcode 1：自机立绘根 VM
+    void msg_boss_battle() override;           // 0x43af70 战斗半边（Boss 域接线）
     void msg_stage_clear() override;           // → PostGameFlow::on_stage_clear
+    // 追加可视化通知钩子（MsgHost 默认空实现 → 本类按 0x428ae0 证据落 ANM 面）
+    void msg_portrait_interrupt(i32 opcode, i32 label) override;  // 13/14 表情切换
+    void msg_speaker_switch(i32 opcode) override;                 // 7/8 亮暗切换
+    void msg_release(i32 opcode) override;                        // 4/5/6/18/23/24
+    void msg_music_fade(i32 opcode) override;                     // 22/27 曲淡出
+    void msg_advance_blip() override;                             // 0x460bc0(0)
+    void msg_dialog_end() override;                               // 终止 → 全释放
     // PostGamePlatform
-    void request_destination(i32 raw) override { host.request_destination(raw); }
+    void request_destination(i32 raw) override {
+        // 0x42cd40 的 supervisor 投递：失败即入场景错误（dcc24 请求不能静默丢）。
+        if (!host.request_destination(raw))
+            fail("Post-game destination request failed: " + std::to_string(raw));
+    }
     void bgm(i32 id) override { msg_bgm(id); }
 };
 

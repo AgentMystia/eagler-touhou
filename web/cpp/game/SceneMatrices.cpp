@@ -73,10 +73,19 @@ AnmCamera stage_camera(const StageCamera& s, const GraphicsViewport& viewport) n
     AnmCamera out;
     out.eye = add(s.position, s.eye_offset);
     out.view = scene_look_at(out.eye, add(out.eye, s.direction), s.up);
-    // 后端世界路径带 NDC y 翻转（Shaders.hpp gl_Position.y 取负）：STD 的
-    // +y（上方）需映到视口上缘，故取景矩阵的视线 y 基（列 1）镜像一次
-    // （golden f1242：鸟居（相机上方）位于画面上部——方向实证）。
-    for (u32 index : {1u, 5u, 9u, 13u}) out.view.m[index] = float(-out.view.m[index]);
+    // [y 镜像移除·2026-10-25] 此处曾对取景矩阵 y 列（{1,5,9,13}）整体取负，
+    // 声称补偿后端世界路径的 clip-space y 翻转（Shaders.hpp gl_Position.y=-y）。
+    // 两项证据判定其为非原版的本作局部分叉，按授权移除：
+    //  1) 原版真值：battle_oracle --replay（r4/oracle-replay/replay121.jsonl）
+    //     f2 L2 世界 quad 的 view[5]=+1、view[13]=-1——与 D3DXMatrixLookAtLH
+    //     直出一致，无任何列镜像；x/z 分量与 port 未镜像值六位重合
+    //     （-79.7740936/897.2701）。
+    //  2) 共享核心一致性：th15 同位 StageCamera.cpp 的 stage_camera 不做
+    //     镜像，且两作 portable/sdl/Shaders.hpp 逐字节一致（同一
+    //     gl_Position.y 取负）。th13 不经游戏矩阵做二次补偿。
+    // 生产 draw 与 draws trace 消费同一（未镜像）矩阵；旧依据 golden f1242
+    // 属 RT 合成链修复前的旧渲染对拍，已过期不再引用。若 STD 实拍出现
+    // 上下翻转，属 STD 数据/顶点约定在真后端边界的裁决项，不得回添镜像。
     // [M0.3 实证修正] 远平面 8000 → 1800：原版 0x43ba20（场景相机构建）
     // D3DXMatrixPerspectiveFovLH(fov, aspect, 0x41f00000=30.0, 0x44e10000=1800.0)
     // 字节级实证（近平面 30 原已一致）。aspect = 该相机视口宽高（ctx+0xd8

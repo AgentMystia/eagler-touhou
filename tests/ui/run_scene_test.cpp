@@ -134,6 +134,7 @@ struct RunHarness {
 
     RunHarness() {
         CHECK(load_bank(manager, 3, synthetic_anm(8, trivial_scripts(46))));  // front 0..45
+        CHECK(load_bank(manager, 2, synthetic_anm(8, trivial_scripts(46))));  // ascii（boss 计时数字 2/3）
         CHECK(load_bank(manager, 4, synthetic_anm(8, trivial_scripts(4))));   // stage 合并位
         CHECK(load_bank(manager, 5, synthetic_anm(8, trivial_scripts(1))));   // bullet
         CHECK(load_bank(manager, 6, synthetic_anm(64, trivial_scripts(3))));  // player 0..2
@@ -181,10 +182,15 @@ TEST(run_scene_frame_and_score_convergence) {
 
 TEST(run_scene_player_controls_and_shots) {
     RunHarness harness;
-    // Z 按住 + 左移 60 帧：自机左移、自机弹生成。
-    harness.scene->controls(0x40 | 0x01, 0x01, 0x01);
+    // Z 按住 + 左移 60 帧：自机左移、自机弹生成。唯一 GameInput 实例逐帧
+    // update（与 BrowserRuntime 同序：先推输入再推帧），边沿只在首帧。
+    GameInput in;
     const float start_x = harness.scene->battle.player_x;
-    for (int frame = 0; frame < 60; frame++) CHECK(harness.scheduler.update() >= 0);
+    for (int frame = 0; frame < 60; frame++) {
+        in.update(0x40 | 0x01);
+        harness.scene->controls(in);
+        CHECK(harness.scheduler.update() >= 0);
+    }
     CHECK(harness.scene->battle.player_x < start_x - 100.0f);
     CHECK(!harness.scene->battle.shots.empty());
     CHECK(harness.scene->error.empty());
@@ -193,7 +199,9 @@ TEST(run_scene_player_controls_and_shots) {
 TEST(run_scene_bomb_consumes_stock_and_clears) {
     RunHarness harness;
     const i32 bombs = harness.player.bombs;
-    harness.scene->controls(0x02, 0x02, 0x02);  // X 边沿
+    GameInput in;
+    in.update(0x02);  // X 边沿（唯一实例首帧 0→0x02，同 BrowserRuntime 序）
+    harness.scene->controls(in);
     CHECK(harness.scheduler.update() >= 0);
     CHECK_EQ(harness.player.bombs, bombs - 1);
     CHECK(harness.scene->battle.bomb_timer > 0);

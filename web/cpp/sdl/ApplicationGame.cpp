@@ -23,8 +23,7 @@ bool ApplicationState::request_pause() {
 }
 
 bool ApplicationState::request_game_over() {
-    if (replay_active) return true;  // 回放会话：终局记账不打扰（harness ReplayHost 同款）
-    return game_over();
+    return game_over();  // 回放会话同语义：无终局豁免（0x448200 死亡照常进 GameOver）
 }
 
 bool ApplicationState::hud_sound(i32 id) { return sound(id); }
@@ -34,9 +33,13 @@ bool ApplicationState::suspend_music() {
     return true;
 }
 
-bool ApplicationState::restart_run() {
-    pending_destination = i32(Destination::Run);
+bool ApplicationState::resume_music() {
+    audio_device.pause_music(false);
     return true;
+}
+
+bool ApplicationState::restart_run() {
+    return start_game(progress.starting_stage);
 }
 
 bool ApplicationState::return_to_title() {

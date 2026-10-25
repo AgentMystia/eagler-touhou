@@ -22,6 +22,12 @@ EM_JS(void, th13_browser_frame, (int ok, double milliseconds, unsigned ticks), {
     Module["onGameFrame"]?.(ok, milliseconds, ticks);
 });
 
+// [R3-M] 标题 Replay 菜单：文件选择触发钩子（页面壳 th13.html 注册
+// onReplayImportRequest → 隐藏 <input type=file> / 拖放承接）。
+EM_JS(void, th13_browser_replay_request, (), {
+    Module["onReplayImportRequest"]?.();
+});
+
 namespace th13::sdl {
 namespace {
 std::unique_ptr<ApplicationState> app;
@@ -78,7 +84,10 @@ bool sample_and_tick() {
     // 回放不受失焦暂停（无头驱动的窗口焦点不参与回放时间线）。
     const bool focus = app->replay_active ? false : lost_focus;
     lost_focus = false;
-    return app->step(controls.held, controls.pressed, controls.repeated, 60.f, focus);
+    // 唯一 GameInput 实例（0x4e49f0 等价）随 tick 整体传给 Application——
+    // held/pressed/released/repeated 同源直达 RunScene/StageBattle（task 卡
+    // stage1-replay-runtime；禁止第二实例）。
+    return app->step(controls, 60.f, focus);
 }
 
 // 单帧驱动（rAF 回调与 th13_frame_tick 手动泵共用）：装载挡板 → 帧钟 → 提交。
@@ -163,6 +172,8 @@ EMSCRIPTEN_KEEPALIVE void th13_render_scale(unsigned scale) {
 
 EMSCRIPTEN_KEEPALIVE const char* th13_error() {
     using namespace th13::sdl;
+    if (app && !app->graphics.submission_trace.good()) return app->graphics.submission_trace.error().c_str();
+    if (app && !app->graphics.error.empty()) return app->graphics.error.c_str();
     return app ? app->failure.c_str() : last_error.c_str();
 }
 
@@ -233,6 +244,31 @@ EMSCRIPTEN_KEEPALIVE int th13_frame_tick(double delta_milliseconds) {
     using namespace th13::sdl;
     if (!running) return -1;  // 循环未开/已停：不泵
     return drive_one_frame(delta_milliseconds < 0 ? 0 : delta_milliseconds / 1000.) ? 1 : 0;
+}
+
+// ---- [R3-M] 标题 Replay 菜单：本地 .rpy 导入 ----
+// 页面壳读取用户选择/拖放的文件后经此注入：bytes 原样交给
+// ApplicationState::import_replay_bytes（解码失败置 replay_import_error，
+// 成功落 catalog 槽并提示菜单选中）。0 = 失败（th13_error 读原因）。
+EMSCRIPTEN_KEEPALIVE int th13_replay_import(const unsigned char* data, unsigned size,
+                                            const char* name) {
+    using namespace th13::sdl;
+    if (!app || !data || size == 0 || !name) return 0;
+    return app->import_replay_bytes(data, size_t(size), std::string(name)) ? 1 : 0;
+}
+
+// 最近导入成功槽位提示（只读；-1 = 无待消费提示。菜单选中后清零）。
+EMSCRIPTEN_KEEPALIVE int th13_replay_import_hint() {
+    using namespace th13::sdl;
+    return app && app->title ? app->title->state.replay_import_hint : -1;
+}
+
+// 最近导入失败文案（= replay_import_error()；空串 = 无失败）。页面壳导入
+// 失败 note 优先读此值而非应用级 th13_error()：解码失败只落菜单 Import 行
+// 语义，不走 fail()——坏 .rpy 不中断会话（原版导入失败仅行内错误）。
+EMSCRIPTEN_KEEPALIVE const char* th13_replay_import_error() {
+    using namespace th13::sdl;
+    return app ? app->replay_import_error().c_str() : "";
 }
 
 // ---- 回放调试会话（th13-debug.html 无头取帧专用）----
@@ -404,10 +440,8 @@ EMSCRIPTEN_KEEPALIVE const char* th13_probe_camera(int enable) {
     return report.c_str();
 }
 
-// ---- 语义绘制清单捕获（web DrawCapture 影子；确定性渲染门禁）----
-// th13_debug_capture_begin：<path>（MEMFS，建议 /th13-capture.jsonl）落输出并
-// 激活逐调用转发；帧界 = present()（帧 f 从激活后第 f 次 present 落行）。
-// 精灵层号钩子需捕获构建（TH13_WEB_CAPTURE=1）；非捕获构建层号恒 -100。
+// Production submission trace v2, NOT legacy draw-v1. Each present completes
+// one frame. Consumers must validate schema and the successful end frame count.
 EMSCRIPTEN_KEEPALIVE int th13_debug_capture_begin(const char* path) {
     using namespace th13::sdl;
     if (!app || !path) return 0;
@@ -422,16 +456,18 @@ EMSCRIPTEN_KEEPALIVE int th13_debug_capture_begin(const char* path) {
 // 结束捕获：关闭输出，返回已落帧数。
 EMSCRIPTEN_KEEPALIVE unsigned th13_debug_capture_end() {
     using namespace th13::sdl;
-    if (!app) return 0;
-    const unsigned frames = unsigned(app->graphics.capture_shadow.frames_out());
-    app->graphics.capture_finish();
-    return frames;
+    if (!app) { last_error = "capture end without application"; return ~0u; }
+    if (!app->graphics.capture_finish()) {
+        last_error = app->graphics.error;
+        return ~0u;
+    }
+    return unsigned(app->graphics.submission_trace.frames_out());
 }
 
 // 已写输出字节偏移（宿主按偏移分块拉取 MEMFS 文件，长窗不驻留整文件）。
 EMSCRIPTEN_KEEPALIVE double th13_debug_capture_tell() {
     using namespace th13::sdl;
-    return app ? double(app->graphics.capture_shadow.output_position()) : 0;
+    return app ? double(app->graphics.submission_trace.output_position()) : -1;
 }
 
 // 像素采样（GL 层确定性证据）：从当前 WebGL 帧缓冲读 RGBA。坐标系 = GL
@@ -441,9 +477,30 @@ EMSCRIPTEN_KEEPALIVE unsigned char* th13_debug_read_pixels(int x, int y, int w, 
     static std::vector<unsigned char> buffer;
     if (w <= 0 || h <= 0 || w > 4096 || h > 4096) return nullptr;
     buffer.resize(size_t(w) * size_t(h) * 4);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    // External reads must not desynchronize Renderer's private binding cache.
+    // WebGL2 pack offsets/PBO are also part of the effective destination.
+    GLint read = 0, draw = 0, pack = 0, row = 0, rows = 0, pixels = 0, pbo = 0;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &read);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &draw);
+    glGetIntegerv(GL_PACK_ALIGNMENT, &pack);
+    glGetIntegerv(GL_PACK_ROW_LENGTH, &row);
+    glGetIntegerv(GL_PACK_SKIP_ROWS, &rows);
+    glGetIntegerv(GL_PACK_SKIP_PIXELS, &pixels);
+    glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pbo);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+    glPixelStorei(GL_PACK_SKIP_ROWS, 0);
+    glPixelStorei(GL_PACK_SKIP_PIXELS, 0);
     glReadPixels(x, y, w, h, GL_RGBA, GL_UNSIGNED_BYTE, buffer.data());
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, GLuint(read));
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, GLuint(draw));
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, GLuint(pbo));
+    glPixelStorei(GL_PACK_ALIGNMENT, pack);
+    glPixelStorei(GL_PACK_ROW_LENGTH, row);
+    glPixelStorei(GL_PACK_SKIP_ROWS, rows);
+    glPixelStorei(GL_PACK_SKIP_PIXELS, pixels);
     return buffer.data();
 }
 }  // extern "C"

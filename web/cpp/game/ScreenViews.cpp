@@ -21,14 +21,14 @@ ScreenView screen_view(const GraphicsViewport& viewport,float fov,Vec2 offset)no
 }
 void ScreenViews::configure(const AnmEnvironment& environment){const float scale=environment.resolution_scale;const auto scaled=[&](float value){return u32(truncate_int(float(value*scale)));};
  views[2]=screen_view({0,0,environment.screen_width,environment.screen_height,0,1},fov);
- // [2026-10-24 勘误] 游戏区视口 x=128（playfield [128,512]×[16,464]），非 th15
- // 遗产的 32。证据（oracle 数据，非目测）：st01-draws-replay.jsonl f124 敌机
- // up 批 verts 屏幕坐标 x∈[411.5,443.5]（layer 56）——在 [32,416] 假设下出场
- // 界；全屏相机 view=-320（中心 320）；a8e54eee 的 screen_offsets 320 与之
- // 自洽。旧值 32 使游戏层内容被裁剪出屏（左 96px 露背景/右 96px 精灵被切）。
- views[0]=screen_view({scaled(128),scaled(16),scaled(384),scaled(448),0,1},fov);
- views[1]=screen_view({scaled(128),scaled(16),scaled(384),scaled(448),0,1},fov);
- views[3]=screen_view({u32(truncate_int(float(float(float(environment.screen_width)-408.f)*.5f))),u32(truncate_int(float(float(float(environment.screen_height)-472.f)*.5f))),408,472,0,1},fov);
+ // 0043bbc0: 4dc984={32,16,384,448}. This is the final-screen
+ // interface viewport, NOT the centered crop of the intermediate @R texture.
+ // text.anm84 samples [128,512] and draws [32,416] after game composition.
+ // Inferring this viewport from raw +320 sprite vertices confused those domains.
+ views[0]=screen_view({scaled(32),scaled(16),scaled(384),scaled(448),0,1},fov);
+ views[1]=screen_view({scaled(32),scaled(16),scaled(384),scaled(448),0,1},fov);
+ // 0043be9b..0043beb9: {0x74,2,0x198,0x1dc} = {116,2,408,476}.
+ views[3]=screen_view({u32(truncate_int(float(float(float(environment.screen_width)-408.f)*.5f))),u32(truncate_int(float(float(float(environment.screen_height)-476.f)*.5f))),408,476,0,1},fov);
 }
 bool ScreenViews::camera(DrawCamera index,bool refresh){auto& view=views[u32(index)];if(refresh)view=screen_view(view.viewport,fov,view.offset);renderer.set_viewport(view.viewport);renderer.set_camera(view.camera);renderer.offset=view.offset;
 // 临时探针：相机切换取证（-96px 排查）

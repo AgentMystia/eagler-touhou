@@ -22,6 +22,7 @@ const files = [
   'st02a.msg', 'st02b.msg', 'st02c.msg', 'st02d.msg',
   'staff.msg',
   'pl00a.sht', 'pl01a.sht', 'pl02a.sht', 'pl03a.sht',
+  'musiccmt.txt',  // MusicRoom 曲目目录（宿主 catalog 源；页面可选装载，缺席=空目录）
 ];
 for (const name of files) {
   copyFileSync(resolve(raw, name), resolve(out, name));

@@ -19,6 +19,18 @@ namespace {
 constexpr float kGameToScreenX = 0.0f, kGameToScreenY = 0.0f;
 // 弹体贴图基准角：贴图朝右时旋转 = 弹角（对屏检验后校准）。
 constexpr float kBulletSpriteForward = 0.0f;
+
+// 自机所有表现 VM（含脚本创建的子体）随游戏暂停。原版游戏侧回调停机，
+// 不能因为此处改用池 VM 就在 Pause 背后继续旋转/生成 Youmu 残像。
+i32 pause_player_effect(AnmVm& vm) {
+    auto* manager = static_cast<AnmManager*>(vm.object_host);
+    if (manager)
+        for (auto* child : manager->registry.children(vm)) {
+            child->pre_tick = pause_player_effect;
+            pause_player_effect(*child);
+        }
+    return vm.environment && vm.environment->paused ? 1 : 0;
+}
 }  // namespace
 
 StagePresentation::StagePresentation(AnmManager& manager, AnmRenderer& draw, Banks banks,
@@ -38,6 +50,192 @@ void StagePresentation::release() {
         animations.release_tree(*player_);
         player_.reset();
     }
+    for (u32 handle : player_effect_handles_)
+        if (auto* vm = animations.registry.find(handle)) animations.release_tree(*vm);
+    player_effect_handles_.clear();
+    for (u32& handle : spirit_handles_) {
+        if (handle && !animations.retire(handle))
+            fail("Spirit animation retire failed: " + animations.error);
+        handle = 0;
+    }
+    for (u32& handle : item_handles_) {
+        if (handle && !animations.retire(handle))
+            fail("Item animation retire failed: " + animations.error);
+        handle = 0;
+    }
+    for (u32& handle : item_side_handles_) {
+        if (handle && !animations.retire(handle))
+            fail("Item side animation retire failed: " + animations.error);
+        handle = 0;
+    }
+    for (u32& handle : youmu_slash_handles_) {
+        if (handle && !animations.retire(handle))
+            fail("Youmu slash retire failed: " + animations.error);
+        handle = 0;
+    }
+    for (u32 handle : youmu_slash_extra_)
+        if (handle && !animations.retire(handle))
+            fail("Youmu slash retire failed: " + animations.error);
+    youmu_slash_extra_.clear();
+    focus_handle_ = 0;
+    option_handles_.fill(0);
+    full_option_handles_.fill(0);
+    bomb_orb_handles_.fill(0);
+    bomb_orb_exploding_.fill(false);
+    option_character_ = option_count_ = -1;
+    full_options_ = false;
+}
+
+u32 StagePresentation::create_player_effect(i32 bank, i32 script, i32 layer,
+                                            u32 ordering, const Vec3& position) {
+    // 00403800 复制已跑完负时间初始化的模板，保留模板的当前指令指针。
+    // 自机模块在写 layer12 后只跑 time0；不可重放 -1 的 ins304 把它改回16。
+    auto* source = animations.script_template(bank, u32(script));
+    if (!source) {
+        fail("Player effect template unavailable");
+        return 0;
+    }
+    auto* vm = animations.registry.allocate();
+    if (!animations.bind_template(*vm, bank, script)) {
+        animations.registry.discard(*vm);
+        fail("Player effect binding failed: " + animations.error);
+        return 0;
+    }
+    vm->instruction_offset = source->instruction_offset;
+    vm->visual.render_flags |= 0x200;
+    if (layer >= 0) {
+        vm->visual.layer = layer;
+        if (layer < 21) vm->visual.render_flags |= 0x40000;
+    }
+    vm->visual.translation = position;
+    vm->variables.rotation.z = 0;
+    vm->pre_tick = pause_player_effect;
+    if (!animations.prime_instance(*vm)) {
+        fail("Player effect initial tick failed: " + animations.error);
+        return 0;
+    }
+    if (bank == banks.effect && script == 22) {
+        // 0046f990 子体在模板初始化后继承父层；script21 的 -1 ins304
+        // 不应在 spawn 时重新覆盖继承值（现公共 spawn 尚从IP0开始）。
+        for (auto* child : animations.registry.children(*vm))
+            child->visual.set_layer(layer);
+    }
+    // time0 可立即 spawn：在首个暂停帧前给这批子体安装同一个停机回调。
+    pause_player_effect(*vm);
+    vm->ordering = ordering;
+    const u32 handle = animations.registry.submit(*vm, ordering);
+    if (!handle) {
+        fail("Player effect creation failed: " + animations.error);
+        return 0;
+    }
+    player_effect_handles_.push_back(handle);
+    return handle;
+}
+
+bool StagePresentation::end_player_effect(u32& handle, bool retire) {
+    if (!handle) return true;
+    // 0046fc30 只排队中断、不立即再 tick；其子树接收同一 label。
+    const bool ok = retire ? animations.retire(handle)
+                           : animations.interrupt(handle, 1, false);
+    handle = 0;
+    return ok || fail("Player effect release failed: " + animations.error);
+}
+
+bool StagePresentation::sync_player_effects(const StageBattle& battle) {
+    player_effect_handles_.erase(
+        std::remove_if(player_effect_handles_.begin(), player_effect_handles_.end(),
+                       [&](u32 handle) { return !animations.registry.find(handle); }),
+        player_effect_handles_.end());
+    const bool visible = battle.player_visible();
+    const Vec3 position{battle.player_x, battle.player_y, 0};
+
+    // 00442a8f：DAT_004c2180 + 0x10 = effect.anm，不是自机 plXX.anm。
+    // script22 自带 sprite23、12帧缩放、18帧旋转及子script21；松Shift
+    // label1 的8帧退场也由原版脚本完成，不画近似圆、不手工改scale。
+    if (visible && battle.focus) {
+        if (!animations.registry.find(focus_handle_)) {
+            focus_handle_ = create_player_effect(banks.effect, 22, 12, 0, position);
+            if (!focus_handle_) return false;
+        }
+        animations.registry.find(focus_handle_)->visual.translation = position;
+    } else if (!end_player_effect(focus_handle_, !visible)) {
+        return false;
+    }
+
+    // 00444df0：四角色本体脚本16/18/19/15，满P光环17/20/21/17。
+    // 00442960 已计算完的定点卫星位置由 battle.options 唯一提供，
+    // 此处不再维护独立跟随轨迹，也不在暂停/展示帧推进卫星物理。
+    constexpr i32 option_scripts[4] = {16, 18, 19, 15};
+    constexpr i32 full_scripts[4] = {17, 20, 21, 17};
+    const i32 character = battle.player_character();
+    const i32 count = visible ? battle.option_count : 0;
+    const bool full = visible && battle.full_power();
+    if (character < 0 || character > 3 || count < 0 || count > 8)
+        return fail("Player option state outside original bounds");
+    if (character != option_character_ || count != option_count_) {
+        for (u32& handle : option_handles_)
+            if (!end_player_effect(handle, true)) return false;
+        for (u32& handle : full_option_handles_)
+            if (!end_player_effect(handle, true)) return false;
+        option_character_ = character;
+        option_count_ = count;
+        full_options_ = false;
+    }
+    if (full != full_options_) {
+        for (u32& handle : full_option_handles_)
+            if (!end_player_effect(handle, !visible)) return false;
+        full_options_ = full;
+    }
+    for (size_t i = 0; i < option_handles_.size(); ++i) {
+        const auto& option = battle.options[i];
+        const bool active = i < size_t(count) && option.active;
+        if (!active) {
+            if (!end_player_effect(option_handles_[i], true) ||
+                !end_player_effect(full_option_handles_[i], true)) return false;
+            continue;
+        }
+        const Vec3 anchor{option.x, option.y, 0};
+        if (!animations.registry.find(option_handles_[i])) {
+            option_handles_[i] = create_player_effect(
+                banks.player, option_scripts[character], 12, 0, anchor);
+            if (!option_handles_[i]) return false;
+        }
+        animations.registry.find(option_handles_[i])->visual.translation = anchor;
+        if (full) {
+            if (!animations.registry.find(full_option_handles_[i])) {
+                full_option_handles_[i] = create_player_effect(
+                    banks.player, full_scripts[character], 12, 2, anchor);
+                if (!full_option_handles_[i]) return false;
+            }
+            animations.registry.find(full_option_handles_[i])->visual.translation = anchor;
+        }
+    }
+
+    // 0040b1b0：DAT_004c22c4 + 0x10（pl00.anm）script18；
+    // 0040b2a0：label1 → 子script21/23/25与19爆炸，不是effect.anm18。
+    // 伤害/运动/爆炸触发全归 battle，表现层只响应原状态边沿。
+    for (size_t i = 0; i < bomb_orb_handles_.size(); ++i) {
+        const auto& orb = battle.bomb_orbs[i];
+        if (character != 0 || (!orb.active && !orb.exploding)) {
+            if (!end_player_effect(bomb_orb_handles_[i], true)) return false;
+            bomb_orb_exploding_[i] = false;
+            continue;
+        }
+        if (!animations.registry.find(bomb_orb_handles_[i]) &&
+            !orb.exploding) {
+            bomb_orb_handles_[i] = create_player_effect(
+                banks.player, 18, -1, 0, {orb.x, orb.y, 0});
+            if (!bomb_orb_handles_[i]) return false;
+            bomb_orb_exploding_[i] = false;
+        }
+        if (auto* vm = animations.registry.find(bomb_orb_handles_[i]))
+            vm->visual.translation = {orb.x, orb.y, 0};
+        if (orb.exploding && !bomb_orb_exploding_[i]) {
+            if (!end_player_effect(bomb_orb_handles_[i], false)) return false;
+            bomb_orb_exploding_[i] = true;
+        }
+    }
+    return true;
 }
 
 // 30x/镜像创建点色通道补步：原版这些 VM 在敌机更新趟内创建（0x41fe80
@@ -50,13 +248,165 @@ void StagePresentation::create_color_step(AnmVm* vm) {
     if (vm) vm->interpolators.advance_color(vm->visual, animations.rate);
 }
 
+// 神霊池视觉同步（原版 0x438ec0 的 kind VM 创建 + 0x438730 位移尾的
+// +0x574 位置回写 + 收集/回收出链）。脚本号证据：0x439088-0x4390b9
+// （lea edx,[kind*3*2+1] / bit0 分支 +4），文件上下文为独立 anm file ctx
+//（0x4c2164+0x10）——其局部脚本号与合并 stage bank（enemy.anm 首位）同序：
+// kind*6+1/kind*6+4 落在 enemy.anm 的镜像对族（32x32 多帧脉冲、层 8、
+// +4 变体带 308 镜像翻转 = trance 期形态），结构唯一吻合。
+bool StagePresentation::sync_item_spirits(StageBattle& battle) {
+    auto& spirits = battle.item_manager.spirits();
+    for (size_t i = 0; i < spirits.size(); ++i) {
+        const Spirit& s = spirits[i];
+        u32& handle = spirit_handles_[i];
+        if (!s.alive) {
+            if (handle && !animations.retire(handle))
+                return fail("Spirit animation retire failed: " + animations.error);
+            handle = 0;
+            continue;
+        }
+        const i32 script = (s.flags & 1u) != 0 ? s.kind * 6 + 4 : s.kind * 6 + 1;
+        AnmVm* vm = animations.registry.find(handle);
+        if (vm && vm->source_script != script) {
+            // 槽位复用换型：回收重建（正常路径经死亡回收，此为防御）。
+            if (!animations.retire(handle))
+                return fail("Spirit animation rebind retire failed: " + animations.error);
+            handle = 0;
+            vm = nullptr;
+        }
+        if (!vm) {
+            handle = animations.create(banks.stage, script, -1, 2,
+                                       {s.x, s.y, s.z}, 0, false);
+            if (!handle)
+                return fail("Spirit animation creation failed: " + animations.error);
+            vm = animations.registry.find(handle);
+        }
+        if (vm) vm->visual.translation = {s.x, s.y, s.z};
+    }
+    return true;
+}
+
+// 妖梦斩击池视觉 + set_vm 回填（原版 0x40cb50 生成支路 + r4/bomb 接线）。
+// 生成：script 19（cursor 偶）/ 20（奇），pl03.anm（= character 3 的
+// banks.player），pos (0, lane+jitter y)，层 -1（脚本 ins_304 置 11）；
+// create 的 initial tick 即执行 ins_119（角抽）与 ins_401（写 rotation.z）
+// ——帧序 = battle lane 抽 → 本 create 角抽 → set_vm 回填。
+// 槽生命：脚本 op1 自灭 / registry 清出 → set_vm(slot,false)（清 anm id，
+// scale 冻结）；rotation 取回填当帧 VM 值。
+bool StagePresentation::sync_youmu_slash(StageBattle& battle) {
+    for (const auto& spawn : battle.youmu_slash_spawns_) {
+        const u32 handle = animations.create(
+            banks.player, spawn.script, -1, 2, {0.0f, spawn.y, 0.0f}, 0, false);
+        if (!handle)
+            return fail("Youmu slash animation creation failed: " +
+                        animations.error);
+        if (spawn.slot >= 0 && spawn.slot < YoumuBomb::kSlots) {
+            youmu_slash_handles_[size_t(spawn.slot)] = handle;
+        } else {
+            youmu_slash_extra_.push_back(handle);  // cursor 越界：仅视觉
+        }
+    }
+    for (int slot = 0; slot < YoumuBomb::kSlots; ++slot) {
+        u32& handle = youmu_slash_handles_[size_t(slot)];
+        AnmVm* vm = animations.registry.find(handle);
+        // 0x46fb90 语义（r4/bomb 接线）：句柄有效即活；另加脚本终止判
+        //（op1 自灭 → instruction_offset=-1/待回收 0x20 → 清槽）。
+        const bool alive = vm && vm->instruction_offset != -1 &&
+                           !(vm->visual.render_flags & 0x20u);
+        battle.youmu_bomb_.set_vm(slot, alive,
+                                  alive ? vm->variables.rotation.z : 0.0f);
+        if (!alive && handle) handle = 0;  // 死槽：不再追踪（scale 冻结在战斗侧）
+    }
+    return true;
+}
+
+// file≥2 的合并 bank 偏移（r4/effects/integration §1）：append 保留各文件
+// 局部 source_id（ANM {id,offset} 表内升序）→ 合并序列里 source_id 回绕处
+// 即新文件起点。file 2 = 合并首文件（局部=全局，offset 0）。
+const std::vector<i32>& StagePresentation::stage_file_offsets() {
+    auto* stage_resource = animations.resource(banks.stage);
+    if (stage_offsets_source_ != stage_resource || stage_file_offsets_.empty()) {
+        stage_file_offsets_.assign(1, 0);
+        i32 prev = -1;
+        const auto& scripts = stage_resource->scripts;
+        for (size_t i = 0; i < scripts.size(); ++i) {
+            const i32 id = scripts[i].source_id;
+            if (id <= prev && i > 0) stage_file_offsets_.push_back(i32(i));
+            prev = id;
+        }
+        stage_offsets_source_ = stage_resource;
+    }
+    return stage_file_offsets_;
+}
+
+// 局部脚本号 → 合并全局号；file 超出已知文件数 = 阻塞（不猜）。
+i32 StagePresentation::stage_script_global(i32 file, i32 script) {
+    if (file < 2) return script;
+    const auto& offsets = stage_file_offsets();
+    const size_t index = size_t(file - 2);
+    if (index >= offsets.size()) {
+        fail("Stage ANM file index beyond merged bank boundaries: " +
+             std::to_string(file));
+        return -1;
+    }
+    return script + offsets[index];
+}
+
+// 道具池视觉同步（0x42f020：两次 0x403800 模板拷贝 + 0x462450 首拍）。
+// 脚本号 = Unicorn 运行时实证（r4/items/item_vm_observer.py，th13_01）：
+// 模板索引 type+0x59 / type+0x62 即 bullet.anm 局部脚本号 → VM1 = 89+N、
+// VM2 = 98+N（sprite 459+N / 468+N）；模板层字段 +0x24 = 0。
+// 每帧位置跟随（0x42e380 尾 vm+0x574 写）；死亡（收集/底回收）→ retire。
+bool StagePresentation::sync_items(StageBattle& battle) {
+    auto& items = battle.item_manager.items();
+    for (size_t i = 0; i < items.size(); ++i) {
+        const Item& item = items[i];
+        u32& handle = item_handles_[i];
+        u32& side = item_side_handles_[i];
+        if (!item.alive) {
+            if (handle && !animations.retire(handle))
+                return fail("Item animation retire failed: " + animations.error);
+            if (side && !animations.retire(side))
+                return fail("Item side animation retire failed: " + animations.error);
+            handle = 0;
+            side = 0;
+            continue;
+        }
+        if (item.type < 1 || item.type > 9) continue;  // 10..14 走神霊路径
+        if (!animations.registry.find(handle)) {
+            handle = animations.create(banks.bullet, 89 + item.type, 0, 2,
+                                       {item.x, item.y, item.z}, 0, false);
+            if (!handle)
+                return fail("Item animation creation failed: " +
+                            animations.error);
+        }
+        if (!animations.registry.find(side)) {
+            side = animations.create(banks.bullet, 98 + item.type, 0, 2,
+                                     {item.x, item.y, item.z}, 0, false);
+            if (!side)
+                return fail("Item side animation creation failed: " +
+                            animations.error);
+        }
+        if (AnmVm* vm = animations.registry.find(handle))
+            vm->visual.translation = {item.x, item.y, item.z};
+        if (AnmVm* vm = animations.registry.find(side))
+            vm->visual.translation = {item.x, item.y, item.z};
+    }
+    return true;
+}
+
 bool StagePresentation::sync(StageBattle& battle, u32 held) {
     if (!error_.empty()) return false;
+    if (animations.scene_environment().paused) return true;
     auto* stage_resource = animations.resource(banks.stage);
     auto* bullet_resource = animations.resource(banks.bullet);
     auto* player_resource = animations.resource(banks.player);
     if (!stage_resource || !bullet_resource || !player_resource)
         return fail("Stage presentation banks unavailable");
+    if (!sync_player_effects(battle)) return false;
+    if (!sync_items(battle)) return false;
+    if (!sync_item_spirits(battle)) return false;
+    if (!sync_youmu_slash(battle)) return false;
 
     // ---- ECL 30x ANM 创建（0x4243e0：模板拷贝→立即 tick→主池头入链。
     // kind=0 特效路径 layer=-1（脚本自定层）、anmArg=0、位置清零（307 的
@@ -68,8 +418,10 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
                          : request.file == 1 ? banks.effect
                                              : banks.stage;
         if (request.kind == 0) {
+            const i32 script = stage_script_global(request.file, request.script);
+            if (script < 0) return false;
             const u32 effect_handle =
-                animations.create(bank, request.script, -1, 2,
+                animations.create(bank, script, -1, 2,
                                   {request.x, request.y, request.z}, 0, false);
             if (!effect_handle)
                 return fail("Effect animation creation failed: " + animations.error);
@@ -97,7 +449,9 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
         // （脚本自定层）使 aura 挂错层）。该字段构造默认 1（StageEnemy
         // mirror_script_base，ECL 552 可覆盖）→ 层 8（与 oracle 敌机
         // aura up 层 4/8 对拍）。
-        handle = animations.create(bank, request.script,
+        handle = animations.create(bank,
+                                   stage_script_global(enemy->anm_file,
+                                                       request.script),
                                    enemy->mirror_script_base + 7, 2, {}, 0, false);
         if (!handle)
             return fail("Slot animation creation failed: " + animations.error);
@@ -162,7 +516,9 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
                     // 语义；303/306 建池 0x4243e0 才是头插）→ f92 op[12] 的
                     // 层内序 Blue 先于 Red，与 oracle 相反（draws 首分歧）。
                     handle = animations.create(bank,
-                                               enemy->anm_script[0] + step,
+                                               stage_script_global(
+                                                   enemy->anm_file,
+                                                   enemy->anm_script[0] + step),
                                                enemy->mirror_script_base + 7,
                                                0, old_pos, 0, false);
                     if (!handle)
@@ -304,25 +660,36 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
         }
     }
 
-    // ---- 自机：plXX.anm 脚本 0/1/2（直立/左倾/右倾）----
-    if (!battle.player_dead) {
-        i32 tilt = 0;
-        if (held & 0x40) tilt = 1;
-        if (held & 0x80) tilt = 2;
+    // ---- 自机：00442960，0直立、1左倾、2左倾回正、3右倾、4右倾回正 ----
+    if (battle.player_visible()) {
+        const i32 tilt = ((held & 0x80) ? 1 : 0) - ((held & 0x40) ? 1 : 0);
         if (!player_) player_ = std::make_unique<AnmVm>();
         if (!player_->resource || tilt != player_tilt_) {
+            const i32 script = tilt < 0 ? 1 : tilt > 0 ? 3
+                                : player_tilt_ < 0 ? 2 : player_tilt_ > 0 ? 4 : 0;
+            if (player_->resource) animations.release_tree(*player_);
             player_->environment = &animations.scene_environment();
             player_->object_host = &animations;
-            if (!player_->bind(*player_resource, u32(tilt)))
+            if (!player_->bind(*player_resource, u32(script)))
                 return fail("Player animation binding failed: " + player_->error);
             player_->visual.set_layer(12);
             player_tilt_ = tilt;
+            player_script_ = script;
         }
         player_->visual.translation = {battle.player_x + kGameToScreenX,
                                        battle.player_y + kGameToScreenY, 0.0f};
         if (player_->tick(random, 1) < 0) return fail("Player animation: " + player_->error);
+        // 0044378x：无敌时每3个状态帧使用蓝色secondary通道；不是隐藏精灵。
+        player_->visual.flags &= ~0x60000u;
+        if (battle.invulnerable > 0 && battle.player_phase_frame % 3 == 0) {
+            player_->visual.secondary_color = 0xff0000ffu;
+            player_->visual.flags |= 0x20000u;
+        }
     } else if (player_) {
+        animations.release_tree(*player_);
         player_.reset();
+        player_tilt_ = 0;
+        player_script_ = -1;
     }
     return true;
 }
@@ -330,13 +697,22 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
 std::string StagePresentation::debug_report() const {
     std::string report;
     char line[256];
-    std::snprintf(line, sizeof line, "enemies=%zu bullets=%zu shots=%zu player=%d\n",
+    std::snprintf(line, sizeof line,
+                  "enemies=%zu bullets=%zu shots=%zu player=%d spirits=%zu items=%zu\n",
                   enemies_.size(),
                   bullets_.empty() ? 0 : std::count_if(bullets_.begin(), bullets_.end(),
                                                        [](const BulletSlot& slot) {
                                                            return slot.active && slot.vm;
                                                        }),
-                  shots_.size(), player_ ? 1 : 0);
+                  shots_.size(), player_ ? 1 : 0,
+                  size_t(std::count_if(spirit_handles_.begin(), spirit_handles_.end(),
+                                       [this](u32 handle) {
+                                           return handle && animations.registry.find(handle);
+                                       })),
+                  size_t(std::count_if(item_handles_.begin(), item_handles_.end(),
+                                       [this](u32 handle) {
+                                           return handle && animations.registry.find(handle);
+                                       })));
     report += line;
     auto describe = [&](const char* kind, const AnmVm& vm, i32 type, i32 color) {
         const auto* source = vm.sprite_resource ? vm.sprite_resource : vm.resource;
@@ -363,6 +739,15 @@ std::string StagePresentation::debug_report() const {
     if (!shots_.empty() && shots_[0])
         describe("shot", *shots_[0], player_shot_sprite_, -1);
     if (player_) describe("player", *player_, player_script_, player_tilt_);
+    auto describe_handle = [&](const char* kind, u32 handle, i32 index) {
+        if (auto* vm = animations.registry.find(handle)) describe(kind, *vm, index, -1);
+    };
+    describe_handle("focus", focus_handle_, 0);
+    for (size_t i = 0; i < option_handles_.size(); ++i) {
+        describe_handle("option", option_handles_[i], i32(i));
+        describe_handle("full-option", full_option_handles_[i], i32(i));
+        describe_handle("bomb-orb", bomb_orb_handles_[i], i32(i));
+    }
     return report;
 }
 
