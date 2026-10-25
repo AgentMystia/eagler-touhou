@@ -39,6 +39,8 @@ private:
     TitleMainMenu main;
     TitleDifficultyMenu difficulty;
     TitleCharacterMenu character;
+    TitleStageMenu stage;
+    FrameCallback stage_text_draw{};
     TitleReplayMenu replay;
     TitleOptionVolumes option_volumes;  // 音量真值（宿主 FileStore 预填，菜单共享编辑）
     TitleOptionsMenu option;
@@ -52,6 +54,7 @@ private:
     bool title_exit(i32) override;
     bool fade_out_title_music() override;
     bool update_title_menu(TitleScreen, const TitleFrameInput&) override;
+    bool restore_practice_selection() override;
     void advance_main_menu_selection() override;
     bool draw_title_replay_texts() override;
     bool draw_title_music_room_texts() override;
@@ -60,6 +63,8 @@ private:
     bool begin_transition(u32&) override;
     bool start_game(i32) override;
     bool character_cleared(i32 character, i32 difficulty) override;
+    bool extra_unlocked(i32 character) override;
+    bool practice_stage_played(i32 character, i32 difficulty, i32 stage) override;
 
 public:
     // Option 屏观测（row/volumes/error 采样；接线与测试用，不提供可变访问）。

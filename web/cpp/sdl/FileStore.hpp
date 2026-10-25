@@ -1,5 +1,5 @@
 // 文件存储（真实持久化，替换旧桩：不再 return true 假成功）。
-// 数据 = 原版 scoreth13.dat 的移植侧子集（v1）：
+// 数据 = 原版 scoreth13.dat 的移植侧子集（v2；兼容 v1）：
 //   - BGM/SE 音量（原版存档字节 DAT_004dc892/893，默认 100/80 = 0x5064）。
 //   - 每角色×难度通关标记 cleared(char 0..3, diff 0..4)：原版 score 数据块
 //     布局 *(int*)(score + 0x56dc*char + 0x7e4 + diff*4) != 0（0x451450
@@ -11,6 +11,7 @@
 
 #include "../game/Types.hpp"
 #include <string>
+#include <array>
 
 namespace th13::sdl {
 
@@ -26,6 +27,22 @@ public:
     // 落档族；原版 score 块 +0x1b27a 字节 0 语义：新档全 0 = 全 "???"，
     // track0 由首次播曲解锁）。格式不变（v1 36B 布局原即保留 3 u32）。
     u32 heard_mask = 0;
+    // v2 extension: 4 characters * 4 ordinary ranks, bits0..5 = stages1..6.
+    // v1 has no played data, so every bit remains zero when loading old saves.
+    std::array<u8, 16> practice_played{};
+    bool practice_stage_played(i32 character, i32 difficulty, i32 stage) const;
+    void mark_practice_stage_played(i32 character, i32 difficulty, i32 stage);
+    // Extra 解锁位（原版 score 块 0x1b26b+char*2 bit0x10：0x416130 通关落档
+    // diff>0 时置位、0x44bec0 读侧；0x44c570 case0 经 +0x5c40 bit1 门 Extra
+    // 行 + 0x44cd10/0x451450 的 rank 屏 5 行分支）。落 v2 reserved[0]
+    // （buffer+36）低 4 位，不进 v1 兼容面。
+    u32 extra_unlocked_mask = 0;
+    bool extra_unlocked(i32 character) const {
+        return character >= 0 && character < 4 && (extra_unlocked_mask >> character) & 1u;
+    }
+    void set_extra_unlocked(i32 character) {
+        if (character >= 0 && character < 4) extra_unlocked_mask |= 1u << character;
+    }
     bool loaded = false;   // true = 读到并采用合法档；false = 新档默认值
 
     bool initialize();  // 装载（缺档/坏档 = 默认值；I/O 硬失败 false + error）

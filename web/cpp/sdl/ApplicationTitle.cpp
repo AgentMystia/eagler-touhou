@@ -92,6 +92,16 @@ bool ApplicationState::character_cleared(i32 character, i32 difficulty) {
     return files.cleared(character, difficulty);
 }
 
+bool ApplicationState::extra_unlocked(i32 character) {
+    // Extra 解锁位（0x44bec0 读 0x1b26b+char*2 bit0x10 / 0x1b26c+char*2；
+    // 0x44c570 case0 汇成 +0x5c40 bit1）。缺档 = 0 = 禁用，与真机无存档一致。
+    return files.extra_unlocked(character);
+}
+
+bool ApplicationState::practice_stage_played(i32 character, i32 difficulty, i32 stage) {
+    return files.practice_stage_played(character, difficulty, stage);
+}
+
 void ApplicationState::apply_volumes(i32 bgm, i32 effect) {
     // 0044ed70 侧 DAT_004e476c/70 写的 port 等价：即编即效写设备真值——
     // effect_volume 走 0x4613f3 per-voice 曲线、music_volume 混音块实时读
