@@ -1,5 +1,9 @@
 # 普通版与 MP 维护
 
+分支按改动归属推送：多人专属修复只进入对应多人开发分支；确有普通版改动时才提交、推送普通版分支。多人修复不得通过 monorepo 合并或目录投影附带推入 `main`。目录投影保留原仓库祖先，提交标题按实际投影目录描述。
+
+普通开发与目录投影提交禁止继承 monorepo 提交中的 `git-subtree-*` 控制标记，也不得复制旧的 `Monorepo-Source`、`Source-Prefix` 来源映射。只在独立、经过标准子树导出验证的连接提交登记一次基点；来源记录核验同时实际运行 `git subtree split --prefix=ports/th12 --quiet HEAD`，核对原仓库祖先和源码目录树。
+
 修改普通版时，同时处理适用于多人版的改动。每对独立源码目录按 `docs/adaptation/port-sync.md` 保留自己的基线与同步历史，记录来源提交、多人版处理和模式专属决定。使用 `tools/ports/sync.mjs` 查看待同步提交并进行三方同步，沿该作品基线继续，源码与历史一起更新。
 
 相关目录提交后，用 `project-history.py --repo . --game <作品> --write-refs --track-normal` 刷新历史与 MP 上游；通过 `git branch -vv` 查看关系。

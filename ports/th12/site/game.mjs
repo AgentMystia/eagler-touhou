@@ -54,7 +54,7 @@ function resetGamePresentation(){previousPresentation=currentPresentation=null;r
 function interpolateGamePresentation(){return !runtimeOptions.limitPresentationTo60&&presentationCadence.fastFrames===4&&needsPresentationInterpolation(presentationInterval,logicalStep);}
 function gamePresentationOptions(){return {presentationContinuity:interpolateGamePresentation(),currentFps:meter.value,hudAge:session?.hudAge??0,scoreLowDigit:session?.continues??0,highScore:session?.highScore??0,alwaysHitbox:!!runtimeOptions.alwaysHitbox,disableMaster:!!(core._th12_practice_ui_behavior?.()&1),stageClear:readJSON('stage_flow').status==='stage-clear',practice:session?.mode==='practice'||session?.replay?.practice,recordedFps:session?.replay?.recordedFps(session.stage,session.cursor)??null};}
 function captureGamePresentation(){if(!session||!ready)return;session.highScore=Math.max(session.highScore??0,core._th12_score_stored()*10+(session.continues??0));warmNextStage();previousPresentation=currentPresentation;currentPresentation=renderer.capturePresentation(core,gamePresentationOptions());}
-function drawGamePresentation(interpolate=false){if(!currentPresentation)captureGamePresentation();if(currentPresentation)renderer.renderPresentation(previousPresentation,currentPresentation,interpolate&&interpolateGamePresentation()?Math.min(1,accumulator/logicalStep):1);}
+function drawGamePresentation(interpolate=true){if(!currentPresentation)captureGamePresentation();if(currentPresentation)renderer.renderPresentation(previousPresentation,currentPresentation,interpolate&&interpolateGamePresentation()?Math.min(1,accumulator/logicalStep):1,{currentFps:meter.value});}
 function updatePracticeUI(){
   if(!practiceUI||!model)return;
   practiceUI.update({scene:model.state.scene,replay:!!session?.replay,menu:model.state.scene==='practice'?model.practiceMenu:null,menuReady:model.ready()});
@@ -249,9 +249,15 @@ async function viewerStage(stage){
     audio.musicSerial=core._th12_music_serial();await playMusic(musicIndex[core._th12_music_track()]?.id??stageMusic[stage]);
   }finally{if(!fatalError){loadingScreen.completeResources();busy=false;}last=performance.now();accumulator=0;}
 }
+function holdStagePresentation(){
+  // Keep the last complete battle picture, including the live player and HUD,
+  // while native stage resources are installed. Loading never clears to black.
+  const held=currentPresentation;
+  loadingScreen.startResources({renderBase:()=>{if(held)renderer.renderPresentation(null,held,1,{currentFps:meter.value});}});
+}
 async function nextStage(){
   if(session?.mode==='demo'){model.returnTitle();return;}
-  if(!session||session.transitioning)return;session.transitioning=true;busy=true;
+  if(!session||session.transitioning)return;session.transitioning=true;busy=true;holdStagePresentation();
   try{
     const flow=readJSON('stage_flow');session.recorder?.finishStage();
     if(!session.replay&&session.mode!=='practice')profile.recordStageClear(session.character,session.shot,session.difficulty,session.stage,core._th12_score_stored()*10);
@@ -263,7 +269,7 @@ async function nextStage(){
     await prepareStage(stage);resetGamePresentation();touch.cancel();session.stage=stage;session.cursor=0;session.previous=0;session.resultKey=null;session.spellCount=0;
     if(session.replay){initializeReplayStage(session.replay,session.replay.stages.find(s=>s.number===stage),{fadeIn:true});}
     else{if(core._th12_start_next_stage()!==1)throw Error('跨关资源继承失败');recordStage();profile.recordStageEntry(session.character,session.shot,session.difficulty,stage);saveProfile().catch(fail);}
-    audio.musicSerial=core._th12_music_serial();const track=musicIndex[core._th12_music_track()]?.id??stageMusic[stage];if(!session.replay)profile.unlockMusic(track);await playMusic(track);captureGamePresentation();
+    audio.musicSerial=core._th12_music_serial();const track=musicIndex[core._th12_music_track()]?.id??stageMusic[stage];if(!session.replay)profile.unlockMusic(track);captureGamePresentation();void playMusic(track).catch(fail);
   }finally{if(session)session.transitioning=false;if(!fatalError){loadingScreen.completeResources();busy=false;}last=performance.now();meter.reset(last);accumulator=0;}
 }
 function resultData(clear){const flow=readJSON('stage_flow'),scoreStored=core._th12_score_stored(),timestamp=Math.floor(Date.now()/1000);session.assisted||=!!practiceBridge?.snapshot().assisted;const assisted=session.unlimitedMovement||session.assisted;return {mode:session.mode,practice:session.mode==='practice',character:session.character,shot:session.shot,difficulty:session.difficulty,stage:session.stage,scoreStored,score:scoreStored*10+flow.continueCount,timestamp,date:new Date(timestamp*1000).toISOString(),playSeconds:session.playTicks/60,clear,continueCount:flow.continueCount,continues:flow.continueCount,canContinue:flow.canContinue,canSaveReplay:!session.replay&&flow.continueCount===0,ranked:flow.continueCount===0&&!assisted,slowdown:assisted?100:0};}
@@ -287,7 +293,10 @@ function completeRun(clear,{saveOnly=false}={}){
 }
 function beginEnding(){
   pendingResult=resultData(true);recordClear(pendingResult);session.recorder?.finishStage({end:true});stopEffects();saveProfile();
-  const id=selectEnding(session.character,session.shot,pendingResult.continueCount>0);
+  playEnding(pendingResult);
+}
+function playEnding(result,loadout=session){
+  pendingResult=result;const id=selectEnding(loadout.character,loadout.shot,pendingResult.continueCount>0);
   model.enter('ending',0,{readyAt:0});ending=new EndingTimeline({resources,atlases:renderer.atlases,ending:resources.endings[id],difficulty:session.difficulty,seen:profile.data.endingsSeen.includes(id),onMusic:id=>playMusic(id).catch(fail),onFadeMusic:()=>fadeMusic(3),onSound:id=>effect({id})});clearKeys();
 }
 function returnTitle(){if(session&&session.mode!=='demo')stopMusic();loadingScreen.startResources();session=null;ending=null;stopEffects();clearKeys();practiceBridge?.reset();damageSources?.reset();saveProfile();}
