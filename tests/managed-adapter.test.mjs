@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {runInNewContext} from 'node:vm';
-import {PresentationCadence,PresentationLimiter,needsPresentationCapture} from '../src/presentation-cadence.mjs';
+import {PresentationCadence,PresentationLimiter,needsPresentationInterpolation,needsPresentationCapture} from '../src/presentation-cadence.mjs';
 import {installManagedShell,managedCommandHandler,runtimeOptions} from '../src/managed-shell.mjs';
 import {ManagedInput} from '../src/managed-input.mjs';
 
@@ -55,19 +55,22 @@ test('managed gamepad: maps every semantic action and rejects retired owners',()
 test('managed presentation: actual browser loop keeps 60 Hz logic at 60, 120 and 144 Hz',()=>{
   const source=readFileSync(new URL('../site/game.mjs',import.meta.url),'utf8');
   const start=source.indexOf('function frame(now){'),end=source.indexOf('\nfunction eventKey',start);
+  const interpolation=source.match(/^function interpolateGamePresentation\(\)\{.*\}$/m)?.[0];
   assert.ok(start>=0&&end>start);
-  for(const hz of [60,120,144]){
+  assert.ok(interpolation,'actual browser interpolation selector');
+  for(const hz of [60,120,144])for(const limited of [false,true]){
     let ticks=0,draws=0;
     const context={terminated:false,backgrounded:false,fatalError:false,last:0,lastPresentation:0,accumulator:0,presentationInterval:1000/60,presentationCadence:new PresentationCadence(),
-      runtimeOptions:{limitPresentationTo60:false},presentationLimiter:new PresentationLimiter(),TICK:1000/60,meter:{frame(){}},loadingScreen:{advance(){},renderOverlay(){}},
+      presentationLimiter:new PresentationLimiter(),needsPresentationInterpolation,needsPresentationCapture,
+      runtimeOptions:{limitPresentationTo60:limited},TICK:1000/60,meter:{frame(){}},loadingScreen:{advance(){},renderOverlay(){}},
       ready:true,busy:false,session:null,model:{actions:[],state:{scene:'playing'}},profile:{settings:{keyMap:{}}},
       keyDown:()=>false,previousPadUI:0,logicalStep:1000/60,captureThisTick:false,launched:false,
-      needsPresentationCapture,interpolateGamePresentation:()=>false,
       tick:()=>{ticks++;},present:()=>{draws++;},requestAnimationFrame(){},fail:error=>{throw error;}};
-    runInNewContext(source.slice(start,end)+';globalThis.frame=frame;',context);
+    runInNewContext(interpolation+'\n'+source.slice(start,end)+';globalThis.frame=frame;',context);
     for(let index=1;index<=hz*10;index++)context.frame(index*1000/hz);
-    assert.ok(Math.abs(ticks-600)<=1,`${hz} Hz: ${ticks} logic steps`);assert.equal(draws,hz*10);
-    assert.equal(context.presentationCadence.fastFrames,hz===60?0:4);
+    assert.ok(Math.abs(ticks-600)<=1,`${hz} Hz, limit ${limited}: ${ticks} logic steps`);
+    assert.ok(Math.abs(draws-(limited?600:hz*10))<=1,`${hz} Hz, limit ${limited}: ${draws} draws`);
+    if(!limited)assert.equal(context.presentationCadence.fastFrames,hz===60?0:4);
     context.backgrounded=true;context.frame(20_000);assert.equal(context.accumulator,0);
     context.backgrounded=false;context.frame(20_001);assert.ok(Math.abs(ticks-600)<=1);
   }
@@ -76,16 +79,17 @@ test('managed presentation: actual browser loop keeps 60 Hz logic at 60, 120 and
 test('a saturated catch-up budget still publishes a fresh game picture on every browser frame',()=>{
   const source=readFileSync(new URL('../site/game.mjs',import.meta.url),'utf8');
   const start=source.indexOf('function frame(now){'),end=source.indexOf('\nfunction eventKey',start);
+  const interpolation=source.match(/^function interpolateGamePresentation\(\)\{.*\}$/m)?.[0];assert.ok(interpolation);
   for(const interval of [150,200,250]){
     let ticks=0,captured=0;const pictures=[];
     const context={terminated:false,backgrounded:false,fatalError:false,last:0,accumulator:0,presentationInterval:0,presentationCadence:new PresentationCadence(),
       runtimeOptions:{limitPresentationTo60:false},presentationLimiter:new PresentationLimiter(),TICK:1000/60,meter:{frame(){}},loadingScreen:{advance(){},renderOverlay(){}},
       ready:true,busy:false,session:null,model:{actions:[],state:{scene:'playing'}},profile:{settings:{keyMap:{}}},
       keyDown:()=>false,previousPadUI:0,logicalStep:1000/60,captureThisTick:false,launched:false,
-      needsPresentationCapture,interpolateGamePresentation:()=>false,
+      needsPresentationInterpolation,needsPresentationCapture,
       tick(){ticks++;if(context.captureThisTick)captured=ticks;},present(){pictures.push(captured);},
       requestAnimationFrame(){},fail(error){throw error;}};
-    runInNewContext(source.slice(start,end)+';globalThis.frame=frame;',context);
+    runInNewContext(interpolation+'\n'+source.slice(start,end)+';globalThis.frame=frame;',context);
     for(let n=1;n<=60;n++)context.frame(n*interval);
     assert.equal(ticks,60*8,'catch-up work remains bounded without skipping logical frames');
     for(let n=0;n<pictures.length;n++)assert.equal(pictures[n],(n+1)*8,`${interval} ms frame ${n} must render the latest completed tick`);
