@@ -73,21 +73,23 @@ void captureAnimationDraw() {
   }
   u32 order = 0;
   struct HostileDraw {
+    u32 owner;
     const Projectile* bullet;
     u32 order;
   };
-  std::unordered_map<u32, HostileDraw> hostileDraw;
-  hostileDraw.reserve(bullets.size());
+  static std::vector<HostileDraw> hostileDraw;
+  hostileDraw.clear();hostileDraw.reserve(bullets.size());
   // 40a020 appends surviving physical slots in ascending order to six
   // appearance groups;40a220 draws group0..5, not allocation/id order.
   for (const auto& bullet : bullets)
     if (!bullet.friendly && bullet.active && bullet.physicalSlot >= 0 && bullet.enemy.type >= 0 &&
         bullet.enemy.type < int(bullet_visuals::appearances.size())) {
-      hostileDraw[0x10000000u + bullet.entityId] = {
+      hostileDraw.push_back({0x10000000u + bullet.entityId,
           &bullet,
           u32(bullet_visuals::appearances[bullet.enemy.type].group * bullet_pool::Slots::capacity +
-              bullet.physicalSlot)};
+              bullet.physicalSlot)});
     }
+  std::stable_sort(hostileDraw.begin(),hostileDraw.end(),[](const auto& a,const auto& b){return a.owner<b.owner;});
   for (const auto* pointer : nodes) {
     const auto& node = *pointer;
     const bool leafGeometry =
@@ -104,8 +106,9 @@ void captureAnimationDraw() {
     u32 drawOrder = order++;
     const HostileDraw* hostile = nullptr;
     if (priority == 31)
-      if (const auto at = hostileDraw.find(node.owner); at != hostileDraw.end()) {
-        hostile = &at->second;
+      if (const auto at = std::upper_bound(hostileDraw.begin(),hostileDraw.end(),node.owner,
+          [](u32 owner,const auto& entry){return owner<entry.owner;}); at != hostileDraw.begin()&&std::prev(at)->owner==node.owner) {
+        hostile = &*std::prev(at);
         drawOrder = hostile->order;
       }
     // 460c90 selects camera2 at layer4; the battle callbacks and HUD44

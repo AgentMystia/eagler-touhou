@@ -10,6 +10,24 @@
 
 namespace th12 {
 std::string presentationMotionBuffer;
+void collectPresentationRevisions() {
+  // IDs are not reused within a stage. Retired owners cannot participate in
+  // interpolation again; retaining them would make every rollback copy grow
+  // with the total shots fired rather than the current world.
+  static std::vector<uint32_t> live;
+  live.clear();
+  for (const auto& [id,node] : animationScene.nodes()) if (node->owner) live.push_back(node->owner);
+  for (const auto& enemy : enemies) if (enemy->active) live.push_back(enemy->id);
+  for (const auto& bullet : bullets) if (bullet.active) live.push_back(0x10000000u+bullet.entityId);
+  for (const auto& item : itemManager.entities) if (item.active())
+    for (auto prefix : {0x20000000u,0x30000000u,0x40000000u}) live.push_back(prefix+item.id);
+  for (const auto* laser : laserManager.ordered()) live.push_back(0xb0000000u+laser->state.serialId);
+  std::sort(live.begin(),live.end());
+  for (auto at=presentation::ownerRevisions.begin();at!=presentation::ownerRevisions.end();)
+    if (at->first<0xff000000u&&!std::binary_search(live.begin(),live.end(),at->first))
+      at=presentation::ownerRevisions.erase(at);
+    else ++at;
+}
 namespace {
 uint32_t continuousFields(const anm_logic::Node& node) {
   return node.vm.continuousFields()|((node.owner>>28)==1?2u:0u);

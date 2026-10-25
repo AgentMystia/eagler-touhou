@@ -12,7 +12,7 @@ import {thcrapLayout} from './localization/layout.mjs';
 import {capturePresentationOwners,interpolatePresentation,readCorePresentationMotion} from './presentation-interpolation.mjs';
 import {VertexBatch} from './vertex-batch.mjs';
 import {copyMeshPose,meshVertexCount,meshCoordinate,translateMesh} from './mesh-vertices.mjs';
-export function readCoreHud(core){const size=core._th12_hud_size?.()??20;if(!Number.isInteger(size)||size<20||size>256)throw Error('状态记录长度无效');const h=new Float32Array(core.HEAPU8.buffer,core._th12_hud(),size);if(typeof core._th12_score_stored!=='function')return h;const score=core._th12_score_stored();if(!Number.isInteger(score)||score< -0x80000000||score>0x7fffffff)throw Error('整数分数记录无效');const exact=[...h];exact[3]=score*10;if(size>40)exact[40]=score*10;return exact;}
+export function readCoreHud(core,{highScore=0,scoreLowDigit=0}={}){const size=core._th12_hud_size?.()??20;if(!Number.isInteger(size)||size<20||size>256)throw Error('状态记录长度无效');const h=new Float32Array(core.HEAPU8.buffer,core._th12_hud(),size);if(typeof core._th12_score_stored!=='function')return h;const score=core._th12_score_stored();if(!Number.isInteger(score)||score< -0x80000000||score>0x7fffffff)throw Error('整数分数记录无效');const exact=[...h];exact[3]=score*10+scoreLowDigit;if(size>40)exact[40]=Math.max(exact[3],Number.isSafeInteger(highScore)&&highScore>=0?highScore:0);return exact;}
 export function readCoreBossHud(core){
   if(!core._th12_boss_hud||!core._th12_boss_hud_size)return null;
   const ptr=core._th12_boss_hud(),size=core._th12_boss_hud_size();
@@ -193,12 +193,12 @@ export class Renderer {
   async prepare(){
     await this.loadAtlases(['pl00','pl01','pl02','bullet','enemy','front','ascii','text']);await this.prepareStage(1);
   }
-  async prepareStage(stage){
+  async prepareStage(stage,{activate=true}={}){
     if(!Number.isInteger(stage)||stage<1||stage>7)throw Error('关卡编号无效');
-    this.requestedStage=stage;
+    if(activate)this.requestedStage=stage;
     if(!this.stageJobs.has(stage)){const name='stage'+String(stage).padStart(2,'0'),enemy='stgenm'+String(stage).padStart(2,'0'),logo='st'+String(stage).padStart(2,'0')+'logo';
       const job=(async()=>{const response=await this.fetch('/assets/'+name+'-background.json');if(!response.ok)throw Error('关卡背景数据加载失败 '+stage);const background=new StageBackground(await response.json(),this.atlases);await this.loadAtlases([name,enemy,enemy+'m',logo].filter(n=>this.atlases[n]));this.stageBackgrounds.set(stage,background);return background;})();this.stageJobs.set(stage,job);}
-    const background=await this.stageJobs.get(stage);if(this.requestedStage===stage)this.background=background;return background;
+    const background=await this.stageJobs.get(stage);if(activate&&this.requestedStage===stage)this.background=background;return background;
   }
   async loadAtlases(names){
     const gl=this.gl;
@@ -443,7 +443,7 @@ export class Renderer {
     this.presentationEpoch++;this.lastFrame=-1;this.animations=new AnimationSampler(this.atlases);
   }
   capturePresentation(core,fps={}){
-    const h=[...readCoreHud(core)],frame=h[0];if(fps.scoreLowDigit){h[3]+=fps.scoreLowDigit;if(h.length>40)h[40]+=fps.scoreLowDigit;}if(frame<this.lastFrame){this.resetPresentation();}this.lastFrame=frame;this.animations.beginFrame();
+    const h=[...readCoreHud(core,fps)],frame=h[0];if(frame<this.lastFrame){this.resetPresentation();}this.lastFrame=frame;this.animations.beginFrame();
     const stage=Math.max(1,Math.min(7,h[39]||1)),stageSuffix=String(stage).padStart(2,'0');if(this.stageBackgrounds.has(stage))this.background=this.stageBackgrounds.get(stage);else if(!this.stageJobs.has(stage))this.prepareStage(stage).catch(error=>this.stageError=error);
     const logicalBackground=readCoreBackground(core),background=this.background.geometry(logicalBackground?.frame??core._th12_background_frame?.()??frame,logicalBackground),screenShake=logicalBackground?.camera?.screenShake??[0,0],backgroundVisible=background.authoritative||(core._th12_background_visible?.()??true);
     const logicalPoses=readCoreAnimationPoses(core,stage),schedule=readCoreDrawSchedule(core),meshes=readCoreMeshes(core,stage),logicalOwners=new Set([...logicalPoses,...meshes].map(p=>p.owner)),message=readCoreMessage(core),spell=readCoreSpell(core),bossHud=readCoreBossHud(core);
