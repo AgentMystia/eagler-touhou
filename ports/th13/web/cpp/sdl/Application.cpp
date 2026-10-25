@@ -334,7 +334,11 @@ bool ApplicationState::preload_scenery_animation(i32 bank, const std::string& na
     return true;
 }
 
-bool ApplicationState::begin_title(i32 reason) {    title.reset();
+bool ApplicationState::begin_title(i32 reason) {
+    // Only a real Practice quit/reselect gets original dc670==4 semantics.
+    // Capture replay status before release_run; never repurpose a replay return.
+    if (returns_to_practice_selection(progress, reason, replay_active)) reason = 4;
+    title.reset();
     release_run();
     if (!audio_device.queue_music(2, -1, "th13_00.wav")) return fail(audio_device.error);
     current_destination = i32(Destination::Title);
@@ -478,6 +482,17 @@ bool ApplicationState::begin_run() {
                                       std::string(kStageBossMusic[progress.stage - 1]) + ".wav"))
             return fail(audio_device.error);
     }
+    // 0x42b990:70-72: entering an ordinary stage marks its played byte, not
+    // its clear byte. Record only after successful asset/scene initialization.
+    if (records_practice_stage(progress, replay_session) &&
+        !files.practice_stage_played(progress.character, progress.difficulty, progress.stage)) {
+        const auto previous = files.practice_played;
+        files.mark_practice_stage_played(progress.character, progress.difficulty, progress.stage);
+        if (!files.save()) {
+            files.practice_played = previous;
+            return fail(files.error);
+        }
+    }
     return true;
 }
 
@@ -559,6 +574,10 @@ bool ApplicationState::apply_destination() {
         // 读侧同式）：内存置位 + 真实 save；写失败显式 fail（不假成功）。
         files.set_cleared(progress.character & 3,
                           std::clamp(progress.difficulty, 0, kSaveDifficulties - 1));
+        // Extra 解锁位（0x416130 通关落档：0x1b26b+char*2 bit0x10，需 diff>0
+        // 普通关卡通关；写入即随 save 落盘）。
+        if (progress.difficulty > 0)
+            files.set_extra_unlocked(progress.character & 3);
         if (!files.save()) return fail(files.error);
         return begin_title(1);
     }

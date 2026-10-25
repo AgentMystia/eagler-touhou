@@ -161,6 +161,9 @@ void TitleDifficultyMenu::choose_character() noexcept {
 }
 
 void TitleDifficultyMenu::return_main() {
+    // No abandoned Practice selection may leak into a subsequent ordinary run.
+    progress.run_mode_flags &= ~0x30u;
+    progress.practice_mode = 0;
     state.change_screen(TitleScreen::Main);
     state.menu.pop();
 }
@@ -398,6 +401,20 @@ bool TitleCharacterMenu::update(u32 pressed, u32 repeated) {
     }
     case 3:
         if (state.age.current == 10) {
+            // 0x451450: age10, Practice (be830 & 0x30 != 0) goes to screen8;
+            // only the ordinary path starts the game transition here.
+            if ((progress.run_mode_flags & 0x30u) == 0x10u) {
+                progress.character = settings.preferred_character =
+                    title_character_at(state.menu.cursor);
+                state.menu.push();
+                state.menu.count = 6;
+                state.menu.wrapping = true;
+                state.menu.select(settings.practice_stage);
+                if (!visual(visuals.retire(resources.difficulty_badge + 1)) ||
+                    !visual(visuals.retire(resources.char_menu_root))) return false;
+                state.change_screen(TitleScreen::Stage);
+                return true;
+            }
             if (!check(host.begin_transition(state.start_effect),
                        "Game start transition unavailable") ||
                 !check(animations.interrupt(state.start_effect, 7),
@@ -412,12 +429,111 @@ bool TitleCharacterMenu::update(u32 pressed, u32 repeated) {
             // Player Select 条 102 退场（对局转场；oracle 窗B 开局序列同）。
             visuals.retire(resources.difficulty_badge + 1);
             progress.stage = 1;
+            progress.starting_stage = 1;
+            progress.practice_mode = 0;
             if (!check(host.start_game(progress.stage), "Game scene destination failed")) return false;
         }
         break;
     case 4:
         if (state.age.current > 5) return_difficulty();
         break;
+    }
+    return true;
+}
+
+bool TitleStageMenu::check(bool ok, const char* reason) {
+    if (!ok && error.empty()) error = reason;
+    return ok;
+}
+
+bool TitleStageMenu::available(i32 stage) {
+    return host.practice_stage_played(progress.character, progress.difficulty, stage);
+}
+
+bool TitleStageMenu::update(u32 pressed, u32 repeated) {
+    switch (state.substate) {
+    case 0:
+        state.menu.count = 6;
+        state.menu.wrapping = true;
+        state.menu.select(settings.practice_stage);
+        // On a return from gameplay the title scene has no persistent backdrop.
+        if (!animations.registry.find(state.handles[89])) {
+            if (!check(visuals.create(89) && visuals.interrupt(89, 3, true),
+                       "Practice return background unavailable")) return false;
+        }
+        // Original handles +0x47c / +0x488 are title scripts 109 / 112.
+        if (!check(visuals.create(109) && visuals.create(112),
+                   "Practice stage animations unavailable")) return false;
+        state.change_substate(1);
+        [[fallthrough]];
+    case 1:
+        if (state.age.current > 10) state.change_substate(2);
+        break;
+    case 2:
+        state.menu.previous = state.menu.cursor;
+        if ((pressed | repeated) & 0x10) state.menu.move(-1);
+        if ((pressed | repeated) & 0x20) state.menu.move(1);
+        if (!check(state.menu.error.empty(), "Practice stage cursor failed")) return false;
+        if (state.menu.previous != state.menu.cursor &&
+            !check(host.sound(10), "Practice stage cursor sound failed")) return false;
+        if (pressed & 0x102) {
+            settings.practice_stage = state.menu.cursor;
+            state.change_substate(4);
+            return check(host.sound(9), "Practice stage cancel sound failed");
+        }
+        if (pressed & 0x80001) {
+            // 0x451cb0 rejects an unplayed stage with sound16, without leaving.
+            if (!available(state.menu.cursor + 1))
+                return check(host.sound(16), "Locked practice stage sound failed");
+            settings.practice_stage = state.menu.cursor;
+            state.change_substate(3);
+            return check(host.sound(7) && host.sound(50), "Practice stage confirm sound failed");
+        }
+        break;
+    case 3:
+        if (state.age.current == 10) {
+            if (!check(host.begin_transition(state.start_effect),
+                       "Practice start transition unavailable") ||
+                !check(animations.interrupt(state.start_effect, 7),
+                       "Practice start transition interrupt failed")) return false;
+        }
+        if (state.age.current > 39) {
+            progress.stage = progress.starting_stage = state.menu.cursor + 1;
+            progress.practice_mode = 1;
+            progress.run_mode_flags = (progress.run_mode_flags & ~0x30u) | 0x10u;
+            state.menu.push();
+            state.change_screen(TitleScreen::StartGame);
+            return check(host.start_game(progress.stage), "Practice game destination failed");
+        }
+        break;
+    case 4:
+        if (state.age.current > 5) {
+            if (!check(visuals.retire(109) && visuals.retire(112),
+                       "Practice stage animation exit failed")) return false;
+            state.menu.pop();
+            state.change_screen(TitleScreen::Character);
+        }
+        break;
+    }
+    return true;
+}
+
+bool TitleStageMenu::draw_texts(HudDrawServices& host) {
+    if (state.screen != TitleScreen::Stage ||
+        (state.substate != 2 && state.substate != 3)) return true;
+    // 0x452170: (296,216), row step18; locked selected=df, available=yellow.
+    // Stage best scores are not stored by this port yet: omit, don't invent them.
+    for (i32 row = 0; row < 6; ++row) {
+        const bool played = available(row + 1);
+        HudTextStyle style;
+        style.color = row != state.menu.cursor ? 0xff808080u :
+                      !played ? 0xffdfdfdfu :
+                      state.substate == 3 && state.age.current % 4 >= 2 ?
+                          0xff000000u : 0xffffff00u;
+        const std::string text = "Stage " + std::to_string(row + 1) +
+            (played ? "" : "  ---------");
+        if (!check(host.hud_text({{296, float(216 + row * 18), 0}, style, text}),
+                   "Practice stage text failed")) return false;
     }
     return true;
 }
