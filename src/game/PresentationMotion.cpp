@@ -61,8 +61,12 @@ const std::string& capturePresentationMotion(){
   for(const auto& enemy:enemies)if(enemy->active&&enemy->extraBombShieldAnimation)
     attachedEnemies.emplace(enemy->extraBombShieldAnimation,enemy->id);
   out<<"],\"nodes\":[";comma=false;
+  static std::vector<const anm_logic::Node*> registeredNodes;
+  registeredNodes.clear();
+  registeredNodes.reserve(animationScene.nodes().size());
   for(const auto membership:{anm_logic::Membership::Primary,anm_logic::Membership::Secondary,anm_logic::Membership::Embedded})
-    for(const auto* pointer:animationScene.chain(membership)){
+    animationScene.appendChain(membership,registeredNodes);
+    for(const auto* pointer:registeredNodes){
       const auto& node=*pointer;const auto& s=node.vm.state();
       if(!node.alive)continue;if(comma)out<<',';comma=true;
       uint32_t motionOwner=node.owner;
@@ -120,6 +124,7 @@ const std::array<uint32_t,17>& capturePresentationMotionBinary(){
   static std::vector<Laser> lasers;
   static std::vector<uint32_t> lineages;
   static std::array<uint32_t,17> header;
+  static std::vector<const anm_logic::Node*> registeredNodes;
   owners.clear();nodes.clear();lasers.clear();lineages.clear();
   const auto* focus=animationScene.find(playerFocusAnimation);
   std::unordered_set<uint32_t> seen;
@@ -143,8 +148,11 @@ const std::array<uint32_t,17>& capturePresentationMotionBinary(){
   }
   std::unordered_map<uint64_t,uint32_t> attached;
   for(const auto& e:enemies)if(e->active&&e->extraBombShieldAnimation)attached.emplace(e->extraBombShieldAnimation,e->id);
+  registeredNodes.clear();
+  registeredNodes.reserve(animationScene.nodes().size());
   for(const auto membership:{anm_logic::Membership::Primary,anm_logic::Membership::Secondary,anm_logic::Membership::Embedded})
-    for(const auto* pointer:animationScene.chain(membership)){
+    animationScene.appendChain(membership,registeredNodes);
+    for(const auto* pointer:registeredNodes){
       const auto& n=*pointer;const auto& s=n.vm.state();if(!n.alive)continue;
       uint32_t motionOwner=n.owner,meshKind=0;
       if(n.owner==0xffff0020u)motionOwner=focus&&focus->id==n.id?0xffff0000u:n.owner;

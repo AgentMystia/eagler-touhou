@@ -52,11 +52,12 @@ export class StageBackground {
       if(authoritative&&!(flags&1)&&object.layer>=0&&object.layer<=11)continue;
       for(const q of object.quads){if(q.kind&&q.kind!==0)continue;const row=poses?.get(this.slots.get(q)),animation=authoritative?(row?logicalAnimation(row):null):this.animations.sample(this.bank,q.script,frame),sprite=this.atlases[this.bank].sprites[animation?.sprite];
         if(!sprite||!animation.visible||animation.alpha<=0)continue;const rotation=[animation.rx,animation.ry,animation.rotation],center=q.position.map((v,i)=>v+instance.position[i]+[animation.x,animation.y,animation.z][i]),size=primitiveSize(q,animation,sprite);
+        // All four corners share the authored rotation.
+        const cx=Math.cos(rotation[0]),sx=Math.sin(rotation[0]),cy=Math.cos(rotation[1]),sy=Math.sin(rotation[1]),cz=Math.cos(rotation[2]),sz=Math.sin(rotation[2]);
         let polygon=[[-.5,-.5,0,0],[.5,-.5,1,0],[.5,.5,1,1],[-.5,.5,0,1]].map(([a,b,u,v])=>{
           let px=a*size[0],py=b*size[1],pz=0;
           // ANM mode 8: the STD primitive determines dimensions, and the
           // script supplies the rotation, including the mirrored snow edges.
-          const cx=Math.cos(rotation[0]),sx=Math.sin(rotation[0]),cy=Math.cos(rotation[1]),sy=Math.sin(rotation[1]),cz=Math.cos(rotation[2]),sz=Math.sin(rotation[2]);
           [py,pz]=[py*cx-pz*sx,py*sx+pz*cx];[px,pz]=[px*cy+pz*sy,-px*sy+pz*cy];[px,py]=[px*cz-py*sz,px*sz+py*cz];
           const d=sub([center[0]+px,center[1]+py,center[2]+pz],camera.position);return {cx:dot(d,x),cy:dot(d,y),depth:dot(d,z),distance:Math.hypot(...d),u:sprite.x+u*sprite.w,v:sprite.y+v*sprite.h};
         });
