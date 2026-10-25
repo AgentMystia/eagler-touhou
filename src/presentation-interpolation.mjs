@@ -1,5 +1,6 @@
 // Presentation endpoints contain JS-owned draw data only. No core, input,
 // animation sampler, clock or random source is reachable from this module.
+import {copyMeshPose,meshVertexCount,interpolateMesh,translateMesh} from './mesh-vertices.mjs';
 const PLAYER=0xffff0000,FOCUS=0xffff0020;
 const family=owner=>(owner>>>28);
 const itemId=owner=>(owner&0x0fffffff);
@@ -80,7 +81,7 @@ function sameAppearance(a,b){
     a.drawPriority!==b.drawPriority||a.clip!==b.clip)return false;
   for(const key of appearanceFields)if(a.a?.[key]!==b.a?.[key])return false;
   if(a.mesh&&(a.primitive!==b.primitive||a.renderPass!==b.renderPass||a.untextured!==b.untextured||
-    a.filter!==b.filter||a.addressFlags!==b.addressFlags||a.vertices.length!==b.vertices.length||a.a.entry!==b.a.entry))return false;
+    a.filter!==b.filter||a.addressFlags!==b.addressFlags||meshVertexCount(a)!==meshVertexCount(b)||a.a.entry!==b.a.entry))return false;
   return true;
 }
 
@@ -145,7 +146,7 @@ function translatePose(p,offset){
   if(!x&&!y)return p;
   // Geometry is translated rigidly with its explicit owner. Laser curve
   // vertices are never paired by index; their owners are ineligible above.
-  if(p.mesh)return {...p,vertices:p.vertices.map(v=>({...v,x:v.x+x,y:v.y+y}))};
+  if(p.mesh)return translateMesh(p,x,y);
   if(p.nativeText)return {...p,nativeText:{...p.nativeText,x:p.nativeText.x+x,y:p.nativeText.y+y}};
   if(finitePoint(p))return {...p,presentationOffset:[x,y]};
   return p;
@@ -228,7 +229,7 @@ function nativeScalars(p,old,node,oldNode,alpha){
   if(mask&16){fields(['r','g','b','alpha','r2','g2','b2','alpha2']);
     if(Array.isArray(old.a.primaryColor)&&Array.isArray(p.a.primaryColor)&&old.a.primaryColor.some((v,i)=>v!==p.a.primaryColor[i])){
       a??={...p.a};a.primaryColor=p.a.primaryColor.map((v,i)=>lerp(old.a.primaryColor[i],v,alpha));}}
-  return a?{...p,a}:p;
+  return a?copyMeshPose(p,{a}):p;
 }
 function nativePlan(previous,current){
   let next=nativePlans.get(previous);
@@ -289,7 +290,7 @@ function interpolateNative(previous,current,alpha){
     // invalidates the complete role correspondence, even at equal lengths.
     if(p.mesh&&node?.meshKind==='laser'){
       if(!continuousLasers.has(p.owner))return p;
-      return {...p,vertices:p.vertices.map((v,i)=>({...v,x:lerp(old.vertices[i].x,v.x,alpha),y:lerp(old.vertices[i].y,v.y,alpha)}))};
+      return interpolateMesh(p,old,alpha);
     }
     const owned=source&&continuousOwners.has(owner);
     const a=before.ownerMap.get(owner),b=source;
@@ -298,7 +299,7 @@ function interpolateNative(previous,current,alpha){
     if(owned){
       const dx=(a.position[0]-b.position[0])*(1-alpha),dy=(a.position[1]-b.position[1])*(1-alpha);
       if(p.mesh){
-        if(node&&['ufo-fill','spell-ring'].includes(node.meshKind))return {...p,vertices:p.vertices.map((v,i)=>({...v,x:lerp(old.vertices[i].x,v.x,alpha),y:lerp(old.vertices[i].y,v.y,alpha)}))};
+        if(node&&['ufo-fill','spell-ring'].includes(node.meshKind))return interpolateMesh(p,old,alpha);
         return translatePose(result,{x:dx,y:dy});
       }
       // Options, focus and the optional hit marker share player displacement;
@@ -312,7 +313,7 @@ function interpolateNative(previous,current,alpha){
     }
     if(p.mesh&&node&&['stage-grid','ufo-summon','ufo-trail','leaf','spell-ring','ufo-fill'].includes(node.meshKind)){
       if(node.meshKind==='stage-grid'&&before.backgroundRevision!==after.backgroundRevision)return p;
-      return {...p,vertices:p.vertices.map((v,i)=>({...v,x:lerp(old.vertices[i].x,v.x,alpha),y:lerp(old.vertices[i].y,v.y,alpha)}))};
+      return interpolateMesh(p,old,alpha);
     }
     // Explicit authored ANM local position tracks are eligible when their
     // resolved engine origin did not move. Detached/global positions do not
