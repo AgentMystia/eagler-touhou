@@ -135,12 +135,25 @@ bool AnimationState::capture(const AnmRegistry& registry,const std::vector<AnmVm
 }
 bool AnimationState::restore(AnmRegistry& registry,const RootResolver& roots,const SpriteResolver& sprites)const{
     if(!ready())return false;const auto& s=*saved_;
-    registry.groups[0].clear();registry.groups[1].clear();for(auto& layer:registry.layers)layer.clear();
-    registry.pending_deletion.clear();registry.nodes.clear();registry.overflow.clear();registry.external.clear();
-    for(size_t i=0;i<registry.pool.size();++i){auto& owned=registry.pool[i];if(!s.present[i]){owned.reset();continue;}
-        if(!owned)owned=std::make_unique<AnmRegistry::Node>();auto& node=*owned;node.slot=u32(i);node.handle=0;
-        node.active=node.registered=false;node.parent=nullptr;node.children.clear();registry.nodes.emplace(&node.vm,&node);
+    // Recycle list links from the discarded future; splice preserves iterator
+    // validity while restoring the captured child and callback order exactly.
+    std::list<AnmRegistry::Node*> links;
+    for(auto& group:registry.groups)links.splice(links.end(),group);
+    for(auto& layer:registry.layers)layer.clear();registry.pending_deletion.clear();
+    for(auto& entry:registry.overflow){registry.nodes.erase(&entry.first->vm);links.splice(links.end(),entry.first->children);}
+    for(auto& entry:registry.external)links.splice(links.end(),entry.second->children);
+    registry.overflow.clear();registry.external.clear();
+    for(size_t i=0;i<registry.pool.size();++i){auto& owned=registry.pool[i];
+        if(owned)links.splice(links.end(),owned->children);
+        if(!s.present[i]){if(owned)registry.nodes.erase(&owned->vm);owned.reset();continue;}
+        if(!owned){owned=std::make_unique<AnmRegistry::Node>();registry.nodes.emplace(&owned->vm,owned.get());}
+        auto& node=*owned;node.slot=u32(i);node.handle=0;
+        node.active=node.registered=false;node.parent=nullptr;
     }
+    const auto append=[&](std::list<AnmRegistry::Node*>& target,AnmRegistry::Node* value){
+        if(links.empty())return target.insert(target.end(),value);
+        const auto at=links.begin();*at=value;target.splice(target.end(),links,at);return at;
+    };
     std::vector<AnmRegistry::Node*> nodes(s.count);
     std::vector<std::unique_ptr<AnmRegistry::Node>> external(s.count);
     VmPointerMap copies(s.originals.size()),originals(s.originals.size());
@@ -172,12 +185,12 @@ bool AnimationState::restore(AnmRegistry& registry,const RootResolver& roots,con
     bool missing_sprite=false;
     const auto remap=[&](AnmVm& vm){each_vm(vm,[&](AnmVm& value){value.rotation_parent=parent(value.rotation_parent);value.creation_parent=parent(value.creation_parent);if(value.sprite_source&&sprites){value.sprite_source=sprites(value.sprite_source);missing_sprite|=value.sprite_source==nullptr;}});};
     for(size_t i=0;i<s.count;++i){auto& node=*nodes[i];const auto& image=s.nodes[i];node.parent=image.parent==none?nullptr:nodes[image.parent];
-        node.children.clear();for(auto child:image.children)node.children.push_back(nodes[child]);
+        for(auto child:image.children)append(node.children,nodes[child]);
         if(!image.nested)remap(node.borrowed?*node.borrowed:node.vm);
     }
     for(auto* target:targets)remap(*target);
     if(missing_sprite){registry.error="Rollback sprite owner was not rebound";return false;}
-    for(size_t group=0;group<s.groups.size();++group)for(auto index:s.groups[group]){auto* node=nodes[index];node->position=registry.groups[group].insert(registry.groups[group].end(),node);}
+    for(size_t group=0;group<s.groups.size();++group)for(auto index:s.groups[group]){auto* node=nodes[index];node->position=append(registry.groups[group],node);}
     for(size_t layer=0;layer<s.layers.size();++layer)for(auto* old:s.layers[layer]){auto* found=originals.find(old);if(!found){registry.error="Rollback animation draw order is incomplete";return false;}registry.layers[layer].push_back(found);}
     for(auto index:s.pending)registry.pending_deletion.push_back(nodes[index]);
     registry.free_slots=s.free_slots;registry.generation=s.generation;registry.active_count=s.active_count;registry.error=s.error;AnmVm::presentation_counter=s.presentation_counter;return true;
