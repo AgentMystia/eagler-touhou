@@ -1,4 +1,5 @@
 #include "multiplayer/AnimationState.hpp"
+#include "multiplayer/FramePointerIndex.hpp"
 #include "game/AnmOverlay.hpp"
 #include <array>
 #include <chrono>
@@ -115,5 +116,31 @@ void repeated_restore_allocations(){
     std::printf("repeated 512-VM restore allocations: %zu across 8 restores\n",total);
     require(total<8*128,"fixed graph restoration must avoid allocations proportional to VM count");
 }
+void capture_index_and_root_reuse(){
+    multiplayer::FramePointerIndex<int> index;std::array<int,513> keys{};
+    require(index.find(&keys[0])==decltype(index)::missing,"empty index lookup");
+    index.reset(0);
+    for(unsigned i=0;i<keys.size();++i)require(index.insert(&keys[i],i),"capture index grows without losing entries");
+    const auto bytes=index.retained_bytes();
+    for(unsigned i=0;i<keys.size();++i){require(index.find(&keys[i])==i,"capture index collision/growth values");require(!index.insert(&keys[i],999),"capture index preserves the first duplicate value");}
+    index.reset(1);require(index.retained_bytes()==bytes,"capture index retains its high water storage");
+    for(const auto& key:keys)require(index.find(&key)==decltype(index)::missing,"capture index removes every previous-frame key");
+
+    AnmRegistry registry;std::array<AnmVm,64> roots;AnimationState saved;
+    auto* vm=registry.allocate();const auto handle=registry.submit(*vm,2);
+    std::vector<AnmVm*> input;
+    for(unsigned round=0;round<6;++round){
+        const unsigned count=round%2?17:64;input.clear();
+        for(unsigned n=0;n<count;++n){const auto i=count-1-n;roots[i].visual.translation.x=float(i+round*100);input.push_back(&roots[i]);input.push_back(nullptr);input.push_back(&roots[i]);input.push_back(vm);}
+        if(round%2)std::reverse(input.begin(),input.end());
+        require(saved.capture(registry,input),"capture duplicate, null and registered roots");
+        require(saved.instances()==count+1,"capture each owning root exactly once");
+        for(unsigned i=0;i<count;++i)roots[i].visual.translation.x=-1;
+        require(saved.restore(registry),"restore graph after root count and order change");
+        require(registry.find(handle)==vm,"root dedup keeps the registered VM owner");
+        for(unsigned i=0;i<count;++i)require(roots[i].visual.translation.x==float(i+round*100),"root values survive dedup and table reuse");
+    }
 }
-int main(){exact_graph();frozen_root();overflow_and_wrap();unregistered_overlay_owner();repeated_restore_allocations();std::puts("TH15 animation rollback ownership checks passed");}
+
+}
+int main(){exact_graph();frozen_root();overflow_and_wrap();unregistered_overlay_owner();repeated_restore_allocations();capture_index_and_root_reuse();std::puts("TH15 animation rollback ownership checks passed");}
