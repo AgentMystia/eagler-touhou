@@ -43,7 +43,7 @@ const server=createServer(async(req,res)=>{try{const p=new URL(req.url,'http://l
  if(p==='/'){res.setHeader('Content-Type','text/html');res.end(html);return;}if(p==='/favicon.ico'){res.writeHead(204).end();return;}
  if(p==='/data'){res.end(archive);return;}if(p==='/options'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(options));return;}
  const font=fonts.find(([n])=>p==='/shared/'+n);if(font){res.end(await readFile(font[1]));return;}
- assert.ok(p.startsWith('/runtime/'));const file=resolve(runtime,decodeURIComponent(p.slice(9)));assert.ok(file.startsWith(runtime+sep));res.setHeader('Content-Type',({'.mjs':'text/javascript','.html':'text/html','.json':'application/json','.wasm':'application/wasm','.css':'text/css'})[extname(file)]||'application/octet-stream');res.end(await readFile(file));
+ assert.ok(p.startsWith('/runtime/'));const file=resolve(runtime,decodeURIComponent(p.slice(9)));assert.ok(file.startsWith(runtime+sep));res.setHeader('Content-Type',({'.js':'text/javascript','.mjs':'text/javascript','.html':'text/html','.json':'application/json','.wasm':'application/wasm','.css':'text/css'})[extname(file)]||'application/octet-stream');res.end(await readFile(file));
  }catch(e){res.writeHead(404).end(String(e));}});
 function inputPayload(bytes){const d=bytes.readUInt32LE(24),chapters=bytes.readUInt32LE(28),frames=bytes.readUInt32LE(32);return {frames,chapters:bytes.subarray(40+d,40+d+chapters*8),data:bytes.subarray(40+d+chapters*8)};}
 try{

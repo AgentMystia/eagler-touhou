@@ -6,6 +6,15 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include <new>
+
+namespace {bool count_allocations=false;size_t allocation_count=0;}
+void* operator new(size_t bytes){if(count_allocations)++allocation_count;if(auto* value=std::malloc(bytes?bytes:1))return value;throw std::bad_alloc();}
+void operator delete(void* value)noexcept{std::free(value);}
+void* operator new[](size_t bytes){return ::operator new(bytes);}
+void operator delete[](void* value)noexcept{std::free(value);}
+void operator delete(void* value,size_t)noexcept{std::free(value);}
+void operator delete[](void* value,size_t)noexcept{std::free(value);}
 
 using namespace th15;
 using th15::multiplayer::AnimationState;
@@ -89,5 +98,22 @@ void unregistered_overlay_owner(){
     require(restored&&child&&child->creation_parent==restored&&restored->creation_parent==&owner,"nested registry and owning-VM references rebound together");
     require(restored->visual.translation.x==43&&registry.children(*restored).size()==1,"nested owned payload and registry graph");
 }
+void repeated_restore_allocations(){
+    AnmRegistry registry;std::vector<u32> handles;
+    for(unsigned i=0;i<512;++i){auto* vm=registry.allocate();handles.push_back(registry.submit(*vm,i%2?2:4));
+        if(i%4)require(registry.attach(*vm,*registry.find(handles[i-i%4])),"attach allocation fixture child");}
+    AnimationState saved;require(saved.capture(registry),"capture allocation fixture");
+    const auto expected=order(registry);size_t total=0;
+    for(unsigned round=0;round<8;++round){
+        allocation_count=0;count_allocations=true;const bool restored=saved.restore(registry);count_allocations=false;
+        require(restored,"restore allocation fixture");total+=allocation_count;
+        require(order(registry)==expected,"recycled callback links preserve both group orders");
+        for(unsigned i=0;i<handles.size();++i){auto* vm=registry.find(handles[i]);require(vm!=nullptr,"recycled node retains its handle");
+            if(i%4==0){const auto children=registry.children(*vm);require(children.size()==3,"recycled child link count");
+                for(unsigned j=0;j<3;++j)require(children[j]==registry.find(handles[i+3-j]),"recycled child order");}}
+    }
+    std::printf("repeated 512-VM restore allocations: %zu across 8 restores\n",total);
+    require(total<8*128,"fixed graph restoration must avoid allocations proportional to VM count");
 }
-int main(){exact_graph();frozen_root();overflow_and_wrap();unregistered_overlay_owner();std::puts("TH15 animation rollback ownership checks passed");}
+}
+int main(){exact_graph();frozen_root();overflow_and_wrap();unregistered_overlay_owner();repeated_restore_allocations();std::puts("TH15 animation rollback ownership checks passed");}
