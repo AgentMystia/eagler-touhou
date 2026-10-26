@@ -1,4 +1,5 @@
 #include "AnimationState.hpp"
+#include "VmPointerMap.hpp"
 #include "../game/AnmOverlay.hpp"
 #include <bitset>
 #include <algorithm>
@@ -120,7 +121,7 @@ bool AnimationState::capture(const AnmRegistry& registry,const std::vector<AnmVm
     }
     for(size_t i=0;i<s.root_count;++i)paired_vms(*s.roots[i].original,s.roots[i].vm,[&](const AnmVm& original,AnmVm& copy){s.originals.emplace_back(&original,&copy);});
     const auto by_original=[](const auto& a,const auto& b){return std::less<const AnmVm*>{}(a.first,b.first);};
-    std::sort(s.originals.begin(),s.originals.end(),by_original);
+    if(!nested.empty())std::sort(s.originals.begin(),s.originals.end(),by_original);
     for(size_t i=0;i<s.count;++i)if(const auto& image=s.nodes[i];image.nested&&image.original){
         const auto at=std::lower_bound(s.originals.begin(),s.originals.end(),std::make_pair(image.original,static_cast<const AnmVm*>(nullptr)),by_original);
         if(at==s.originals.end()||at->first!=image.original){error="Rollback is missing an embedded VM's owning root";return false;}
@@ -142,7 +143,7 @@ bool AnimationState::restore(AnmRegistry& registry,const RootResolver& roots,con
     }
     std::vector<AnmRegistry::Node*> nodes(s.count);
     std::vector<std::unique_ptr<AnmRegistry::Node>> external(s.count);
-    std::unordered_map<const AnmVm*,AnmVm*> copies,originals;
+    VmPointerMap copies(s.originals.size()),originals(s.originals.size());
     // Allocate node shells without dereferencing borrowed VMs. An overlay may
     // have destroyed/recreated those embedded addresses since capture.
     for(size_t i=0;i<s.count;++i){const auto& image=s.nodes[i];AnmRegistry::Node* node=nullptr;
@@ -162,12 +163,12 @@ bool AnimationState::restore(AnmRegistry& registry,const RootResolver& roots,con
     for(size_t i=0;i<s.root_count;++i){const auto& image=s.roots[i];auto* target=roots?roots(image.original):image.original;
         if(!target){registry.error="Rollback embedded VM owner was not rebound";return false;}*target=image.vm;targets[i]=target;pair(image.vm,*target);
     }
-    for(const auto& link:s.originals){auto found=copies.find(link.second);if(found==copies.end()){registry.error="Rollback animation graph is incomplete";return false;}originals.emplace(link.first,found->second);}
+    for(const auto& link:s.originals){auto* found=copies.find(link.second);if(!found){registry.error="Rollback animation graph is incomplete";return false;}originals.emplace(link.first,found);}
     for(size_t i=0;i<s.count;++i){const auto& image=s.nodes[i];auto& node=*nodes[i];
-        if(image.nested){auto found=originals.find(image.original);if(found==originals.end()||!image.external||image.frozen){registry.error="Rollback embedded VM ownership is invalid";return false;}node.borrowed=found->second;}
+        if(image.nested){auto* found=originals.find(image.original);if(!found||!image.external||image.frozen){registry.error="Rollback embedded VM ownership is invalid";return false;}node.borrowed=found;}
         if(image.external){auto* borrowed=node.borrowed;if(!registry.external.emplace(borrowed,std::move(external[i])).second){registry.error="Duplicate rollback VM owner";return false;}}
     }
-    auto parent=[&](AnmVm* old){auto found=originals.find(old);return found!=originals.end()?found->second:old&&roots?roots(old):old;};
+    auto parent=[&](AnmVm* old){auto* found=originals.find(old);return found?found:old&&roots?roots(old):old;};
     bool missing_sprite=false;
     const auto remap=[&](AnmVm& vm){each_vm(vm,[&](AnmVm& value){value.rotation_parent=parent(value.rotation_parent);value.creation_parent=parent(value.creation_parent);if(value.sprite_source&&sprites){value.sprite_source=sprites(value.sprite_source);missing_sprite|=value.sprite_source==nullptr;}});};
     for(size_t i=0;i<s.count;++i){auto& node=*nodes[i];const auto& image=s.nodes[i];node.parent=image.parent==none?nullptr:nodes[image.parent];
@@ -177,7 +178,7 @@ bool AnimationState::restore(AnmRegistry& registry,const RootResolver& roots,con
     for(auto* target:targets)remap(*target);
     if(missing_sprite){registry.error="Rollback sprite owner was not rebound";return false;}
     for(size_t group=0;group<s.groups.size();++group)for(auto index:s.groups[group]){auto* node=nodes[index];node->position=registry.groups[group].insert(registry.groups[group].end(),node);}
-    for(size_t layer=0;layer<s.layers.size();++layer)for(auto* old:s.layers[layer]){auto found=originals.find(old);if(found==originals.end()){registry.error="Rollback animation draw order is incomplete";return false;}registry.layers[layer].push_back(found->second);}
+    for(size_t layer=0;layer<s.layers.size();++layer)for(auto* old:s.layers[layer]){auto* found=originals.find(old);if(!found){registry.error="Rollback animation draw order is incomplete";return false;}registry.layers[layer].push_back(found);}
     for(auto index:s.pending)registry.pending_deletion.push_back(nodes[index]);
     registry.free_slots=s.free_slots;registry.generation=s.generation;registry.active_count=s.active_count;registry.error=s.error;AnmVm::presentation_counter=s.presentation_counter;return true;
 }

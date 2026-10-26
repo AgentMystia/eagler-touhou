@@ -27,7 +27,7 @@ bool StageFrameState::capture(StageGameplay& stage,SessionGameplay* session,cons
     frame_values::IdentityGuard guard;error.clear();if(!saved_)saved_=std::make_unique<Data>();auto& s=*saved_;s.ready=false;
     if(stage.messages.active()){error="Dialogue is a confirmed frame boundary";return false;}
     s.owner=&stage;s.session=session;s.dialogue=stage.messages.dialogue.get();s.deformation=stage.background_deformation.get();
-    s.stage=frame_values::copy(stage_fields(stage));s.background=frame_values::copy(background_fields(stage.background));s.hud=frame_values::copy(hud_fields(stage.hud));s.popups=frame_values::copy(popup_fields(stage.popups));if(session)s.session_values=frame_values::copy(session_fields(*session));
+    s.stage=stage_fields(stage);s.background=background_fields(stage.background);s.hud=hud_fields(stage.hud);s.popups=popup_fields(stage.popups);if(session)s.session_values=session_fields(*session);
     if(s.deformation){s.mesh=s.deformation->mesh;s.deformation_error=s.deformation->error;s.deformation_enabled=s.deformation->enabled;}
     s.primitives=stage.background.primitives;s.embedded=stage.background.embedded;
     s.roots.assign(roots.begin(),roots.end());for(auto& vm:stage.background.primitives)s.roots.push_back(&vm);for(auto& vm:stage.background.embedded)s.roots.push_back(&vm);s.roots.push_back(&stage.popups.glyph);

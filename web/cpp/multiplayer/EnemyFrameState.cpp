@@ -35,7 +35,7 @@ bool EnemyFrameState::capture(EnemyManager& manager){
     s.owner=&manager;s.owners.assign(manager.active.begin(),manager.active.end());
     if(s.entries.size()<s.owners.size())s.entries.resize(s.owners.size());
     for(size_t i=0;i<s.owners.size();++i){const auto& enemy=*s.owners[i];auto& entry=s.entries[i];
-        entry.state=enemy.state;entry.scripts=enemy.scripts.snapshot();entry.error=enemy.error;entry.script_error=enemy.scripts.error;
+        entry.state=enemy.state;enemy.scripts.snapshot(entry.scripts);entry.error=enemy.error;entry.script_error=enemy.scripts.error;
         entry.command_host=enemy.commands.host;entry.spawning=enemy.commands.spawning;entry.bullets=enemy.commands.bullets.host;
         entry.lasers=enemy.commands.lasers.host;entry.laser_scene=enemy.commands.lasers.scene;entry.visuals=enemy.commands.visuals.host;
     }
