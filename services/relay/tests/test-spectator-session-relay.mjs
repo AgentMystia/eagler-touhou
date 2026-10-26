@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 import {WebSocket} from 'ws';
 import {COOPERATIVE_SPECTATOR_MARKERS} from '../src/spectator-stages.mjs';
 const child=spawn(process.execPath,[fileURLToPath(new URL('../src/netplay-relay.mjs',import.meta.url))],{windowsHide:true,stdio:['ignore','pipe','pipe'],
- env:{...process.env,EAGLER_NETPLAY_RELAY_HOST:'127.0.0.1',EAGLER_NETPLAY_RELAY_PORT:'0',EAGLER_NETPLAY_PUBLIC_NICKNAMES:'0',EAGLER_NETPLAY_STUN_URLS:'',EAGLER_NETPLAY_CONNECTIONS_PER_MINUTE:'240',EAGLER_NETPLAY_MAX_ROOMS_PER_IP:'6'}});
+ env:{...process.env,EAGLER_NETPLAY_GAMEPLAY_RELAY_FALLBACK:'1',EAGLER_NETPLAY_RELAY_HOST:'127.0.0.1',EAGLER_NETPLAY_RELAY_PORT:'0',EAGLER_NETPLAY_PUBLIC_NICKNAMES:'0',EAGLER_NETPLAY_STUN_URLS:'',EAGLER_NETPLAY_CONNECTIONS_PER_MINUTE:'240',EAGLER_NETPLAY_MAX_ROOMS_PER_IP:'6'}});
 let log='',port;child.stdout.on('data',b=>{log+=b;const m=String(b).match(/listening ws:\/\/127\.0\.0\.1:(\d+)/);if(m)port=Number(m[1]);});child.stderr.on('data',b=>log+=b);
 const sockets=[];
 async function wait(check,label){const end=Date.now()+6000;while(!check()){if(Date.now()>end)throw Error(label+' timeout\n'+log);await new Promise(r=>setTimeout(r,5));}}

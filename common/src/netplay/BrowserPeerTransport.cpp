@@ -466,6 +466,7 @@ EM_JS(int, eagler_peer_connect, (const char *relayUrlPtr, const char *tagPtr, in
             iceServers: Array.isArray(Module.eaglerOptions?.netplayIceServers)
                 ? Module.eaglerOptions.netplayIceServers : [],
             iceTransportPolicy: Module.eaglerOptions?.netplayPreferTurn === true ? 'relay' : 'all',
+            allowWebsocketFallback: Module.eaglerOptions?.netplayAllowWebsocketFallback === true,
             sendSignal(payload) {
                 const message = JSON.stringify(payload);
                 if (this.signal?.readyState === WebSocket.OPEN) {
@@ -495,6 +496,10 @@ EM_JS(int, eagler_peer_connect, (const char *relayUrlPtr, const char *tagPtr, in
             },
             setRoute(mode) {
                 if (this.closed || this.route) return;
+                if (mode === 'failed' || (mode === 'relay' && !this.allowWebsocketFallback)) {
+                    this.fail(mode === 'failed' ? 'WebRTC connection unavailable' : 'WebRTC connection unavailable; WebSocket gameplay fallback is disabled', false);
+                    return;
+                }
                 this.route = mode;
                 globalThis.__eaglerNetplayTransport = mode;
                 if (mode === 'rtc') {
@@ -921,14 +926,14 @@ EM_JS(int, eagler_peer_connect, (const char *relayUrlPtr, const char *tagPtr, in
                     }
                 };
                 socket.onerror = () => {
-                    if (!this.route && this.relay?.readyState === WebSocket.OPEN) this.setRoute('relay');
+                    if (!this.route && this.relay?.readyState !== WebSocket.OPEN) this.fail('WebRTC signaling unavailable', false);
                 };
                 socket.onclose = () => {
                     if (this.signal !== socket) return;
                     this.signal = null;
                     if (this.closed) return;
                     if (this.route === 'rtc') this.scheduleSignalReconnect();
-                    else if (!this.route && this.relay?.readyState === WebSocket.OPEN) this.setRoute('relay');
+                    else if (!this.route && this.relay?.readyState !== WebSocket.OPEN) this.fail('WebRTC signaling unavailable', false);
                 };
             },
             openRelay() {
@@ -937,19 +942,22 @@ EM_JS(int, eagler_peer_connect, (const char *relayUrlPtr, const char *tagPtr, in
                 this.relay=socket;socket.binaryType='arraybuffer';
                 socket.onopen=()=>{
                     if(this.closed || this.relay!==socket)return;
-                    if(!this.route && this.signal && this.signal.readyState>=WebSocket.CLOSING)this.setRoute('relay');
                     this.onReceive?.();
                 };
                 socket.onmessage=event=>{
                     if(this.closed || this.relay!==socket)return;
                     if(typeof event.data==='string'){
                         let message;try{message=JSON.parse(event.data);}catch{return;}
-                        if(message?.type==='route' && (message.mode==='rtc'||message.mode==='relay'))this.setRoute(message.mode);
+                        if(message?.type==='route' && (message.mode==='rtc'||message.mode==='relay'||message.mode==='failed'))this.setRoute(message.mode);
                     }else if(!this.route || this.route==='relay')this.receiveBinary(event.data);
                 };
                 socket.onerror=()=>{if(this.route==='relay' && this.relay===socket)this.fail('WebSocket relay error');};
                 socket.onclose=event=>{
                     if(this.closed || this.relay!==socket || this.route==='rtc')return;
+                    if(!this.route && this.signal?.readyState!==WebSocket.OPEN) {
+                        this.fail('WebRTC connection unavailable', false);
+                        return;
+                    }
                     if(this.route!=='relay')return;
                     // The relay retires a run when its stream closes. Reusing
                     // that run would invent missing history; offer room return.

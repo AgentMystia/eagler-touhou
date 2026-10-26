@@ -8,7 +8,7 @@ const start = source.indexOf('EM_JS(int, eagler_peer_connect,');
 const body = source.indexOf('{', start), end = source.indexOf('\n});', body);
 assert.ok(start >= 0 && end > body);
 
-function fixture(preference, tag, seat, players) {
+function fixture(preference, tag, seat, players, allowWebsocketFallback = false) {
   class Socket {
     static OPEN = 1; static CONNECTING = 0; static CLOSING = 2;
     readyState = 1; sent = [];
@@ -26,7 +26,7 @@ function fixture(preference, tag, seat, players) {
   const heap = new Uint8Array(512), global = {};
   heap.set(new TextEncoder().encode('wss://example.test/room'), 0);
   heap.set(new TextEncoder().encode(tag), 100);
-  const context = {globalThis:global, Module:{eaglerOptions:{netplayPreferTurn:preference}},
+  const context = {globalThis:global, Module:{eaglerOptions:{netplayPreferTurn:preference,netplayAllowWebsocketFallback:allowWebsocketFallback}},
     location:{href:'https://example.test/'}, HEAPU8:heap, TextDecoder, URL,
     WebSocket:Socket, RTCPeerConnection:Peer, Uint8Array, ArrayBuffer, Blob,
     setTimeout:()=>1, clearTimeout(){}, setInterval:()=>1, clearInterval(){}};
@@ -58,10 +58,9 @@ for (const tag of ['th06','th07','th075','th08','th09','th10','th11','th15']) {
     state.handlePeerConnectionState(peerId);
     assert.equal(state.signal.sent.at(-1).type, 'rtc-failed');
     state.signal.onmessage({data:JSON.stringify({type:'route', mode:'relay'})});
-    assert.equal(state.route, 'relay');
-    assert.equal(peer.pc.closed, true);
-    state.relay.onmessage({data:new Uint8Array([7]).buffer});
-    assert.equal(state.received[0][0], 7, 'WebSocket fallback still receives gameplay');
+    assert.equal(state.route, null);
+    assert.equal(state.disconnected, true, 'WebSocket gameplay fallback stays disabled');
+    assert.equal(state.received.length, 0);
     state.close();
   }
 }
@@ -73,4 +72,8 @@ await state.restartPeerIce(1);
 assert.equal(state.peers.get(1).pc.config.iceTransportPolicy, 'relay', 'Recovery retains TURN preference');
 assert.equal(state.peers.get(1).pc.offerOptions.iceRestart, true);
 state.close();
-console.log('browser peer TURN preference: PASS | 8 titles | 2 and 3 players | both roles | recovery and WebSocket fallback');
+const legacy = fixture(false, 'th09', 0, 2, true);
+legacy.setRoute('relay');
+assert.equal(legacy.route, 'relay', 'The explicit compatibility switch retains the old route');
+legacy.close();
+console.log('browser peer TURN preference: PASS | 8 titles | 2 and 3 players | both roles | recovery and disabled WebSocket fallback');
