@@ -12,4 +12,6 @@
 
 最终构建通过全部 10 项原生检查，以及三人 Extra 正常、CPU 六倍降速、弱网三组浏览器验证，各席确认输入一致。相邻慢 CPU 对照的推进帧率分别为 8.03 与 8.01 fps，当前测量没有显示整体帧率提升。
 
-源码修改位于 `ports/th15-mp`。本轮构建和验证留在本地，测量数据与 CPU 调用栈保存在 `artifacts/th15-capture-optimize-20261026/`。
+源码修改位于 `ports/th15-mp`，提交 `0ffc2cd6a`。测量数据与 CPU 调用栈保存在 `artifacts/th15-capture-optimize-20261026/`。
+
+2026-10-26 已发布到 `test.touhou.vip`，发布名 `th15-snapshot-optimize-20261026-63ba987a733f`，多人 Runtime generation 为 `2099c8274acdd55202ad324320dc02046a8b86b2c89806b5d0cf969fc47833b7`。公网两人延迟模式、旁观、三人回滚及离线录像播放验证通过，断输入等待时显示 0 fps。发布保留错误报告器和共享字体清单，游戏包、联机服务、其他 Runtime 及主站、beta 发布身份核对一致。部署记录与回退脚本位置保存在 `artifacts/th15-optimized-test-deploy-20261026/result.json`。
