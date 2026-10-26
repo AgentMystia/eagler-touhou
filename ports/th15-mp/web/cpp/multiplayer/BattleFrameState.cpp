@@ -68,7 +68,7 @@ bool BattleFrameState::capture(GameBattle& battle,const std::vector<AnmVm*>& ext
     BulletFrameState::append_roots(*battle.bullet_scene,battle.animations.registry,s.roots);LaserFrameState::append_roots(*battle.laser_scene,battle.animations.registry,s.roots);ItemFrameState::append_roots(*battle.items,battle.animations.registry,s.roots);
     if(!s.animations.capture(battle.animations.registry,s.roots)){error=s.animations.error;return false;}
     if(!s.callbacks.capture(*battle.active_schedule)){error=s.callbacks.error;return false;}
-    s.battle=frame_values::copy(battle_fields(battle));s.spell=frame_values::copy(spell_fields(battle.spell_card));
+    s.battle=battle_fields(battle);s.spell=spell_fields(battle.spell_card);
     s.environment=battle.environment;s.visual=battle.visual_random;s.presentation_counter=guard.value;
     if(battle.progress)s.progress=*battle.progress;else s.progress.reset();
     if(battle.records)s.records=*battle.records;else s.records.reset();
@@ -78,11 +78,11 @@ bool BattleFrameState::capture(GameBattle& battle,const std::vector<AnmVm*>& ext
         auto& pilot=*battle.pilots[seat];if(!pilot.player||!pilot.bomb||!pilot.collection){error="Pilot owner is not ready for rollback";return false;}
         if(!s.players[seat])s.players[seat]=std::make_unique<Data::PlayerImage>();auto& image=*s.players[seat];auto& player=*pilot.player;
         image.owner=&player;image.bomb=pilot.bomb;image.pilot=&pilot;image.character=pilot.character;
-        image.header=player.resource.header;image.motion=player.motion;image.damage=player.damage;image.visuals=frame_values::copy(visual_fields(player.visuals));
-        image.life=frame_values::copy(life_fields(player.life));image.frame=frame_values::copy(frame_fields(player.frame));image.shot_context=frame_values::copy(shot_context_fields(player.shot_context));
-        image.shots=frame_values::copy(shot_fields(player.shots));image.options=frame_values::copy(option_fields(player.options));image.pilot_values=frame_values::copy(pilot_fields(pilot));
+        image.header=player.resource.header;image.motion=player.motion;image.damage=player.damage;image.visuals=visual_fields(player.visuals);
+        image.life=life_fields(player.life);image.frame=frame_fields(player.frame);image.shot_context=shot_context_fields(player.shot_context);
+        image.shots=shot_fields(player.shots);image.options=option_fields(player.options);image.pilot_values=pilot_fields(pilot);
         image.collection_power=pilot.collection->small_power_amount;image.collection_error=pilot.collection->error;image.error=player.error;image.initialized=player.initialized;
-        image.bomb_values=frame_values::copy(bomb_fields(*pilot.bomb));
+        image.bomb_values=bomb_fields(*pilot.bomb);
         switch(pilot.character){
         case 0:{auto& bomb=static_cast<BombReimu&>(*pilot.bomb);image.orbs=bomb.orbs;image.orbs_available=bomb.orbs_available;image.aura=bomb.aura;break;}
         case 1:{auto& bomb=static_cast<BombMarisa&>(*pilot.bomb);image.first=bomb.beam;image.aura=bomb.aura;break;}
