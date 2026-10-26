@@ -46,13 +46,14 @@ void legacy_replay_admission(){
   for(unsigned frame=0;frame<180;++frame){std::array<Netplay::FrameInput,3> inputs;for(unsigned seat=0;seat<count;++seat)inputs[seat]=input(frame,seat);CHECK(old.Append(frame,frame<90?1:2,inputs.data(),count));}
   std::vector<unsigned char> bytes;CHECK(old.Encode(&bytes));ReplayArchive replay;
   CHECK(replay.Load(bytes.data(),bytes.size()));CHECK(replay.LegacyStageFlow());
-  CHECK(replay.CompatibleBuild(current)==known);CHECK(!replay.CompatibleBuild({}));
-  CHECK(replay.CompatibleBuild(config.build)==known);
+  const bool compatible=known&&SessionSetup::GameplayVersion==21;
+  CHECK(replay.CompatibleBuild(current)==compatible);CHECK(!replay.CompatibleBuild({}));
+  CHECK(replay.CompatibleBuild(config.build)==compatible);
   CHECK(replay.Info().chapterCount==2&&replay.FrameCount()==180);
   for(unsigned frame=0;frame<180;++frame)CHECK(*replay.FrameAt(frame)==*old.FrameAt(frame));
   CHECK(replay.Encode(bytes,"LEGACY",0,false));ReplayArchive restored;
   CHECK(restored.Load(bytes.data(),bytes.size())&&restored.LegacyStageFlow());
-  CHECK(restored.CompatibleBuild(current)==known);
+  CHECK(restored.CompatibleBuild(current)==compatible);
   replay.Clear();CHECK(!replay.LegacyStageFlow()&&!replay.CompatibleBuild(current));
  }
 }
