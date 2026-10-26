@@ -1,6 +1,6 @@
 # 文档总表
 
-共 267 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
+共 268 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
 
 项目说明按当前目录重写；许可证保留原文，生成报告由各自工具更新。原有 498 份 Markdown 的逐篇去向见[旧文档去向](history/INDEX.md)。
 
@@ -158,6 +158,7 @@
 | 开发工具 | [tools/browser/README.md](../tools/browser/README.md) | 浏览器测试工具 |
 | 开发工具 | [tools/ci/README.md](../tools/ci/README.md) | CI 来源资产清单 |
 | 开发工具 | [tools/ports/README.md](../tools/ports/README.md) | 各作源码检查 |
+| 架构说明 | [docs/architecture/netplay-routing.md](architecture/netplay-routing.md) | 联机自适应选路 |
 | 架构说明 | [docs/architecture/netplay.md](architecture/netplay.md) | 联机输入时序与 Adonis |
 | 架构说明 | [docs/architecture/rollback.md](architecture/rollback.md) | 回滚运行参考 |
 | 架构说明 | [docs/architecture/source-layout.md](architecture/source-layout.md) | 游戏源码目录 |
