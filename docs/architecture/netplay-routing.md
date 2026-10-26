@@ -21,6 +21,8 @@ node launcher/tests/test-peer-runtime-update.mjs
 
 这种更新适用于原生 ABI 相同的浏览器桥修改。完整源码构建直接使用相同的 `BrowserPeerTransport.cpp`，两种发布入口共用传输实现。
 
+更新工具的独立检查使用显式绑定源，可在 Launcher 稀疏检出中执行。公共传输检查同时核对原始可靠通道和自适应可靠发送，维修流量共用已有的背压与容量边界。
+
 ## 路径与兼容
 
 每对玩家保留当前 WebRTC 连接和至多一条 TURN 连接。备用连接强制 `iceTransportPolicy=relay`，使用信令服务签发的第一个 TURN 候选及其现有端口配置。初始连接已经走 TURN 或本机启用「优先使用 TURN」时，继续沿用该路径。
