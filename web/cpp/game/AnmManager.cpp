@@ -21,7 +21,12 @@ AnmVm* AnmManager::create(AnmResource& file,i32 script,u16 file_id,u32 layer,boo
     auto& node=vm->registry;node.value=vm;node.next=node.previous=nullptr;const u32 list=overlay?1:0;
     if(prepend){node.next=heads[list];if(heads[list])heads[list]->previous=&node;else tails[list]=&node;heads[list]=&node;}
     else{node.previous=tails[list];if(tails[list])tails[list]->next=&node;else heads[list]=&node;tails[list]=&node;}
-    if(++next_id==0)++next_id;vm->id=next_id;active.emplace(next_id,vm);return vm;
+    if(++next_id==0)++next_id;vm->id=next_id;active.emplace(next_id,vm);
+    // Mark after the id is assigned: the sidecar keys by id, and the first
+    // frame of a new VM must be presented as-is (owners write the authored
+    // position within this same tick).
+    presentation::note_spawn(*vm);
+    return vm;
 }
 AnmVm* AnmManager::spawn(AnmVm& parent,i32 script,u32 op){if(!parent.resource)return nullptr;return create(*parent.resource,script,parent.file_index,parent.layer,op==90||op==92,op==91||op==92);}
 void AnmManager::destroy(AnmVm& vm){
