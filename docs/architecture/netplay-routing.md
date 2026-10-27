@@ -25,6 +25,8 @@ node launcher/tests/test-peer-runtime-update.mjs
 
 ## 路径与兼容
 
+玩家对战默认使用 WebRTC，建立失败后返回等待室。启用旧 WebSocket 对战兼容时，服务端设置 `EAGLER_NETPLAY_GAMEPLAY_RELAY_FALLBACK=1`，客户端同时设置 `netplayAllowWebsocketFallback=true`。房间、信令与旁观继续由 Relay 承载。生命周期测试对兼容场景显式开启回退，默认关闭场景由服务端专项检查覆盖。
+
 每对玩家保留当前 WebRTC 连接和至多一条 TURN 连接。备用连接强制 `iceTransportPolicy=relay`，使用信令服务签发的第一个 TURN 候选及其现有端口配置。初始连接已经走 TURN 或本机启用「优先使用 TURN」时，继续沿用该路径。
 
 双方通过当前可靠控制通道交换 `etr1:` 能力和备用 SDP/ICE，不增加 Relay 消息种类。相同控制通道承载备用协商，双方确认支持后才启用选路。旧版客户端继续使用既有二进制输入与控制流。
