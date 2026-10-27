@@ -77,9 +77,11 @@ async function openLobby(port, room, clientId, policy = '') {
   const initial = await first;
   assert.equal(initial.type, "state", `${room}: ${JSON.stringify(initial)}`);
   assert.equal(initial.room.prankMode, false, 'prank mode stays disabled at room creation');
-  const initialPolicy = multiplayerInputTimingPolicy(multiplayerConfigForProduct(room.split('-')[0]));
-  assert.equal(initial.room.predictionLimit, initialPolicy.predictionLimit, `${room}: initial prediction policy`);
-  assert.equal(initial.room.adonisMode, initialPolicy.rollback ? 0 : 1, `${room}: initial timing mode`);
+  const product = room.split('-')[0];
+  const initialPolicy = multiplayerInputTimingPolicy(multiplayerConfigForProduct(product));
+  const defaultRollback = initialPolicy.rollback && product !== 'th15mp';
+  assert.equal(initial.room.predictionLimit, defaultRollback ? initialPolicy.predictionLimit : 0, `${room}: initial prediction policy`);
+  assert.equal(initial.room.adonisMode, defaultRollback ? 0 : 1, `${room}: initial timing mode`);
   return socket;
 }
 

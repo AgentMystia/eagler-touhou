@@ -9,6 +9,7 @@ struct MultiplayerOptions {
     bool challenge=false;
     std::array<int,3> selections{};
     i32 chapter_threshold=0;
+    // Recorded rule 20 owns both the stage handoff and Reisen shield behavior.
     bool replay_legacy_stage_flow=false;
     bool spectator=false;
     bool valid()const noexcept {

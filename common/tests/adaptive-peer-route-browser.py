@@ -15,6 +15,7 @@ from playwright.sync_api import sync_playwright
 parser = argparse.ArgumentParser()
 parser.add_argument('--turn-origin', required=True)
 parser.add_argument('--browser', default='msedge')
+parser.add_argument('--game', choices=['th09', 'th12', 'th15'], default='th09')
 parser.add_argument('--output', type=pathlib.Path)
 args = parser.parse_args()
 root = pathlib.Path(__file__).resolve().parents[2]
@@ -86,19 +87,19 @@ try:
             page.evaluate("""seat => {const frame=document.createElement('iframe');frame.src='/peer?seat='+seat;document.body.append(frame);} """, seat)
             page.wait_for_function('seat => window.frames.length > seat && window.frames[seat].document.readyState === "complete"', arg=seat)
             frame = page.frames[seat + 1]
-            frame.evaluate("""seat => {
+            frame.evaluate("""({seat,game}) => {
                 window.testSeat=seat; window.Module={eaglerOptions:{netplayIceServers:parent.testServers}};
                 window.HEAPU8=new Uint8Array(1024);
                 HEAPU8.set(new TextEncoder().encode('wss://fixture.test/room'),0);
-                HEAPU8.set(new TextEncoder().encode('th09'),100);
+                HEAPU8.set(new TextEncoder().encode(game),100);
                 window.__eaglerNetplayLanActive=true;
                 window.errors=[];
                 window.addEventListener('error',e=>errors.push(e.message));
                 window.dropInput=false;window.holdControl=false;window.held=[];
                 const original=RTCDataChannel.prototype.send;
                 RTCDataChannel.prototype.send=function(data){
-                    if(this.label==='th09-input' && dropInput)return;
-                    if(this.label==='th09-control' && holdControl && typeof data!=='string'){
+                    if(this.label===game+'-input' && dropInput)return;
+                    if(this.label===game+'-control' && holdControl && typeof data!=='string'){
                         const copy=data.slice();held.push(()=>original.call(this,copy));return;
                     }
                     return original.call(this,data);
@@ -110,7 +111,7 @@ try:
                     send(text){if(this.signal)parent.sendSignal(seat,text);}
                     close(){this.readyState=3;this.onclose?.({code:1000});}
                 };
-            }""", seat)
+            }""", {'seat': seat, 'game': args.game})
             frame.evaluate('window.connectTransport=' + embedded('EM_JS(int, eagler_peer_connect,', 'relayUrlPtr,tagPtr,localPlayer,playerCount,stageSpectatorHistory'))
             frame.evaluate('window.sendControl=' + embedded('EM_JS(int, eagler_peer_send,', 'data,size,control'))
             frame.evaluate('window.sendInput=' + embedded('EM_JS(int, eagler_peer_send_to,', 'peerId,data,size'))
@@ -144,7 +145,7 @@ try:
         for frame in frames:
             frame.evaluate('__eaglerPeerTransport.close()')
         report = {'test':'production EM_JS | real direct and TURN | controlled input loss | reliable control replay',
-            'timestamp':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'game':args.game, 'timestamp':datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'base':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),
             'received':received,'peers':results}
         if args.output:

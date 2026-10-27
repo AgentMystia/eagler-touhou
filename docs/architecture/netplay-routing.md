@@ -25,6 +25,8 @@ node launcher/tests/test-peer-runtime-update.mjs
 
 ## 路径与兼容
 
+玩家对战默认使用 WebRTC，建立失败后返回等待室。启用旧 WebSocket 对战兼容时，服务端设置 `EAGLER_NETPLAY_GAMEPLAY_RELAY_FALLBACK=1`，客户端同时设置 `netplayAllowWebsocketFallback=true`。房间、信令与旁观继续由 Relay 承载。生命周期测试对兼容场景显式开启回退，默认关闭场景由服务端专项检查覆盖。
+
 每对玩家保留当前 WebRTC 连接和至多一条 TURN 连接。备用连接强制 `iceTransportPolicy=relay`，使用信令服务签发的第一个 TURN 候选及其现有端口配置。初始连接已经走 TURN 或本机启用「优先使用 TURN」时，继续沿用该路径。
 
 双方通过当前可靠控制通道交换 `etr1:` 能力和备用 SDP/ICE，不增加 Relay 消息种类。相同控制通道承载备用协商，双方确认支持后才启用选路。旧版客户端继续使用既有二进制输入与控制流。
@@ -66,6 +68,21 @@ python common/tests/adaptive-peer-route-browser.py --turn-origin https://your-la
 ```
 
 浏览器脚本从诊断接口取得短期 TURN 凭据，在本机两个独立 frame 中执行生产 `EM_JS` 传输。房间信令由隔离 fixture 提供，初始路径使用真实直连，备用路径使用指定站点的实际 TURN。测试只丢弃直连输入通道的发送，并暂存一条可靠控制消息，以验证新路径重发与旧路径迟到去重。`--output` 可保存不含凭据的 JSON 结果。
+
+### TH12 与 TH15 多人接入
+
+TH12 和 TH15 多人 Runtime 通过 `eagler::netplay` 使用同一套 `BrowserPeerTransport`，选路直接嵌入运行脚本。游戏标签分别为 `th12` 和 `th15`，双人建立一组路径，三人对每个对端分别建立路径；各组路径独立探测、协商与释放。
+
+```sh
+python common/tests/adaptive-peer-route-browser.py --turn-origin https://your-launcher.example --game th12 --output th12-route.json
+python common/tests/adaptive-peer-route-browser.py --turn-origin https://your-launcher.example --game th15 --output th15-route.json
+```
+
+这两个入口验证两作标签对应的真实直连、TURN 切换和可靠控制顺序。`browser-peer-turn-preference.test.mjs` 同时覆盖两作双人、三人配置及显式固定 TURN。
+
+已有多人运行包可使用 `launcher/scripts/update-peer-runtime.mjs` 更新四个同签名浏览器绑定：TH12 的目标为 `core.mjs`，TH15 为 `th15.mjs`。工具校验绑定参数，保留 WASM 和其余脚本内容，并输出源文件与更新结果的 SHA-256 记录。正式发布时同步重建运行包清单与代际身份。完整源码构建继续使用两作的多人构建入口。
+
+两作各自的多人开发分支承载此次公共传输接入。原生回滚窗口、输入身份和规则版本沿用各作当前实现。
 
 ### 实际游戏换路
 
