@@ -1,6 +1,6 @@
 # 文档总表
 
-共 267 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
+共 279 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
 
 项目说明按当前目录重写；许可证保留原文，生成报告由各自工具更新。原有 498 份 Markdown 的逐篇去向见[旧文档去向](history/INDEX.md)。
 
@@ -63,7 +63,7 @@
 | 作品适配表 | [ports/th15/ADAPTATION.md](../ports/th15/ADAPTATION.md) | th15 适配检查 |
 | 作品适配表 | [ports/th20/ADAPTATION.md](../ports/th20/ADAPTATION.md) | th20 适配检查 |
 | 作品源码文档 | [ports/th06/docs/DEVELOPMENT.md](../ports/th06/docs/DEVELOPMENT.md) | TH06 开发指南 |
-| 作品源码文档 | [ports/th06/docs/records/2026-10-26-spectator-browser.md](../ports/th06/docs/records/2026-10-26-spectator-browser.md) | th06 普通局旁观检查 |
+| 作品源码文档 | [ports/th06/docs/records/2026-10-26-spectator-browser.md](../ports/th06/docs/records/2026-10-26-spectator-browser.md) | 合作旁观状态验收 |
 | 作品源码文档 | [ports/th07/docs/DEVELOPMENT.md](../ports/th07/docs/DEVELOPMENT.md) | TH07 开发指南 |
 | 作品源码文档 | [ports/th07/vendored/README.md](../ports/th07/vendored/README.md) | 第三方构建依赖 |
 | 作品源码文档 | [ports/th075-mp/docs/DEVELOPMENT.md](../ports/th075-mp/docs/DEVELOPMENT.md) | 萃梦想多人版开发 |
@@ -78,7 +78,7 @@
 | 作品源码文档 | [ports/th10/docs/DEVELOPMENT.md](../ports/th10/docs/DEVELOPMENT.md) | TH10 开发指南 |
 | 作品源码文档 | [ports/th11-mp/docs/DEVELOPMENT.md](../ports/th11-mp/docs/DEVELOPMENT.md) | TH11 多人版开发指南 |
 | 作品源码文档 | [ports/th11-mp/docs/records/2026-10-24-display-high-refresh.md](../ports/th11-mp/docs/records/2026-10-24-display-high-refresh.md) | th11 高刷新呈现 ｜ 2026-10-24 |
-| 作品源码文档 | [ports/th11-mp/docs/records/2026-10-25-spectator-stage6.md](../ports/th11-mp/docs/records/2026-10-25-spectator-stage6.md) | th11 六面旁观逐帧对照 |
+| 作品源码文档 | [ports/th11-mp/docs/records/2026-10-25-spectator-stage6.md](../ports/th11-mp/docs/records/2026-10-25-spectator-stage6.md) | 第六关多人 Replay 一致性 |
 | 作品源码文档 | [ports/th11-mp/portable/presentation-lab/CAMPAIGN.md](../ports/th11-mp/portable/presentation-lab/CAMPAIGN.md) | th11 帧间位移巡检 |
 | 作品源码文档 | [ports/th11-mp/portable/presentation-lab/README.md](../ports/th11-mp/portable/presentation-lab/README.md) | th11 Presentation Lab |
 | 作品源码文档 | [ports/th11/docs/DEVELOPMENT.md](../ports/th11/docs/DEVELOPMENT.md) | TH11 开发指南 |
@@ -161,6 +161,7 @@
 | 开发工具 | [tools/browser/README.md](../tools/browser/README.md) | 浏览器测试工具 |
 | 开发工具 | [tools/ci/README.md](../tools/ci/README.md) | CI 来源资产清单 |
 | 开发工具 | [tools/ports/README.md](../tools/ports/README.md) | 各作源码检查 |
+| 架构说明 | [docs/architecture/netplay-routing.md](architecture/netplay-routing.md) | 联机自适应选路 |
 | 架构说明 | [docs/architecture/netplay.md](architecture/netplay.md) | 联机输入时序与 Adonis |
 | 架构说明 | [docs/architecture/rollback.md](architecture/rollback.md) | 回滚运行参考 |
 | 架构说明 | [docs/architecture/source-layout.md](architecture/source-layout.md) | 游戏源码目录 |
@@ -169,6 +170,14 @@
 | 迁移记录 | [docs/migration/README.md](migration/README.md) | Monorepo 迁移记录 |
 | 迁移记录 | [docs/migration/local-workspace-20261019.md](migration/local-workspace-20261019.md) | 本地工作区归并 ｜ 2026-10-19 |
 | 迁移记录 | [docs/migration/th12-subtree-20261024.md](migration/th12-subtree-20261024.md) | th12 子树继承 ｜ 上游同源历史 |
+| 历史记录 | [archive/README.md](../archive/README.md) | 历史记录 |
+| 历史记录 | [archive/th15-rollback-20261026/th15-capture-index-20261026.md](../archive/th15-rollback-20261026/th15-capture-index-20261026.md) | TH15 多人快照：连续捕获索引 |
+| 历史记录 | [archive/th15-rollback-20261026/th15-multiplayer-shield-boss-20261026.md](../archive/th15-rollback-20261026/th15-multiplayer-shield-boss-20261026.md) | TH15 多人兔机护盾与 Boss 伤害 |
+| 历史记录 | [archive/th15-rollback-20261026/th15-multiplayer-stress-20261026.md](../archive/th15-rollback-20261026/th15-multiplayer-stress-20261026.md) | TH15 多人压力验证 |
+| 历史记录 | [archive/th15-rollback-20261026/th15-rollback-allocation-20261026.md](../archive/th15-rollback-20261026/th15-rollback-allocation-20261026.md) | TH15 多人回滚：复用快照容器 |
+| 历史记录 | [archive/th15-rollback-20261026/th15-rollback-experiment-20261026.md](../archive/th15-rollback-20261026/th15-rollback-experiment-20261026.md) | TH15 多人回滚实验 |
+| 历史记录 | [archive/th15-rollback-20261026/th15-rollback-stress-fix-20261026.md](../archive/th15-rollback-20261026/th15-rollback-stress-fix-20261026.md) | TH15 密集回滚修复与复测 |
+| 历史记录 | [archive/th15-rollback-20261026/th15-upstream-rebuild-20261026.md](../archive/th15-rollback-20261026/th15-upstream-rebuild-20261026.md) | TH15 多人实验分支与上游同步 |
 | 历史记录 | [docs/history/INDEX.md](history/INDEX.md) | 旧文档去向 |
 | 历史记录 | [docs/history/README.md](history/README.md) | 历史与迁移 |
 | 历史记录 | [docs/history/port-sync-20261023.md](history/port-sync-20261023.md) | 普通版到 MP 全量同步 ｜ 2026-10-23 |
