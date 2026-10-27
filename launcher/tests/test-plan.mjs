@@ -25,6 +25,7 @@ export const REPOSITORY_NODE_TESTS = Object.freeze([
   "tests/test-build-profile.mjs",
   "tests/test-runtime-build-profiles.mjs",
   "tests/test-runtime-source-plan.mjs",
+  "tests/test-peer-runtime-update.mjs",
   "tests/test-host-workspace.mjs",
   "tests/test-host-artwork-adapter-coverage.mjs",
   "tests/test-format-adapter-coverage.mjs",

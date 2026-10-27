@@ -20,6 +20,8 @@ Launcher 房间回报和 UI 状态展示测量结果；Native Runtime 在本地�
 
 ## 房间手动丢包测试
 
+运行期公共传输通过当前路径和 TURN 备用路径的端到端回显比较质量，保留游戏会话并协调双方换路。测量启动阶段沿用同一实际通道，开局后启用质量选路。组件、消息边界、成本与验证入口见[联机自适应选路](netplay-routing.md)。
+
 在房间中点击自己的玩家卡片，打开个人状态面板后选择「测试丢包率」。一次操作分别测量与房内其他玩家的直连和 TURN 路径，展示「你 → 对方」和「对方 → 你」的本次消息丢失比例，适用于全部多人作品。
 
 [`room-network.mts`](../../launcher/src/launcher/room-network.mts) 复用房间的独立 ICE 探测连接。直连连接只配置 STUN，TURN 连接强制 relay，测试结果按路径分开保留。[`room-packet-loss.mts`](../../launcher/src/launcher/room-packet-loss.mts) 使用可靠通道协调测试、交换收发摘要，使用 `ordered:false, maxRetransmits:0` 的专用通道发送 300 个 96 字节消息，间隔 16 ms。末尾保留 1 秒接收窗，再以唯一序号计数计算两个方向的比例；重复包不增加接收数，接收窗内的乱序正常计入。
