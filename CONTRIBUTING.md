@@ -74,7 +74,11 @@ npm test
 
 以上包含文档和前端检查。游戏改动再运行该作开发指南中的编译与行为检查；Relay 等服务运行自身测试。
 
+来源历史回归在隔离的临时仓库中先物化作品目录，再调用标准 `git subtree split`，同时核对导出树和上游祖先，覆盖 Windows 与 Linux 的路径前置条件。
+
 新建或移动文档后，运行 `npm run docs:index` 更新[全部文档表](docs/INDEX.md)，再执行 `npm run docs:check`。验收记录使用[模板](docs/adaptation/record-template.md)。
+
+带日期的实验、压测、部署和会话记录及配套 JSON 等证据，统一保存到 `archive/<主题-日期>/`。`docs/` 维护当前架构、接口契约、开发指南和适配状态，`docs/migration/` 保留当前有效的来源登记。移动历史记录时一起迁移关联证据、修正相对链接并更新文档总表。当前指南引用历史结果时，标明对应构建和验证范围。
 
 ## 5. 提交与合并
 

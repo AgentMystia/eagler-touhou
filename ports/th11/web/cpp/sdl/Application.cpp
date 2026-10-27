@@ -544,6 +544,10 @@ bool interpolation_ready(){
     auto& application=th11::sdl::app;
     if(!application.initialized||!application.error.empty())return false;
     const auto& session=application.session;
+    // Menus animate continuously through the ANM manager (background, cursor,
+    // transitions), so the title screen interpolates like gameplay. Only the
+    // in-stage frozen states (dialogue, pause) stay on the logic rate.
+    if(session.state.phase==th11::GameSessionPhase::title)return true;
     if(session.state.phase!=th11::GameSessionPhase::stage)return false;
     if(!session.battle||!session.battle->stage_active||session.battle->transitioning)return false;
     if(session.battle->dialogue&&session.battle->dialogue->active)return false;
