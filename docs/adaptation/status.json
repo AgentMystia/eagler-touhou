@@ -2003,7 +2003,7 @@
       "game": "th12",
       "variant": "normal",
       "directory": "ports/th12",
-      "sourceDigest": "79523b2f8b2d386ab533e84ca9c79f582c7153a8ea3ef0a8c8943e9e2de8f976",
+      "sourceDigest": "9232ef2246a215f0a97d17a23e1f93b6f67174305148a6afcaa9d8316bd1f74d",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 60,
