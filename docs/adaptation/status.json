@@ -938,7 +938,7 @@
       "game": "th08",
       "variant": "multiplayer",
       "directory": "ports/th08-mp",
-      "sourceDigest": "fca2ba34b133daaf67ad3c0619060657b34ae89642dc0aab9f252c32b803759e",
+      "sourceDigest": "11f36ebd5c49ca88e76ca6ae403196d198367200e5ce2a075739a4c0f6bad05e",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 225,

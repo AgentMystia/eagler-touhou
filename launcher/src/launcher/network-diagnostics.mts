@@ -329,20 +329,43 @@ async function probeTurnLatency(servers: RTCIceServer[]): Promise<number> {
   const configuration: RTCConfiguration = { iceServers: relayServers, iceTransportPolicy: "relay" };
   const left = new RTCPeerConnection(configuration);
   const right = new RTCPeerConnection(configuration);
+  // Trickle candidates while both peers gather, including candidates that arrive
+  // before the other peer has installed its remote description.
+  const forwardCandidates = (source: RTCPeerConnection, target: RTCPeerConnection) => {
+    let ready = false;
+    const pending: RTCIceCandidateInit[] = [];
+    const add = (candidate: RTCIceCandidateInit) => {
+      // One unusable candidate must not discard other working TURN routes.
+      void target.addIceCandidate(candidate).catch(() => {});
+    };
+    const receive = (event: RTCPeerConnectionIceEvent) => {
+      if (!event.candidate) return;
+      if (ready) add(event.candidate); else pending.push(event.candidate);
+    };
+    source.addEventListener("icecandidate", receive);
+    return {
+      ready() { ready = true; for (const candidate of pending.splice(0)) add(candidate); },
+      dispose() { source.removeEventListener("icecandidate", receive); pending.length = 0; },
+    };
+  };
+  const toRight = forwardCandidates(left, right);
+  const toLeft = forwardCandidates(right, left);
   const channel = left.createDataChannel("network-check");
   right.addEventListener("datachannel", event => {
     event.channel.addEventListener("message", message => event.channel.send(message.data));
   });
   try {
-    await left.setLocalDescription(await left.createOffer());
-    await waitForIceGathering(left, 12000);
-    if (!/\styp relay\s/i.test(left.localDescription?.sdp || "")) throw new Error("TURN allocation failed");
-    await right.setRemoteDescription(left.localDescription as RTCSessionDescription);
-    await right.setLocalDescription(await right.createAnswer());
-    await waitForIceGathering(right, 12000);
-    if (!/\styp relay\s/i.test(right.localDescription?.sdp || "")) throw new Error("TURN allocation failed");
-    await left.setRemoteDescription(right.localDescription as RTCSessionDescription);
-    await waitForDataChannel(channel);
+    const offer = await left.createOffer();
+    await left.setLocalDescription(offer);
+    await right.setRemoteDescription(offer);
+    toRight.ready();
+    const answer = await right.createAnswer();
+    await right.setLocalDescription(answer);
+    await left.setRemoteDescription(answer);
+    toLeft.ready();
+    // Retain the previous combined allocation/opening budget (12 + 12 + 12 s),
+    // while a usable pair can open immediately without waiting for other ports.
+    await waitForDataChannel(channel, 36000);
     if (!await selectedPairUsesTurn(left)) throw new Error("TURN route was not selected");
     const samples: number[] = [];
     for (let index = 0; index < 3; index++) {
@@ -364,6 +387,8 @@ async function probeTurnLatency(servers: RTCIceServer[]): Promise<number> {
     }
     return turnServerLatencyFromLoopback(median(samples));
   } finally {
+    toRight.dispose();
+    toLeft.dispose();
     try { channel.close(); } catch {}
     left.close();
     right.close();
@@ -379,8 +404,7 @@ export function turnServerLatencyFromLoopback(peerRoundTripMs: number): number {
   return Math.max(1, Math.round(Math.max(0, peerRoundTripMs) / 2));
 }
 
-/** Shared probe state. It owns no DOM and starts IO only on run(). Probe
- * algorithms, run ordering and native timeout/finally cleanup remain main's. */
+/** Shared probe state. It owns no DOM and starts IO only on run(). */
 export function createNetworkDiagnosticsState(options: NetworkDiagnosticsStateOptions) {
   let running = false;
   let snapshot = initialNetworkDiagnosticsSnapshot;
