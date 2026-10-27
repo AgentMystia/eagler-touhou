@@ -3,6 +3,7 @@
 #if TH15_MULTIPLAYER
 #include "../multiplayer/NetplayRuntime.hpp"
 #include "../multiplayer/FrameFence.hpp"
+#include "../multiplayer/PredictionBoundary.hpp"
 #include "AppFrameState.hpp"
 #include "../multiplayer/InputLanes.hpp"
 #include "../multiplayer/ReplayArchive.hpp"
@@ -54,9 +55,10 @@ struct MpFrame {
  Netplay::SpectatorStagePublisher::Frame publication;
 };
 std::array<MpFrame,13> mp_frames;
-u32 mp_commit_frame=0,mp_replay_until=0,mp_fence_frame=Netplay::INVALID_FRAME;
+u32 mp_commit_frame=0,mp_replay_until=0;
+multiplayer::PredictionBoundary mp_boundary;
 u32 mp_corrections=0,mp_replayed_frames=0,mp_last_depth=0,mp_peak_depth=0;
-void mp_clear_frames(){reset_presentation_clock();multiplayer::FrameFence::tentative=multiplayer::FrameFence::blocked=false;for(auto& f:mp_frames){f.state.discard();f.effects.clear();f.publication={};f.valid=f.captured=false;f.frame=Netplay::INVALID_FRAME;}mp_commit_frame=mp_replay_until=0;mp_fence_frame=Netplay::INVALID_FRAME;}
+void mp_clear_frames(){reset_presentation_clock();multiplayer::FrameFence::tentative=multiplayer::FrameFence::blocked=false;for(auto& f:mp_frames){f.state.discard();f.effects.clear();f.publication={};f.valid=f.captured=false;f.frame=Netplay::INVALID_FRAME;}mp_commit_frame=mp_replay_until=0;mp_boundary.clear();}
 bool mp_commit_frames(){
  while(mp_commit_frame<network.NextFrame()){
   std::array<Netplay::FrameInput,3> actual;if(!network.ConfirmedInputs(mp_commit_frame,actual))break;
@@ -141,7 +143,7 @@ bool mp_tick(u32 held,bool physical=true){
   if(!image.state.restore(*app)){last_error=image.state.error;return false;}
   mp_menu=image.menu;mp_menu_edges=image.menu_edges;mp_stage=image.stage_before;mp_spectator_stage=image.spectator_before;
   if(!network.Rewind(first)){last_error=network.Error();return false;}
-  mp_replay_until=std::max(mp_replay_until,end);mp_fence_frame=Netplay::INVALID_FRAME;
+  mp_replay_until=std::max(mp_replay_until,end);mp_boundary.clear();
   ++mp_corrections;mp_last_depth=end-first;mp_peak_depth=std::max(mp_peak_depth,mp_last_depth);
   for(auto& frame:mp_frames)if(frame.frame>=first){frame.effects.clear();frame.valid=false;}
   app->graphics.presentation.reset();
@@ -155,7 +157,7 @@ bool mp_tick(u32 held,bool physical=true){
   const auto decision=network.Prepare(frame);if(!decision.canAdvance)return true;
   std::array<MultiplayerInput,3> lanes;if(!multiplayer::InputLanes::Decode(decision.inputs.data(),network.Setup().player_count,lanes)){last_error="Invalid TH15 frame inputs";return false;}
   const bool tentative=network.Tentative(frame);
-  if(tentative&&(mp_fence_frame==frame||!AppFrameState::ready(*app)||std::any_of(lanes.begin(),lanes.end(),[](const auto& input){return input.pause;})))return true;
+  if(tentative&&(mp_boundary.blocks(frame)||!AppFrameState::ready(*app)||std::any_of(lanes.begin(),lanes.end(),[](const auto& input){return input.pause;})))return true;
   auto& journal=mp_frames[frame%mp_frames.size()];
   if(journal.valid&&journal.frame!=frame){last_error="TH15 correction window exceeded retained frame journal";return false;}
   journal.frame=frame;journal.effects.clear();journal.captured=false;journal.menu=mp_menu;journal.menu_edges=mp_menu_edges;journal.stage_before=mp_stage;journal.spectator_before=mp_spectator_stage;
@@ -173,7 +175,7 @@ bool mp_tick(u32 held,bool physical=true){
   }
   if(blocked){
    if(!journal.captured||!journal.state.restore(*app)){last_error=journal.state.error.empty()?"TH15 speculative boundary has no snapshot":journal.state.error;return false;}
-   mp_menu=journal.menu;mp_menu_edges=journal.menu_edges;mp_stage=journal.stage_before;mp_spectator_stage=journal.spectator_before;journal.effects.clear();journal.valid=false;mp_fence_frame=frame;mp_replay_until=frame;return true;
+   mp_menu=journal.menu;mp_menu_edges=journal.menu_edges;mp_stage=journal.stage_before;mp_spectator_stage=journal.spectator_before;journal.effects.clear();journal.valid=false;mp_boundary.defer(frame);mp_replay_until=frame;return true;
   }
   if(!advanced){last_error=app->failure;return false;}
   if(journal.spectator){auto& spectator=journal.publication;
@@ -184,6 +186,7 @@ bool mp_tick(u32 held,bool physical=true){
   }
   journal.valid=true;
   if(!network.MarkSimulated(frame,decision)){last_error=network.Error();return false;}
+  mp_boundary.completed(frame);
   if(replaying)++mp_replayed_frames;
   if(!mp_commit_frames())return false;
   // Test whether this was a recovery tick before advancing it. Finishing the
@@ -311,7 +314,7 @@ bool sample_and_tick(){
  // Enabling this for combat accumulates a permanent extra capture lead after
  // a network stall, on top of the user's explicit D-frame input delay.
  network.SetCapturePhase(app&&mp_started&&!mp_local_results&&!app->exiting&&
-   (app->title||app->ending||mp_fence_frame!=Netplay::INVALID_FRAME||(app->scene()&&app->scene()->messages.active())||(app->pause&&app->pause->state.screen!=PauseScreen::Inactive)),SDL_GetTicksNS()/1000);
+   (app->title||app->ending||mp_boundary.waiting()||(app->scene()&&app->scene()->messages.active())||(app->pause&&app->pause->state.screen!=PauseScreen::Inactive)),SDL_GetTicksNS()/1000);
  // Touch pulses and held/pressed edges are sampled exactly once per frame.
  // While a captured frame waits, only pump the confirmed-input runtime.
  if(mp_started&&!mp_local_results&&!network.NeedsCapture())return mp_tick(0,false);
@@ -377,7 +380,7 @@ EMSCRIPTEN_KEEPALIVE const int* th15_mp_result_status(){
  if(app&&app->pause){const auto& p=app->pause->state;value={int(p.screen),p.phase,p.menu.cursor,p.menu.count,p.names.cursor,p.name_length,p.age.current};}
  return value.data();
 }
-EMSCRIPTEN_KEEPALIVE const unsigned* th15_mp_rollback_status(){using namespace th15::sdl;static std::array<unsigned,9> out{};out={1,network.RollbackEnabled()?1u:0u,mp_corrections,mp_replayed_frames,mp_last_depth,mp_peak_depth,network.NextFrame()<mp_replay_until?mp_replay_until-network.NextFrame():0u,mp_fence_frame,unsigned(std::lround(presentation_fps*100.f))};return out.data();}
+EMSCRIPTEN_KEEPALIVE const unsigned* th15_mp_rollback_status(){using namespace th15::sdl;static std::array<unsigned,9> out{};out={1,network.RollbackEnabled()?1u:0u,mp_corrections,mp_replayed_frames,mp_last_depth,mp_peak_depth,network.NextFrame()<mp_replay_until?mp_replay_until-network.NextFrame():0u,mp_boundary.frame(),unsigned(std::lround(presentation_fps*100.f))};return out.data();}
 EMSCRIPTEN_KEEPALIVE const unsigned* th15_mp_calibration_status(){return th15::sdl::network.CalibrationStatus();}
 EMSCRIPTEN_KEEPALIVE const char* th15_mp_error(){using namespace th15::sdl;return last_error.empty()?network.Error():last_error.c_str();}
 EMSCRIPTEN_KEEPALIVE const char* th15_mp_spectator_state(){return th15::sdl::network.SpectatorState();}

@@ -277,3 +277,4 @@
 | 项目文档 | [docs/TOUHOU_PROGRESS.md](TOUHOU_PROGRESS.md) | 东方作品进度 |
 | 项目文档 | [docs/th075-thcrap.md](th075-thcrap.md) | th075 语言资源准备 |
 | 架构 | [architecture/netplay-routing.md](architecture/netplay-routing.md) | 联机自适应选路与 TH12、TH15 多人接入 |
+| 历史记录 | [history/th15mp-boss-transfer-20261027.md](history/th15mp-boss-transfer-20261027.md) | TH15 多人共享碎片与 Boss 入场输入 |
