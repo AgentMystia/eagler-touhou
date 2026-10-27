@@ -90,8 +90,8 @@ python common/tests/adaptive-peer-route-browser.py --turn-origin https://your-la
 
 `PC_BUILD` 指向正式编译目录，`TURN_ORIGIN` 指向提供短期诊断凭据的站点，`ROUTE_REPORT` 指定结果文件。`ROUTE_SCENARIO` 选择 `stable`、`bursts`、`outage`，分别验证健康路径保持、间歇性长丢包和持续断流；`ROUTE_BURST_MS` 控制每二十秒的连续丢包时长，`ROUTE_DURATION_MS` 控制观察时间。素材使用 th09 开发指南中的 `TH09_FIXTURE_DATA`、`TH09_FIXTURE_ASSETS`、`TH09_FIXTURE_MUSIC` 显式配置。短期凭据由内存和子进程环境传递，结果记录运行包身份、换路时长、候选类型和逐帧对照结果。
 
-`ROUTE_RUNTIME_URL` 可指定公网候选的 `th09.mjs`。测试先核对公开脚本与本地候选摘要一致，再让浏览器从该地址加载脚本与同代 WASM，将公网文件分发纳入同一次实际对局验证。
+`ROUTE_RUNTIME_URL` 可指定公网候选的 `th09.mjs`。测试沿实际响应及重定向记录浏览器加载的脚本与 WASM，分别核对本地候选摘要，并将实际 URL、字节数与摘要写入结果。两类响应完整匹配后确认验收结果，将公网文件分发纳入同一次实际对局验证。该校验复用[浏览器验证工具](../../tools/browser/README.md)。
 
-`ROUTE_CONTROL_FAULT=1` 同时暂存初始可靠通道的发送，恢复后按原顺序交付，用游戏状态对照验证控制重放与迟到去重。`ROUTE_STARTUP_ONLY=1` 进行重复开局检查，`ROUTE_ADAPTIVE_DISABLED=1` 提供相同运行包的旧传输对照。
+`ROUTE_CONTROL_FAULT=1` 同时暂存初始可靠通道的发送，恢复后按原顺序交付，用游戏状态对照验证控制重放与迟到去重。`ROUTE_STARTUP_ONLY=1` 固定使用健康路径场景，检查双端开局后持续推进、原路径保持和共同帧 hash；此模式关闭输入与控制故障注入，可重复运行核对开局。完整断流换路场景使用默认入口，保留成熟采样与恢复后的帧对照。`ROUTE_ADAPTIVE_DISABLED=1` 提供相同运行包的旧传输对照。
 
 `ROUTE_RELAY_URL` 可指定公开 WSS 服务，测试先准备双端世界，再以随机房间号和独立成员身份创建私密双人房间，经该服务完成信令与路线屏障。结束时通过目录的当前会话凭据释放成员和传输。默认入口使用独立本地 Relay 进程。

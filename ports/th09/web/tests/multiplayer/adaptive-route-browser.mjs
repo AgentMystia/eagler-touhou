@@ -9,16 +9,17 @@ import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {presentationServer} from '../../scripts/presentation-server.mjs';
 import {launchBrowser} from '../../../../../tools/browser/launch.mjs';
+import {verifyRuntimeDelivery} from '../../../../../tools/browser/verified-runtime.mjs';
 
 const repository = fileURLToPath(new URL('../../../../../', import.meta.url));
 const output = resolve(process.env.ROUTE_REPORT || 'artifacts/adaptive-route-game.json');
 const artifactDirectory = resolve(process.env.PC_BUILD);
-const scenario = process.env.ROUTE_SCENARIO || 'outage';
+const startupOnly=process.env.ROUTE_STARTUP_ONLY==='1';
+const scenario = startupOnly ? 'stable' : process.env.ROUTE_SCENARIO || 'outage';
 const burstMs = Number(process.env.ROUTE_BURST_MS || 2500);
 const durationMs = Number(process.env.ROUTE_DURATION_MS || (scenario === 'outage' ? 35000 : 60000));
-const startupOnly=process.env.ROUTE_STARTUP_ONLY==='1';
 const adaptiveDisabled=process.env.ROUTE_ADAPTIVE_DISABLED==='1';
-const controlFault=process.env.ROUTE_CONTROL_FAULT==='1';
+const controlFault=!startupOnly&&process.env.ROUTE_CONTROL_FAULT==='1';
 assert.ok(['stable','bursts','outage'].includes(scenario));
 assert.ok(Number.isFinite(burstMs) && burstMs > 0 && burstMs <= 10000);
 assert.ok(Number.isFinite(durationMs) && durationMs >= 15000 && durationMs <= 180000);
@@ -28,7 +29,7 @@ assert.equal(build.sha256, actualHash);
 assert.equal(build.kind, 'th09-native-web-release-candidate');
 mkdirSync(resolve(output, '..'), {recursive:true});
 const host = await presentationServer(0, {release:true, artifactDirectory});
-let browser, relay, page;
+let browser, relay, page, delivery;
 const errors = [];
 let relayLog = '';
 try {
@@ -37,14 +38,12 @@ try {
   page = await browser.newPage();
   page.on('pageerror', error => errors.push(String(error)));
   const runtimeUrl=process.env.ROUTE_RUNTIME_URL;
-  let runtimeDelivery=null;
+  delivery=await verifyRuntimeDelivery(page,{
+    scriptUrl:runtimeUrl||host.url+'/probe.mjs',
+    scriptBytes:readFileSync(resolve(artifactDirectory,'th09.mjs')),
+    wasmName:'th09.wasm',wasmBytes:readFileSync(resolve(artifactDirectory,'th09.wasm')),
+  });
   if(runtimeUrl){
-    const response=await page.request.get(runtimeUrl);
-    assert.equal(response.status(),200);
-    const bytes=await response.body();
-    assert.equal(createHash('sha256').update(bytes).digest('hex'),
-      createHash('sha256').update(readFileSync(resolve(artifactDirectory,'th09.mjs'))).digest('hex'));
-    runtimeDelivery={url:runtimeUrl,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
     await page.route(host.url+'/probe.mjs',route=>route.fulfill({status:302,headers:{location:runtimeUrl}}));
   }
   await page.goto(host.url);
@@ -150,7 +149,7 @@ try {
     }
     await wait(()=>frames.every(w=>w.play.active&&stats(w)[1]>30));
     const peers=frames.map(w=>[...w.__eaglerPeerTransport.peers.values()][0]);
-    if(!adaptiveDisabled)await wait(()=>peers.every(p=>p.adaptive.snapshot().standbyReady));
+    if(!adaptiveDisabled&&!startupOnly)await wait(()=>peers.every(p=>p.adaptive.snapshot().standbyReady));
     if(peers.some(p=>p.primary.path!=='direct'))throw Error('Initial path must be direct');
     const initialFrames=frames.map(stats);
     // Give both routes a mature healthy baseline before a sustained failure.
@@ -184,12 +183,14 @@ try {
     }
     let switchedAt=null;
     const routeTimeline=[];
-    while(performance.now()-faultAt<(startupOnly?3500:durationMs)){
+    while(performance.now()-faultAt<(startupOnly?20000:durationMs)){
       if(closes.length)throw Error(JSON.stringify(closes));
       const snapshots=peers.map(p=>p.adaptive.snapshot());
       routeTimeline.push({at:performance.now()-faultAt,frames:frames.map(stats),
         selected:snapshots.map(s=>s.selected)});
       if(!switchedAt&&snapshots.every(s=>s.selected==='turn'))switchedAt=performance.now();
+      if(startupOnly&&[...hashMaps[0].keys()].filter(frame=>
+        frame>Math.max(...faultFrames.map(s=>s[1]))&&hashMaps[1].has(frame)).length>100)break;
       if(scenario==='outage'&&switchedAt&&performance.now()-switchedAt>12000&&frames.every((w,i)=>stats(w)[1]>faultFrames[i][1]+300))break;
       await sleep(100);
     }
@@ -212,6 +213,7 @@ try {
     await globalThis.cleanupRouteGame();
     return result;
   },{relayUrl,scenario,burstMs,durationMs,startupOnly,adaptiveDisabled,controlFault});
+  await delivery.assertComplete();
   const routePassed=scenario==='stable' ? result.snapshots.every(s=>s.selected==='primary'&&s.epoch===0) :
     scenario==='outage' ? result.snapshots.every(s=>s.selected==='turn')&&
       result.selectedPairs.every(p=>p.local==='relay'&&p.remote==='relay') :
@@ -220,7 +222,7 @@ try {
     (scenario==='stable'||result.droppedInputs.every(n=>n>10))&&
     !result.errors.length&&!result.closes.length&&!errors.length;
   writeFileSync(output,JSON.stringify({passed,at:new Date().toISOString(),wasm:actualHash,
-    browser:browser.version(),scenario,burstMs,durationMs,startupOnly,adaptiveDisabled,controlFault,runtimeDelivery,relayUrl:externalRelay||'isolated local relay',
+    browser:browser.version(),scenario,burstMs,durationMs,startupOnly,adaptiveDisabled,controlFault,runtimeDelivery:delivery.receipts,relayUrl:externalRelay||'isolated local relay',
     scope:'Two production TH09 WASM games | production relay protocol | live TURN | controlled initial input impairment',
     result,errors},null,2)+'\n');
   assert.ok(passed,JSON.stringify({...result,routeTimeline:undefined,events:undefined}));
@@ -228,7 +230,7 @@ try {
     comparedFrames:result.comparedFrames,comparedAfterRecovery:result.comparedAfterRecovery,final:result.final}));
 } catch(error) {
   let evidence;try{evidence=await page?.evaluate(()=>globalThis.routeGameSnapshot?.()||globalThis.routeGameEvidence);}catch{}
-  writeFileSync(output+'.failure.json',JSON.stringify({error:String(error.stack),errors,evidence,relayLog},null,2));
+  writeFileSync(output+'.failure.json',JSON.stringify({error:String(error.stack),errors,evidence,relayLog,runtimeDelivery:delivery?.receipts,deliveryErrors:delivery?.failures},null,2));
   throw error;
 } finally {
   try{await page?.evaluate(()=>globalThis.cleanupRouteGame?.());}catch{}
