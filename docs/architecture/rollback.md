@@ -22,7 +22,7 @@
 - TH09：[`RollbackSession`](../../ports/th09/web/cpp/multiplayer/RollbackSession.cpp) 管理输入帧；[`Application.cpp`](../../ports/th09/web/cpp/sdl/Application.cpp) 的 `checkpoint`、`rollback_tick` 及 SDL 帧循环接管标题世界、恢复和重模拟。
 - TH10：[`RollbackState`](../../ports/th10-mp/web/cpp/multiplayer/RollbackState.cpp) 通过稀疏池捕获器和 `RollbackJournal` 接线各领域状态；`NetplayRuntime` 只提供网络和输入决策。
 - TH11：`NetplayRuntime` 持有帧前沿和提交水位；[`WorldRollback`](../../ports/th11-mp/web/cpp/game/WorldRollback.cpp) 与 `StageRollback`、`EnemyRollback`、`AnmRollback` 管理标题状态。
-- TH15：[`NetplayRuntime`](../../ports/th15-mp/web/cpp/multiplayer/NetplayRuntime.cpp) 设 `allowPrediction=false`，当前多人运行按精确输入推进，不使用标题回滚日志。
+- th15：[`NetplayRuntime`](../../ports/th15-mp/web/cpp/multiplayer/NetplayRuntime.cpp) 默认使用纯延迟；开启回滚后使用十二帧预测窗口，由 `AppFrameState` 保存应用与战斗快照，恢复后重演并在确认帧提交音频、录像和旁观输出。暂停、对话和场景工厂使用真实输入边界。实验构建与压力验证见[归档记录](../../archive/th15-rollback-20261026/th15-rollback-experiment-20261026.md)。
 
 ## 一帧的输入与恢复路径
 

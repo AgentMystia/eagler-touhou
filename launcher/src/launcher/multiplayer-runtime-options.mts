@@ -158,7 +158,7 @@ export function buildMultiplayerRuntimeOptions(
     input.predictionLimit !== timingPolicy.predictionLimit &&
     !(adonisMode === 1 && input.predictionLimit === 0)
   )
-    throw new Error('该多人 Runtime 固定使用 12 帧回滚上限');
+    throw new Error(`${roomProduct.toUpperCase()} 直接回滚固定使用 12 帧预测上限`);
   if (
     (input.inputDelayAuto !== undefined && typeof input.inputDelayAuto !== 'boolean') ||
     (input.inputDelayAuto && (!measuredTitle || !requestedMode)) ||
