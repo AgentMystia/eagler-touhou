@@ -5,3 +5,5 @@
 当前架构、开发指南和适配状态见[项目文档](../docs/README.md)。归档规则见[贡献指南](../CONTRIBUTING.md)。
 
 - [th15 回滚实验与压力验证 | 2026-10-26](th15-rollback-20261026/th15-rollback-experiment-20261026.md)
+
+- [TH15 多人：共享碎片与 Boss 入场输入 | 2026-10-27](th15-boss-transfer-20261027/README.md)

@@ -1,6 +1,6 @@
 # 文档总表
 
-共 279 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
+共 280 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
 
 项目说明按当前目录重写；许可证保留原文，生成报告由各自工具更新。原有 498 份 Markdown 的逐篇去向见[旧文档去向](history/INDEX.md)。
 
@@ -171,6 +171,7 @@
 | 迁移记录 | [docs/migration/local-workspace-20261019.md](migration/local-workspace-20261019.md) | 本地工作区归并 ｜ 2026-10-19 |
 | 迁移记录 | [docs/migration/th12-subtree-20261024.md](migration/th12-subtree-20261024.md) | th12 子树继承 ｜ 上游同源历史 |
 | 历史记录 | [archive/README.md](../archive/README.md) | 历史记录 |
+| 历史记录 | [archive/th15-boss-transfer-20261027/README.md](../archive/th15-boss-transfer-20261027/README.md) | TH15 多人：共享碎片与 Boss 入场输入 |
 | 历史记录 | [archive/th15-rollback-20261026/th15-capture-index-20261026.md](../archive/th15-rollback-20261026/th15-capture-index-20261026.md) | TH15 多人快照：连续捕获索引 |
 | 历史记录 | [archive/th15-rollback-20261026/th15-multiplayer-shield-boss-20261026.md](../archive/th15-rollback-20261026/th15-multiplayer-shield-boss-20261026.md) | TH15 多人兔机护盾与 Boss 伤害 |
 | 历史记录 | [archive/th15-rollback-20261026/th15-multiplayer-stress-20261026.md](../archive/th15-rollback-20261026/th15-multiplayer-stress-20261026.md) | TH15 多人压力验证 |
