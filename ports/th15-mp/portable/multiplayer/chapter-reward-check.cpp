@@ -35,6 +35,11 @@ int main(int argc,char** argv){
   require(b.mp_reward_item(fragment)&&b.session.extra_lives==3&&b.score.life_piece_tier==1,"Shared Extra fragment missed the host's native Extend");
   require(b.pilots[1]->session.extra_lives==3&&b.pilots[1]->owned_life_piece_tier==5,"Shared Extra fragment used another pilot's Extend tier");
   if(count==3)require(b.pilots[2]->session.extra_lives==2&&b.pilots[2]->session.life_pieces==1&&b.pilots[2]->owned_life_piece_tier==5,"Shared Extra fragment granted a sixth Extend");
+  // The admitted historical rule-20 Replay must retain its recorded economy.
+  b.mp_options.replay_legacy_stage_flow=true;b.score.difficulty=1;b.score.life_piece_tier=0;b.mp_fragments=2;
+  for(unsigned s=0;s<count;++s){auto& p=*b.pilots[s];p.session.extra_lives=s?2:8;p.session.life_pieces=2;p.session.bombs=2;p.session.bomb_pieces=0;}
+  require(b.pilots[1]->collection->award(fragment),b.error);
+  require(b.mp_fragments==0&&b.session.extra_lives==8&&b.session.bomb_pieces==0&&b.pilots[1]->session.extra_lives==3,"Historical Replay economy changed under the new reward rule");
  }
  require(multiplayer_chapter_threshold(1)==1000000,"Single-player threshold changed");
  std::puts("PASS: all 19 thresholds at actual chapter-reward boundaries, 2P/3P defaults, native scoring and single-player default");
