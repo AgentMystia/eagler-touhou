@@ -59,6 +59,8 @@ git log --oneline port-history/th10mp..port-history/th10
 
 日常开发使用原目录和开发分支。`port-history/*` 是各作的目录历史，合并同步时以 MP 分支为起点。`sync.mjs record` 登记处理进度，目录历史合并建立 Git 祖先，两者随同步一起维护。完整操作见[下一次提交与同步](docs/adaptation/port-sync.md#下一次提交与同步)。
 
+monorepo 的 `main` 集成普通版与 MP。向独立作品源仓库回推时，普通版目录历史进入其普通版分支（包括名为 `main` 的普通版分支），MP 目录历史进入对应多人分支。投影提交重新生成来源映射，独立连接提交通过标准子树导出核对祖先和目录内容。
+
 修改共用代码时，用[目录映射](launcher/config/workspace.json)和[构建配方](launcher/config/runtime-builds.json)找出受影响的游戏。接口定义、调用方和对应测试在同一改动中更新。
 
 ## 4. 检查
