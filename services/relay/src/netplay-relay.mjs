@@ -200,6 +200,7 @@ const rtcTimeoutMs = Math.max(
     10,
   ) || 4500,
 );
+const allowGameplayRelayFallback = process.env.EAGLER_NETPLAY_GAMEPLAY_RELAY_FALLBACK === '1';
 const stunUrls = envValue(
   'EAGLER_NETPLAY_STUN_URLS',
   ['TH07_STUN_URLS'],
@@ -671,6 +672,26 @@ function chooseRoute(roomId, runId, room, run, route) {
   broadcastRoute(run, { type: 'route', mode: route });
 }
 
+function failRoute(roomId, runId, run, reason) {
+  if (run.route || run.ended) return;
+  run.route = 'failed';
+  run.ended = true;
+  if (run.routeTimer) clearTimeout(run.routeTimer);
+  if (run.spectatorGraceTimer) clearTimeout(run.spectatorGraceTimer);
+  run.routeTimer = null;
+  run.spectatorGraceTimer = null;
+  clearSpectatorHistory(run);
+  console.log(`ROUTE room=${roomId} run=${runId} mode=failed reason=${reason}`);
+  const message = JSON.stringify({type: 'route', mode: 'failed', reason});
+  for (const socket of [...run.signalClients.values(), ...run.clients.values()]) {
+    sendBounded(socket, message);
+    if (socket.readyState === WebSocket.OPEN) socket.close(1013, reason);
+  }
+  for (const socket of run.spectatorClients.values()) {
+    if (socket.readyState === WebSocket.OPEN) socket.close(1013, reason);
+  }
+}
+
 function maybeStartRouteTimer(roomId, runId, room, run) {
   const allSignalsPresent = run.signalClients.size >= run.playerCount;
   const allRelaysPresent = run.clients.size >= run.playerCount;
@@ -691,6 +712,10 @@ function maybeStartRouteTimer(roomId, runId, room, run) {
 function maybeResolveRoute(roomId, runId, room, run) {
   if (run.route || run.playerCount < 2) return;
   if (run.rtcFailed) {
+    if (!allowGameplayRelayFallback) {
+      failRoute(roomId, runId, run, 'WebRTC connection unavailable');
+      return;
+    }
     // Relay release is a barrier too: do not let the first endpoint begin
     // frame-zero traffic until every expected relay socket and signaling
     // client is already present. Route delivery itself is asynchronous, so
@@ -2162,6 +2187,7 @@ server.on('connection', (socket, request) => {
         }
       return;
     }
+    if (!allowGameplayRelayFallback) return;
     let requestedPeer = null;
     let forwardedPayload = incoming;
     if (incoming.length >= 2 && incoming[0] === targetedEnvelopeMarker) {

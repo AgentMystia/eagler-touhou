@@ -353,6 +353,7 @@ const relayEnv = {
   EAGLER_NETPLAY_RELAY_HOST: "127.0.0.1",
   EAGLER_NETPLAY_RELAY_PORT: String(port),
   EAGLER_NETPLAY_STUN_URLS: "",
+  EAGLER_NETPLAY_GAMEPLAY_RELAY_FALLBACK: "1",
   // This suite intentionally creates many distinct product rooms on one IP.
   EAGLER_NETPLAY_MAX_ROOMS_PER_IP: "100",
   EAGLER_NETPLAY_ROOM_LOOKUPS_PER_MINUTE: "100",
