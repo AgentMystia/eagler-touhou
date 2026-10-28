@@ -97,7 +97,8 @@ for (const path of ['/lobby.html', '/lobby', '/nested/lobby.html?game=th09mp']) 
   assert.equal(document.querySelector('#listHead').hidden, true);
   assert.equal(document.querySelector('#listLoading').hidden, false);
   assert.equal(document.querySelector('#roomList').getAttribute('aria-busy'), 'true');
-  assert.equal(document.querySelector('.site-footer'), null); assert.equal(document.querySelector('.brand'), null);
+  assert.equal(document.querySelector('.site-footer'), null);
+  assert.equal(document.querySelector('.brand').getAttribute('aria-label'), 'EAGLER TOUHOU');
   assert.equal(document.querySelector('iframe'), null); assertUniqueIds(document);
 });
 for (const lobby of [false, true]) test(`exact original ${lobby ? 'lobby' : 'library'} noscript copy`, () => {

@@ -14,6 +14,8 @@
 
 房间丢包测量的状态和双端计数由 `npm run check` 检查；`npm run test:room-packet-loss:browser` 在本机浏览器中验证真实 DataChannel 与房间面板。
 
+共享顶栏的直接页面导航、当前页面标识、帮助与设置的 500 毫秒悬停等待及取消、即时点击和键盘操作、语言菜单和键盘焦点由 `react-main/shell-links.test.mjs` 检查。`node tests/test-netplay-telemetry.mjs` 检查遥测接口兼容性；从 `services/telemetry/` 运行 `npm test` 检查服务探测、历史恢复、旧地址跳转和下载服务分组开关。
+
 th075 生产配置的语言包边界由 `npm run check:workspace` 检查；`npm run test:th075-language-upgrade:browser` 使用历史导入包、现行站点和原生 Runtime 验证升级流程。th12 中文贴图合成由 `npm run check` 检查。
 
 Host 工作区检查覆盖 th12 的原始音轨输入与 `assets-eagler` 成品内容标记，确保两种内容准备方式都能被识别。

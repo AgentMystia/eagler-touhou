@@ -10,6 +10,7 @@ import {resolvePublicOrRepositorySource} from '../../lib/public-source.mjs';
 import {authoredSourcesPlugin} from '../../lib/authored-source-resolution.mjs';
 import {build} from 'esbuild';
 import {reactDeploymentConfig} from './deployment-config.ts';
+import {buildStandalonePageOutputs} from '../../lib/standalone-page-build.mjs';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 // Original lobby selectors stopped at the launcher iframe's document. Settings,
 // Player and their detached overlays now retain that ownership explicitly. The
@@ -22,7 +23,27 @@ export function mainAssets(): Plugin {
   const output = resolve(root, deployment.outputDirectory, 'client');
   return {
     configureServer(server) {
+      let standalone: ReturnType<typeof buildStandalonePageOutputs> | null = null;
+      server.watcher.on('change', () => {standalone = null;});
       server.middlewares.use(async (req, res, next) => {
+        const pathname = req.url?.split('?')[0];
+        if (pathname === deployment.mountPath+'features.css') {
+          const styles = launcherStyleSources(readFileSync(resolve(root,'public/styles.css'),'utf8'), readFileSync(resolve(root,'public/ui-fonts.css'),'utf8'));
+          res.setHeader('Content-Type','text/css'); res.end(styles.features); return;
+        }
+        if (pathname === deployment.mountPath+'site-pages.mjs' || pathname === deployment.mountPath+'site-pages.css') {
+          try {
+            standalone ??= buildStandalonePageOutputs({project:root,outputDirectory:output});
+            const files = await standalone, extension = pathname.endsWith('.css') ? '.css' : '.mjs';
+            res.setHeader('Content-Type',extension === '.css'?'text/css':'application/javascript');
+            res.end(files.find(file => file.path.endsWith(extension))!.contents);
+          } catch (error) {standalone=null;next(error);} return;
+        }
+        const page = pathname?.slice(deployment.mountPath.length);
+        if (['about.html','faq.html','uptime/','uptime/index.html'].includes(page ?? '')) {
+          try {res.setHeader('Content-Type','text/html; charset=utf-8');res.end(readFileSync(resolve(root,'public',page==='uptime/'?'uptime/index.html':page!)));}
+          catch(error){next(error);} return;
+        }
         if (req.url?.split('?')[0] !== deployment.mountPath + 'runtime-program-sw.js') {next();return;}
         try {res.setHeader('Content-Type', 'application/javascript');res.setHeader('Cache-Control', 'no-cache');
           res.end(await buildRuntimeProgramWorkerSource({project:root}));}
@@ -67,7 +88,7 @@ export function mainAssets(): Plugin {
       mkdirSync(output, {recursive: true});
       // Consume the same public-file contract as main. Route documents and
       // generated CSS belong to their respective builders, not raw copying.
-      const generated = new Set(['index.html', 'en.html', 'lobby.html', 'styles.css', 'features.css', 'touch-guide.css', 'runtime-program-sw.js']);
+      const generated = new Set(['index.html', 'en.html', 'lobby.html', 'styles.css', 'features.css', 'touch-guide.css', 'runtime-program-sw.js', 'site-pages.mjs', 'site-pages.css']);
       for (const path of STATIC_FRONTEND_PACKAGE_FILES) {
         if (generated.has(path) || path.startsWith('legacy/')) continue;
         const source = resolvePublicOrRepositorySource(path);
@@ -90,6 +111,7 @@ export function mainAssets(): Plugin {
       for (const file of await buildLauncherStyleOutputs({project: root, outputDirectory: output})) {
         await writeFileAtomic(file.path, file.contents);
       }
+      for (const file of await buildStandalonePageOutputs({project:root,outputDirectory:output})) await writeFileAtomic(file.path,file.contents);
     },
   };
 }

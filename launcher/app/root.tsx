@@ -7,6 +7,7 @@ import {InitialLauncher, InitialDocumentBody, OriginalNoscript} from './componen
 import '../public/styles.css';
 import '../public/lobby.css';
 import '../public/touch-guide.css';
+import './site-navigation.css';
 import './components/launcher/lobby-options.css';
 import './components/launcher/shared-options.css';
 export function Layout({children}: {children: ReactNode}) {
