@@ -1,6 +1,6 @@
 # 文档总表
 
-共 321 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
+共 329 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
 
 项目说明按当前目录重写；许可证保留原文，生成报告由各自工具更新。原有 498 份 Markdown 的逐篇去向见[旧文档去向](history/INDEX.md)。
 
@@ -185,6 +185,7 @@
 | 架构说明 | [docs/architecture/netplay-routing.md](architecture/netplay-routing.md) | 联机自适应选路 |
 | 架构说明 | [docs/architecture/netplay.md](architecture/netplay.md) | 联机输入时序与 Adonis |
 | 架构说明 | [docs/architecture/rollback.md](architecture/rollback.md) | 回滚运行参考 |
+| 架构说明 | [docs/architecture/site-recovery.md](architecture/site-recovery.md) | 网页入口回退 |
 | 架构说明 | [docs/architecture/source-layout.md](architecture/source-layout.md) | 游戏源码目录 |
 | 架构说明 | [docs/architecture/spectator-replay.md](architecture/spectator-replay.md) | 流式 Replay 旁观 |
 | 架构说明 | [docs/architecture/spectator.md](architecture/spectator.md) | 旁观协议 |
@@ -192,7 +193,11 @@
 | 迁移记录 | [docs/migration/local-workspace-20261019.md](migration/local-workspace-20261019.md) | 本地工作区归并 ｜ 2026-10-19 |
 | 迁移记录 | [docs/migration/th12-subtree-20261024.md](migration/th12-subtree-20261024.md) | th12 子树继承 ｜ 上游同源历史 |
 | 历史记录 | [archive/README.md](../archive/README.md) | 历史记录 |
+| 历史记录 | [archive/hk-mirror-relay-20261028/deployment.md](../archive/hk-mirror-relay-20261028/deployment.md) | 香港镜像与统一 Relay 入口 ｜ 2026-10-28 |
+| 历史记录 | [archive/main-refresh-20261028/README.md](../archive/main-refresh-20261028/README.md) | 主线发布与镜像一致性 |
 | 历史记录 | [archive/main-thprac-th08-test-th12-20261028/README.md](../archive/main-thprac-th08-test-th12-20261028/README.md) | 主站 THPrac／TH08 与测试站 TH12 多人发布 |
+| 历史记录 | [archive/relay-entry-20261027/deployment.md](../archive/relay-entry-20261027/deployment.md) | Relay 入口自动切换发布 |
+| 历史记录 | [archive/site-recovery-20261028/README.md](../archive/site-recovery-20261028/README.md) | 网页入口回退发布 |
 | 历史记录 | [archive/th06-th08-multiplayer-bugs-20261028/README.md](../archive/th06-th08-multiplayer-bugs-20261028/README.md) | TH06／TH08 多人索敌与 Last Spell 修复验证 |
 | 历史记录 | [archive/th12-maintenance-20261025/th12-history-rebuild-20261025.md](../archive/th12-maintenance-20261025/th12-history-rebuild-20261025.md) | TH12 未合入历史重建 |
 | 历史记录 | [archive/th12-maintenance-20261025/th12-switch-fixes-20261025.md](../archive/th12-maintenance-20261025/th12-switch-fixes-20261025.md) | TH12 Switch 修复适配 |
@@ -207,6 +212,8 @@
 | 历史记录 | [archive/th12-multiplayer-20261028/th12-multiplayer-transfer-font-20261026.md](../archive/th12-multiplayer-20261028/th12-multiplayer-transfer-font-20261026.md) | TH12 多人资源传递提示 |
 | 历史记录 | [archive/th12-multiplayer-20261028/th12-visual-performance-20261025.md](../archive/th12-multiplayer-20261028/th12-visual-performance-20261025.md) | TH12 飞钵轮廓与展示性能 |
 | 历史记录 | [archive/th12-multiplayer-20261028/th12mp-localization-20261025.md](../archive/th12-multiplayer-20261028/th12mp-localization-20261025.md) | TH12 多人本地语言资源 |
+| 历史记录 | [archive/th12mp-public-20261028/README.md](../archive/th12mp-public-20261028/README.md) | 星莲船正式发布 |
+| 历史记录 | [archive/th12mp-public-20261028/cn129.md](../archive/th12mp-public-20261028/cn129.md) | 原主站入口同步 |
 | 历史记录 | [archive/th15-boss-transfer-20261027/README.md](../archive/th15-boss-transfer-20261027/README.md) | TH15 多人：共享碎片与 Boss 入场输入 |
 | 历史记录 | [archive/th15-rollback-20261026/th15-capture-index-20261026.md](../archive/th15-rollback-20261026/th15-capture-index-20261026.md) | TH15 多人快照：连续捕获索引 |
 | 历史记录 | [archive/th15-rollback-20261026/th15-multiplayer-shield-boss-20261026.md](../archive/th15-rollback-20261026/th15-multiplayer-shield-boss-20261026.md) | TH15 多人兔机护盾与 Boss 伤害 |
@@ -216,6 +223,7 @@
 | 历史记录 | [archive/th15-rollback-20261026/th15-rollback-stress-fix-20261026.md](../archive/th15-rollback-20261026/th15-rollback-stress-fix-20261026.md) | TH15 密集回滚修复与复测 |
 | 历史记录 | [archive/th15-rollback-20261026/th15-upstream-rebuild-20261026.md](../archive/th15-rollback-20261026/th15-upstream-rebuild-20261026.md) | TH15 多人实验分支与上游同步 |
 | 历史记录 | [archive/thprac-information-touch-20261027/README.md](../archive/thprac-information-touch-20261027/README.md) | THPrac 信息窗触控归属 |
+| 历史记录 | [archive/turn-fallback-20261028/README.md](../archive/turn-fallback-20261028/README.md) | TURN 选择同步 |
 | 历史记录 | [docs/history/INDEX.md](history/INDEX.md) | 旧文档去向 |
 | 历史记录 | [docs/history/README.md](history/README.md) | 历史与迁移 |
 | 历史记录 | [docs/history/port-sync-20261023.md](history/port-sync-20261023.md) | 普通版到 MP 全量同步 ｜ 2026-10-23 |

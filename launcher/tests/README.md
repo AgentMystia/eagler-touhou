@@ -16,6 +16,8 @@
 
 房间丢包测量的状态和双端计数由 `npm run check` 检查；`npm run test:room-packet-loss:browser` 在本机浏览器中验证真实 DataChannel 与房间面板。
 
+`npm run test:site-mirror:browser` 使用本地 HTTPS 服务检查网页与 Runtime 的镜像回退、完整性校验、离线刷新及浏览器重启。通过 `EAGLER_TEST_TLS_CERT`、`EAGLER_TEST_TLS_KEY` 提供测试证书与密钥。`react-main/relay-entry-routing.test.mjs` 和 `site-mirror-routing.test.mjs` 覆盖入口选择、超时、取消、请求身份和发布配置。
+
 共享顶栏的直接页面导航、当前页面标识、帮助与设置的 500 毫秒悬停等待及取消、即时点击和键盘操作、语言菜单和键盘焦点由 `react-main/shell-links.test.mjs` 检查。`node tests/test-netplay-telemetry.mjs` 检查遥测接口兼容性；从 `services/telemetry/` 运行 `npm test` 检查服务探测、历史恢复、旧地址跳转和下载服务分组开关。
 
 th075 生产配置的语言包边界由 `npm run check:workspace` 检查；`npm run test:th075-language-upgrade:browser` 使用历史导入包、现行站点和原生 Runtime 验证升级流程。th12 中文贴图合成由 `npm run check` 检查。

@@ -2,7 +2,7 @@
 
 // One registered classic SW. Immutable public URLs do the version binding;
 // private snapshots provide atomic offline preparation and whole-set fallback.
-function createRuntimeCache({ scopeUrl, catalog, fetchTimeoutMs = 8000 }) {
+function createRuntimeCache({ scopeUrl, catalog, fetchTimeoutMs = 8000, siteRouting = null }) {
   const C = EaglerRuntimeGenerations;
   const known = C.validateRuntimeManifest(catalog);
   const prefix = `eagler-touhou-runtime-v2-${encodeURIComponent(scopeUrl.pathname)}-`;
@@ -55,6 +55,18 @@ function createRuntimeCache({ scopeUrl, catalog, fetchTimeoutMs = 8000 }) {
     return response;
   }
   async function network(url, read, {cache = 'no-store', file, onProgress} = {}) {
+    if (siteRouting) {
+      let loaded = 0, success = false;
+      const report = phase => onProgress?.({type: C.RUNTIME_PROGRESS, protocol: C.RUNTIME_CACHE_PROTOCOL,
+        path: new URL(url).pathname.slice(scopeUrl.pathname.length), phase, loaded, total: file?.bytes || 0});
+      try {
+        const result = await siteRouting.run(url, async (response, progress) => {
+          loaded = 0; report('requesting');
+          return read(response, (bytes = 0) => {progress(); loaded += bytes; if (bytes) report('receiving');});
+        }, {cache});
+        success = true; return result;
+      } finally { report(success ? 'complete' : 'failed'); }
+    }
     const controller = new AbortController();
     let timeout, loaded = 0, success = false;
     const report = phase => onProgress?.({type: C.RUNTIME_PROGRESS, protocol: C.RUNTIME_CACHE_PROTOCOL,

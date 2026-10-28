@@ -1,3 +1,4 @@
+import {createRelayEntryRouting} from '../../src/launcher/relay-entry-routing.mts';
 import {loadGameVersion} from "../../package/game-version.mjs";
 import {DEFAULT_GAME_OPTIONS} from '../../src/launcher/game-preferences.mts';
 import {loadCompatibleSiteManifest} from '../../src/contracts/compat/host-manifest.mts';
@@ -314,10 +315,14 @@ export function createBrowserSession({document, window, baseUrl: configuredBaseU
   let sessionStorage: Storage | null = null; try {sessionStorage = window.sessionStorage;} catch {}
   const identity = createMultiplayerIdentityStore({persistentStorage: storage, sessionStorage});
   const sessions = createMultiplayerRoomSessionStore({storage: sessionStorage});
+  const relayRouting = createRelayEntryRouting({
+    shared: () => directoryEntry ? directory.getSnapshot().siteManifest?.shared : metadata.getSnapshot().siteManifest?.shared,
+    createSocket: url => new WebSocket(url),
+  });
   const directory = createLobbyDirectory({
     testBuild: entryUrl.searchParams.has('test'),
     loadSiteManifest: signal => loadCompatibleSiteManifest(async file => {const response = await window.fetch(new URL(file, baseUrl), {cache: 'no-store', signal}); if (!response.ok) throw Object.assign(new Error(`HTTP ${response.status}`), {status: response.status}); return response.json();}),
-    createSocket: url => new WebSocket(url), memberId: multiplayerMemberId,
+    createSocket: url => relayRouting.createSocket(url), memberId: multiplayerMemberId,
     identity, sessions, sessionStorage, translate: t,
     launcherUrl: () => new URL(snapshot.locale === 'en' ? 'en.html' : './', baseUrl).href,
     navigateToRoom: url => requiredNavigation().navigateToRoom(url),
@@ -325,7 +330,8 @@ export function createBrowserSession({document, window, baseUrl: configuredBaseU
     onSelectedProductNormalized: product => requiredNavigation().selectLobbyProduct(product),
   });
   const networkDiagnostics = createNetworkDiagnosticsModel({ translate: stringTranslate,
-    getRelayUrl: () => {const host = /\/lobby(?:\.html)?\/?$/.test(window.location.pathname) ? directory.getSnapshot().siteManifest : metadata.getSnapshot().siteManifest; const relay = host?.shared.netplayRelay; return relay ? buildMultiplayerDiagnosticRelayUrl(relay) : '';},
+    createRelaySocket: url => relayRouting.createSocket(url),
+    getRelayUrl: () => {const host = /\/lobby(?:\.html)?\/?$/.test(window.location.pathname) ? directory.getSnapshot().siteManifest : metadata.getSnapshot().siteManifest; const relay = host?.shared.netplayRelay; return relay ? buildMultiplayerDiagnosticRelayUrl(relayRouting.resolve(relay)) : '';},
     getFallbackIceServers: () => [{urls: ['stun:stun.cloudflare.com:3478']}]});
   const nativeTouch = createTouchNativePorts({document, screen: window.screen, mobile, translate: t});
   const playerGestureTypes = ['contextmenu', 'selectstart', 'dragstart', 'gesturestart', 'gesturechange', 'gestureend'];
@@ -531,7 +537,7 @@ export function createBrowserSession({document, window, baseUrl: configuredBaseU
   });
   const titleNetwork = createTitleNetwork({context: () => ({game: runtime?.getSnapshot().game ?? activeSettings?.gameId ?? 'th06',
     product: roomSession?.service.getSnapshot().product ?? activeSettings?.context.productId ?? DEFAULT_PRODUCT_ID,
-    launched: runtime?.getSnapshot().launched === true, relayUrl: metadata.getSnapshot().siteManifest?.shared.netplayRelay ?? ''}),
+    launched: runtime?.getSnapshot().launched === true, relayUrl: relayRouting.resolve(metadata.getSnapshot().siteManifest?.shared.netplayRelay ?? '')}),
     translate: stringTranslate, toast: feedback.toast, randomValues: value => {const bytes = new Uint32Array(value.length); window.crypto.getRandomValues(bytes); value.set(bytes); return value;},
     sendNetworkCancel: () => requiredRuntime().cancelTitleNetwork(),
     enterRoom(product, code, created) {if (isMultiplayerProductId(product)) roomSession!.service.enterRoom(product, code, created);},
@@ -1023,7 +1029,7 @@ export function createBrowserSession({document, window, baseUrl: configuredBaseU
   const roomPreparation = createRoomPreparation({acquisition, metadataReady: metadata.initialize, baseUrl, translate: t,
     activeWorker: () => appShellOwner.activeWorker(), network});
   roomSession = createRoomSession({document, window, storage, identity, sessions, memberId: multiplayerMemberId,
-    createSocket: url => new WebSocket(url), relayUrl: () => metadata.getSnapshot().siteManifest?.shared.netplayRelay ?? '',
+    createSocket: url => relayRouting.createSocket(url), relayUrl: () => relayRouting.resolve(metadata.getSnapshot().siteManifest?.shared.netplayRelay ?? ''),
     settingsModel: settings, sitePreferences: preferences, runtime: () => runtime, replayViewer: () => snapshot.replayViewer,
     titleOverlayOpen: () => snapshot.th09NetworkOverlayOpen,
     settings: () => ({touchEnabled: settings.getSnapshot()?.options.touchEnabled === true, touchMovementMode: settings.getSnapshot()?.options.touchMovementMode ?? DEFAULT_GAME_OPTIONS.touchMovementMode, ...(settings.getSnapshot()?.context.productId === 'th09mp' ? {replayAutoSave: settings.getSnapshot()?.replayAutoSave} : {}), mobileDevice: mobile, iceServers: [{urls: ['stun:stun.cloudflare.com:3478']}]}),
