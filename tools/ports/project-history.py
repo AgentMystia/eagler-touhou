@@ -317,7 +317,7 @@ def prepare_writeback(git, projection, merged_ref, create_commit=False, message=
         raise RuntimeError("Write-back changed a different directory")
     if not message.strip() or "\n" in message or "\r" in message:
         raise RuntimeError("Commit title must be one non-empty line")
-    body = message + "\n\ngit-subtree-dir: " + prefix + "\ngit-subtree-split: " + merged + "\n"
+    body = message + "\n\ngit-subtree-dir: " + prefix + "\ngit-subtree-mainline: " + head + "\ngit-subtree-split: " + merged + "\n"
     body += "Port-History-Writeback: 1\n"
     report = {"sourceHead": head, "game": game, "target": prefix, "merged": merged,
               "tree": tree, "parents": [head, merged], "message": body, "changed": changed}

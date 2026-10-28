@@ -146,13 +146,14 @@ export function buildMultiplayerRuntimeOptions(
 
   const fixedRollbackTitle = product === multiplayerConfigForProduct('th11mp') || product === multiplayerConfigForProduct('th12mp');
   const th075 = roomProduct === 'th075mp';
-  const requestedMode = input.adonisMode ?? (fixedRollbackTitle || th075 ? 1 : 0);
+  const th15 = roomProduct === 'th15mp';
+  const requestedMode = input.adonisMode ?? (fixedRollbackTitle || th075 || product.inputTiming?.rollbackDefault === false ? 1 : 0);
   const timingPolicy = multiplayerInputTimingPolicy(product);
   const rollback = timingPolicy.rollback && [0, 2].includes(requestedMode);
   const adonisMode = rollback ? 0 : requestedMode;
   const measuredTitle = timingPolicy.measuredStartup;
   if (
-    fixedRollbackTitle &&
+    (fixedRollbackTitle || roomProduct === "th15mp") &&
     input.predictionLimit !== undefined &&
     input.predictionLimit !== timingPolicy.predictionLimit &&
     !(adonisMode === 1 && input.predictionLimit === 0)
@@ -215,18 +216,18 @@ export function buildMultiplayerRuntimeOptions(
                 : 0,
         }
       : {}),
-    ...(input.adonisMode !== undefined || fixedRollbackTitle || th075 ? { netplayAdonisMode: adonisMode } : {}),
-    ...((fixedRollbackTitle && rollback) || th075 ? { netplayInputDelayAuto: false } : {}),
+    ...(input.adonisMode !== undefined || fixedRollbackTitle || th075 || th15 ? { netplayAdonisMode: adonisMode } : {}),
+    ...(((fixedRollbackTitle || th15) && rollback) || th075 ? { netplayInputDelayAuto: false } : {}),
     ...(measuredTitle && adonisMode
       ? {
           netplayInputDelayAuto: input.inputDelayAuto ?? false,
           netplayPredictionReserve: input.predictionReserve ?? 2,
         }
       : {}),
-    ...(!timingPolicy.rollback || input.predictionLimit !== undefined || fixedRollbackTitle || th075
+    ...(!timingPolicy.rollback || input.predictionLimit !== undefined || fixedRollbackTitle || th075 || th15
       ? {
           netplayPredictionLimit:
-            !timingPolicy.rollback || ((fixedRollbackTitle || th075) && adonisMode === 1)
+            !timingPolicy.rollback || ((fixedRollbackTitle || th075 || th15) && adonisMode === 1)
               ? 0
               : typeof input.predictionLimit === 'number' &&
                   Number.isInteger(input.predictionLimit) &&

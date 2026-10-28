@@ -131,9 +131,14 @@ class ProjectionTests(unittest.TestCase):
         self.assertTrue(all(path.startswith("ports/th10-mp/") for path in prepared["changed"]))
         prepared = module.prepare_writeback(self.reader, report, merged, create_commit=True)
         written = prepared["candidateCommit"]
+        # Standard git subtree also checks the on-disk prefix. Materialize the
+        # fixture's HEAD before testing an export of the candidate revision.
         self.run_git("read-tree", "HEAD")
         self.run_git("checkout-index", "--all")
         self.run_git("update-index", "--refresh")
+        split = self.run_git("subtree", "split", "--prefix=ports/th10-mp", "--quiet", written).decode().strip()
+        self.assertTrue(self.reader.ancestor(merged, split))
+        self.assertEqual(self.reader.commit(split)[0], merged_tree)
         self.run_git("merge", "--ff-only", written)
         after = self.project(write=True)
         self.assertEqual(after["results"]["th10"]["head"], a)
@@ -198,6 +203,13 @@ class ProjectionTests(unittest.TestCase):
         merged_tree = self.run_git("merge-tree", "--write-tree", fork, self.normal).decode().splitlines()[0]
         self.assertEqual(merged_tree, self.tree(mp_files))
         prepared = module.prepare_writeback(self.reader, report, fork, create_commit=True)
+        # A writeback with the same content still has to carry the upstream
+        # ancestors through a standard export, not just through our projector.
+        self.run_git("read-tree", prepared["candidateCommit"])
+        self.run_git("checkout-index", "--all")
+        split = self.run_git("subtree", "split", "--prefix=ports/th12-mp", "--quiet", prepared["candidateCommit"]).decode().strip()
+        self.assertTrue(self.reader.ancestor(fork, split))
+        self.assertEqual(self.reader.commit(split)[0], self.tree(mp_files))
         after = module.project(self.reader, prepared["candidateCommit"], "th12")
         self.assertEqual(after["results"]["th12mp"]["head"], fork)
 

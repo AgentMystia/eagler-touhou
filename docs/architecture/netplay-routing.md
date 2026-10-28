@@ -25,6 +25,8 @@ node launcher/tests/test-peer-runtime-update.mjs
 
 ## 路径与兼容
 
+玩家对战默认使用 WebRTC，建立失败后返回等待室。启用旧 WebSocket 对战兼容时，服务端设置 `EAGLER_NETPLAY_GAMEPLAY_RELAY_FALLBACK=1`，客户端同时设置 `netplayAllowWebsocketFallback=true`。房间、信令与旁观继续由 Relay 承载。生命周期测试对兼容场景显式开启回退，默认关闭场景由服务端专项检查覆盖。
+
 每对玩家保留当前 WebRTC 连接和至多一条 TURN 连接。备用连接强制 `iceTransportPolicy=relay`，使用信令服务签发的第一个 TURN 候选及其现有端口配置。初始连接已经走 TURN 或本机启用「优先使用 TURN」时，继续沿用该路径。
 
 双方通过当前可靠控制通道交换 `etr1:` 能力和备用 SDP/ICE，不增加 Relay 消息种类。相同控制通道承载备用协商，双方确认支持后才启用选路。旧版客户端继续使用既有二进制输入与控制流。
@@ -81,3 +83,15 @@ python common/tests/adaptive-peer-route-browser.py --turn-origin https://your-la
 已有多人运行包可使用 `launcher/scripts/update-peer-runtime.mjs` 更新四个同签名浏览器绑定：TH12 的目标为 `core.mjs`，TH15 为 `th15.mjs`。工具校验绑定参数，保留 WASM 和其余脚本内容，并输出源文件与更新结果的 SHA-256 记录。正式发布时同步重建运行包清单与代际身份。完整源码构建继续使用两作的多人构建入口。
 
 两作各自的多人开发分支承载此次公共传输接入。原生回滚窗口、输入身份和规则版本沿用各作当前实现。
+
+### 实际游戏换路
+
+`ports/th09/web/tests/multiplayer/adaptive-route-browser.mjs` 加载正式 th09 WASM 和原作素材，通过独立的生产 Relay 进程建立双人房间。测试从直连开始，建立健康基线后持续丢弃初始路径的输入发送，核对双方选择实际 TURN、已确认游戏帧继续推进，以及换路前后共同帧的世界 hash 一致。
+
+`PC_BUILD` 指向正式编译目录，`TURN_ORIGIN` 指向提供短期诊断凭据的站点，`ROUTE_REPORT` 指定结果文件。`ROUTE_SCENARIO` 选择 `stable`、`bursts`、`outage`，分别验证健康路径保持、间歇性长丢包和持续断流；`ROUTE_BURST_MS` 控制每二十秒的连续丢包时长，`ROUTE_DURATION_MS` 控制观察时间。素材使用 th09 开发指南中的 `TH09_FIXTURE_DATA`、`TH09_FIXTURE_ASSETS`、`TH09_FIXTURE_MUSIC` 显式配置。短期凭据由内存和子进程环境传递，结果记录运行包身份、换路时长、候选类型和逐帧对照结果。
+
+`ROUTE_RUNTIME_URL` 可指定公网候选的 `th09.mjs`。测试沿实际响应及重定向记录浏览器加载的脚本与 WASM，分别核对本地候选摘要，并将实际 URL、字节数与摘要写入结果。两类响应完整匹配后确认验收结果，将公网文件分发纳入同一次实际对局验证。该校验复用[浏览器验证工具](../../tools/browser/README.md)。
+
+`ROUTE_CONTROL_FAULT=1` 同时暂存初始可靠通道的发送，恢复后按原顺序交付，用游戏状态对照验证控制重放与迟到去重。`ROUTE_STARTUP_ONLY=1` 固定使用健康路径场景，检查双端开局后持续推进、原路径保持和共同帧 hash；此模式关闭输入与控制故障注入，可重复运行核对开局。完整断流换路场景使用默认入口，保留成熟采样与恢复后的帧对照。`ROUTE_ADAPTIVE_DISABLED=1` 提供相同运行包的旧传输对照。
+
+`ROUTE_RELAY_URL` 可指定公开 WSS 服务，测试先准备双端世界，再以随机房间号和独立成员身份创建私密双人房间，经该服务完成信令与路线屏障。结束时通过目录的当前会话凭据释放成员和传输。默认入口使用独立本地 Relay 进程。

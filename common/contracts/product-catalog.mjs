@@ -380,7 +380,7 @@ export const PRODUCT_GAMES = Object.freeze({
         musicCapabilities: Object.freeze({ midi: false }),
         musicRuntime: Object.freeze({ localOggConfigureMode: "runtime-selection" }),
         touchFire: TOGGLE_TOUCH_FIRE,
-        support: Object.freeze({ highRefreshRate: false,
+        support: Object.freeze({ highRefreshRate: true,
             sourceRepository: "https://github.com/YomotsuHisami/th11",
             adaptationNotice: "early-test",
         }),
@@ -499,7 +499,7 @@ export const PRODUCT_GAMES = Object.freeze({
         multiplayer: Object.freeze({
             titleKey: "game.title.th15mp",
             gameplay: "cooperative",
-            inputTiming: Object.freeze({ rollbackLimit: 0, measuredStartup: true, manualDelayLimit: 9 }),
+            inputTiming: Object.freeze({ rollbackLimit: 12, sendPredictionLimit: 12, rollbackDefault: false, measuredStartup: true, manualDelayLimit: 9 }),
             playerCounts: STANDARD_MULTIPLAYER_PLAYER_COUNTS,
             difficulties: STANDARD_MULTIPLAYER_DIFFICULTIES,
             loadouts: TH15_MULTIPLAYER_LOADOUTS,
