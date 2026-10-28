@@ -297,7 +297,7 @@ export const PRODUCT_GAMES = Object.freeze({
             titleKey: "game.title.th09mp",
             gameplay: "versus",
             inGameSelection: true,
-            inputTiming: Object.freeze({ rollbackLimit: 8, measuredStartup: true, manualDelayLimit: 9, manualRollbackDelay: true }),
+            inputTiming: Object.freeze({ rollbackLimit: 8, measuredStartup: true, manualDelayLimit: 9 }),
             playerCounts: Object.freeze([2]),
             difficulties: TH09_MULTIPLAYER_DIFFICULTIES,
             loadouts: TH09_MULTIPLAYER_LOADOUTS,
@@ -563,7 +563,6 @@ export function multiplayerInputTimingPolicy(product) {
     return {
         measuredStartup,
         rollback,
-        manualRollbackDelay: rollback && timing?.manualRollbackDelay === true,
         manualDelayLimit: timing?.manualDelayLimit ?? (measuredStartup ? 9 : 8),
         predictionLimit: rollback ? timing?.sendPredictionLimit ?? 8 : 0,
     };
