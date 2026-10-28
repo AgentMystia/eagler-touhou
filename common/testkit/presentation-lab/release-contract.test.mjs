@@ -83,3 +83,11 @@ test('forward evidence is compared against current plus velocity, not past-frame
   samples[5]={...frame(11,17),alpha:1.5};
   assert.equal(analyzeNormalizedWindow(input).objects[0].status,'non-idempotent');
 });
+
+
+test('current-frame comparison treats the deliberate hold as a reference, not a smoothing fault',()=>{
+ const previous=frame(10,0),current=frame(11,10);
+ const samples=[1,1,1,1].map(alpha=>({...frame(11,10),alpha}));
+ const report=analyzeNormalizedWindow({previous,current,samples,mode:'current',stateBefore:evidence(),statesAfter:samples.map(()=>evidence())});
+ assert.equal(report.valid,true);assert.equal(report.issueGroups.length,0);
+});

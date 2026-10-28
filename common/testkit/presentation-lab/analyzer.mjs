@@ -78,7 +78,7 @@ export function analyzeNormalizedWindow({previous,current,samples,stateBefore,st
       for(const [id,field] of currentFields){
         const previousField=previousFields.get(id),observed=sampleFields.map(sample=>({alpha:sample.alpha,field:sample.fields.get(id)}));
         if(!previousField||observed.some(sample=>!sample.field)){row.fields.push({id,label:field.label||id,status:'unobserved'});continue;}
-        row.fields.push({id,label:field.label||id,...classifyField(previousField,field,observed)});
+        row.fields.push({id,label:field.label||id,...classifyField(previousField,mode==='current'?{...field,interpolationPolicy:'snap-current'}:field,observed)});
       }
       row.status=row.fields.reduce((status,field)=>defaultSeverity(field.status)>defaultSeverity(status)?field.status:status,'static');
       if(row.status==='static'&&row.fields.some(field=>['interpolated','extrapolated'].includes(field.status)))row.status=mode==='extrapolation'?'extrapolated':'interpolated';
