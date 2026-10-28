@@ -27,7 +27,8 @@ const build=JSON.parse(await readFile(resolve(runtimeRoot,'build.json'),'utf8'))
 if(![6,7].includes(stage)||!Number.isInteger(section)||!Number.isInteger(loadout)||loadout<0||loadout>5||!Number.isInteger(frames)||frames<300||frames>3600)throw Error('Invalid scenario');
 if(!Number.isInteger(cpuRate)||cpuRate<1||cpuRate>8)throw Error('Invalid CPU rate');
 const baselineCommit=execFileSync('git',['rev-parse','--verify','--end-of-options',(process.env.TH12_PROFILE_BASELINE_REF??'HEAD')+'^{commit}'],{cwd:resolve(root,'../..'),encoding:'utf8'}).trim();
-const baselineSources=new Map(baseline?['renderer.mjs','presentation-interpolation.mjs','draw-scheduler.mjs'].map(name=>['/src/'+name,execFileSync('git',['show',baselineCommit+':ports/th12/src/'+name],{cwd:resolve(root,'../..')})]):[]);
+const baselineFiles=['renderer.mjs','presentation-interpolation.mjs','draw-scheduler.mjs','animation.mjs'];
+const baselineSources=new Map(baseline?baselineFiles.map(name=>['/src/'+name,execFileSync('git',['show',baselineCommit+':ports/th12/src/'+name],{cwd:resolve(root,'../..')})]):[]);
 if(!/^[a-z0-9-]+$/.test(label))throw Error('Invalid profile label');
 const html=`<!doctype html><meta charset="utf-8"><style>body{margin:0;background:#080808}canvas{width:640px;height:480px}</style><canvas width="640" height="480"></canvas><script type="module">
 import create from '/site/runtime/core.mjs';import {Renderer} from '/src/renderer.mjs';${compare?"import {Renderer as BaselineRenderer} from '/baseline/renderer.mjs';window.BaselineRenderer=BaselineRenderer;":''}
@@ -65,7 +66,7 @@ const server=createServer(async(req,res)=>{
   try{
     const url=new URL(req.url,'http://localhost');
     if(url.pathname==='/'){res.setHeader('Content-Type','text/html;charset=utf-8');res.end(html);return;}
-    if(url.pathname.startsWith('/baseline/')){const name=url.pathname.slice('/baseline/'.length);if(name.includes('..'))throw Error('Invalid path');res.setHeader('Content-Type','text/javascript');res.end(name==='renderer.mjs'?execFileSync('git',['show',baselineCommit+':ports/th12/src/renderer.mjs'],{cwd:resolve(root,'../..')}):await readFile(resolve(root,'src',name)));return;}
+    if(url.pathname.startsWith('/baseline/')){const name=url.pathname.slice('/baseline/'.length);if(name.includes('..'))throw Error('Invalid path');res.setHeader('Content-Type','text/javascript');res.end(baselineFiles.includes(name)?execFileSync('git',['show',baselineCommit+':ports/th12/src/'+name],{cwd:resolve(root,'../..')}):await readFile(resolve(root,'src',name)));return;}
     if(baselineSources.has(url.pathname)){res.setHeader('Content-Type','text/javascript');res.end(baselineSources.get(url.pathname));return;}
     const asset=url.pathname.startsWith('/assets/'),runtime=url.pathname.startsWith('/site/runtime/'),base=asset?assetsRoot:runtime?runtimeRoot:root;
     const relative=asset?url.pathname.slice('/assets/'.length):runtime?url.pathname.slice('/site/runtime/'.length):'.'+url.pathname;
@@ -95,7 +96,10 @@ try{
           if(frame>=120){samples[name].capture.push(captured-start);samples[name].render.push(drawn-captured);}endpoints[name]=endpoint;
         }
         if(frame%150===149||frame===frames-1){
-          if(JSON.stringify(endpoints.baseline)!==JSON.stringify(endpoints.optimized))throw Error('Endpoint mismatch at '+frame);
+          if(JSON.stringify(endpoints.baseline)!==JSON.stringify(endpoints.optimized)){
+            const differences=[];const compare=(a,b,path)=>{if(differences.length>=8||JSON.stringify(a)===JSON.stringify(b))return;if(a&&b&&typeof a==='object'&&typeof b==='object'){for(const key of new Set([...Object.keys(a),...Object.keys(b)]))compare(a[key],b[key],path+'.'+key);}else differences.push({path,baseline:a,optimized:b});};
+            compare(endpoints.baseline,endpoints.optimized,'endpoint');if(differences.length)throw Error('Endpoint mismatch at '+frame+': '+JSON.stringify(differences));
+          }
           const pixels=renderer=>{const gl=renderer.gl,bytes=new Uint8Array(640*480*4);gl.readPixels(0,0,640,480,gl.RGBA,gl.UNSIGNED_BYTE,bytes);return bytes;};
           const a=pixels(baselineRenderer),b=pixels(r);let differences=0;for(let i=0;i<a.length;i++)differences+=a[i]!==b[i];
           if(differences)throw Error('Pixel mismatch at '+frame+': '+differences);
