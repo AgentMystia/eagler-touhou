@@ -364,3 +364,8 @@ target_link_libraries(eagler_common_cooperative_menu_input_test PRIVATE eagler::
 add_test(NAME eagler-common.cooperative-menu-input COMMAND eagler_common_cooperative_menu_input_test)
 target_link_libraries(eagler_common_cooperative_rules_test PRIVATE eagler::netplay_headers)
 add_test(NAME eagler-common.cooperative-rules COMMAND eagler_common_cooperative_rules_test)
+
+if(EAGLER_COMMON_NODE_EXECUTABLE)
+    add_test(NAME eagler-common.thprac-passive-adapters
+        COMMAND ${EAGLER_COMMON_NODE_EXECUTABLE} --test ${CMAKE_CURRENT_SOURCE_DIR}/thprac-passive-adapters.test.mjs)
+endif()
