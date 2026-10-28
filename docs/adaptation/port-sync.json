@@ -304,7 +304,7 @@
     "th12": {
       "normal": "ports/th12",
       "multiplayer": "ports/th12-mp",
-      "base": "733c0b706e8067b228589cbb0f9bb9c41b23227e",
+      "base": "6289bfcf4d5f258833e70a6f3f3d32cfe709c01e",
       "origin": {
         "normalCommit": "5e5081a1d2a434b2f8d785ebbd6b965f1058d828",
         "multiplayerCommit": "02e3a62a7ff38ca5ec1f3ad2007c117534e9ba26",
@@ -323,6 +323,20 @@
           "multiplayerHistory": "b3e59c47be3a1c4c58d512ed77728e75e5e7933d",
           "integration": "committed",
           "note": "沿重建后的普通版与多人版父链完成完整目录历史合并。普通版新增内容为说明文档，MP 保留自己的合作规则说明。重建前的四条接收记录保存在 archive/th12-multiplayer-20261028/port-sync-before-rebuild.json。"
+        },
+        {
+          "kind": "git-merge",
+          "base": "733c0b706e8067b228589cbb0f9bb9c41b23227e",
+          "source": "60d01c1f2919f31d75d132a6cad1a464f77f19d3",
+          "targetHead": "6289bfcf4d5f258833e70a6f3f3d32cfe709c01e",
+          "normalHistory": "fd7a59af58a9d27630e4b3c10dcd2c7ac526548c",
+          "multiplayerHistory": "5dc35be24a34df543e7093d3464521f79f6bdb73",
+          "paths": [
+            "ports/th12-mp/docs/BUILD.md",
+            "ports/th12-mp/integration/common-dependency.json"
+          ],
+          "integration": "committed",
+          "note": "普通版与多人版接收相同的构建依赖摘要及维护约定，保留多人独立存储与录像接口。两侧完整目录合并后内容树保持一致，普通版待接收历史归零。"
         }
       ]
     }
