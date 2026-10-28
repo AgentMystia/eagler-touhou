@@ -2690,7 +2690,7 @@ for(const game of ['th06','th07','th08','th09','th10','th11','th15']) test(`actu
  f.native[api.multiplayerConfigForProduct(product).peerTransportGlobal]=peer;
  await React.act(async()=>f.native.emit('first-frame'));
  await until(()=>session.getSnapshot().roomLaunchStage===null,'gameplay path settled');
- await click('.room-workspace-fullscreen');
+ assert.equal(session.getSnapshot().roomPlayerExpanded,true,'Start already expands the game for player input');
  peer.disconnected=true;
  await until(()=>session.getGameplayNetwork().getSnapshot().returnToRoom,'ended connection offers Return to room');
  await click('#netplayConnectionReturn');

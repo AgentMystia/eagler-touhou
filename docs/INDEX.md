@@ -1,6 +1,6 @@
 # 文档总表
 
-共 317 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
+共 321 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
 
 项目说明按当前目录重写；许可证保留原文，生成报告由各自工具更新。原有 498 份 Markdown 的逐篇去向见[旧文档去向](history/INDEX.md)。
 
@@ -197,6 +197,16 @@
 | 历史记录 | [archive/th12-maintenance-20261025/th12-history-rebuild-20261025.md](../archive/th12-maintenance-20261025/th12-history-rebuild-20261025.md) | TH12 未合入历史重建 |
 | 历史记录 | [archive/th12-maintenance-20261025/th12-switch-fixes-20261025.md](../archive/th12-maintenance-20261025/th12-switch-fixes-20261025.md) | TH12 Switch 修复适配 |
 | 历史记录 | [archive/th12-maintenance-20261026/th12mp-stage-ending-20261026.md](../archive/th12-maintenance-20261026/th12mp-stage-ending-20261026.md) | TH12 多人结局与换面 |
+| 历史记录 | [archive/th12-multiplayer-20261028/README.md](../archive/th12-multiplayer-20261028/README.md) | th12 多人接收 ｜ 2026-10-28 |
+| 历史记录 | [archive/th12-multiplayer-20261028/th12-multiplayer-20261024.md](../archive/th12-multiplayer-20261028/th12-multiplayer-20261024.md) | TH12 多人合作 ｜ 共享飞碟与独立源码 |
+| 历史记录 | [archive/th12-multiplayer-20261028/th12-multiplayer-bomb-interpolation-20261027.md](../archive/th12-multiplayer-20261028/th12-multiplayer-bomb-interpolation-20261027.md) | TH12 多人放雷与回滚插值开销 |
+| 历史记录 | [archive/th12-multiplayer-20261028/th12-multiplayer-followup-20261025.md](../archive/th12-multiplayer-20261028/th12-multiplayer-followup-20261025.md) | TH12 联机呈现与计时（2026-10-25） |
+| 历史记录 | [archive/th12-multiplayer-20261028/th12-multiplayer-performance-20261025.md](../archive/th12-multiplayer-20261028/th12-multiplayer-performance-20261025.md) | TH12 多人回滚性能 |
+| 历史记录 | [archive/th12-multiplayer-20261028/th12-multiplayer-restart-safety-20261026.md](../archive/th12-multiplayer-20261028/th12-multiplayer-restart-safety-20261026.md) | TH12 多人重开确认 |
+| 历史记录 | [archive/th12-multiplayer-20261028/th12-multiplayer-touch-continuity-20261027.md](../archive/th12-multiplayer-20261028/th12-multiplayer-touch-continuity-20261027.md) | TH12 多人触控连续性 |
+| 历史记录 | [archive/th12-multiplayer-20261028/th12-multiplayer-transfer-font-20261026.md](../archive/th12-multiplayer-20261028/th12-multiplayer-transfer-font-20261026.md) | TH12 多人资源传递提示 |
+| 历史记录 | [archive/th12-multiplayer-20261028/th12-visual-performance-20261025.md](../archive/th12-multiplayer-20261028/th12-visual-performance-20261025.md) | TH12 飞钵轮廓与展示性能 |
+| 历史记录 | [archive/th12-multiplayer-20261028/th12mp-localization-20261025.md](../archive/th12-multiplayer-20261028/th12mp-localization-20261025.md) | TH12 多人本地语言资源 |
 | 历史记录 | [archive/th15-boss-transfer-20261027/README.md](../archive/th15-boss-transfer-20261027/README.md) | TH15 多人：共享碎片与 Boss 入场输入 |
 | 历史记录 | [archive/th15-rollback-20261026/th15-capture-index-20261026.md](../archive/th15-rollback-20261026/th15-capture-index-20261026.md) | TH15 多人快照：连续捕获索引 |
 | 历史记录 | [archive/th15-rollback-20261026/th15-multiplayer-shield-boss-20261026.md](../archive/th15-rollback-20261026/th15-multiplayer-shield-boss-20261026.md) | TH15 多人兔机护盾与 Boss 伤害 |
@@ -211,16 +221,7 @@
 | 历史记录 | [docs/history/port-sync-20261023.md](history/port-sync-20261023.md) | 普通版到 MP 全量同步 ｜ 2026-10-23 |
 | 历史记录 | [docs/history/port-sync-audit.md](history/port-sync-audit.md) | 普通版与 MP 提交对账 |
 | 历史记录 | [docs/history/th12-audio-20261024.md](history/th12-audio-20261024.md) | th12 菜单音效 ｜ Edge A/B ｜ 2026-10-24 |
-| 历史记录 | [docs/history/th12-multiplayer-20261024.md](history/th12-multiplayer-20261024.md) | TH12 多人合作 ｜ 共享飞碟与独立源码 |
-| 历史记录 | [docs/history/th12-multiplayer-bomb-interpolation-20261027.md](history/th12-multiplayer-bomb-interpolation-20261027.md) | TH12 多人放雷与回滚插值开销 |
-| 历史记录 | [docs/history/th12-multiplayer-followup-20261025.md](history/th12-multiplayer-followup-20261025.md) | TH12 联机呈现与计时（2026-10-25） |
-| 历史记录 | [docs/history/th12-multiplayer-performance-20261025.md](history/th12-multiplayer-performance-20261025.md) | TH12 多人回滚性能 |
-| 历史记录 | [docs/history/th12-multiplayer-restart-safety-20261026.md](history/th12-multiplayer-restart-safety-20261026.md) | TH12 多人重开确认 |
-| 历史记录 | [docs/history/th12-multiplayer-touch-continuity-20261027.md](history/th12-multiplayer-touch-continuity-20261027.md) | TH12 多人触控连续性 |
-| 历史记录 | [docs/history/th12-multiplayer-transfer-font-20261026.md](history/th12-multiplayer-transfer-font-20261026.md) | TH12 多人资源传递提示 |
 | 历史记录 | [docs/history/th12-performance-20261024.md](history/th12-performance-20261024.md) | th12 性能测量 ｜ 2026-10-24 |
-| 历史记录 | [docs/history/th12-visual-performance-20261025.md](history/th12-visual-performance-20261025.md) | TH12 飞钵轮廓与展示性能 |
-| 历史记录 | [docs/history/th12mp-localization-20261025.md](history/th12mp-localization-20261025.md) | TH12 多人本地语言资源 |
 | 历史记录 | [ports/th15-mp/web/CHANGELOG.txt](../ports/th15-mp/web/CHANGELOG.txt) | [2026-10-05] 绀珠传 WEB 1.0.3 |
 | 历史记录 | [ports/th15/web/CHANGELOG.txt](../ports/th15/web/CHANGELOG.txt) | [2026-10-05] 绀珠传 WEB 1.0.3 |
 | 许可证与声明 | [common/LICENSE](../common/LICENSE) | LICENSE |

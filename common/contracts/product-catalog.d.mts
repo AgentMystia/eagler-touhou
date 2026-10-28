@@ -677,6 +677,18 @@ export declare const PRODUCT_GAMES: Readonly<{
         replay: Readonly<{
             prefix: "th12";
         }>;
+        multiplayerRuntime: "./runtime/th12/multiplayer/th12.html";
+        multiplayer: Readonly<{
+            titleKey: "game.title.th12mp";
+            gameplay: "cooperative";
+            inputTiming: Readonly<{rollbackLimit: 12; sendPredictionLimit: 12; measuredStartup: true; manualDelayLimit: 9}>;
+            playerCounts: readonly [2, 3];
+            difficulties: readonly string[];
+            loadouts: readonly MultiplayerLoadoutConfig[];
+            peerTransportGlobal: "__th12PeerTransport";
+            spectator: true;
+            titleRoomEntry: false;
+        }>;
         features: Readonly<{
             thprac: true;
             languages: true;
