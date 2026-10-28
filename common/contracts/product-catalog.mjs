@@ -476,9 +476,16 @@ export const PRODUCT_GAMES = Object.freeze({
         requiredShared: Object.freeze(["/msgothic.ttc", "/unifont.otf"]),
         runtimeAssets: Object.freeze([
             "th13.html",
+            "manifest.json",
+            "shell.mjs",
+            "managed.css",
+            "keyboard.mjs",
             "directory-keyboard.mjs",
+            "runtime-assets.mjs",
+            "startup-branding.mjs",
             "th13-sdl.mjs",
             "th13-sdl.wasm",
+            "resources.json",
         ]),
         dataProvider: "retail-memory",
         package: Object.freeze({
