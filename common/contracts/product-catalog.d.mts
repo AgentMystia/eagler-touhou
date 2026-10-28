@@ -697,6 +697,7 @@ export declare const PRODUCT_GAMES: Readonly<{
     }>;
     th13: Readonly<{
         testOnly: true;
+        buildOptIn: true;
         number: "13";
         title: "東方神霊廟";
         subtitle: "Ten Desires";
