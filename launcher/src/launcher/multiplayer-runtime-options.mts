@@ -182,7 +182,7 @@ export function buildMultiplayerRuntimeOptions(
   )
     throw new Error('该多人 Runtime 仅支持纯延迟时序，不能启用预测或回滚');
   if (
-    (requestedMode || timingPolicy.manualRollbackDelay && input.inputDelay !== undefined) &&
+    (requestedMode || input.inputDelay !== undefined) &&
     (!Number.isInteger(input.inputDelay) ||
       input.inputDelay! < 0 ||
       input.inputDelay! > timingPolicy.manualDelayLimit)
@@ -206,12 +206,12 @@ export function buildMultiplayerRuntimeOptions(
     ...(rollback || input.inputDelay !== undefined
       ? {
           netplayInputDelay:
-            rollback && !timingPolicy.manualRollbackDelay || input.inputDelayAuto
+            rollback || input.inputDelayAuto
               ? 0
               : typeof input.inputDelay === 'number' &&
                   Number.isInteger(input.inputDelay) &&
                   input.inputDelay >= 0 &&
-                  input.inputDelay <= (adonisMode || timingPolicy.manualRollbackDelay ? timingPolicy.manualDelayLimit : 8)
+                  input.inputDelay <= (adonisMode ? timingPolicy.manualDelayLimit : 8)
                 ? input.inputDelay
                 : 0,
         }
