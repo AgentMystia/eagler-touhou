@@ -304,7 +304,7 @@
     "th12": {
       "normal": "ports/th12",
       "multiplayer": "ports/th12-mp",
-      "base": "a54397f9e31ff71043fe22a77058a675c1ff05de",
+      "base": "9eb7fe4a817d7126f5ba36601d3d680fa3398744",
       "origin": {
         "normalCommit": "5e5081a1d2a434b2f8d785ebbd6b965f1058d828",
         "multiplayerCommit": "02e3a62a7ff38ca5ec1f3ad2007c117534e9ba26",
@@ -432,6 +432,25 @@
             "ports/th12-mp/tests/text-outline.test.mjs"
           ],
           "note": "SDL3资源、绘制、设备与练习平台代码同步到两侧；MP保留pilot访问和网络宿主，普通版Web桥接、标准构建和预览脚本不覆盖MP专用实现。历史中绿UFO预告线与文字描边修复已存在于MP渲染器，MP构建文档沿自身模式保留。标题分块采样修复两侧共用，已保留合并祖先。"
+        },
+        {
+          "kind": "manual",
+          "base": "a54397f9e31ff71043fe22a77058a675c1ff05de",
+          "source": "9eb7fe4a817d7126f5ba36601d3d680fa3398744",
+          "targetHead": "941425e1a880aa0e21f9400636ffdf8e102c19ef",
+          "paths": [
+            "ports/th12-mp/docs/LAUNCHER_INTEGRATION.md",
+            "ports/th12-mp/portable/sdl/PracticeOverlay.cpp",
+            "ports/th12-mp/portable/sdl/Scene.cpp",
+            "ports/th12-mp/portable/sdl/Scene.hpp",
+            "ports/th12-mp/portable/sdl/TextRaster.cpp",
+            "ports/th12-mp/portable/sdl/TextRaster.hpp",
+            "ports/th12-mp/scripts/package-launcher.mjs",
+            "ports/th12-mp/site/adapter-preview.html",
+            "ports/th12-mp/site/adapter-preview.mjs",
+            "ports/th12-mp/site/game-sdl.mjs"
+          ],
+          "note": "两侧接收共用符卡排版、文字栅格与 THPrac 颜色修复并保留合并祖先；语言包及启动桥接修改归普通版，MP 保留自己的合作启动接口。"
         }
       ]
     }
