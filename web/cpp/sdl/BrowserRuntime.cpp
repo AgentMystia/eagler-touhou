@@ -310,11 +310,12 @@ u32 sample_controller(u32& buttons){
 }
 bool sample_and_tick(){
 #if TH15_MULTIPLAYER
- // Only confirmed menus may queue physical samples while remote input waits.
- // Enabling this for combat accumulates a permanent extra capture lead after
- // a network stall, on top of the user's explicit D-frame input delay.
+ // Every confirmed-only phase needs a bounded physical-input pipeline. Stage
+ // handoffs are not snapshot-ready either: without this, each transition tick
+ // waits for the preceding tick's remote input before sending the next sample.
+ // Snapshot-ready combat drains the queued tail before sampling fresh inputs.
  network.SetCapturePhase(app&&mp_started&&!mp_local_results&&!app->exiting&&
-   (app->title||app->ending||mp_boundary.waiting()||(app->scene()&&app->scene()->messages.active())||(app->pause&&app->pause->state.screen!=PauseScreen::Inactive)),SDL_GetTicksNS()/1000);
+   (mp_boundary.waiting()||!AppFrameState::ready(*app)),SDL_GetTicksNS()/1000);
  // Touch pulses and held/pressed edges are sampled exactly once per frame.
  // While a captured frame waits, only pump the confirmed-input runtime.
  if(mp_started&&!mp_local_results&&!network.NeedsCapture())return mp_tick(0,false);
