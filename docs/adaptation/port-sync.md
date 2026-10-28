@@ -186,4 +186,4 @@ node tools/ports/sync.mjs record th10 --from <commit> --note "已手工合并冲
 
 ## th12 同源维护
 
-th12-mp 继承 th12 的来源子树，按相同目录投影、合并和写回流程接收普通版历史。重建前的提交登记保留在[固定历史记录](../../archive/th12-multiplayer-20261028/port-sync-before-rebuild.json)，当前同步基线沿重建后的真实父链推进。普通版修改与多人专属规则分别核验，代码树核对和 Git 祖先核对共同确认接收结果。
+th12-mp 继承 th12 的来源子树，按相同目录投影、合并和写回流程接收普通版历史。重建前的提交登记保留在[固定历史记录](../../archive/th12-multiplayer-20261028/port-sync-before-rebuild.json)，当前同步基线沿重建后的真实父链推进。普通版修改与多人专属规则分别核验，代码树核对和 Git 祖先核对共同确认接收结果。Source history CI 同时运行同步检查，确认 th12 基线属于当前父链。
