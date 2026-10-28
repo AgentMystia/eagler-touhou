@@ -171,6 +171,8 @@
 
 ## 运行验收记录
 
+2026-10-28 normal：高刷使用当前帧外推，最多向前一个逻辑帧；原始逻辑与回放沿用 60 Hz 更新。构建、原生检查和 Presentation Lab 的验证范围见[外推记录](../../archive/motion-extrapolation-153-20261028/README.md)。
+
 按检查编号附[验证记录](../../docs/adaptation/record-template.md)，写明源码身份、模式、环境、操作与结果。自动更新保留本节内容。
 
 ### 2026-10-20：normal / Chromium / 日文 1.00b
