@@ -1,6 +1,6 @@
 # 文档总表
 
-共 335 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
+共 347 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
 
 项目说明按当前目录重写；许可证保留原文，生成报告由各自工具更新。原有 498 份 Markdown 的逐篇去向见[旧文档去向](history/INDEX.md)。
 
@@ -100,6 +100,8 @@
 | 作品源码文档 | [ports/th12-mp/docs/behavior/animation.md](../ports/th12-mp/docs/behavior/animation.md) | 动画、场景与界面行为 |
 | 作品源码文档 | [ports/th12-mp/docs/behavior/combat.md](../ports/th12-mp/docs/behavior/combat.md) | 战斗行为与原版接口 |
 | 作品源码文档 | [ports/th12-mp/docs/behavior/ufo.md](../ports/th12-mp/docs/behavior/ufo.md) | UFO 与道具行为 |
+| 作品源码文档 | [ports/th12-mp/portable/sdl/LICENSES.md](../ports/th12-mp/portable/sdl/LICENSES.md) | SDL 原生层来源与许可 |
+| 作品源码文档 | [ports/th12-mp/portable/sdl/README.md](../ports/th12-mp/portable/sdl/README.md) | TH12 SDL3 / GLES 共用应用 |
 | 作品源码文档 | [ports/th12-mp/src/audio/README.md](../ports/th12-mp/src/audio/README.md) | Streaming OGG music |
 | 作品源码文档 | [ports/th12-mp/src/practice/DAMAGE-SOURCES.md](../ports/th12-mp/src/practice/DAMAGE-SOURCES.md) | ReimuA damage-source compatibility |
 | 作品源码文档 | [ports/th12-mp/src/practice/INTEGRATION.md](../ports/th12-mp/src/practice/INTEGRATION.md) | TH12 Purple THPrac integration |
@@ -118,6 +120,8 @@
 | 作品源码文档 | [ports/th12/docs/behavior/animation.md](../ports/th12/docs/behavior/animation.md) | 动画、场景与界面行为 |
 | 作品源码文档 | [ports/th12/docs/behavior/combat.md](../ports/th12/docs/behavior/combat.md) | 战斗行为与原版接口 |
 | 作品源码文档 | [ports/th12/docs/behavior/ufo.md](../ports/th12/docs/behavior/ufo.md) | UFO 与道具行为 |
+| 作品源码文档 | [ports/th12/portable/sdl/LICENSES.md](../ports/th12/portable/sdl/LICENSES.md) | SDL 原生层来源与许可 |
+| 作品源码文档 | [ports/th12/portable/sdl/README.md](../ports/th12/portable/sdl/README.md) | TH12 SDL3 / GLES 共用应用 |
 | 作品源码文档 | [ports/th12/src/audio/README.md](../ports/th12/src/audio/README.md) | Streaming OGG music |
 | 作品源码文档 | [ports/th12/src/practice/DAMAGE-SOURCES.md](../ports/th12/src/practice/DAMAGE-SOURCES.md) | ReimuA damage-source compatibility |
 | 作品源码文档 | [ports/th12/src/practice/INTEGRATION.md](../ports/th12/src/practice/INTEGRATION.md) | TH12 Purple THPrac integration |
@@ -317,10 +321,18 @@
 | 许可证与声明 | [ports/th11/web/cpp/game/THPRAC-LICENSE.txt](../ports/th11/web/cpp/game/THPRAC-LICENSE.txt) | MIT License |
 | 许可证与声明 | [ports/th12-mp/LICENSE](../ports/th12-mp/LICENSE) | LICENSE |
 | 许可证与声明 | [ports/th12-mp/NOTICE.md](../ports/th12-mp/NOTICE.md) | Copyright and license scope |
+| 许可证与声明 | [ports/th12-mp/portable/sdl/licenses/CC0-1.0.txt](../ports/th12-mp/portable/sdl/licenses/CC0-1.0.txt) | Creative Commons Legal Code |
+| 许可证与声明 | [ports/th12-mp/portable/sdl/licenses/TH12-MIT.txt](../ports/th12-mp/portable/sdl/licenses/TH12-MIT.txt) | MIT License |
+| 许可证与声明 | [ports/th12-mp/portable/sdl/third_party/miniaudio.LICENSE](../ports/th12-mp/portable/sdl/third_party/miniaudio.LICENSE) | miniaudio |
+| 许可证与声明 | [ports/th12-mp/portable/sdl/third_party/stb_image.LICENSE](../ports/th12-mp/portable/sdl/third_party/stb_image.LICENSE) | stb_image |
 | 许可证与声明 | [ports/th12-mp/src/practice/THPRAC-LICENSE.txt](../ports/th12-mp/src/practice/THPRAC-LICENSE.txt) | MIT License |
 | 许可证与声明 | [ports/th12-mp/third_party/stb_vorbis/LICENSE](../ports/th12-mp/third_party/stb_vorbis/LICENSE) | LICENSE |
 | 许可证与声明 | [ports/th12/LICENSE](../ports/th12/LICENSE) | LICENSE |
 | 许可证与声明 | [ports/th12/NOTICE.md](../ports/th12/NOTICE.md) | Copyright and license scope |
+| 许可证与声明 | [ports/th12/portable/sdl/licenses/CC0-1.0.txt](../ports/th12/portable/sdl/licenses/CC0-1.0.txt) | Creative Commons Legal Code |
+| 许可证与声明 | [ports/th12/portable/sdl/licenses/TH12-MIT.txt](../ports/th12/portable/sdl/licenses/TH12-MIT.txt) | MIT License |
+| 许可证与声明 | [ports/th12/portable/sdl/third_party/miniaudio.LICENSE](../ports/th12/portable/sdl/third_party/miniaudio.LICENSE) | miniaudio |
+| 许可证与声明 | [ports/th12/portable/sdl/third_party/stb_image.LICENSE](../ports/th12/portable/sdl/third_party/stb_image.LICENSE) | stb_image |
 | 许可证与声明 | [ports/th12/src/practice/THPRAC-LICENSE.txt](../ports/th12/src/practice/THPRAC-LICENSE.txt) | MIT License |
 | 许可证与声明 | [ports/th12/third_party/stb_vorbis/LICENSE](../ports/th12/third_party/stb_vorbis/LICENSE) | LICENSE |
 | 许可证与声明 | [ports/th15-mp/LICENSE](../ports/th15-mp/LICENSE) | LICENSE |

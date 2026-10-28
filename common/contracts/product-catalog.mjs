@@ -430,7 +430,7 @@ export const PRODUCT_GAMES = Object.freeze({
         storage: Object.freeze({saveRoot: "/savesth12", scoreFile: "scoreth12.dat", configFiles: Object.freeze(["th12.cfg"])}),
         runtime: "./runtime/th12/th12.html",
         runtimeFileLayout: "directory",
-        runtimeAssets: Object.freeze(["th12.html", "manifest.json", "game.css", "game.mjs", "core.mjs", "core.wasm", "vorbis.mjs", "vorbis.wasm", "managed-data.mjs", "managed-shell.mjs", "storage.mjs", "replay-workspace.mjs"]),
+        runtimeAssets: Object.freeze(["th12.html", "manifest.json", "game.css", "game.mjs", "core.mjs", "core.wasm", "managed-data.mjs", "managed-shell.mjs", "storage.mjs"]),
         requiredShared: Object.freeze(["/msgothic.ttc", "/unifont.otf"]),
         dataProvider: "retail-memory",
         runtimeResourceTransport: "resources",
