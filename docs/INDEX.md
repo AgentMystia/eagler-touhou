@@ -1,6 +1,6 @@
 # 文档总表
 
-共 330 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
+共 332 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
 
 项目说明按当前目录重写；许可证保留原文，生成报告由各自工具更新。原有 498 份 Markdown 的逐篇去向见[旧文档去向](history/INDEX.md)。
 
@@ -215,7 +215,9 @@
 | 历史记录 | [archive/th12-multiplayer-20261028/th12mp-localization-20261025.md](../archive/th12-multiplayer-20261028/th12mp-localization-20261025.md) | TH12 多人本地语言资源 |
 | 历史记录 | [archive/th12mp-public-20261028/README.md](../archive/th12mp-public-20261028/README.md) | 星莲船正式发布 |
 | 历史记录 | [archive/th12mp-public-20261028/cn129.md](../archive/th12mp-public-20261028/cn129.md) | 原主站入口同步 |
+| 历史记录 | [archive/th15-bomb-snapshot-memory-20261028/README.md](../archive/th15-bomb-snapshot-memory-20261028/README.md) | TH15 多人放雷快照内存峰值 |
 | 历史记录 | [archive/th15-boss-transfer-20261027/README.md](../archive/th15-boss-transfer-20261027/README.md) | TH15 多人：共享碎片与 Boss 入场输入 |
+| 历史记录 | [archive/th15-main-rollback-20261028/README.md](../archive/th15-main-rollback-20261028/README.md) | TH15 多人回滚主站发布 |
 | 历史记录 | [archive/th15-rollback-20261026/th15-capture-index-20261026.md](../archive/th15-rollback-20261026/th15-capture-index-20261026.md) | TH15 多人快照：连续捕获索引 |
 | 历史记录 | [archive/th15-rollback-20261026/th15-multiplayer-shield-boss-20261026.md](../archive/th15-rollback-20261026/th15-multiplayer-shield-boss-20261026.md) | TH15 多人兔机护盾与 Boss 伤害 |
 | 历史记录 | [archive/th15-rollback-20261026/th15-multiplayer-stress-20261026.md](../archive/th15-rollback-20261026/th15-multiplayer-stress-20261026.md) | TH15 多人压力验证 |
@@ -223,6 +225,7 @@
 | 历史记录 | [archive/th15-rollback-20261026/th15-rollback-experiment-20261026.md](../archive/th15-rollback-20261026/th15-rollback-experiment-20261026.md) | TH15 多人回滚实验 |
 | 历史记录 | [archive/th15-rollback-20261026/th15-rollback-stress-fix-20261026.md](../archive/th15-rollback-20261026/th15-rollback-stress-fix-20261026.md) | TH15 密集回滚修复与复测 |
 | 历史记录 | [archive/th15-rollback-20261026/th15-upstream-rebuild-20261026.md](../archive/th15-rollback-20261026/th15-upstream-rebuild-20261026.md) | TH15 多人实验分支与上游同步 |
+| 历史记录 | [archive/th15-stage-transition-rollback-20261028/README.md](../archive/th15-stage-transition-rollback-20261028/README.md) | TH15 多人回滚换面输入节奏 |
 | 历史记录 | [archive/thprac-information-touch-20261027/README.md](../archive/thprac-information-touch-20261027/README.md) | THPrac 信息窗触控归属 |
 | 历史记录 | [archive/turn-fallback-20261028/README.md](../archive/turn-fallback-20261028/README.md) | TURN 选择同步 |
 | 历史记录 | [docs/history/INDEX.md](history/INDEX.md) | 旧文档去向 |
