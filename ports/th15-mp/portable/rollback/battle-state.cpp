@@ -17,8 +17,9 @@ static void cancel_item_reuse(RetailAssets& assets){
 }
 int main(int argc,char** argv){
     require(argc==2,"Pass TH15_TEST_ARCHIVE");RetailAssets assets(argv[1]);cancel_item_reuse(assets);unsigned replayed=0;double capture_ms=0,restore_ms=0;unsigned captures=0;
-    for(const auto selection:{std::array<int,3>{0,1,2},std::array<int,3>{3,3,0}}){
-        World world(assets,3,2,selection);auto& b=*world.battle;EnemySpawnRequest main;main.routine="main";require(b.spawn(main),b.error);
+    struct Case {unsigned players,local,stage;std::array<int,3> selection;};
+    for(const Case config:std::array<Case,3>{{{3,2,1,{0,1,2}},{3,2,1,{3,3,0}},{2,1,7,{2,2,0}}}}){
+        World world(assets,config.players,config.local,config.selection,false,config.stage);auto& b=*world.battle;EnemySpawnRequest main;main.routine="main";require(b.spawn(main),b.error);
         BattleFrameState saved;
         for(unsigned frame=0;frame<720;){
             for(unsigned n=0;n<48&&frame<720;++n,++frame)world.step(input(frame));
