@@ -200,6 +200,7 @@
 | 历史记录 | [archive/relay-session-identity-20261028/README.md](../archive/relay-session-identity-20261028/README.md) | 多入口会话匹配 |
 | 历史记录 | [archive/site-recovery-20261028/README.md](../archive/site-recovery-20261028/README.md) | 网页入口回退发布 |
 | 历史记录 | [archive/th06-th08-multiplayer-bugs-20261028/README.md](../archive/th06-th08-multiplayer-bugs-20261028/README.md) | TH06／TH08 多人索敌与 Last Spell 修复验证 |
+| 历史记录 | [archive/th12-green-ufo-warning-20261028/README.md](../archive/th12-green-ufo-warning-20261028/README.md) | Extra 绿 UFO 激光预告线 |
 | 历史记录 | [archive/th12-maintenance-20261025/th12-history-rebuild-20261025.md](../archive/th12-maintenance-20261025/th12-history-rebuild-20261025.md) | TH12 未合入历史重建 |
 | 历史记录 | [archive/th12-maintenance-20261025/th12-switch-fixes-20261025.md](../archive/th12-maintenance-20261025/th12-switch-fixes-20261025.md) | TH12 Switch 修复适配 |
 | 历史记录 | [archive/th12-maintenance-20261026/th12mp-stage-ending-20261026.md](../archive/th12-maintenance-20261026/th12mp-stage-ending-20261026.md) | TH12 多人结局与换面 |
