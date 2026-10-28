@@ -11,7 +11,13 @@ PlayerBombKind player_bomb_kind(u8 character,i32 type)noexcept{
 }
 bool update_player_bomb(PlayerBombState& s,PlayerBombContext& input,PlayerLifeState& life,PlayerLifeContext& context,PlayerMovementState& movement,AnmVm& animation,const ShotProfile& profile,const FrameTiming& timing,PlayerBombActions& actions){
 #ifdef TH_ENABLE_MULTIPLAYER_GAMEPLAY
-    if(context.challenge_mode){context.bombs=0;s.active=0;s.triggered=0;life.auto_bomb=0;return true;}
+    if(context.challenge_mode){
+        context.bombs=0;
+        // Automatic Last Spell cancellation is a stage transition, not a
+        // player bomb. Let it start and finish even when manual bombs are off.
+        const bool last_word=(life.auto_bomb&&(context.game_flags&0x180))||(s.active&&s.type==4);
+        if(!last_word){s.active=0;s.triggered=0;life.auto_bomb=0;return true;}
+    }
 #endif
     const bool automatic=life.auto_bomb&&life.predead_count==1;
     if(!automatic){
