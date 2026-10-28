@@ -171,6 +171,7 @@ void shutdown(){reset_input();release_blind_image();g_blind_view_opt={};if(auto*
 void mouse(int type,float x,float y){if(auto* renderer=touhou::sdl::current();renderer&&renderer->flip_present_y)y=480-y;px=x;py=y;if(type==1||type==2){const bool pressed=type==1;if(pressed!=pointer_down){if(pointer_edges.size()>=64){cancel_pointer();return;}pointer_edges.push_back({pressed,x,y});pointer_down=pressed;}}}
 void cancel_pointer(){pointer_edges.clear();pointer_down=pointer_sample_down=false;px=py=-FLT_MAX;}
 void process_event(const SDL_Event& e,float scale){if(!initialized)return;if(e.type==SDL_EVENT_MOUSE_MOTION){if(e.motion.which==SDL_TOUCH_MOUSEID)return;desktop=true;mouse(0,e.motion.x/scale,e.motion.y/scale);}else if(e.type==SDL_EVENT_MOUSE_BUTTON_DOWN||e.type==SDL_EVENT_MOUSE_BUTTON_UP){if(e.button.which==SDL_TOUCH_MOUSEID)return;desktop=true;if(e.button.button==SDL_BUTTON_LEFT)mouse(e.type==SDL_EVENT_MOUSE_BUTTON_DOWN?1:2,e.button.x/scale,e.button.y/scale);}else if(e.type==SDL_EVENT_MOUSE_WHEEL)ImGui::GetIO().MouseWheel+=e.wheel.y;}
+bool passive_pointer(float x,float y){if(!initialized||captures_game_input())return false;if(auto* renderer=touhou::sdl::current();renderer&&renderer->flip_present_y)y=480-y;return MobileThprac::passive_pointer(x,y);}
 bool captures_pointer(float x,float y){if(!initialized)return false;if(auto* renderer=touhou::sdl::current();renderer&&renderer->flip_present_y)y=480-y;if(ImGui::IsPopupOpen(nullptr,ImGuiPopupFlags_AnyPopupId|ImGuiPopupFlags_AnyPopupLevel))return true;for(auto* w:ImGui::GetCurrentContext()->Windows)if(w->Active&&!w->Hidden&&!(w->Flags&ImGuiWindowFlags_NoMouseInputs)&&w->OuterRectClipped.Contains({x,y}))return true;return false;}
 bool captures_game_input(){return initialized&&(was_open||MobileThprac::captures_advanced(false));}
 void update_input(ApplicationState& app,const bool* keys){if(!initialized)return;++generation;const u32 bits=u32(EM_ASM_INT({return Module.eaglerControls?.thpracKeyboardBits|0;}));for(int i=0;i<256;i++){bool held=keys[i]||(i==8&&(bits&1))||(i==9&&(bits&256))||(i>=112&&i<=118&&(bits&(1u<<(i-111))))||(i==123&&(bits&512));edge[i]=held&&!down[i];down[i]=held;}
@@ -243,7 +244,7 @@ void render(ApplicationState& app){if(!initialized)return;if(draw_generation==ge
 }
 #else
 namespace th15::sdl::ThpracUi {
-bool initialize(ApplicationState&){return true;}void shutdown(){}void process_event(const SDL_Event&,float){}void update_input(ApplicationState&,const bool*){}void render(ApplicationState&){}bool captures_game_input(){return false;}bool captures_pointer(float,float){return false;}void mouse(int,float,float){}void cancel_pointer(){}
+bool initialize(ApplicationState&){return true;}void shutdown(){}void process_event(const SDL_Event&,float){}void update_input(ApplicationState&,const bool*){}void render(ApplicationState&){}bool captures_game_input(){return false;}bool captures_pointer(float,float){return false;}bool passive_pointer(float,float){return false;}void mouse(int,float,float){}void cancel_pointer(){}
 void reset_input(){}
 }
 #endif

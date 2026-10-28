@@ -39,6 +39,13 @@ bool damage_enemy(EclVm& enemy,const EnemyDamageContext& input,PlayerFrameState&
     return hit;
 }
 #ifdef TH_ENABLE_MULTIPLAYER_GAMEPLAY
+bool last_spell_waits_for_players(EnemyDamageActions& actions){
+    for(u32 seat=0;seat<actions.participant_count();++seat){
+        EnemyDamageParticipant pilot;
+        if(actions.participant(seat,pilot)&&pilot.life_state==0&&!pilot.bomb)return false;
+    }
+    return true;
+}
 bool damage_enemy_multiplayer(EclVm& enemy,u8 time_spell,u8 spell_bomb_damage,GameValues& values,i32& bomb_hit,u32& owner,EnemyDamageActions& actions){
     enemy.last_damage=0;bomb_hit=0;owner=0;
     if(!(enemy.flags&0x40))return false;

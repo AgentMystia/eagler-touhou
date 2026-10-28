@@ -65,3 +65,40 @@ test('Lobby launcher back keeps original anchor and uses Router, standalone docs
 test('Lobby masthead close closes actual detached custom-select menu',async()=>{await mount(el(Masthead));await click('#mastheadMenuToggle');await click('.mizuki-select-trigger');assert.equal(n('.mizuki-select-menu').hidden,false);await click('#mastheadMenuToggle');assert.equal(n('.mizuki-select-menu').hidden,true);assert.equal(n('#mastheadMenuPanel').hasAttribute('inert'),true);});
 test('Lobby custom-select item click does not count as masthead outside click',async()=>{await mount(el(Masthead));await click('#mastheadMenuToggle');await click('.mizuki-select-trigger');await click('.mizuki-select-item');assert.equal(n('#mastheadMenuToggle').getAttribute('aria-expanded'),'true');});
 test('Lobby Escape closes menu and restores original toggle focus',async()=>{await mount(el(Masthead));await click('#mastheadMenuToggle');const event=new env.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true});await React.act(async()=>n('#mastheadMenuPanel').dispatchEvent(event));assert.equal(event.defaultPrevented,true);assert.equal(n('#mastheadMenuToggle').getAttribute('aria-expanded'),'false');assert.equal(env.document.activeElement,n('#mastheadMenuToggle'));});
+
+test('shared header play links navigate directly and only help and settings expand',async()=>{
+ function CurrentMasthead(){const{pathname}=owners.useLocation();return el(Masthead,{variant:pathname==='/lobby.html'?'lobby':'library'});}
+ await mount(el(CurrentMasthead));
+ assert.equal(n('.site-primary-links [aria-current=page]').dataset.siteLink,'single');
+ assert.equal(n('#mastheadMenu').querySelectorAll('a[href*="game="]').length,0);
+ assert.equal(n('.site-mobile-page-links [data-site-link=lobby]').getAttribute('href'),'/lobby.html');
+ await React.act(async()=>n('.site-primary-links [data-site-link=lobby]').dispatchEvent(new env.window.PointerEvent('pointerover',{bubbles:true,pointerType:'mouse'})));
+ assert.equal(n('#mastheadMenuPanel').hasAttribute('inert'),true);
+ await click('.site-primary-links [data-site-link=lobby]');assert.equal(n('#address').textContent,'/lobby.html');
+ assert.equal(n('.site-primary-links [aria-current=page]').dataset.siteLink,'lobby');
+ await click('.site-primary-links [data-site-link=single]');assert.equal(n('#address').textContent,'/en.html');
+ assert.equal(n('.site-primary-links [aria-current=page]').dataset.siteLink,'single');
+ await click('[data-site-trigger=help]');
+ assert.equal(n('#mastheadMenu').dataset.group,'help');assert.equal(n('#mastheadMenuPanel').hasAttribute('inert'),false);
+ assert.equal(n('[data-site-panel=help] a[href="/uptime/"]').tagName,'A');
+ await React.act(async()=>env.document.body.click());assert.equal(n('#mastheadMenuPanel').hasAttribute('inert'),true);
+});
+
+test('header hover waits 500ms, cancels on departure or dismissal, and keeps direct actions immediate',async t=>{
+ await mount(el(Masthead));t.mock.timers.enable({apis:['setTimeout']});
+ const enter=()=>React.act(async()=>n('[data-site-trigger=help]').dispatchEvent(new env.window.PointerEvent('pointerover',{bubbles:true,pointerType:'mouse'})));
+ const tick=ms=>React.act(async()=>t.mock.timers.tick(ms));
+ const escape=()=>React.act(async()=>n('[data-site-trigger=help]').dispatchEvent(new env.window.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true})));
+ const closed=()=>assert.equal(n('#mastheadMenuPanel').hasAttribute('inert'),true);
+ await enter();await tick(499);closed();await tick(1);
+ assert.equal(n('#mastheadMenuPanel').hasAttribute('inert'),false);assert.equal(n('#mastheadMenu').dataset.group,'help');
+ await escape();await enter();await tick(250);
+ await React.act(async()=>n('[data-site-trigger=help]').dispatchEvent(new env.window.PointerEvent('pointerout',{bubbles:true,pointerType:'mouse',relatedTarget:env.document.body})));
+ await tick(1000);closed();
+ await enter();await tick(250);await React.act(async()=>env.document.body.click());await tick(500);closed();
+ await enter();await escape();await tick(500);closed();
+ await enter();await click('[data-site-trigger=help]');assert.equal(n('#mastheadMenuPanel').hasAttribute('inert'),false);
+ await click('[data-site-trigger=help]');await tick(1000);closed();
+ await React.act(async()=>n('[data-site-trigger=settings]').dispatchEvent(new env.window.KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true})));
+ assert.equal(n('#mastheadMenuPanel').hasAttribute('inert'),false);assert.equal(n('#mastheadMenu').dataset.group,'settings');
+});

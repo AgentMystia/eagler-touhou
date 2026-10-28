@@ -176,7 +176,7 @@
 | Relay 服务 | [services/relay/deploy/README.md](../services/relay/deploy/README.md) | 部署 Relay |
 | Relay 服务 | [services/relay/docs/protocol.md](../services/relay/docs/protocol.md) | Relay 客户端协议 |
 | TURN 服务 | [services/turn/README.md](../services/turn/README.md) | TURN 配置工具 |
-| Telemetry 服务 | [services/telemetry/README.md](../services/telemetry/README.md) | 联机遥测服务 |
+| Telemetry 服务 | [services/telemetry/README.md](../services/telemetry/README.md) | 服务状态与联机遥测 |
 | 服务 | [services/resource-router/README.md](../services/resource-router/README.md) | 资源下载服务 |
 | 开发工具 | [tools/README.md](../tools/README.md) | 开发工具 |
 | 开发工具 | [tools/browser/README.md](../tools/browser/README.md) | 浏览器测试工具 |
@@ -192,6 +192,8 @@
 | 迁移记录 | [docs/migration/local-workspace-20261019.md](migration/local-workspace-20261019.md) | 本地工作区归并 ｜ 2026-10-19 |
 | 迁移记录 | [docs/migration/th12-subtree-20261024.md](migration/th12-subtree-20261024.md) | th12 子树继承 ｜ 上游同源历史 |
 | 历史记录 | [archive/README.md](../archive/README.md) | 历史记录 |
+| 历史记录 | [archive/main-thprac-th08-test-th12-20261028/README.md](../archive/main-thprac-th08-test-th12-20261028/README.md) | 主站 THPrac／TH08 与测试站 TH12 多人发布 |
+| 历史记录 | [archive/th06-th08-multiplayer-bugs-20261028/README.md](../archive/th06-th08-multiplayer-bugs-20261028/README.md) | TH06／TH08 多人索敌与 Last Spell 修复验证 |
 | 历史记录 | [archive/th12-maintenance-20261025/th12-history-rebuild-20261025.md](../archive/th12-maintenance-20261025/th12-history-rebuild-20261025.md) | TH12 未合入历史重建 |
 | 历史记录 | [archive/th12-maintenance-20261025/th12-switch-fixes-20261025.md](../archive/th12-maintenance-20261025/th12-switch-fixes-20261025.md) | TH12 Switch 修复适配 |
 | 历史记录 | [archive/th12-maintenance-20261026/th12mp-stage-ending-20261026.md](../archive/th12-maintenance-20261026/th12mp-stage-ending-20261026.md) | TH12 多人结局与换面 |
@@ -203,6 +205,7 @@
 | 历史记录 | [archive/th15-rollback-20261026/th15-rollback-experiment-20261026.md](../archive/th15-rollback-20261026/th15-rollback-experiment-20261026.md) | TH15 多人回滚实验 |
 | 历史记录 | [archive/th15-rollback-20261026/th15-rollback-stress-fix-20261026.md](../archive/th15-rollback-20261026/th15-rollback-stress-fix-20261026.md) | TH15 密集回滚修复与复测 |
 | 历史记录 | [archive/th15-rollback-20261026/th15-upstream-rebuild-20261026.md](../archive/th15-rollback-20261026/th15-upstream-rebuild-20261026.md) | TH15 多人实验分支与上游同步 |
+| 历史记录 | [archive/thprac-information-touch-20261027/README.md](../archive/thprac-information-touch-20261027/README.md) | THPrac 信息窗触控归属 |
 | 历史记录 | [docs/history/INDEX.md](history/INDEX.md) | 旧文档去向 |
 | 历史记录 | [docs/history/README.md](history/README.md) | 历史与迁移 |
 | 历史记录 | [docs/history/port-sync-20261023.md](history/port-sync-20261023.md) | 普通版到 MP 全量同步 ｜ 2026-10-23 |

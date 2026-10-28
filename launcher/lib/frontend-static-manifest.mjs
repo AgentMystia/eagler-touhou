@@ -17,6 +17,9 @@ const entries = [
   ['ui-fonts-deferred.css', false],
   ['touch-guide.css', true],
   ['about.css', true],
+  ['site-pages.mjs', true],
+  ['site-pages.css', true],
+  ['uptime/index.html', true],
   // Origin migration must always use the current network document. Caching it
   // in the App Shell could leave either side of a cutover on stale protocol
   // code even when the server correctly marks the page for revalidation.
@@ -41,6 +44,8 @@ const entries = [
   ['assets/touch-rotate-landscape.webp', true],
   ['assets/launcher-background.webp', true],
   ['assets/room-caret-left.svg', true],
+  ['assets/site-menu.svg', true],
+  ['assets/site-menu-close.svg', true],
   ['assets/room-caret-right.svg', true],
   ['assets/room-copy.svg', true],
   ['assets/room-gear-six.svg', true],
