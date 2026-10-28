@@ -12,6 +12,8 @@
 
 核心计划在 [`test-plan.mjs`](test-plan.mjs)，由 [`scripts/check.mjs`](../scripts/check.mjs) 执行，每个测试入口在同一计划中执行一次。新测试归入计划或稳定 npm 入口；`test-test-ownership.mjs` 检查归属。
 
+`npm run test:support` 的 Package 模块检查通过正式生成器准备 FAQ 静态样式，再在独立目录验证合约编译、模块依赖与 HTTP 服务。生成样式覆盖 `styles.css`、`features.css` 与 `site-pages.css`，检查目录保留源码输入及生成文件的逐字节一致性。
+
 房间丢包测量的状态和双端计数由 `npm run check` 检查；`npm run test:room-packet-loss:browser` 在本机浏览器中验证真实 DataChannel 与房间面板。
 
 共享顶栏的直接页面导航、当前页面标识、帮助与设置的 500 毫秒悬停等待及取消、即时点击和键盘操作、语言菜单和键盘焦点由 `react-main/shell-links.test.mjs` 检查。`node tests/test-netplay-telemetry.mjs` 检查遥测接口兼容性；从 `services/telemetry/` 运行 `npm test` 检查服务探测、历史恢复、旧地址跳转和下载服务分组开关。
