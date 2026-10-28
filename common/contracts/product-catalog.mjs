@@ -425,7 +425,6 @@ export const PRODUCT_GAMES = Object.freeze({
         features: Object.freeze({ thprac: true, languages: true, focusHitbox: false }),
     }),
     th12: Object.freeze({
-        testOnly: true,
         number: "12", title: "東方星蓮船", subtitle: "Undefined Fantastic Object",
         cardArtwork: "th12-card.webp",
         storage: Object.freeze({saveRoot: "/savesth12", scoreFile: "scoreth12.dat", configFiles: Object.freeze(["th12.cfg"])}),
