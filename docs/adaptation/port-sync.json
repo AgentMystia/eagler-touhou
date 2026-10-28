@@ -304,7 +304,7 @@
     "th12": {
       "normal": "ports/th12",
       "multiplayer": "ports/th12-mp",
-      "base": "9eb7fe4a817d7126f5ba36601d3d680fa3398744",
+      "base": "1020941a6fcb0f1f544a7519fba505235d0b82c9",
       "origin": {
         "normalCommit": "5e5081a1d2a434b2f8d785ebbd6b965f1058d828",
         "multiplayerCommit": "02e3a62a7ff38ca5ec1f3ad2007c117534e9ba26",
@@ -451,6 +451,16 @@
             "ports/th12-mp/site/game-sdl.mjs"
           ],
           "note": "两侧接收共用符卡排版、文字栅格与 THPrac 颜色修复并保留合并祖先；语言包及启动桥接修改归普通版，MP 保留自己的合作启动接口。"
+        },
+        {
+          "kind": "manual",
+          "base": "9eb7fe4a817d7126f5ba36601d3d680fa3398744",
+          "source": "1020941a6fcb0f1f544a7519fba505235d0b82c9",
+          "targetHead": "f0eb09734315feb6be722454f55a96c596a37daf",
+          "paths": [
+            "ports/th12-mp/src/wasm/PracticeUi.cpp"
+          ],
+          "note": "两侧同步练习菜单方向键增减、选择循环及鼠标和键盘焦点切换，MP 保留 pilot() 身份读取，完整目录历史已合并。"
         }
       ]
     }
