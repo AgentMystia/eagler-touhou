@@ -54,6 +54,8 @@ Host 工作区检查覆盖 th12 的原始音轨输入与 `assets-eagler` 成品�
 
 `npm run test:room-runtime-retention:browser` 使用真实 th06 或 th07 多人 Wasm、两名玩家、一名旁观者和本地 Relay，连续三次从旁观回到原生菜单并重进同一局。显式设置 `ROOM_RUNTIME_GAME`、`ROOM_RUNTIME_ROOT`、`ROOM_RUNTIME_DATA`、`EAGLER_SHARED_GOTHIC` 和 `EAGLER_SHARED_UNIFONT`；结果与截图位于 `.cache/native-room-retention/<game>/`。
 
+工作区的 `test-multiplayer-session-identity.mjs` 执行 th08、th10、th11、th12、th15 的实际准入函数，检查不同 Relay 地址下的玩家与旁观者共用会话 ID，以及房间和局次隔离。标题预加载浏览器检查支持 `ROOM_PREVIEW_MIXED_RELAY=1`，用同一服务的两个域名及代理路径验证真实双人开局。
+
 `npm run test:th10-room-native-preview:browser` 检查 th10 原生标题动画、同实例双人开局、相同逻辑帧的 RNG 与世界状态，以及主动返回和原生退出后的菜单动画。输入为 `TH10_PREVIEW_RUNTIME`、`TH10_TEST_ARCHIVE` 与上述两项字体路径，`TH10_PREVIEW_MODE` 选择同步模式。`test:room-native-preview:browser` 提供 th15 标题与双人启动检查，使用对应的 `TH15_PREVIEW_RUNTIME`、`TH15_TEST_ARCHIVE`；`test:room-title-preload:browser -- <game> <mode>` 提供各作预加载检查，使用 `ROOM_PREVIEW_RUNTIME`、`ROOM_PREVIEW_DATA` 与上述字体路径。
 
 Python 浏览器测试使用锁定依赖：
