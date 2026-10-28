@@ -184,5 +184,26 @@
     "includesStageTransitionFix": false,
     "remote": "origin",
     "branch": "fix/th15-mp-bomb-snapshot-memory"
+  },
+  "combinedDelivery": {
+    "remote": "origin",
+    "branch": "fix/th15-mp-bomb-snapshot-memory",
+    "includesStageTransitionFix": true,
+    "parents": {
+      "memory": "eeb15680ce50c7e4fb0cc2b3d25ee31232bf56e2",
+      "stageTransition": "333f0b202139d0cba4e3bc8e6d2cf60621b30573"
+    },
+    "productionWasm": "dfcb9969c623d71b905b4ac7e2b18d2e94752b31c72f66e8c28ec7db87e1223c",
+    "checks": {
+      "nativeRegressionSuites": "3/3 PASS",
+      "wasmNetworkAndStartup": "PASS",
+      "multiplayerAdaptation": "7/7 PASS"
+    },
+    "evidenceHashes": {
+      "combined-native-tests.log": "dcff65d62a175f47966d51fa1a5977fc69515f4218b19a1f7c86c17deffd014a",
+      "combined-wasm-network.log": "997b4f5d5894c2b4ac8fda498d2c2c879449c805d5a1e1789c745f4b6c933cec",
+      "adaptation-combined.log": "e33a7882c28cb62a159421fc371ddbd49a1c3abf3fb2a8b62c241b82d94812af",
+      "build-combined.log": "aba46ee6601629f20c3176919b01bc58070acad84d4a78dae9537f45f85eb505"
+    }
   }
 }
