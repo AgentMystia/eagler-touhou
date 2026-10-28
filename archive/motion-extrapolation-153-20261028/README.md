@@ -47,3 +47,9 @@ node ports/th15/portable/presentation-lab/serve.mjs
 ```
 
 构建在 Windows PowerShell、Emscripten 6.0.9-git 与本机 CMake／Ninja 上完成。编译临时目录放在工作区 `artifacts/issue-153/tmp`。浏览器验证使用 Playwright Chromium／SwiftShader。扩展录像测试所需的私有 Replay／atlas 文件和记录范围列在机器记录中。
+
+## CI 构建接入
+
+公共原生测试检出八个实际被测的 SDL 适配目录，持续验证触控路由；外推时序契约同时注册到原生 CTest。TH12 的共享头文件固定记录对齐到已合并的 `5aa34a56f`，包括 `PracticeMobilePanels.hpp` 和 `PracticePointer.hpp`，普通版与多人版分别保留自己的固定记录。
+
+提交 `4f1d46ae8` 的上游 CI 已通过 13 个源码祖先锚点、TH12／TH15 MP 标准子树导出、Windows／Ubuntu 适配清单及必需 Checks。标准导出身份保存在机器记录中。

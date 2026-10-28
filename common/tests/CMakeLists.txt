@@ -369,3 +369,7 @@ if(EAGLER_COMMON_NODE_EXECUTABLE)
     add_test(NAME eagler-common.thprac-passive-adapters
         COMMAND ${EAGLER_COMMON_NODE_EXECUTABLE} --test ${CMAKE_CURRENT_SOURCE_DIR}/thprac-passive-adapters.test.mjs)
 endif()
+
+add_executable(eagler_common_extrapolation_test ../testkit/extrapolation-check.cpp)
+target_link_libraries(eagler_common_extrapolation_test PRIVATE eagler::netplay_headers)
+add_test(NAME eagler-common.extrapolation COMMAND eagler_common_extrapolation_test)

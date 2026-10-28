@@ -22,7 +22,8 @@
       "branch": "feature/th12-mp-motion-extrapolation-153",
       "base": "f5847433324d7f3298ef736cf6928b10cc975c4e",
       "commit": "b3dcec09f",
-      "testsPassed": 28
+      "testsPassed": 28,
+      "buildPinCommit": "ca7566d6f"
     }
   },
   "wasm": {
@@ -408,5 +409,26 @@
     "passed": true,
     "command": "npm run ports:status -- --all",
     "log": "status-refresh-final.log"
+  },
+  "ciBaselineVerification": {
+    "head": "4f1d46ae88f8ab92e4ee64d83441154c2c0607ff",
+    "run": "https://github.com/Ritosa2333/eagler-touhou/actions/runs/40636147315",
+    "sourceHistory": "passed",
+    "sourceAnchors": 13,
+    "subtrees": {
+      "ports/th12": "dbb81cc9c01d7fa9ea3eff32285f6a167f55ed68",
+      "ports/th15-mp": "fde3a4126576cda8e02f92f7a60cf9112c02391d"
+    },
+    "adaptationWindows": "passed",
+    "adaptationUbuntu": "passed",
+    "requiredChecks": "passed"
+  },
+  "ciBuildRepairs": {
+    "commonNative": "Sparse checkout includes the eight SDL adapter directories actually compiled by thprac-passive-adapters.test.mjs.",
+    "th12Pin": "Existing PracticeMobilePanels.hpp and PracticePointer.hpp pins match merged 5aa34a56f common sources.",
+    "nativeChecks": {
+      "extrapolation": "passed",
+      "thpracPassiveAdapters": "passed"
+    }
   }
 }
