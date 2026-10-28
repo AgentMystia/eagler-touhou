@@ -1,6 +1,6 @@
 # 文档总表
 
-共 337 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
+共 338 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
 
 项目说明按当前目录重写；许可证保留原文，生成报告由各自工具更新。原有 498 份 Markdown 的逐篇去向见[旧文档去向](history/INDEX.md)。
 
@@ -203,6 +203,7 @@
 | 历史记录 | [archive/th06-th08-multiplayer-bugs-20261028/README.md](../archive/th06-th08-multiplayer-bugs-20261028/README.md) | TH06／TH08 多人索敌与 Last Spell 修复验证 |
 | 历史记录 | [archive/th12-green-ufo-warning-20261028/README.md](../archive/th12-green-ufo-warning-20261028/README.md) | Extra 绿 UFO 激光预告线 |
 | 历史记录 | [archive/th12-hud-sampling-20261029/README.md](../archive/th12-hud-sampling-20261029/README.md) | TH12 静态 HUD 采样优化 |
+| 历史记录 | [archive/th12-hud-sampling-20261029/deployment/README.md](../archive/th12-hud-sampling-20261029/deployment/README.md) | TH12 主站性能更新部署 |
 | 历史记录 | [archive/th12-maintenance-20261025/th12-history-rebuild-20261025.md](../archive/th12-maintenance-20261025/th12-history-rebuild-20261025.md) | TH12 未合入历史重建 |
 | 历史记录 | [archive/th12-maintenance-20261025/th12-switch-fixes-20261025.md](../archive/th12-maintenance-20261025/th12-switch-fixes-20261025.md) | TH12 Switch 修复适配 |
 | 历史记录 | [archive/th12-maintenance-20261026/th12mp-stage-ending-20261026.md](../archive/th12-maintenance-20261026/th12mp-stage-ending-20261026.md) | TH12 多人结局与换面 |

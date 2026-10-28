@@ -36,4 +36,4 @@ HUD 复现入口为 `tools/ports/th12-hud-sampling-profile.mjs`。设置 `TH12_P
 
 浏览器入口为 `tools/ports/th12-byakuren-profile.mjs`：沿用上述基线，设置 `TH12_PROFILE_COMPARE=1`、`TH12_PROFILE_FRAMES=600`，并指定生产 Runtime 和提取资源目录；`TH12_PROFILE_BOMB=1` 使用射击和放雷场景。基线 renderer、动画采样器、顺序器及插值模块均从指定提交读取。
 
-本轮普通／多人两侧同步修改，沿已有干净开发分支追加普通提交，不引入投影或子树祖先。未部署站点。
+本轮普通／多人两侧同步修改，沿已有干净开发分支追加普通提交，不引入投影或子树祖先。已于 2026-10-29 部署主站，见[部署记录](deployment/README.md)。
