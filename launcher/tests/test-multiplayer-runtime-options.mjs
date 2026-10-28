@@ -12,6 +12,7 @@ const th07 = {
   difficulties: PRODUCT_GAMES.th07.multiplayer.difficulties,
   loadouts: PRODUCT_GAMES.th07.multiplayer.loadouts,
 };
+const th12 = PRODUCT_GAMES.th12.multiplayer;
 const base = {
   url: "wss://relay.example.test/netplay?room=th06mp-1234&run=1&player=0",
   player: 0,
@@ -44,7 +45,16 @@ assert.deepEqual(buildMultiplayerRuntimeOptions(base, th06), {
   netplayLoadouts: base.loadouts.slice(0, 2),
 }, "Runtime options must use only the active player-count prefix of loadouts");
 const th08Timing=buildMultiplayerRuntimeOptions({ ...base, inputDelay: 4, predictionLimit: 2 }, th06);
-for (const product of ['th06mp','th07mp','th075mp','th08mp','th09mp','th10mp','th11mp','th15mp']) {
+for(const playerCount of [2,3]){
+  const input={...base,url:base.url.replace('th06mp','th12mp'),playerCount,difficulty:4,inputDelay:0,
+    loadouts:[{character:0,shot:0},{character:1,shot:1},{character:2,shot:1}]};
+  const direct=buildMultiplayerRuntimeOptions({...input,adonisMode:0},th12);
+  assert.equal(direct.netplayPredictionLimit,12);assert.equal(direct.netplayInputDelay,0);assert.equal(direct.netplayInputDelayAuto,false);
+  const automatic=buildMultiplayerRuntimeOptions({...input,adonisMode:1,inputDelayAuto:true},th12);
+  assert.equal(automatic.netplayPredictionLimit,0);assert.equal(automatic.netplayInputDelayAuto,true);
+  assert.equal(automatic.netplayLoadouts.length,playerCount);
+}
+for (const product of ['th06mp','th07mp','th075mp','th08mp','th09mp','th10mp','th11mp','th12mp','th15mp']) {
   const input = {...base, difficulty: 1, inputDelay: 0, ...(product === 'th15mp' ? {adonisMode: 1} : {}), url: base.url.replace('th06mp', product)};
   assert.equal(buildMultiplayerRuntimeOptions({...input, preferTurn: true}, th06).netplayPreferTurn, true, product);
   assert.equal(buildMultiplayerRuntimeOptions({...input, preferTurn: false}, th06).netplayPreferTurn, undefined, product);

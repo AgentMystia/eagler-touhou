@@ -156,7 +156,8 @@
       "sourceBuild": { "kind": "node", "build": ["scripts/build-eagler.mjs"], "commonInputs": ["include/eagler/thprac/PracticeSpeed.hpp","include/eagler/thprac/PracticeInput.hpp","include/eagler/thprac/PracticeKeyMonitor.hpp","include/eagler/thprac/PracticeMobilePanels.hpp","include/eagler/thprac/PracticePointer.hpp"] },
       "workspaceRepository": "th12",
       "variants": {
-        "normal": { "features": { "thcrap": true, "thprac": true }, "cache": {} }
+        "normal": { "features": { "thcrap": true, "thprac": true }, "cache": {} },
+        "multiplayer": { "workspaceRepository": "th12mp", "features": { "thcrap": true, "thprac": false }, "sourceBuild": { "kind": "node", "build": ["scripts/build-eagler.mjs"] }, "cache": {} }
       }
     }
   }

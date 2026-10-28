@@ -1195,6 +1195,20 @@ test('actual BrowserLauncher: absent default base falls back inside Host without
   assert.equal(node('#gameId').dataset.game, 'th07');
 });
 
+for (const format of ['token', 'legacy']) test(`test-only TH12 room refresh preserves the invited product before Host metadata (${format})`, async () => {
+  const host = developmentAcquisitionHost(['th07', 'th12']); host.shared.testBuild = true;
+  const initial = format === 'token' ? '/?j=' + api.encodeRoomInvite({g:'th12mp',r:'1234',f:true,a:'join'}) : '/?game=th12mp&mpRoom=1234';
+  const f = await mountBrowser({initial,host,holdHost:true}), session = api.getTestSession();
+  await until(() => !!session.room.service.getSnapshot().room, 'invited room restored before Host');
+  assert.equal(session.room.service.getSnapshot().product, 'th12mp');
+  assert.equal(session.settings.getSnapshot().context.productId, 'th12mp');
+  assert.equal(api.resolveRoomInvite(new URL(currentUrl(),env.window.location.href)).g, 'th12mp');
+  await acceptHeldHost(f);
+  assert.equal(session.room.service.getSnapshot().product, 'th12mp');
+  assert.equal(session.settings.getSnapshot().context.productId, 'th12mp');
+  assert.equal(api.resolveRoomInvite(new URL(currentUrl(),env.window.location.href)).g, 'th12mp');
+});
+
 for (const room of [false, true]) test(`actual BrowserLauncher: same-base missing MP Runtime ${room ? 'retains the restored room' : 'hides options but retains catalog content'}`, async () => {
   const initial = `/?game=th06mp${room ? '&mpRoom=1234' : ''}&keep=a%20b#retained`;
   const f = await mountBrowser({initial, holdHost: true, host: subsetHost(['th06'], {multiplayer: false})});
@@ -2292,18 +2306,18 @@ test('actual BrowserLauncher: spectator toolbar exits playback into the existing
   assert.equal(env.document.querySelector('#playbackExit'), null);
 });
 
-for (const mobileDevice of [false,true]) for (const game of ['th06','th09']) for (const spectator of [true,false])
+for (const mobileDevice of [false,true]) for (const game of ['th06','th09','th12']) for (const spectator of [true,false])
 test(`room Leave retires the ${mobileDevice?'mobile':'desktop'} ${game} ${spectator?'spectator':'player'} without exposing fullscreen`,async t=>{
  const agent=env.window.navigator.userAgent;t.after(()=>Object.defineProperty(env.window.navigator,'userAgent',{configurable:true,value:agent}));
  Object.defineProperty(env.window.navigator,'userAgent',{configurable:true,value:mobileDevice?'Mozilla/5.0 Android Mobile':'Mozilla/5.0 Desktop'});
- const product=game+'mp',host=developmentAcquisitionHost([game]);host.shared.netplayRelay='wss://relay.invalid/socket';
+ const product=game+'mp',host=developmentAcquisitionHost([game]);host.shared.netplayRelay='wss://relay.invalid/socket';host.shared.testBuild=true;
  const invite=api.encodeRoomInvite({g:product,r:'1234',f:true,a:'join',s:spectator});
  const f=await mountBrowser({initial:'/?j='+invite,host,socketBoundary:true,actualHistory:true,seedPackages:[game],seedStorage(storage){
   storage.values.set(api.gamePreferenceStorageKey(product),JSON.stringify({music:'none',options:{touchEnabled:true,thpracEnabled:false}}));
  }}),session=api.getTestSession();
  await until(()=>session.room.service.getSnapshot().preparation?.status==='ready','room native menu loaded',15_000);
  const socket=f.sockets[0],id=new URL(socket.url).searchParams.get('lobby');
- const room={code:'1234',playerCount:2,difficulty:1,phase:'running',inputDelay:0,predictionLimit:8,startSerial:4,spectatorTimeline:true,
+ const room={code:'1234',playerCount:2,difficulty:1,phase:'running',inputDelay:0,predictionLimit:game==='th12'?12:8,startSerial:4,spectatorTimeline:true,
   seats:[{clientId:spectator?'host':id,name:'A',loadout:0,ready:true},{clientId:'peer',name:'B',loadout:1,ready:true}],spectators:spectator?[{clientId:id,name:'C'}]:[]};
  await React.act(async()=>{socket.open();socket.message({type:'state',room});socket.message({type:spectator?'spectator-start':'start',serial:4,room});});
  await until(()=>node('#decisionDialog').open||session.getRuntime().getSnapshot().launched,'room launch accepted',15_000);
@@ -2314,7 +2328,12 @@ test(`room Leave retires the ${mobileDevice?'mobile':'desktop'} ${game} ${specta
  await React.act(async()=>f.native.emit('first-frame'));
  if(spectator&&game!=='th09')await React.act(async()=>f.native.emit('runtime-info',{spectatorPlayback:{version:1,run:'run_4',revision:1,min:0,position:30,received:1200,edge:1190,target:30,paused:false,seeking:false,following:true,ended:false,nodes:[]}}));
  await until(()=>session.getSnapshot().roomLaunchStage===null,'game picture presented');
+ if(!spectator){
+  assert.equal(session.getSnapshot().roomPlayerExpanded,true,'Start leaves the input-blocking room preview on desktop and mobile');
+  assert.equal(node('#player').classList.contains('room-workspace'),false,'live players mount gameplay input controls');
+ }
  if(f.fullscreen)await React.act(async()=>env.document.exitFullscreen());
+ else if(session.getSnapshot().roomPlayerExpanded)await React.act(async()=>session.togglePlayerFullscreen());
  assert.equal(node('#player').classList.contains('room-workspace'),true);
  const entered=f.order.filter(value=>value==='fullscreen-enter').length,visibleWithoutRoom=[];
  const stop=session.room.service.subscribe(()=>{if(!session.room.service.getSnapshot().room&&session.getSnapshot().playerOpen)visibleWithoutRoom.push(true);});t.after(stop);
@@ -2671,7 +2690,7 @@ for(const game of ['th06','th07','th08','th09','th10','th11','th15']) test(`actu
  f.native[api.multiplayerConfigForProduct(product).peerTransportGlobal]=peer;
  await React.act(async()=>f.native.emit('first-frame'));
  await until(()=>session.getSnapshot().roomLaunchStage===null,'gameplay path settled');
- await click('.room-workspace-fullscreen');
+ assert.equal(session.getSnapshot().roomPlayerExpanded,true,'Start already expands the game for player input');
  peer.disconnected=true;
  await until(()=>session.getGameplayNetwork().getSnapshot().returnToRoom,'ended connection offers Return to room');
  await click('#netplayConnectionReturn');

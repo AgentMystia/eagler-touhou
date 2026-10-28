@@ -176,6 +176,7 @@ export const DEVELOPMENT_CONTENT = Object.freeze({
     }),
     th12: Object.freeze({
       runtime: `${ws("th12", "build-eagler", "th12.html")}?hosted=1`,
+      multiplayerRuntime: `${ws("th12mp", "build-eagler-multiplayer", "th12.html")}?hosted=1`,
       data: Object.freeze({
         source: th12ContentRoot
           ? projectRelativePath(resolve(th12ContentRoot, "th12.data"))

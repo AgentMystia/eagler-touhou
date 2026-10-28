@@ -847,6 +847,12 @@ export function createBrowserSession({document, window, baseUrl: configuredBaseU
     else throw new Error(t('room.resourcesUnavailable'));
     if (!context.isCurrent()) throw new RuntimeSessionSupersededError();
     if (cover) {publish({roomLaunchStage: 'path'}); await gameplayNetwork!.waitForGameplayPath({isCurrent: context.isCurrent});}
+    // The room preview deliberately blocks trusted native keys and has no
+    // gameplay input owner. Desktop players must leave it once Start is ready,
+    // just as mobile players do when opening the fullscreen Player.
+    if (context.snapshot.seat != null && !snapshot.roomPlayerExpanded) {
+      navigation?.openRoomFullscreen?.(); publish({roomPlayerExpanded: true});
+    }
     publish({roomLaunchStage: null});
   }
   async function checkRoom(context: RoomOperationContext) {
@@ -1148,9 +1154,12 @@ export function createBrowserSession({document, window, baseUrl: configuredBaseU
     const expected = resolveRoomInvite(url); if (!expected?.r) return Promise.resolve();
     const existing = room.service.getSnapshot();
     // Retained membership is independent of later Host business fallback.
-    if (existing.room?.code === expected.r) return Promise.resolve();
+    if (existing.room?.code === expected.r && existing.product === expected.g) return Promise.resolve();
     const businessProduct = settings.getSnapshot()!.context.productId;
-    const selected = isMultiplayerProductId(businessProduct) ? businessProduct : DEFAULT_MULTIPLAYER_PRODUCT_ID;
+    // Host metadata can arrive after the invite. Keep its game identity even
+    // when a test-only product is not yet available in the initial catalog.
+    const selected = isMultiplayerProductId(expected.g) ? expected.g
+      : isMultiplayerProductId(businessProduct) ? businessProduct : DEFAULT_MULTIPLAYER_PRODUCT_ID;
     if (!disposed) {
       settings.hydrate(settingsContext(selected, snapshot.locale));
       room.service.restoreInvite(url, selected);

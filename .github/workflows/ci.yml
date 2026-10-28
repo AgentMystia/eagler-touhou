@@ -24,6 +24,10 @@ jobs:
     - run: python3 tools/ports/check-history.py --base "$EAGLER_CI_BASE"
       env:
         EAGLER_CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+    - run: node tools/ports/sync.mjs status th12 --all
   scope:
     runs-on: ubuntu-latest
     outputs:
@@ -115,6 +119,8 @@ jobs:
           ports/th12/scripts
 
           ports/th12/src
+
+          ports/th12-mp/src
 
           services/relay'
     - uses: actions/setup-node@v7
@@ -275,7 +281,23 @@ jobs:
         submodules: false
         sparse-checkout: 'common
 
-          tools/build'
+          tools/build
+
+          ports/th08/web/cpp/sdl
+
+          ports/th08-mp/web/cpp/sdl
+
+          ports/th10/web/cpp/sdl
+
+          ports/th10-mp/web/cpp/sdl
+
+          ports/th11/web/cpp/sdl
+
+          ports/th11-mp/web/cpp/sdl
+
+          ports/th15/web/cpp/sdl
+
+          ports/th15-mp/web/cpp/sdl'
     - uses: actions/setup-node@v4
       with:
         node-version: 22

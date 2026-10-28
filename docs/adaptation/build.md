@@ -48,3 +48,7 @@ SDK 版本核对读取带引号或纯文本的版本文件，统一比较版本�
 ## 源码入口
 
 [工作区目录](../../launcher/config/workspace.json) · [构建配方](../../launcher/config/runtime-builds.json) · [构建计划](../../launcher/lib/runtime-source-plan.mjs)
+
+## 新增构建模式
+
+构建计划按注册的作品和模式生成，th12 普通版与多人版分别指向自己的源码目录，开发站清单核对各自运行包的实际路径。公共库的跨作品平台回归同时检出各自 SDL 适配入口，在同一公共头文件版本上核对输入行为。
