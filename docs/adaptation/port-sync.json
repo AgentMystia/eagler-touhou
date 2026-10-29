@@ -304,7 +304,7 @@
     "th12": {
       "normal": "ports/th12",
       "multiplayer": "ports/th12-mp",
-      "base": "e5517fab11ec3b67b7f559575c035b5b96868d9c",
+      "base": "918ee331791401021658125acfb3da5b2ec01016",
       "origin": {
         "normalCommit": "5e5081a1d2a434b2f8d785ebbd6b965f1058d828",
         "multiplayerCommit": "02e3a62a7ff38ca5ec1f3ad2007c117534e9ba26",
@@ -570,6 +570,16 @@
             "ports/th12-mp/tests/native/sdl-animation-performance.cpp"
           ],
           "note": "静止轨道年龄快进同时等待 UV 回绕归一化完成；两侧保持一致，新增超范围 UV 回归，原版脚本逐帧输出与显示 RNG 核对通过。"
+        },
+        {
+          "kind": "manual",
+          "base": "e5517fab11ec3b67b7f559575c035b5b96868d9c",
+          "source": "918ee331791401021658125acfb3da5b2ec01016",
+          "targetHead": "918ee331791401021658125acfb3da5b2ec01016",
+          "paths": [
+            "ports/th12-mp/scripts/package-sdl.mjs"
+          ],
+          "note": "SDL 正式打包同步包含 crash-code-identities.json，报告器引用纳入不可变代码闭包；两侧 WASM 与上一轮性能验证一致。发布目录契约允许精确命名的共享错误报告脚本，拒绝任意新增 JS 文件。"
         }
       ]
     }
