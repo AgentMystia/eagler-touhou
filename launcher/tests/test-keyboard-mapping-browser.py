@@ -90,6 +90,7 @@ def run(browser, launcher, workspace, target, broken=False):
         getSnapshot:()=>({launched:true,ready:true}),subscribe:fn=>{notify.push(fn);return()=>{};},
         postInput:(command,body)=>ProductionKeyboard.deliverRuntimeInput(context,{...body,protocol:context.protocol,game,epoch:1,command})};
       const post=target.postMessage.bind(target);target.postMessage=(...args)=>{window.messages++;post(...args);};
+      window.flushInput=()=>new Promise(resolve=>{const done=event=>{if(event.data!=='fixture-input-drained')return;target.removeEventListener('message',done);resolve();};target.addEventListener('message',done);post('fixture-input-drained',location.origin);});
       window.keyboardPreferences=ProductionKeyboard.createKeyboardPreferences(null);
       window.owner=ProductionKeyboard.createPlayerKeyboard({runtime,window,document,frame,preferences:keyboardPreferences,playerOpen:()=>true,
         launcherOwnsTarget:t=>!!t?.closest?.('input,textarea,select,button'),releaseHeldTouchFire(){},cancelTouchFunction(){},
@@ -126,18 +127,19 @@ def run(browser, launcher, workspace, target, broken=False):
         frame.wait_for_function("([code,bit,down])=>{const state=getKeys();return ('bits' in state?!!(state.bits&bit):state.keys.includes(code))===down}", arg=[code, bit, down], timeout=3000)
 
     assert page.evaluate("keyboardPreferences.getLayoutSnapshot().selected") == 'arrows'
+    page.evaluate("flushInput()")
     page.keyboard.down("w")
     assert not frame.evaluate("fixtureKeyDown('ArrowUp')"), (game, "Arrow keys preset still maps W")
     page.keyboard.up("w")
-    page.evaluate("keyboardPreferences.selectLayout('wasd')")
+    page.evaluate("async()=>{keyboardPreferences.selectLayout('wasd');await flushInput();}")
     page.keyboard.down("w")
     frame.wait_for_function("fixtureKeyDown('ArrowUp')", timeout=3000)
-    page.evaluate("keyboardPreferences.selectLayout('arrows')")
+    page.evaluate("async()=>{keyboardPreferences.selectLayout('arrows');await flushInput();}")
     frame.wait_for_function("!fixtureKeyDown('ArrowUp')", timeout=3000)
     frame.evaluate("window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyW',key:'w',repeat:true,bubbles:true}))")
     assert not frame.evaluate("fixtureKeyDown('ArrowUp')")
     page.keyboard.up("w")
-    page.evaluate("keyboardPreferences.selectLayout('wasd')")
+    page.evaluate("async()=>{keyboardPreferences.selectLayout('wasd');await flushInput();}")
 
     page.keyboard.down("w")
     expect_held("ArrowUp", 16)
