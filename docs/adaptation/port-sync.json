@@ -304,7 +304,7 @@
     "th12": {
       "normal": "ports/th12",
       "multiplayer": "ports/th12-mp",
-      "base": "1020941a6fcb0f1f544a7519fba505235d0b82c9",
+      "base": "0649221333cf7728a63200c72ef8a4b62349aeda",
       "origin": {
         "normalCommit": "5e5081a1d2a434b2f8d785ebbd6b965f1058d828",
         "multiplayerCommit": "02e3a62a7ff38ca5ec1f3ad2007c117534e9ba26",
@@ -461,6 +461,37 @@
             "ports/th12-mp/src/wasm/PracticeUi.cpp"
           ],
           "note": "两侧同步练习菜单方向键增减、选择循环及鼠标和键盘焦点切换，MP 保留 pilot() 身份读取，完整目录历史已合并。"
+        },
+        {
+          "kind": "manual",
+          "base": "1020941a6fcb0f1f544a7519fba505235d0b82c9",
+          "source": "0649221333cf7728a63200c72ef8a4b62349aeda",
+          "targetHead": "986ac9049e25b7d5f318cf86ee9eab4e02aa599e",
+          "paths": [
+            "ports/th12-mp/ADAPTATION.md",
+            "ports/th12-mp/README.md",
+            "ports/th12-mp/docs/DEVELOPMENT.md",
+            "ports/th12-mp/portable/sdl/Application.cpp",
+            "ports/th12-mp/portable/sdl/Audio.cpp",
+            "ports/th12-mp/portable/sdl/Game.cpp",
+            "ports/th12-mp/portable/sdl/Game.hpp",
+            "ports/th12-mp/portable/sdl/GameHost.cpp",
+            "ports/th12-mp/portable/sdl/Host.cmake",
+            "ports/th12-mp/portable/sdl/README.md",
+            "ports/th12-mp/portable/sdl/Replay.cpp",
+            "ports/th12-mp/portable/sdl/Replay.hpp",
+            "ports/th12-mp/portable/sdl/ReplayExtension.cpp",
+            "ports/th12-mp/portable/sdl/ReplayExtension.hpp",
+            "ports/th12-mp/portable/sdl/ReplayJson.hpp",
+            "ports/th12-mp/portable/sdl/RuntimeOptions.hpp",
+            "ports/th12-mp/portable/sdl/Scene.cpp",
+            "ports/th12-mp/portable/sdl/Scene.hpp",
+            "ports/th12-mp/portable/sdl/TitleScenes.cpp",
+            "ports/th12-mp/portable/sdl/TitleScenes.hpp",
+            "ports/th12-mp/scripts/package-sdl.mjs",
+            "ports/th12-mp/site/game-sdl.mjs"
+          ],
+          "note": "两侧同步 SDL 扩展录像编解码、练习开局与跨关伤害源、整曲音乐、触控按下信号和帧率显示；普通版浏览器桥接与代码包沿自身入口，MP 保留现有房间、回滚及多人录像宿主和模式专属文档。目录历史已合并，写回代码树保持已编译身份。"
         }
       ]
     }
