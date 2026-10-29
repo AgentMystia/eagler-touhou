@@ -1,9 +1,13 @@
 // StagePresentation 实现。锚点注释对应 docs/plans/anm-pipeline.md 与
 // BulletAppearance.hpp（0x4120b0 / 0x4bbe30 表）。
 #include "StagePresentation.hpp"
+#include "AnmCoordinates.hpp"
+#include "AnmOverlay.hpp"
+#include "StageMath.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace th13 {
 
@@ -19,6 +23,30 @@ namespace {
 constexpr float kGameToScreenX = 0.0f, kGameToScreenY = 0.0f;
 // 弹体贴图基准角：贴图朝右时旋转 = 弹角（对屏检验后校准）。
 constexpr float kBulletSpriteForward = 0.0f;
+
+// 自机弹脚本是否带 id 中断标签（op5 [len12: time,mask,id32]）。0x446bf0
+// 无条件写 VM+0x4a0=1；仅当脚本确有 id1 标签（pl00.anm script 10..17 的
+// 命中渐隐段）才留尸，无标签脚本不进留尸池（中断无落点，弹型脚本会按
+// 原飞行段死循环，永不自灭）。
+bool shot_script_has_interrupt(const AnmResource& resource, u32 script, i32 id) {
+    if (script >= resource.scripts.size()) return false;
+    const auto& bytes = resource.scripts[script].bytes;
+    for (u32 off = 0; off + 8 <= bytes.size();) {
+        i16 opcode;
+        u16 length;
+        std::memcpy(&opcode, bytes.data() + off, sizeof opcode);
+        std::memcpy(&length, bytes.data() + off + 2, sizeof length);
+        if (opcode == -1) break;
+        if (length < 8 || length % 4 || off + length > bytes.size()) break;
+        if (opcode == 5 && length >= 12) {
+            i32 label;
+            std::memcpy(&label, bytes.data() + off + 8, sizeof label);
+            if (label == id) return true;
+        }
+        off += length;
+    }
+    return false;
+}
 
 // 自机所有表现 VM（含脚本创建的子体）随游戏暂停。原版游戏侧回调停机，
 // 不能因为此处改用池 VM 就在 Pause 背后继续旋转/生成 Youmu 残像。
@@ -38,14 +66,171 @@ StagePresentation::StagePresentation(AnmManager& manager, AnmRenderer& draw, Ban
     : animations(manager), renderer(draw), banks(banks),
       random(manager.random_source()), player_shot_sprite_(player_shot_sprite) {}
 
-void StagePresentation::release() {
+StagePresentation::BulletSlot* StagePresentation::bullet_slot(StageBullet& bullet) {
+    BulletSlot* slot = nullptr;
+    for (auto& entry : bullets_)
+        if (entry.active && entry.generation == bullet.generation) { slot = &entry; break; }
+    if (!slot) {
+        for (auto& entry : bullets_) if (!entry.active) { slot = &entry; break; }
+        if (!slot) { bullets_.emplace_back(); slot = &bullets_.back(); }
+        if (slot->vm && !animations.release_tree(*slot->vm)) {
+            fail(animations.error);
+            return nullptr;
+        }
+        *slot = BulletSlot{};
+        slot->generation = bullet.generation;
+        slot->active = true;
+    }
+    slot->source.type = i32(bullet.sprite);
+    slot->source.color = i32(bullet.subtype);
+    if (!slot->vm) slot->vm = std::make_unique<AnmVm>();
+    return slot;
+}
+
+void StagePresentation::bullet_animation_geometry(StageBullet& bullet, const AnmVm& vm) {
+    bullet.animation_ready = vm.variables.integers[0] != 0;
+    bullet.animation_geometry = vm.sprite != nullptr;
+    if (vm.sprite) {
+        // 0040db10 passes the sprite descriptor+38/+34, independently of
+        // mutable VM sizes/scales used by the renderer.
+        bullet.sprite_width = vm.sprite->width;
+        bullet.sprite_height = vm.sprite->height;
+    }
+}
+
+bool StagePresentation::initialize_bullet(StageBullet& bullet, i32 interrupt) {
+    auto* resource = animations.resource(banks.bullet);
+    const auto* appearance = bullet_appearance(i32(bullet.sprite));
+    if (!resource || !appearance) return fail("Bullet animation resource/type unavailable");
+    auto* slot = bullet_slot(bullet);
+    if (!slot) return false;
+    auto& vm = *slot->vm;
+    // 00405010 + 00461cb0 run immediately at birth and at EVERY etEx200,
+    // even if the type/color are unchanged. The queue can then replace the
+    // pending birth label before the frame's single 00462450 tail update.
+    vm.environment = &animations.scene_environment();
+    vm.object_host = &animations;
+    if (!vm.bind(*resource, u32(appearance->script))) return fail(vm.error);
+    vm.sprite_source = &slot->source;
+    if (vm.tick(random, animations.rate) < 0) return fail(vm.error);
+    vm.visual.render_flags |= 0x40000;
+    vm.pending_interrupt = interrupt;
+    vm.visual.translation = {bullet.x, bullet.y, bullet.z};
+    slot->script = appearance->script;
+    slot->color = i32(bullet.subtype);
+    bullet_animation_geometry(bullet, vm);
+    return true;
+}
+
+bool StagePresentation::tick_bullet(StageBullet& bullet, bool birth) {
+    const auto* appearance = bullet_appearance(i32(bullet.sprite));
+    if (!appearance) return fail("Bullet animation type unavailable");
+    auto* slot = bullet_slot(bullet);
+    if (!slot) return false;
+    if (!slot->vm->resource || slot->script != appearance->script || slot->color != i32(bullet.subtype)) {
+        // Standalone callers may enter here without StageSim's birth callback.
+        if (!initialize_bullet(bullet, bullet.state == 2 ? bullet.delay : 2)) return false;
+    }
+    auto& vm = *slot->vm;
+    if (bullet.animation_interrupt) vm.pending_interrupt = bullet.animation_interrupt;
+    bullet.animation_interrupt = 0;
+    if (bullet.animation_blend >= 0) {
+        vm.visual.flags = (vm.visual.flags & ~0x1e0u) | (u32(bullet.animation_blend) << 5);
+        bullet.animation_blend = -1;
+    }
+    vm.visual.translation = {bullet.x, bullet.y, bullet.z};
+    vm.variables.rotation.z = bullet.angle + kBulletSpriteForward;
+    const int result = vm.tick(random, animations.rate);
+    if (result < 0) return fail("Bullet animation: " + vm.error);
+    bullet_animation_geometry(bullet, vm);
+    if (result > 0) { bullet.alive = false; slot->active = false; }
+    (void)birth;
+    return true;
+}
+
+bool StagePresentation::bullet_cancel(i32 script,const Vec3& position,const Vec3& displacement,bool interpolate) {
+    const u32 handle=animations.create(banks.bullet,script,-1,0,position,0,false);
+    auto* vm=animations.registry.find(handle);
+    if(!vm)return fail("Bullet cancel particle: "+animations.error);
+    vm->visual.render_flags|=0x40000u;
+    if(interpolate)vm->interpolators.position.begin(30,6,{0,0,0},
+        {displacement.x,displacement.y,displacement.z}); //4125b0, no extra tick
+    bullet_cancel_handles_.push_back(handle);
+    return true;
+}
+
+bool StagePresentation::beam_hit_effect(const Vec3& position, const Vec3& displacement,
+                                        float angle) {
+    // 447230 -> 46f820 creates player ANM script15 and primes it immediately.
+    // The impact rotation and 4125b0's 20-frame mode4 local displacement are
+    // installed only after the initial tick, before the manager's next update.
+    const u32 handle = animations.create(banks.player, 15, -1, 0, position, 0, false);
+    auto* vm = animations.registry.find(handle);
+    if (!vm) return fail("Player beam hit effect: " + animations.error);
+    vm->visual.flags |= 4u;
+    vm->variables.rotation.z = angle;
+    vm->interpolators.position.begin(20, 4, {0, 0, 0},
+                                     {displacement.x, displacement.y, displacement.z});
+    player_effect_handles_.push_back(handle);
+    return true;
+}
+
+bool StagePresentation::youmu_charge_effect(i32 action, const Vec3& position) {
+    if (action == 0) {
+        // 446122..446163 creates player-bank script18 via 46f820 immediately.
+        youmu_charge_handle_ = animations.create(banks.player, 18, -1, 0, position, 0, false);
+        if (!youmu_charge_handle_) return fail("Youmu charge effect: " + animations.error);
+        player_effect_handles_.push_back(youmu_charge_handle_);
+    } else if (action == 1 && youmu_charge_handle_) {
+        // 4461f0 at charge60 queues label2 to this VM and its children.
+        if (!animations.interrupt(youmu_charge_handle_, 2, false))
+            return fail("Youmu charge interrupt: " + animations.error);
+    } else if (action == 2 && youmu_charge_handle_) {
+        if (!animations.retire(youmu_charge_handle_))
+            return fail("Youmu charge retirement: " + animations.error);
+    } else if (action == 3) {
+        if (auto* vm = animations.registry.find(youmu_charge_handle_))
+            vm->visual.translation = position;
+        else youmu_charge_handle_ = 0;
+    }
+    return true;
+}
+
+void StagePresentation::release_stage() {
+    while (!fog_handles_.empty()) retire_enemy_fog(fog_handles_.begin()->first);
     for (auto& enemy : enemies_)
         if (enemy.vm) animations.release_tree(*enemy.vm);
     enemies_.clear();
+    for (auto& bullet : bullets_)
+        if (bullet.vm) animations.release_tree(*bullet.vm);
+    bullets_.clear();
+    for (auto* handles : {&item_handles_, &item_side_handles_})
+        for (u32& handle : *handles) { if (handle) animations.retire(handle); handle = 0; }
+    for (u32& handle : spirit_handles_) { if (handle) animations.retire(handle); handle = 0; }
+    spirit_serials_.fill(0); spirit_scripts_.fill(0);
+    stage_file_offsets_.clear(); stage_offsets_source_ = nullptr;
+}
+
+void StagePresentation::release() {
+    for(auto& handle:bullet_cancel_handles_)if(handle)animations.retire(handle);
+    bullet_cancel_handles_.clear();
+    if(trance_handle_)animations.retire(trance_handle_);
+    trance_was_active_=false;
+    while(!fog_handles_.empty())retire_enemy_fog(fog_handles_.begin()->first);
+    for (auto& enemy : enemies_)
+        if (enemy.vm) animations.release_tree(*enemy.vm);
+    enemies_.clear();
+    for (auto& bullet : bullets_)
+        if (bullet.vm) animations.release_tree(*bullet.vm);
     bullets_.clear();
     for (auto& shot : shots_)
         if (shot && shot->resource) animations.release_tree(*shot);
     shots_.clear();
+    shot_generations_.clear();
+    for (auto& corpse : shot_fades_)
+        if (corpse.vm && corpse.vm->resource) animations.release_tree(*corpse.vm);
+    shot_fades_.clear();
+    shot_faded_generations_.clear();
     if (player_) {
         animations.release_tree(*player_);
         player_.reset();
@@ -53,11 +238,14 @@ void StagePresentation::release() {
     for (u32 handle : player_effect_handles_)
         if (auto* vm = animations.registry.find(handle)) animations.release_tree(*vm);
     player_effect_handles_.clear();
+    youmu_charge_handle_ = 0;
     for (u32& handle : spirit_handles_) {
         if (handle && !animations.retire(handle))
             fail("Spirit animation retire failed: " + animations.error);
         handle = 0;
     }
+    spirit_serials_.fill(0);
+    spirit_scripts_.fill(0);
     for (u32& handle : item_handles_) {
         if (handle && !animations.retire(handle))
             fail("Item animation retire failed: " + animations.error);
@@ -82,6 +270,8 @@ void StagePresentation::release() {
     full_option_handles_.fill(0);
     bomb_orb_handles_.fill(0);
     bomb_orb_exploding_.fill(false);
+    bomb_generation_=bomb_background_=bomb_beam_=0;
+    bomb_ray_handles_.fill(0);
     option_character_ = option_count_ = -1;
     full_options_ = false;
 }
@@ -141,6 +331,64 @@ bool StagePresentation::end_player_effect(u32& handle, bool retire) {
     return ok || fail("Player effect release failed: " + animations.error);
 }
 
+bool StagePresentation::sync_bomb_effects(const StageBattle& battle) {
+    const i32 character=battle.player_character();
+    if(battle.bomb_generation!=bomb_generation_) {
+        bomb_generation_=battle.bomb_generation;
+        // 40b4b0 / 40a650 / 40be80 / 40c910: original plXX background
+        // scripts, not effect.anm or a synthetic fullscreen flash.
+        if(!end_player_effect(bomb_background_,false)||
+           !end_player_effect(bomb_beam_,false))return false;
+        for(auto& handle:bomb_ray_handles_)
+            if(!end_player_effect(handle,false))return false;
+        if(battle.bomb_timer>0) {
+            if(character==1) {
+                bomb_beam_=create_player_effect(banks.player,23,-1,0,battle.bomb_center());
+                if(!bomb_beam_)return false;
+            }
+            constexpr i32 backgrounds[]={26,31,27,25};
+            bomb_background_=create_player_effect(banks.player,backgrounds[character],
+                                                   -1,0,battle.bomb_center());
+            if(!bomb_background_)return false;
+            if(character!=0) {
+                auto* vm=animations.registry.find(bomb_background_);
+                vm->visual.color=(vm->visual.color&0xffffffu)|0xe0000000u;
+                vm->interpolators.secondary_alpha.control2[0]=224; // native vm+334
+            }
+            if(character==2)for(size_t i=0;i<bomb_ray_handles_.size();++i) {
+                // 40be80 copies pl02 template +81bc = script23 * 5a4.
+                bomb_ray_handles_[i]=create_player_effect(banks.player,23,-1,0,
+                                                         battle.bomb_rays[i].origin);
+                if(!bomb_ray_handles_[i])return false;
+            }
+        }
+    }
+    if(battle.bomb_timer<=0) {
+        if(!end_player_effect(bomb_background_,false)||
+           !end_player_effect(bomb_beam_,false))return false;
+        for(auto& handle:bomb_ray_handles_)
+            if(!end_player_effect(handle,false))return false;
+        return true;
+    }
+    if(character==1) {
+        if(auto* vm=animations.registry.find(bomb_beam_)) {
+            vm->visual.translation=battle.bomb_center();
+            vm->variables.rotation.z=battle.bomb_visual_angle();
+            vm->visual.flags|=4;
+        }
+    } else if(character==2) {
+        if(auto* vm=animations.registry.find(bomb_background_))
+            vm->visual.translation=battle.bomb_center();
+        for(size_t i=0;i<bomb_ray_handles_.size();++i)
+            if(auto* vm=animations.registry.find(bomb_ray_handles_[i])) {
+                vm->visual.translation=battle.bomb_rays[i].origin;
+                vm->variables.rotation.z=battle.bomb_rays[i].angle;
+                vm->visual.flags|=4;
+            }
+    }
+    return true;
+}
+
 bool StagePresentation::sync_player_effects(const StageBattle& battle) {
     player_effect_handles_.erase(
         std::remove_if(player_effect_handles_.begin(), player_effect_handles_.end(),
@@ -148,6 +396,7 @@ bool StagePresentation::sync_player_effects(const StageBattle& battle) {
         player_effect_handles_.end());
     const bool visible = battle.player_visible();
     const Vec3 position{battle.player_x, battle.player_y, 0};
+    if(!sync_bomb_effects(battle))return false;
 
     // 00442a8f：DAT_004c2180 + 0x10 = effect.anm，不是自机 plXX.anm。
     // script22 自带 sprite23、12帧缩放、18帧旋转及子script21；松Shift
@@ -162,67 +411,19 @@ bool StagePresentation::sync_player_effects(const StageBattle& battle) {
         return false;
     }
 
-    // 00444df0：四角色本体脚本16/18/19/15，满P光环17/20/21/17。
-    // 00442960 已计算完的定点卫星位置由 battle.options 唯一提供，
-    // 此处不再维护独立跟随轨迹，也不在暂停/展示帧推进卫星物理。
-    constexpr i32 option_scripts[4] = {16, 18, 19, 15};
-    constexpr i32 full_scripts[4] = {17, 20, 21, 17};
-    const i32 character = battle.player_character();
-    const i32 count = visible ? battle.option_count : 0;
-    const bool full = visible && battle.full_power();
-    if (character < 0 || character > 3 || count < 0 || count > 8)
-        return fail("Player option state outside original bounds");
-    if (character != option_character_ || count != option_count_) {
-        for (u32& handle : option_handles_)
-            if (!end_player_effect(handle, true)) return false;
-        for (u32& handle : full_option_handles_)
-            if (!end_player_effect(handle, true)) return false;
-        option_character_ = character;
-        option_count_ = count;
-        full_options_ = false;
-    }
-    if (full != full_options_) {
-        for (u32& handle : full_option_handles_)
-            if (!end_player_effect(handle, !visible)) return false;
-        full_options_ = full;
-    }
-    for (size_t i = 0; i < option_handles_.size(); ++i) {
-        const auto& option = battle.options[i];
-        const bool active = i < size_t(count) && option.active;
-        if (!active) {
-            if (!end_player_effect(option_handles_[i], true) ||
-                !end_player_effect(full_option_handles_[i], true)) return false;
-            continue;
-        }
-        const Vec3 anchor{option.x, option.y, 0};
-        if (!animations.registry.find(option_handles_[i])) {
-            option_handles_[i] = create_player_effect(
-                banks.player, option_scripts[character], 12, 0, anchor);
-            if (!option_handles_[i]) return false;
-        }
-        animations.registry.find(option_handles_[i])->visual.translation = anchor;
-        if (full) {
-            if (!animations.registry.find(full_option_handles_[i])) {
-                full_option_handles_[i] = create_player_effect(
-                    banks.player, full_scripts[character], 12, 2, anchor);
-                if (!full_option_handles_[i]) return false;
-            }
-            animations.registry.find(full_option_handles_[i])->visual.translation = anchor;
-        }
-    }
+    if (!sync_player_options(battle)) return false;
 
     // 0040b1b0：DAT_004c22c4 + 0x10（pl00.anm）script18；
     // 0040b2a0：label1 → 子script21/23/25与19爆炸，不是effect.anm18。
     // 伤害/运动/爆炸触发全归 battle，表现层只响应原状态边沿。
     for (size_t i = 0; i < bomb_orb_handles_.size(); ++i) {
         const auto& orb = battle.bomb_orbs[i];
-        if (character != 0 || (!orb.active && !orb.exploding)) {
+        if (battle.player_character() != 0 || (!orb.active && !orb.exploding)) {
             if (!end_player_effect(bomb_orb_handles_[i], true)) return false;
             bomb_orb_exploding_[i] = false;
             continue;
         }
-        if (!animations.registry.find(bomb_orb_handles_[i]) &&
-            !orb.exploding) {
+        if (!animations.registry.find(bomb_orb_handles_[i]) && !orb.exploding) {
             bomb_orb_handles_[i] = create_player_effect(
                 banks.player, 18, -1, 0, {orb.x, orb.y, 0});
             if (!bomb_orb_handles_[i]) return false;
@@ -238,6 +439,131 @@ bool StagePresentation::sync_player_effects(const StageBattle& battle) {
     return true;
 }
 
+bool StagePresentation::sync_player_options(const StageBattle& battle, bool power_rebuild) {
+    const bool visible = battle.player_visible();
+    const bool defer_anchor = power_rebuild || option_anchor_deferred_;
+    // 00444df0：四角色本体脚本16/18/19/15，满P光环17/20/21/17。
+    // 00442960 已计算完的定点卫星位置由 battle.options 唯一提供，
+    // 此处不再维护独立跟随轨迹，也不在暂停/展示帧推进卫星物理。
+    constexpr i32 option_scripts[4] = {16, 18, 19, 15};
+    constexpr i32 full_scripts[4] = {17, 20, 21, 17};
+    const i32 character = battle.player_character();
+    const i32 count = visible ? battle.option_count : 0;
+    const bool full = visible && battle.full_power();
+    if (character < 0 || character > 3 || count < 0 || count > 8)
+        return fail("Player option state outside original bounds");
+    if (character != option_character_ || count != option_count_) {
+        for (u32& handle : option_handles_)
+            if (!end_player_effect(handle, true)) return false;
+        for (u32& handle : full_option_handles_)
+            if (!end_player_effect(handle, !visible || full)) return false;
+        option_character_ = character;
+        option_count_ = count;
+        full_options_ = false;
+    }
+    if (full != full_options_) {
+        for (u32& handle : full_option_handles_)
+            if (!end_player_effect(handle, !visible)) return false;
+        full_options_ = full;
+    }
+    // 444df0 creates the full-power trees in a separate first loop.
+    if (full) for (size_t i = 0; i < full_option_handles_.size(); ++i) {
+        const auto& option = battle.options[i];
+        if (i >= size_t(count) || !option.active) continue;
+        const Vec3 anchor{option.x, option.y, 0};
+        if (!animations.registry.find(full_option_handles_[i])) {
+            full_option_handles_[i] = create_player_effect(
+                banks.player, full_scripts[character], 12, 2,
+                power_rebuild ? Vec3{} : anchor);
+            if (!full_option_handles_[i]) return false;
+            if (power_rebuild)
+                animations.registry.find(full_option_handles_[i])->visual.translation = {0, -32, 0};
+        }
+        if (!defer_anchor) animations.registry.find(full_option_handles_[i])->visual.translation = anchor;
+    }
+    for (size_t i = 0; i < option_handles_.size(); ++i) {
+        const auto& option = battle.options[i];
+        const bool active = i < size_t(count) && option.active;
+        if (!active) {
+            if (!end_player_effect(option_handles_[i], true) ||
+                !end_player_effect(full_option_handles_[i], true)) return false;
+            continue;
+        }
+        const Vec3 anchor{option.x, option.y, 0};
+        if (!animations.registry.find(option_handles_[i])) {
+            option_handles_[i] = create_player_effect(
+                banks.player, option_scripts[character], 12, 0,
+                power_rebuild ? Vec3{} : anchor);
+            if (!option_handles_[i]) return false;
+            if (power_rebuild)
+                animations.registry.find(option_handles_[i])->visual.translation = {0, -32, 0};
+        }
+        if (!defer_anchor) animations.registry.find(option_handles_[i])->visual.translation = anchor;
+    }
+    option_anchor_deferred_ = power_rebuild;
+    return true;
+}
+
+bool StagePresentation::reimu_bomb_orb_birth(const StageBattle& battle, i32 index) {
+    if (index < 0 || index >= i32(bomb_orb_handles_.size()))
+        return fail("Reimu bomb orb index outside pool");
+    u32& handle = bomb_orb_handles_[size_t(index)];
+    if (animations.registry.find(handle)) return fail("Reimu bomb orb slot already active");
+    const auto& orb = battle.bomb_orbs[size_t(index)];
+    handle = create_player_effect(banks.player, 18, -1, 0, {orb.x, orb.y, 0});
+    bomb_orb_exploding_[size_t(index)] = false;
+    return handle != 0;
+}
+
+bool StagePresentation::initialize_player_shot(PlayerShot& shot, u32 index) {
+    if (shot.script < 0) return true;
+    while (shots_.size() <= index) shots_.push_back(std::make_unique<AnmVm>());
+    shot_generations_.resize(shots_.size());
+    auto& vm = *shots_[index];
+    if (shot_generations_[index] == shot.generation && vm.resource &&
+        vm.source_script == shot.script) return true;
+    if (vm.resource && !animations.release_tree(vm))
+        return fail("Player shot animation release failed");
+    vm = AnmVm{};
+    vm.environment = &animations.scene_environment();
+    vm.object_host = &animations;
+    const auto* source = animations.script_template(banks.player, u32(shot.script));
+    if (!source || !animations.bind_template(vm, banks.player, shot.script))
+        return fail("Player shot animation template unavailable");
+    // 445e4d..445e83 copies the negative-time template and initializes at0
+    // with zero translation/rotation.4464d0 writes the live projectile pose
+    // later, before the same frame's separate manager tick (46fb51).
+    vm.instruction_offset = source->instruction_offset;
+    vm.visual.render_flags |= 0x200u;
+    vm.visual.translation = {};
+    vm.variables.rotation.z = 0;
+    if (!animations.prime_instance(vm))
+        return fail("Player shot animation initialization: " + animations.error);
+    shot_generations_[index] = shot.generation;
+    return true;
+}
+
+bool StagePresentation::initialize_player_effects(const StageBattle& battle) {
+    // Keep this narrowly scoped to the player VM family. Projectile and enemy
+    // presentation is still created by sync() after the first simulation step.
+    return sync_player_effects(battle);
+}
+
+bool StagePresentation::activate_player_effects(const StageBattle& battle) {
+    // 00441b00 broadcasts label2 to every option root and child. In particular
+    // pl03 script15's script16 child consumes the four RNG reads at this
+    // deferred manager tick; do not call tick_instance directly (that bypasses
+    // the native interrupt path and gives other characters a false extra tick).
+    for (size_t i = 0; i < option_handles_.size(); ++i) {
+        for (u32 handle : {option_handles_[i], full_option_handles_[i]}) {
+            if (!animations.registry.find(handle)) continue;
+            if (!animations.interrupt(handle, 2, false)) return fail(animations.error);
+        }
+    }
+    // 424d0 broadcasts to the existing tree before 444df0 rebuilds it.
+    return initialize_player_effects(battle);
+}
+
 // 30x/镜像创建点色通道补步：原版这些 VM 在敌机更新趟内创建（0x41fe80
 // case3 与 0x419450 镜像块，均由 0x41a8a0 趟直调），创建趟本身多推进一次
 // 色/α 插值——oracle 实测 f0 VM+0x15c α=6/timer(+0x160)=2 而 port 4/1
@@ -251,35 +577,73 @@ void StagePresentation::create_color_step(AnmVm* vm) {
 // 神霊池视觉同步（原版 0x438ec0 的 kind VM 创建 + 0x438730 位移尾的
 // +0x574 位置回写 + 收集/回收出链）。脚本号证据：0x439088-0x4390b9
 // （lea edx,[kind*3*2+1] / bit0 分支 +4），文件上下文为独立 anm file ctx
-//（0x4c2164+0x10）——其局部脚本号与合并 stage bank（enemy.anm 首位）同序：
-// kind*6+1/kind*6+4 落在 enemy.anm 的镜像对族（32x32 多帧脉冲、层 8、
-// +4 变体带 308 镜像翻转 = trance 期形态），结构唯一吻合。
+//（0x4c2164+0x10）。00405530 loads astral.anm into original resource slot25;
+// these script numbers refer to that file, including its label1 fade lifetime.
+bool StagePresentation::spirit_animation_alive(u32 slot, u32 serial) const noexcept {
+    // A newly born spirit has not reached sync/create yet. Once bound, its
+    // actual registry handle is the lifetime authority, including script op1.
+    return slot >= spirit_handles_.size() || spirit_serials_[slot] != serial ||
+           serial == 0 || animations.registry.find(spirit_handles_[slot]) != nullptr;
+}
+
+bool StagePresentation::sync_trance_effect(const StageBattle& battle) {
+    const bool active=battle.sim.session&&trance_active(*battle.sim.session);
+    if(active&&!trance_was_active_){
+        auto* effect=animations.resource(banks.effect);auto* astral=animations.resource(banks.spirit);
+        if(!effect||!astral)return fail("Trance animation banks unavailable");
+        trance_handle_=animations.create(banks.effect,0,26,0);
+        auto* vm=animations.registry.find(trance_handle_);
+        if(!vm)return fail("Trance effect creation failed: "+animations.error);
+        vm->geometry.overlay=std::make_unique<AnmOverlay>();
+        vm->geometry.allocation_bytes=0x1c3c;
+        if(!vm->geometry.overlay->initialize(*effect,*astral,*vm,random))return fail("Trance panels initialization failed");
+        if(!animations.interrupt(trance_handle_,9,false))return fail(animations.error);
+    }else if(!active&&trance_was_active_){
+        if(!animations.interrupt(trance_handle_,1,false))return fail(animations.error);
+    }
+    trance_was_active_=active;return true;
+}
+
 bool StagePresentation::sync_item_spirits(StageBattle& battle) {
     auto& spirits = battle.item_manager.spirits();
     for (size_t i = 0; i < spirits.size(); ++i) {
-        const Spirit& s = spirits[i];
+        Spirit& s = spirits[i];
         u32& handle = spirit_handles_[i];
         if (!s.alive) {
             if (handle && !animations.retire(handle))
                 return fail("Spirit animation retire failed: " + animations.error);
             handle = 0;
+            spirit_serials_[i] = 0;
             continue;
         }
         const i32 script = (s.flags & 1u) != 0 ? s.kind * 6 + 4 : s.kind * 6 + 1;
         AnmVm* vm = animations.registry.find(handle);
-        if (vm && vm->source_script != script) {
+        const bool changed = spirit_serials_[i] != s.serial || spirit_scripts_[i] != script;
+        if (changed) {
             // 槽位复用换型：回收重建（正常路径经死亡回收，此为防御）。
-            if (!animations.retire(handle))
+            if (handle && !animations.retire(handle))
                 return fail("Spirit animation rebind retire failed: " + animations.error);
             handle = 0;
             vm = nullptr;
         }
+        if (!vm && !changed && s.serial != 0) {
+            // Script completion is not a new birth. Ordinary spirits are
+            // removed by ItemManager's handle check; trance skips that gate.
+            continue;
+        }
         if (!vm) {
-            handle = animations.create(banks.stage, script, -1, 2,
+            handle = animations.create(banks.spirit, script, -1, 2,
                                        {s.x, s.y, s.z}, 0, false);
             if (!handle)
                 return fail("Spirit animation creation failed: " + animations.error);
             vm = animations.registry.find(handle);
+            spirit_serials_[i] = s.serial;
+            spirit_scripts_[i] = script;
+        }
+        if (s.fade_requested) {
+            if (!animations.interrupt(handle, 1, false))
+                return fail("Spirit fade interrupt failed: " + animations.error);
+            s.fade_requested = false;
         }
         if (vm) vm->visual.translation = {s.x, s.y, s.z};
     }
@@ -296,7 +660,7 @@ bool StagePresentation::sync_item_spirits(StageBattle& battle) {
 bool StagePresentation::sync_youmu_slash(StageBattle& battle) {
     for (const auto& spawn : battle.youmu_slash_spawns_) {
         const u32 handle = animations.create(
-            banks.player, spawn.script, -1, 2, {0.0f, spawn.y, 0.0f}, 0, false);
+            banks.player, spawn.script, -1, 0, {0.0f, spawn.y, 0.0f}, 0, false);
         if (!handle)
             return fail("Youmu slash animation creation failed: " +
                         animations.error);
@@ -314,7 +678,8 @@ bool StagePresentation::sync_youmu_slash(StageBattle& battle) {
         const bool alive = vm && vm->instruction_offset != -1 &&
                            !(vm->visual.render_flags & 0x20u);
         battle.youmu_bomb_.set_vm(slot, alive,
-                                  alive ? vm->variables.rotation.z : 0.0f);
+                                  alive ? vm->variables.rotation.z : 0.0f,
+                                  battle.sim.time_rate());
         if (!alive && handle) handle = 0;  // 死槽：不再追踪（scale 冻结在战斗侧）
     }
     return true;
@@ -337,6 +702,16 @@ const std::vector<i32>& StagePresentation::stage_file_offsets() {
         stage_offsets_source_ = stage_resource;
     }
     return stage_file_offsets_;
+}
+
+// 真实 ECL 文件号路由（0x41fe80 / 0x4243e0 对齐原版 DAT_004c2188+0x80 槽位表）：
+// 0 = bullet.anm（banks.bullet）
+// 1 = effect.anm（banks.effect）
+// 2.. = stage ECL ANIM 合并表（banks.stage）
+StagePresentation::ScriptTarget StagePresentation::resolve_script_target(i32 file, i32 script) {
+    if (file == 0) return {banks.bullet, script};
+    if (file == 1) return {banks.effect, script};
+    return {banks.stage, stage_script_global(file, script)};
 }
 
 // 局部脚本号 → 合并全局号；file 超出已知文件数 = 阻塞（不猜）。
@@ -395,33 +770,18 @@ bool StagePresentation::sync_items(StageBattle& battle) {
     return true;
 }
 
-bool StagePresentation::sync(StageBattle& battle, u32 held) {
-    if (!error_.empty()) return false;
-    if (animations.scene_environment().paused) return true;
-    auto* stage_resource = animations.resource(banks.stage);
-    auto* bullet_resource = animations.resource(banks.bullet);
-    auto* player_resource = animations.resource(banks.player);
-    if (!stage_resource || !bullet_resource || !player_resource)
-        return fail("Stage presentation banks unavailable");
-    if (!sync_player_effects(battle)) return false;
-    if (!sync_items(battle)) return false;
-    if (!sync_item_spirits(battle)) return false;
-    if (!sync_youmu_slash(battle)) return false;
-
+bool StagePresentation::flush_ecl_animations(StageBattle& battle, StageEnemy* constructing) {
     // ---- ECL 30x ANM 创建（0x4243e0：模板拷贝→立即 tick→主池头入链。
     // kind=0 特效路径 layer=-1（脚本自定层）、anmArg=0、位置清零（307 的
     // 敌机位仅特效路径用）；kind=1 槽位路径见下方 [+0x278]+7 注。
     // 文件索引：0=bullet、1=effect、2..=stage 合并表（脚本号文件内局部——
     // 文件 3+ 的合并偏移为已知局限，窗口内敌机均用文件 2）----
     for (const auto& request : battle.sim.anm_effects) {
-        const i32 bank = request.file == 0   ? banks.bullet
-                         : request.file == 1 ? banks.effect
-                                             : banks.stage;
         if (request.kind == 0) {
-            const i32 script = stage_script_global(request.file, request.script);
-            if (script < 0) return false;
+            const auto target = resolve_script_target(request.file, request.script);
+            if (target.script < 0) return false;
             const u32 effect_handle =
-                animations.create(bank, script, -1, 2,
+                animations.create(target.bank, target.script, -1, 2,
                                   {request.x, request.y, request.z}, 0, false);
             if (!effect_handle)
                 return fail("Effect animation creation failed: " + animations.error);
@@ -430,7 +790,7 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
         }
         // kind=1：303/306 槽位 VM（0x41fe80 / 0x41b260 case3）——重挂先回收
         // 旧槽（0x470110 语义：retire+子树 0x20 位），script<0 仅清槽。
-        StageEnemy* enemy = nullptr;
+        StageEnemy* enemy = constructing && constructing->serial == request.serial ? constructing : nullptr;
         for (auto& candidate : battle.sim.enemies)
             if (candidate->serial == request.serial) {
                 enemy = candidate.get();
@@ -449,14 +809,14 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
         // （脚本自定层）使 aura 挂错层）。该字段构造默认 1（StageEnemy
         // mirror_script_base，ECL 552 可覆盖）→ 层 8（与 oracle 敌机
         // aura up 层 4/8 对拍）。
-        handle = animations.create(bank,
-                                   stage_script_global(enemy->anm_file,
-                                                       request.script),
+        const auto target = resolve_script_target(request.file, request.script);
+        if (target.script < 0) return false;
+        handle = animations.create(target.bank, target.script,
                                    enemy->mirror_script_base + 7, 2, {}, 0, false);
         if (!handle)
             return fail("Slot animation creation failed: " + animations.error);
         create_color_step(animations.registry.find(handle));
-        if (request.slot == 0) {
+        if (request.slot == 0 && request.opcode != 318) {
             if (AnmVm* vm = animations.registry.find(handle)) {
                 const float w = float(vm->visual.sprite_size.x *
                                       vm->visual.scale.x);
@@ -473,6 +833,72 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
         }
     }
     battle.sim.anm_effects.clear();
+    return true;
+}
+
+bool StagePresentation::enemy_death(i32 file,i32 script,const Vec3& position,float angle) {
+    const auto target=resolve_script_target(file,script);
+    if(target.script<0)return false;
+    // 41ab7f ->46f820(bank,script,pos,angle,layer4,flags0).
+    return animations.create(target.bank,target.script,4,0,position,angle,false)!=0 ||
+           fail("Enemy death animation: "+animations.error);
+}
+
+void StagePresentation::retire_enemy_fog(u32 serial) {
+    const auto found=fog_handles_.find(serial);if(found==fog_handles_.end())return;
+    for(auto& handle:found->second)if(!animations.retire(handle))fail(animations.error);
+    fog_handles_.erase(found);
+}
+
+bool StagePresentation::enemy_fog(StageEnemy& enemy,bool reset) {
+    if(reset||!enemy.fog)retire_enemy_fog(enemy.serial);
+    if(!enemy.fog)return error_.empty();
+    auto& handles=fog_handles_[enemy.serial];
+    for(size_t column=0;column<handles.size();++column) {
+        if(!handles[column]) {
+            // 4159c0 ->43cac0: text82 samples @R, layer29, tail insertion,
+            // mode12 strip and screen coordinates. 0x43cac0 replaces only the
+            // draw-mode field (mask 0xd9ffffff | 0x18000000); 4159c0 then
+            // clears VM+0x18 blend bits 0x1e0 (script82 op303 wrote 3 =
+            // One/Zero) and render_flags 0x40000, leaving blend 0.
+            handles[column]=animations.create(0,82,29,0);
+            auto* vm=animations.registry.find(handles[column]);
+            if(!vm)return fail("Enemy fog render-target animation: "+animations.error);
+            vm->visual.flags=(vm->visual.flags&~0x3e000000u)|(12u<<25);
+            vm->visual.flags&=~0x1e0u;
+            vm->visual.render_flags&=~0x40000u;
+            vm->variables.integers[0]=17;
+            vm->geometry.screen_vertices.resize(34);
+        }
+        auto* vm=animations.registry.find(handles[column]);
+        if(!vm)return fail("Enemy fog strip retired while enemy is live");
+        if(!reset)for(size_t row=0;row<17;++row) {
+            vm->geometry.screen_vertices[row*2]=enemy.fog->vertices[column*17+row];
+            vm->geometry.screen_vertices[row*2+1]=enemy.fog->vertices[(column+1)*17+row];
+        }
+    }
+    return true;
+}
+
+bool StagePresentation::sync(StageBattle& battle, u32 held) {
+    bullet_cancel_handles_.erase(std::remove_if(bullet_cancel_handles_.begin(),bullet_cancel_handles_.end(),
+        [this](u32 handle){return !animations.registry.find(handle);}),bullet_cancel_handles_.end());
+    if(!sync_trance_effect(battle))return false;
+    if (!error_.empty()) return false;
+    if (animations.scene_environment().paused) return true;
+    auto* stage_resource = animations.resource(banks.stage);
+    auto* bullet_resource = animations.resource(banks.bullet);
+    auto* player_resource = animations.resource(banks.player);
+    if (!stage_resource || !bullet_resource || !player_resource)
+        return fail("Stage presentation banks unavailable");
+    // The next battle step consumes this snapshot before sim.step_frame().
+    // It is deliberately refreshed only after the previous frame's VM tick.
+    battle.begin_player_shot_geometry_snapshot();
+    if (!sync_player_effects(battle)) return false;
+    if (!sync_items(battle)) return false;
+    if (!sync_item_spirits(battle)) return false;
+
+    if (!flush_ecl_animations(battle)) return false;
     // 槽位 VM 位置跟随（0x41a8a0:84-93：敌机管理器每帧把敌机 ECL 位置
     // （enemy+0x44/48/4c）写入各槽 VM 的偏移 +0x574/578/57c——0x466a80 的
     // 位置和项；+320/+16 由 0x40000 位在 adjust 阶段补，此处只写 ECL 原值）。
@@ -504,10 +930,7 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
                             return fail("Mirror retire failed: " + animations.error);
                         handle = 0;
                     }
-                    const i32 bank = enemy->anm_file == 0   ? banks.bullet
-                                     : enemy->anm_file == 1 ? banks.effect
-                                                           : banks.stage;
-                    // 槽 0 脚本号 = 306 记录（enemy->anm_script[0]）；
+                    // 槽 0 脚本号 = 306 记录（enemy->anm_base_script）；
                     // layer = 敌机内嵌 VM+0x278 + 7（0x419450:0x419764 实证，
                     // mirror_script_base 构造默认 1 → 层 8，ECL 552 可覆盖）；
                     // 插入方向 = 主链尾插（0x419764 块直调 0x46f3f0——f92
@@ -515,10 +938,10 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
                     // 之后。此前沿用 create 默认 ordering=2（0x46f4a0 头插
                     // 语义；303/306 建池 0x4243e0 才是头插）→ f92 op[12] 的
                     // 层内序 Blue 先于 Red，与 oracle 相反（draws 首分歧）。
-                    handle = animations.create(bank,
-                                               stage_script_global(
-                                                   enemy->anm_file,
-                                                   enemy->anm_script[0] + step),
+                    const auto target = resolve_script_target(enemy->anm_file,
+                                                              enemy->anm_base_script + step);
+                    if (target.script < 0) return false;
+                    handle = animations.create(target.bank, target.script,
                                                enemy->mirror_script_base + 7,
                                                0, old_pos, 0, false);
                     if (!handle)
@@ -529,12 +952,15 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
                 }
                 enemy->mirror_prev_x = enemy->position[0];
             }
-            for (u32 handle : enemy->anm_slot_handle)
-                if (AnmVm* vm = animations.registry.find(handle)) {
-
-                    vm->visual.translation = {enemy->position[0],
-                                              enemy->position[1],
-                                              enemy->position[2]};
+            for (u32 slot = 0; slot < StageEnemy::kAnimationSlots; ++slot)
+                if (AnmVm* vm = animations.registry.find(enemy->anm_slot_handle[slot])) {
+                    // 41a8a0 adds inner+160 offsets unless flag08000000
+                    // selects direct enemy-position following.
+                    const Vec3 offset = enemy->flags & 0x8000000u
+                        ? Vec3{} : enemy->anm_slot_offset[slot];
+                    vm->visual.translation = {offset.x + enemy->position[0],
+                                              offset.y + enemy->position[1],
+                                              enemy->position[2] + offset.z};
                 }
         }
     }
@@ -568,7 +994,7 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
         }
         slot->vm->visual.translation = {enemy->position[0] + kGameToScreenX,
                                         enemy->position[1] + kGameToScreenY, enemy->position[2]};
-        if (slot->vm->tick(random, 1) < 0) return fail("Enemy animation: " + slot->vm->error);
+        if (slot->vm->tick(random, animations.rate) < 0) return fail("Enemy animation: " + slot->vm->error);
     }
     // 消失的敌机：销毁其 ANM 子树（子体可能仍挂 registry，release_tree 归还）。
     for (size_t i = 0; i < enemies_.size();) {
@@ -588,16 +1014,64 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
     }
     }  // !enemies_from_ecl
 
+    // Production bullet ANM is advanced by StageSim at birth/update time.
+    // Standalone presentation clients retain the existing sync entry point.
+    if (battle.sim.bullet_animation) {
+        for (auto& slot : bullets_) {
+            bool live = false;
+            for (const auto& bullet : battle.sim.bullets)
+                if (bullet.alive && slot.generation == bullet.generation) { live = true; break; }
+            slot.active = live;
+        }
+    } else {
     // ---- 敌弹：bullet.anm 脚本 + 外观表精灵源（出生中断 2，0x40e840 尾）----
     if (bullets_.size() < battle.sim.bullets.size()) {
         const size_t wanted = battle.sim.bullets.size();
         while (bullets_.size() < wanted) bullets_.push_back(BulletSlot{});
     }
-    size_t used = 0;
+    // StageSim compacts its bullet vector after every update.  Match existing
+    // VMs by birth identity rather than by the compacted index; the original
+    // bullet manager keeps a distinct ANM root per live bullet.
+    std::vector<bool> matched(bullets_.size(), false);
+    auto reset_slot = [&](BulletSlot& slot) -> bool {
+        if (slot.vm && slot.vm->resource && !animations.release_tree(*slot.vm))
+            return fail("Bullet animation release failed: " + animations.error);
+        slot.vm.reset();
+        slot.script = -1;
+        slot.color = -1;
+        slot.generation = 0;
+        slot.active = false;
+        return true;
+    };
     for (const auto& bullet : battle.sim.bullets) {
         const auto* appearance = bullet_appearance(i32(bullet.sprite));
-        BulletSlot& slot = bullets_[used++];
+        size_t slot_index = bullets_.size();
+        for (size_t i = 0; i < bullets_.size(); ++i) {
+            if (!matched[i] && bullets_[i].active &&
+                bullets_[i].generation == bullet.generation) {
+                slot_index = i;
+                break;
+            }
+        }
+        if (slot_index == bullets_.size()) {
+            // Reuse an inactive storage slot only after retiring its old VM;
+            // otherwise a same-script/color bullet inherits its old timer.
+            for (size_t i = 0; i < bullets_.size(); ++i) {
+                if (!matched[i] && !bullets_[i].active) {
+                    slot_index = i;
+                    break;
+                }
+            }
+            if (slot_index == bullets_.size()) {
+                bullets_.push_back(BulletSlot{});
+                matched.push_back(false);
+            }
+            if (!reset_slot(bullets_[slot_index])) return false;
+        }
+        matched[slot_index] = true;
+        BulletSlot& slot = bullets_[slot_index];
         slot.active = true;
+        slot.generation = bullet.generation;
         slot.source.type = i32(bullet.sprite);
         slot.source.color = i32(bullet.subtype);
         const i32 script = appearance ? appearance->script : -1;
@@ -610,32 +1084,52 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
             if (!slot.vm->bind(*bullet_resource, u32(script)))
                 return fail("Bullet animation binding failed: " + slot.vm->error);
             slot.vm->sprite_source = &slot.source;
-            slot.vm->pending_interrupt = 2;  // 出生（0x40e840：vm+0x4c8 = 2）
+            // 461cb0 executes the script's initialization before40e840 sends
+            // the birth interrupt. Skipping it loses sprite/draw-mode setup.
+            if (slot.vm->tick(random, animations.rate) < 0) return fail("Bullet initialization: " + slot.vm->error);
+            slot.vm->visual.render_flags |= 0x40000;
+            slot.vm->pending_interrupt = bullet.state == 2 && bullet.delay ? bullet.delay : 2;
             slot.script = script;
             slot.color = i32(bullet.subtype);
         }
         slot.vm->visual.translation = {bullet.x + kGameToScreenX, bullet.y + kGameToScreenY,
                                        bullet.z};
         slot.vm->variables.rotation.z = bullet.angle + kBulletSpriteForward;
-        if (slot.vm->tick(random, 1) < 0) return fail("Bullet animation: " + slot.vm->error);
+        if (slot.vm->tick(random, animations.rate) < 0) return fail("Bullet animation: " + slot.vm->error);
     }
-    for (size_t i = used; i < bullets_.size(); ++i) bullets_[i].active = false;
+    for (size_t i = 0; i < bullets_.size(); ++i)
+        if (!matched[i]) bullets_[i].active = false;
+
+    }
 
     // ---- 自机弹：.sht 弹型脚本（plXX.anm，旋转模式 1 随弹向）；无 .sht
     // 会话回退精灵直贴（player_shot_sprite_） ----
     if (shots_.size() < battle.shots.size())
         while (shots_.size() < battle.shots.size()) shots_.push_back(std::make_unique<AnmVm>());
+    shot_generations_.resize(shots_.size());
     for (size_t i = 0; i < shots_.size(); ++i) {
-        AnmVm& vm = *shots_[i];
         if (i < battle.shots.size() && battle.shots[i].alive) {
-            const auto& shot = battle.shots[i];
+            auto& shot = battle.shots[i];
+            // Compaction changes slots, not ANM identity. Preserve a survivor's
+            // VM; a new shot binds fresh even if its script matches the old one.
+            if (shot_generations_[i] != shot.generation) {
+                size_t source = i + 1;
+                while (source < shots_.size() &&
+                       shot_generations_[source] != shot.generation) ++source;
+                if (source < shots_.size()) {
+                    std::swap(shots_[i], shots_[source]);
+                    std::swap(shot_generations_[i], shot_generations_[source]);
+                } else {
+                    if (shots_[i]->resource && !animations.release_tree(*shots_[i]))
+                        return fail("Player shot animation release failed");
+                    *shots_[i] = AnmVm{};
+                    shot_generations_[i] = shot.generation;
+                }
+            }
+            AnmVm& vm = *shots_[i];
             const i32 script = shot.script;
-            if (script >= 0 && vm.source_script != script) {
-                if (vm.resource) animations.release_tree(vm);
-                vm.environment = &animations.scene_environment();
-                vm.object_host = &animations;  // 弹型脚本可 spawn 附属弹子 VM
-                if (!vm.bind(*player_resource, u32(script)))
-                    return fail("Player shot animation binding failed: " + vm.error);
+            if (script >= 0 && (!vm.resource || vm.source_script != script)) {
+                if (!initialize_player_shot(shot, u32(i))) return false;
             } else if (script < 0 && (!vm.resource || vm.source_script >= 0)) {
                 vm.environment = &animations.scene_environment();
                 vm.initialize_unbound();
@@ -647,17 +1141,145 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
                 vm.visual.render_flags |= 0x200;
                 vm.visual.set_layer(11);
             }
-            vm.visual.translation = {shot.x + kGameToScreenX, shot.y + kGameToScreenY, 0.0f};
-            vm.variables.rotation.z = shot.angle;  // 脚本旋转模式 1：贴图随弹向
-            if (script >= 0 && vm.resource && vm.tick(random, 1) < 0)
-                return fail("Player shot animation: " + vm.error);
-        } else {
-            if (vm.resource) {
-                animations.release_tree(vm);
-                vm = AnmVm{};
+            if (shot.state == 2 && shot_faded_generations_.insert(shot.generation).second)
+                vm.pending_interrupt = 1; // 446bf0, once per hit generation.
+            if (shot.behavior == 2 && shot.state == 1 && shot.beam_interrupt) {
+                vm.pending_interrupt = shot.beam_interrupt;
+                shot.beam_interrupt = 0;
             }
-            vm.visible = false;
+            vm.visual.translation = {shot.x + kGameToScreenX, shot.y + kGameToScreenY,
+                                     shot.state == 2 && !shot.sine_moving ? 0.1f : 0.0f};
+            vm.variables.rotation.z = shot.angle;  // 脚本旋转模式 1：贴图随弹向
+            if (shot.behavior == 2 && shot.state == 1) {
+                // 446f20 writes VM+80 length and +78 scale each frame.
+                vm.visual.scale.x = shot.beam_visual_width / 512.f;
+                vm.visual.secondary_scale.x = shot.beam_visual_width;
+                vm.visual.flags |= 0x18u;
+            }
+            if (script >= 0 && vm.resource) {
+                const int result = vm.tick(random, animations.rate);
+                if (result < 0) return fail("Player shot animation: " + vm.error);
+                if (result == 1) shot.animation_finished = true;
+            }
+            if (script >= 0 && shot.type != 2) {
+                Vec3 corners[4];
+                if (!anm_quad_positions(vm, corners))
+                    return fail("Player shot geometry snapshot unavailable");
+                std::array<Vec3, 4> snapshot{};
+                std::copy(std::begin(corners), std::end(corners), snapshot.begin());
+                battle.set_player_shot_geometry(i32(i), shot.age, script, shot.generation,
+                                                snapshot);
+            }
+        } else {
+            // 0x4464d0 只有两种死法：出界（上一帧四角全离开 [128,512]×
+            // [16,464] 且快照龄>9、类型≠2 —— consume_player_shot_geometry
+            // 已在 step_shots 内镜像同一谓词先行剔除）与命中（sim.step_frame
+            // 的 0x446870 → 伤害记录回调 0x446bf0）。此处用同一 VM 四角复算
+            // 同一谓词区分死因：VM 自上帧快照后未再推进，四角与快照逐位相等，
+            // 判定与 battle 侧 consume 完全同数据同条件，无启发式。
+            AnmVm& vm = *shots_[i];
+            bool fade = false;
+            PlayerShot corpse_shot{};
+            if (i < battle.shots.size() && !battle.shots[i].alive) {
+                const PlayerShot& shot = battle.shots[i];
+                corpse_shot = shot;
+                const bool snapshotted = shot_generations_[i] == shot.generation &&
+                                         vm.resource &&
+                                         vm.source_script == shot.script && shot.type != 2;
+                bool outside = false;
+                if (snapshotted && shot.age - 1 > 9) {  // consume 的快照龄门
+                    Vec3 corners[4];
+                    if (!anm_quad_positions(vm, corners))
+                        return fail("Player shot death geometry unavailable");
+                    outside = true;
+                    for (const auto& corner : corners)
+                        outside = outside && (corner.x <= 128.0f || corner.x >= 512.0f ||
+                                              corner.y <= 16.0f || corner.y >= 464.0f);
+                }
+                fade = !outside && shot.script >= 0 &&
+                       shot_faded_generations_.find(shot.generation) ==
+                           shot_faded_generations_.end() &&
+                       shot_script_has_interrupt(*player_resource, u32(shot.script), 1);
+            }
+            if (fade) {
+                // 0x446bf0：VM+0x4a0=1（中断段=脚本后半 layer13 渐隐）；弹转
+                // dying：速度×0.125、z=0x3dcccccd(0.1)、VM 位姿回写死亡位
+                //（battle.step_shots 的本帧整速位移已在命中前完成，不再补动）。
+                if (!vm.resource || vm.source_script != corpse_shot.script) {
+                    // 出生帧即命中、从未同步绑定的弹：补绑后直接进中断段。
+                    if (vm.resource && !animations.release_tree(vm))
+                        return fail("Player shot animation release failed");
+                    vm.environment = &animations.scene_environment();
+                    vm.object_host = &animations;  // 与存活路径同一宿主接线
+                    if (!vm.bind(*player_resource, u32(corpse_shot.script)))
+                        return fail("Player shot animation binding failed: " + vm.error);
+                }
+                ShotFade corpse;
+                corpse.generation = corpse_shot.generation;
+                corpse.vm = std::move(shots_[i]);
+                corpse.x = corpse_shot.x;
+                corpse.y = corpse_shot.y;
+                corpse.angle = corpse_shot.angle;
+                corpse.drift = corpse_shot.speed * 0.125f;
+                corpse.sine_moving = corpse_shot.sine_moving;
+                corpse.sine_motion = corpse_shot.sine_motion;
+                corpse.vm->pending_interrupt = 1;  // 0x446bf0: VM+0x4a0 = 1
+                corpse.vm->visual.translation = {corpse.x + kGameToScreenX,
+                                                 corpse.y + kGameToScreenY,
+                                                 corpse.sine_moving ? 0.0f : 0.1f};
+                corpse.vm->variables.rotation.z = corpse.angle;
+                shot_faded_generations_.insert(corpse.generation);
+                shot_fades_.push_back(std::move(corpse));
+                shots_[i] = std::make_unique<AnmVm>();
+                shot_generations_[i] = 0;
+            } else {
+                // 出界死（0x470110 语义）或无中断段脚本：立即回收。
+                if (vm.resource) {
+                    animations.release_tree(vm);
+                    vm = AnmVm{};
+                }
+                vm.visible = false;
+                shot_generations_[i] = 0;
+            }
         }
+    }
+
+    // ---- 命中留尸推进（0x4464d0 dying 惰行 + VM 跟随 → op1 自灭回收）----
+    // 原版 dying 弹仍走 0x4464d0：位移（减速率 0.125 后的 speed）、0x473780
+    // 0.01 量化、VM+0x574 位姿回写、flags&0x40 时角度回写；随后 anm 推进。
+    // 脚本 op1/-1 自灭（tick 返回 1）后回收——对应原版次帧 0x46fb90 查无
+    // VM 的槽位释放路径（视觉自灭帧即不可见，回收无观察差）。
+    for (size_t n = 0; n < shot_fades_.size();) {
+        ShotFade& corpse = shot_fades_[n];
+        AnmVm& vm = *corpse.vm;
+        if (corpse.age > 0) {  // 命中当帧不惰行（整速位移已计入死亡位）
+            float vx, vy;
+            const float rate = battle.sim.time_rate();
+            if (corpse.sine_moving) {
+                corpse.sine_motion.advance(rate);
+                corpse.x = corpse.sine_motion.pos[0];
+                corpse.y = corpse.sine_motion.pos[1];
+                corpse.angle = corpse.sine_motion.angle;
+            } else {
+                polar_xy(corpse.angle, float(corpse.drift * rate), vx, vy);
+                corpse.x = round001(float(corpse.x + vx));
+                corpse.y = round001(float(corpse.y + vy));
+            }
+            vm.visual.translation = {corpse.x + kGameToScreenX,
+                                     corpse.y + kGameToScreenY,
+                                     corpse.sine_moving ? 0.0f : 0.1f};
+            vm.variables.rotation.z = corpse.angle;
+        }
+        ++corpse.age;
+        const i32 result = vm.tick(random, animations.rate);
+        if (result < 0) return fail("Player shot fade animation: " + vm.error);
+        if (result == 1) {
+            animations.release_tree(vm);
+            corpse.vm.reset();
+            shot_fades_.erase(shot_fades_.begin() + i32(n));
+            continue;
+        }
+        ++n;
     }
 
     // ---- 自机：00442960，0直立、1左倾、2左倾回正、3右倾、4右倾回正 ----
@@ -678,7 +1300,7 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
         }
         player_->visual.translation = {battle.player_x + kGameToScreenX,
                                        battle.player_y + kGameToScreenY, 0.0f};
-        if (player_->tick(random, 1) < 0) return fail("Player animation: " + player_->error);
+        if (player_->tick(random, animations.rate) < 0) return fail("Player animation: " + player_->error);
         // 0044378x：无敌时每3个状态帧使用蓝色secondary通道；不是隐藏精灵。
         player_->visual.flags &= ~0x60000u;
         if (battle.invulnerable > 0 && battle.player_phase_frame % 3 == 0) {
@@ -714,33 +1336,35 @@ std::string StagePresentation::debug_report() const {
                                            return handle && animations.registry.find(handle);
                                        })));
     report += line;
-    auto describe = [&](const char* kind, const AnmVm& vm, i32 type, i32 color) {
+    auto describe = [&](const char* kind, const AnmVm& vm, i32 type, i32 color,
+                        u32 generation) {
         const auto* source = vm.sprite_resource ? vm.sprite_resource : vm.resource;
         std::snprintf(line, sizeof line,
                       "  %s script=%d sprite=%d size=%.0fx%.0f scale=%.2fx%.2f "
-                      "pos=(%.0f,%.0f) rot=%.2f mode=%u blend=%u type=%d color=%d\n",
+                      "pos=(%.0f,%.0f) rot=%.2f mode=%u blend=%u type=%d color=%d age=%d gen=%u\n",
                       kind, vm.source_script, vm.visual.sprite,
                       double(vm.visual.sprite_size.x), double(vm.visual.sprite_size.y),
                       double(vm.visual.scale.x), double(vm.visual.scale.y),
                       double(vm.visual.translation.x), double(vm.visual.translation.y),
                       double(vm.variables.rotation.z), unsigned(vm.visual.draw_mode()),
-                      unsigned(vm.visual.blend_mode()), type, color);
+                      unsigned(vm.visual.blend_mode()), type, color, vm.age.current,
+                      generation);
         report += line;
         (void)source;
     };
     for (const auto& enemy : enemies_)
-        if (enemy.vm) describe("enemy", *enemy.vm, enemy.script, -1);
+        if (enemy.vm) describe("enemy", *enemy.vm, enemy.script, -1, 0);
     u32 shown = 0;
     for (const auto& slot : bullets_) {
         if (!slot.active || !slot.vm || shown >= 40) continue;
-        describe("bullet", *slot.vm, slot.source.type, slot.source.color);
+        describe("bullet", *slot.vm, slot.source.type, slot.source.color, slot.generation);
         ++shown;
     }
     if (!shots_.empty() && shots_[0])
-        describe("shot", *shots_[0], player_shot_sprite_, -1);
-    if (player_) describe("player", *player_, player_script_, player_tilt_);
+        describe("shot", *shots_[0], player_shot_sprite_, -1, 0);
+    if (player_) describe("player", *player_, player_script_, player_tilt_, 0);
     auto describe_handle = [&](const char* kind, u32 handle, i32 index) {
-        if (auto* vm = animations.registry.find(handle)) describe(kind, *vm, index, -1);
+        if (auto* vm = animations.registry.find(handle)) describe(kind, *vm, index, -1, 0);
     };
     describe_handle("focus", focus_handle_, 0);
     for (size_t i = 0; i < option_handles_.size(); ++i) {
@@ -772,6 +1396,9 @@ bool StagePresentation::draw(u32 pass) {
     case 0:
         for (auto& shot : shots_)
             if (shot) one(*shot);
+        // 命中留尸 VM 同层直绘（原版 layer13 渐隐条与在飞亮条同 pass）。
+        for (auto& corpse : shot_fades_)
+            if (corpse.vm) one(*corpse.vm);
         break;
     case 1:
         if (player_) one(*player_);

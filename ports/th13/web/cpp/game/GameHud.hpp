@@ -14,6 +14,9 @@ namespace th13 {
 
 struct HudEntryContext {
     i32 scene_destination = 0;
+    // Supervisor+590 (DAT_004dcc30):0 for destination0xc continuation,
+    // 1 for fresh entries and retries (0043c1c0).
+    bool new_run = true;
 };
 
 class GameHud {
@@ -34,6 +37,9 @@ public:
     u32 flags = 0;
     Timer intro_age{0, 0, 0, 0, 0};
     Timer frame_age{0, 0, 0, 0, 0};
+    // HUD+184..194 is independent from the loader-reset frame clock.
+    Timer clear_age{0, 0, 0, 0, 0};
+    u32 clear_banner = 0;
     i32 displayed_score = 0, score_increment = 0;
     std::string error;
     // th13 灵界计（agauge）：0x425170 FUN_0046f820(script 0xab=171) 建
@@ -63,16 +69,26 @@ public:
     bool initialize(const HudEntryContext&);
     bool life(i32 lives, i32 pieces);
     bool bombs(i32 bombs, i32 pieces);
+    // Independent per-stage logo ANM bank, injected by the run scene.
+    i32 stage_logo_bank = -1;
     bool stage_logo(i32 scene_destination);
+    bool stage_music_logo();
     bool update(const HudFrameContext&, HudFrameServices&);
     void update_score();
     bool draw(const HudDrawContext&, HudDrawServices&);
+    bool draw_trance_countdown(HudDrawServices&);
     bool reset_for_retry();
     void prepare_stage_assets() noexcept {
         frame_age.set(0);
         displayed_score = score.score;
+        boss_hud.prepare_stage_assets();
     }
     bool update_trance();  // 0x42b030 值→172/173/175 显示映射（无状态副作用）
+    bool begin_stage_clear();  // 0042abf0: front115 and HUD+180 bit100
+    bool finish_stage_clear(); // 0042ad40: label1, clear flag and clock
+    void tick_stage_clear() noexcept {
+        if (flags & 0x100u) clear_age.tick(&progress.rate);
+    }
 };
 
 }  // namespace th13

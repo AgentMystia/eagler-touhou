@@ -105,9 +105,10 @@ bool StageScript::step(float rate) {
             error = "STD instruction loop limit";
             return false;
         }
-        // th13 实测指令面的最小参数量（st01-st07 dump 全集；st02 ins_14 未入表）。
+        // th13 实测指令面的最小参数量（st01-st07 dump 全集；ins_14 需 2 参）。
         static constexpr u8 minimum[13] = {0, 2, 3, 5, 3, 5, 3, 1, 3, 5, 11, 11, 1};
-        if (c->opcode >= 0 && c->opcode <= 12 && c->arguments.size() < minimum[u32(c->opcode)]) {
+        if ((c->opcode >= 0 && c->opcode <= 12 && c->arguments.size() < minimum[u32(c->opcode)]) ||
+            (c->opcode == 14 && c->arguments.size() < 2)) {
             error = "truncated STD arguments";
             return false;
         }
@@ -149,9 +150,31 @@ bool StageScript::step(float rate) {
             if (!s.camera_effect) s.camera.eye_offset = {};
             s.effect_timer.set(0);
             break;
+        case 14: {  // 0x408a43：背景子 ANM 槽隐藏/模板重挂（arg0=槽、arg1=模板号）
+            const i32 slot = command.argument<i32>(0), template_index = command.argument<i32>(1);
+            if (slot < 0 || slot >= i32(s.background.size())) {
+                error = "STD ins_14 slot outside background pool";
+                return false;
+            }
+            if (template_index >= 0 && !background_command) {
+                error = "STD ins_14 background ANM host unavailable";
+                return false;
+            }
+            if (background_command && !background_command(slot, template_index)) {
+                error = "STD background ANM command failed";
+                return false;
+            }
+            if (template_index < 0) {
+                s.background[u32(slot)].visible = false;
+            } else {
+                s.background[u32(slot)].script = template_index;
+                s.background[u32(slot)].visible = true;
+            }
+            break;
+        }
         case 16: break;  // 中断标号（interrupt 扫描锚点，顺序执行无动作）
         default:
-            // st02 ins_14（嵌入背景动画）等未定域指令：显式停机，不静默近似。
+            // 未定域指令：显式停机，不静默近似。
             error = "STD camera opcode not yet implemented: " + std::to_string(command.opcode);
             return false;
         }
@@ -192,10 +215,12 @@ void StageScript::camera_effect(float rate) noexcept {
     i32 period = 512;
     switch (kind) {
     case 1:
+        // 0x408c8a（unicorn 直跑实测 + 常量池 0x4aef78=-120.0/0x4aef70=-50.0）：
+        // eye.x=−120·sin(φ)、eye.z=−50·sin(2φ)；up/target 公式不变。
         phase = normalize_angle(float(phase * (1.f / 512)));
         wave = sine(phase);
-        s.camera.eye_offset.x = float(wave * -20);
-        s.camera.eye_offset.z = float(sine(normalize_angle(float(phase * 2))) * -10);
+        s.camera.eye_offset.x = float(wave * -120);
+        s.camera.eye_offset.z = float(sine(normalize_angle(float(phase * 2))) * -50);
         s.camera.up.x = float(wave * -.01f);
         s.camera.target_offset.x = float(s.camera.eye_offset.x * -.5f);
         s.camera.target_offset.z = float(s.camera.eye_offset.z * -.5f);

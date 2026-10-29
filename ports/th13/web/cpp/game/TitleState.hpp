@@ -1,5 +1,5 @@
 // 标题场景状态：Main/Difficulty/Character/Practice Stage/Replay/Options 等
-// 共用光标历史。SpellPractice/PlayerData/Demo 入口尚未实现。
+// 共用光标历史。PlayerData/SpellPractice 已接路由骨架（数据仍归宿主）。
 // TitleScreen 数值暂沿 th15 世代枚举位；th13 supervisor（0x44e600 对应物）锚定后回填。
 #pragma once
 
@@ -12,21 +12,27 @@ namespace th13 {
 // Main=1、Quit/StartGame=2（同值冲突是有意保留的现状，TitleFrame/ApplicationState
 // 以 screen==Quit 区分）、Option=3（case 3 → 0x44dd00，MenuExtras 实证）、
 // 难度=5 对应物 450fb0（th13 沿 th15 位 6，待回填）、
-// 角色=7（同上）、Replay=11 = case b → 0x4525b0（p58 反编译实证）、
+// 角色=7（同上）、PlayerData=10 = case a → 0x453170（记录浏览；数据服务归宿主）、
+// Replay=11 = case b → 0x4525b0（p58 反编译实证）、
 // MusicRoom=13 = case d → 0x4554f0（MenuExtras 实证）、Manual=16 = case 10
-// → 0x455330（MenuExtras 实证；真实 help 查看器归宿主，wrapper≠完成）。
+// → 0x455330（MenuExtras 实证；真实 help 查看器归宿主，wrapper≠完成）、
+// SpellPractice=17 = case 0x11/0x12/0x13 → 0x4560a0/0x456650/0x4576c0
+//（三级菜单；解锁/启动数据归宿主）。
 enum class TitleScreen : i32 {
     Initialize = 0,
     Main = 1,
     Quit = 2,
     StartGame = 2,
     Option = 3,
+    KeyConfig = 4,  // 0x44c570 case 4 -> 0x44fcc0 (Pad Config)
     Difficulty = 6,
     Character = 7,
     Stage = 8,  // 0x44c570 case8 -> 0x451cb0 (Practice Stage Select)
+    PlayerData = 10,  // 0x44c570 case a -> 0x453170
     Replay = 11,
     MusicRoom = 13,
     Manual = 16,
+    SpellPractice = 17,  // 0x44c570 case 0x11/0x12/0x13
 };
 
 struct TitleSelectionSettings {

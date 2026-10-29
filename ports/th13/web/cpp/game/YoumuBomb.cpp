@@ -5,6 +5,7 @@
 //   center  = (0 ∓ offset.x, y ∓ offset.y)（偶减/奇加）   （0x40ce0b / 0x40cdf1）
 //   h       = f32(rect_scale × double(128.0))             （0x40ce3b fmul QWORD 0x4ae8c8）
 #include "YoumuBomb.hpp"
+#include "Types.hpp"
 
 #include <array>
 #include <cmath>
@@ -39,7 +40,7 @@ std::optional<YoumuBomb::Spawn> YoumuBomb::step(int age, GameRandom& rng) {
     return Spawn{-1, script, y};
 }
 
-void YoumuBomb::set_vm(int slot, bool alive, float rotation_z) {
+void YoumuBomb::set_vm(int slot, bool alive, float rotation_z, float rate) {
     if (slot < 0 || slot >= kSlots) return;
     Slot& s = slots_[slot];
     if (!s.has_anm) return;  // 原版：anm id==0 的槽不进循环体（无 tick、无矩形）
@@ -51,8 +52,16 @@ void YoumuBomb::set_vm(int slot, bool alive, float rotation_z) {
     s.alive = true;
     s.angle = rotation_z;
     s.rect_scale = s.scale;  // 本帧矩形用 tick 前值
-    s.scale = static_cast<float>(static_cast<double>(s.scale) + 1.0);
-    s.counter += 1;          // 槽定时器 max += *cb(=1.0)
+    // 40ceac..40cee7 follows the slot timer's rate pointer. The near-one
+    // path increments the integer separately; the other path truncates the
+    // updated f32 fractional value, just like FUN_004971f0.
+    if (rate > .99f && rate < 1.01f) {
+        s.scale = float(s.scale + 1.0f);
+        ++s.counter;
+    } else {
+        s.scale = float(s.scale + rate);
+        s.counter = truncate_int(s.scale);
+    }
 }
 
 bool YoumuBomb::active(int slot) const { return slots_[slot].alive; }

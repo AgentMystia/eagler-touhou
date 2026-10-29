@@ -67,6 +67,54 @@ bool stage_visible(const StageObject& object, const Vec3& instance, const AnmCam
            min_y <= float(origin.y + extent.y);
 }
 }  // namespace
+void StageScenery::begin_exit() noexcept {
+    lifecycle_flags = (lifecycle_flags | 2u | 1u) & ~8u;
+    lifecycle_timer.set(30);
+}
+void StageScenery::begin_enter() noexcept {
+    lifecycle_flags = (lifecycle_flags | 4u | 1u) & ~8u;
+    lifecycle_timer.set(60);
+    fade_in_pending = false;
+}
+bool StageScenery::draw_camera_enabled() const noexcept {
+    if (retired()) return false;
+    return (lifecycle_flags & 8u) == 0 &&
+           ((lifecycle_flags & 4u) == 0 || lifecycle_timer.current < 60);
+}
+u32 StageScenery::draw_clear_color() const noexcept {
+    if ((lifecycle_flags & 4u) != 0 && frames < 34) return 0;
+    return script.state.camera.fog.color;
+}
+u32 StageScenery::take_draw_tint() noexcept {
+    const u32 color = transition_color;
+    transition_color &= 0x00ffffffu;
+    return color;
+}
+bool StageScenery::finish_draw_pass(i32 pass) noexcept {
+    if (retired()) return false;
+    if (pass == 2 && (lifecycle_flags & 4u)) {
+        if (lifecycle_timer.current < 30) {
+            fade_in_pending = true;
+            lifecycle_flags |= 1u;
+            lifecycle_timer.set(1);
+        } else {
+            lifecycle_flags &= ~1u;
+            transition_color &= 0x00ffffffu;
+        }
+    }
+    if (pass != 5) return true;
+    if ((lifecycle_flags & 4u) && lifecycle_timer.current >= 30)
+        transition_color &= 0x00ffffffu;
+    if (lifecycle_timer.current > 0) {
+        lifecycle_timer.decrement(&rate);
+        if (lifecycle_timer.current < 1) {
+            if (lifecycle_flags & 2u) lifecycle_flags |= 8u;
+            lifecycle_flags &= ~6u;
+            transition_color = 0x00ffffffu;
+        }
+    }
+    return !retired();
+}
 bool StageScenery::bind(AnmVm& vm, AnmManager& animations, i32 bank, i32 script_index) {
     if (!animations.bind_template(vm, bank, script_index)) return fail(animations.error);
     vm.rotation_parent = vm.creation_parent = nullptr;
@@ -79,6 +127,15 @@ bool StageScenery::initialize(AnmManager& animations, i32 bank) {
     if (!animations.resource(bank)) return fail("Stage scenery animation bank unavailable");
     script.state.timer.set(0);
     script.state.culling_distance_squared = 9999999.f;
+    script.background_command = [this, &animations, bank](i32 slot, i32 template_index) {
+        auto& vm = background_slots[u32(slot)];
+        if (template_index < 0) {
+            vm.visual.flags &= ~1u;
+            vm.visible = false;
+            return true;
+        }
+        return bind(vm, animations, bank, template_index);
+    };
     primitives.resize(file.animation_count);
     object_flags.assign(file.objects.size(), 1);
     instance_flags.resize(file.instances.size());
@@ -91,19 +148,25 @@ bool StageScenery::initialize(AnmManager& animations, i32 bank) {
         }
     }
     initialized = true;
+    lifecycle_flags = 1;
+    lifecycle_timer.set(0);
     return true;
 }
 bool StageScenery::update(AnmManager& animations, AnmEnvironment& environment, float step_rate) {
     if (!error.empty()) return false;
     if (!initialized) return fail("Stage scenery not initialized");
+    if (retired()) return true;
     rate = step_rate;
     animations.rate = rate;
+    if ((lifecycle_flags & 4u) && lifecycle_timer.current >= 60) return true;
+    transition_color = (transition_color & 0xff000000u) | 0x00808080u;
     script.state.camera.animation_delta = {};
     // 先归一化上一帧视线（含 target_offset）再执行脚本。
     const auto& direction = script.state.camera.direction;
     const auto& offset = script.state.camera.target_offset;
     view_direction = normalize_scene_vector(
         {float(direction.x + offset.x), float(direction.y + offset.y), float(direction.z + offset.z)});
+    if ((lifecycle_flags & 4u) && lifecycle_timer.current >= 30) { ++frames; return true; }
     for (u32 i = 0; i < file.objects.size(); ++i) {
         if (!(object_flags[i] & 1)) continue;
         u32 active = 0;
@@ -114,10 +177,14 @@ bool StageScenery::update(AnmManager& animations, AnmEnvironment& environment, f
         }
         if (!active) object_flags[i] &= u8(~1u);
     }
-    if (!script.step(rate)) return fail(script.error);
+    if (!script.step(rate)) return fail(error.empty() ? script.error : error);
+    for (auto& vm : background_slots)
+        if (vm.resource && animations.tick_instance(vm) < 0) return fail(animations.error);
     environment.camera_origin = script.state.camera.eye_offset;
     environment.screen_translation = script.state.camera.position;
     environment.reference_position = view_direction;
+    environment.stage_direction=script.state.camera.direction;
+    environment.background_delta=script.state.camera.animation_delta;
     frames++;
     return true;
 }
@@ -127,17 +194,44 @@ bool StageScenery::interrupt_objects(i32 label) {
 }
 bool StageScenery::draw(AnmManager& animations, AnmRenderer& renderer, ZunGraphics& graphics,
                         i32 layer_first, i32 layer_last, const GraphicsViewport& viewport,
-                        Vec2 cull_extent) {
+                        Vec2 cull_extent, Vec2 screen_shake) {
     (void)animations;
     if (!error.empty()) return false;
     if (!initialized) return fail("Stage scenery not initialized");
+    if (retired() || !draw_geometry_enabled()) return true;
+    if (layer_first == 0) {
+        bool has_background = false;
+        for (const auto& vm : background_slots) has_background |= vm.sprite != nullptr;
+        if (has_background) {
+            renderer.set_viewport(viewport);
+            AnmCamera overlay_camera;
+            const float fov = script.state.camera.fov;
+            const float distance = float(240.0 / std::tan(double(float(fov * .5f))));
+            overlay_camera.eye = {320, 240, distance};
+            overlay_camera.view = scene_look_at(overlay_camera.eye, {320, 240, 0}, {0, -1, 0});
+            overlay_camera.projection = scene_perspective(fov, 1.3333333730697632f, 1.f, 10000.f);
+            renderer.set_camera(overlay_camera);
+            renderer.offset = screen_shake;
+            renderer.flush();
+            graphics.set_fog(false);
+            graphics.set_depth_mask(false);
+            for (auto& vm : background_slots)
+                if (vm.sprite && renderer.draw(vm) == -2) return fail(renderer.error);
+            renderer.flush();
+            graphics.set_depth_mask(true);
+        }
+    }
     auto camera_state = script.state.camera;
     camera_state.direction = view_direction;
     const auto camera = stage_camera(camera_state, viewport);
+    renderer.scenery_camera=camera;renderer.scenery_viewport=viewport;renderer.scenery_camera_ready=true;
     renderer.set_viewport(viewport);
     renderer.set_camera(camera);
     graphics.presentation_camera(true);
-    renderer.offset = {};
+    // 406d90/407310 copy4dcbe8/ec into camera+f4/f8;43ba20 then
+    // sets ANM manager+d0/d4. This is a projected/screen-quad offset,
+    // not a displacement of the eye, world geometry, or culling volume.
+    renderer.offset = screen_shake;
     for (u32 i = 0; i < file.instances.size(); ++i) {
         renderer.presentation_instance = i + 1;
         const auto& instance = file.instances[i];
@@ -163,10 +257,10 @@ bool StageScenery::draw(AnmManager& animations, AnmRenderer& renderer, ZunGraphi
                 // STD 尺寸 → 精灵缩放（延迟的 ins_300 可能尚未选精灵：仅非零
                 // 尺寸查表，与原版 40f99c 行为一致）。
                 if (primitive.size.x != 0 || primitive.size.y != 0) {
-                    auto* source = vm.sprite_resource ? vm.sprite_resource : vm.resource;
-                    if (!source || visual.sprite < 0 || u32(visual.sprite) >= source->sprites.size())
+                    const auto* selected = vm.texture_sprite();
+                    if (!selected)
                         return fail("Stage scenery primitive sprite unavailable");
-                    const auto& sprite = source->sprites[u32(visual.sprite)];
+                    const auto& sprite = *selected;
                     if (primitive.size.x != 0) {
                         visual.scale.x = float(primitive.size.x / sprite.width);
                         visual.flags |= 8;

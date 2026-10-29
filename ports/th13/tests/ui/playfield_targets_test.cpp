@@ -37,6 +37,7 @@ struct RecordedClear {
 struct RecordedDraw {
     u32 order = 0, target = 0, texture = 0;
     std::vector<AnmGeometryVertex> vertices;
+    GraphicsViewport viewport;
 };
 
 struct Graphics final : ZunGraphics {
@@ -56,7 +57,7 @@ struct Graphics final : ZunGraphics {
     void triangles(u32 n, const void* ptr, u32 stride) override {
         CHECK_EQ(stride, u32(sizeof(AnmGeometryVertex)));
         auto* v = static_cast<const AnmGeometryVertex*>(ptr);
-        draws.push_back({++clock, target, texture_id, {v, v + n * 3}});
+        draws.push_back({++clock, target, texture_id, {v, v + n * 3}, viewport});
         CHECK(target != texture_id);
     }
     void primitives(Topology, u32, const void*, u32) override {}
@@ -330,6 +331,74 @@ TEST(real_schedule_draws_layer22_after_compose_on_final_screen) {
     CHECK(screen_clear.order < strip_draw.order);
     CHECK(h.graphics.draws[3].target == 0u);  // compose84 先于边条提交
     CHECK(h.graphics.draws[3].order < strip_draw.order);
+}
+
+TEST(spell_name_layer20_preserves_intermediate_right_edge_before_final_crop) {
+    Harness h;
+    struct Services final : AnmDrawServices {
+        ScreenViews& views;
+        explicit Services(ScreenViews& v) : views(v) {}
+        bool camera(DrawCamera index, bool refresh) override { return views.camera(index, refresh); }
+    } services{h.views};
+    AnmDrawSchedule schedule(h.scheduler, h.manager, h.renderer, h.graphics, services);
+    const auto handle = h.manager.create(0, 74);
+    auto* name = h.manager.registry.find(handle);
+    CHECK(name);
+    if (!name) return;
+    CHECK(h.manager.update());
+    name->visual.flags |= 0x100000u;
+    name->visual.color = 0xffffffffu;
+    name->visual.scale = {1,1};
+    name->variables.position = {524,384,0};
+    CHECK(h.scheduler.draw() >= 0);
+    h.renderer.flush();
+    const RecordedDraw* submission = nullptr;
+    for (const auto& draw : h.graphics.draws)
+        if (draw.texture == 10) submission = &draw;
+    CHECK(submission);
+    if (!submission) return;
+    CHECK_EQ(submission->target, 13u);
+    CHECK_EQ(submission->viewport.x, 116u);
+    CHECK_EQ(submission->viewport.width, 408u);
+    CHECK_EQ(submission->viewport.x + submission->viewport.width, 524u);
+    near(submission->vertices[1].position.x, 523.5f);
+}
+
+TEST(distortion_layers_are_composed_once_into_opposite_render_targets) {
+    Harness h;
+    struct Services final : AnmDrawServices {
+        ScreenViews& views;
+        explicit Services(ScreenViews& v) : views(v) {}
+        bool camera(DrawCamera index, bool refresh) override {
+            return views.camera(index, refresh);
+        }
+    } services{h.views};
+    AnmDrawSchedule schedule(h.scheduler, h.manager, h.renderer, h.graphics, services);
+    const auto fog = h.manager.create(0, 82, 29, 0);
+    const auto overlay = h.manager.create(0, 83, 30, 0);
+    CHECK(fog && overlay);
+    CHECK(h.manager.update());
+    CHECK(h.scheduler.draw() >= 0);
+    h.renderer.flush();
+    // Compatible quads may share a submission batch. Expand that grouping,
+    // without making a flush boundary part of the game's draw contract.
+    std::vector<const RecordedDraw*> quads;
+    for (const auto& draw : h.graphics.draws) {
+        CHECK_EQ(draw.vertices.size() % 6, 0u);
+        for (size_t i = 0; i < draw.vertices.size(); i += 6) quads.push_back(&draw);
+    }
+    CHECK_EQ(quads.size(), 6u);
+    if (quads.size() != 6) return;
+    // 0043c870 draws compositor82 then layer29 into RT-B; 0043c920
+    // draws compositor83 then layer30 into RT-A, before the next RT switch.
+    const u32 targets[] = {13, 13, 12, 12, 13, 0};
+    const u32 sources[] = {12, 12, 13, 13, 12, 13};
+    for (u32 i = 0; i < 6; ++i) {
+        CHECK_EQ(quads[i]->target, targets[i]);
+        CHECK_EQ(quads[i]->texture, sources[i]);
+    }
+    CHECK(quads[1]->order < h.graphics.clears[3].order);
+    CHECK(quads[3]->order < h.graphics.clears[4].order);
 }
 
 TEST(final_original_anm84_maps_center_and_both_edges) {

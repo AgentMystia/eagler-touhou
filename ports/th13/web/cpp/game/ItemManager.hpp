@@ -16,6 +16,7 @@
 #include "Types.hpp"
 
 #include <array>
+#include <functional>
 
 namespace th13 {
 
@@ -32,7 +33,7 @@ enum ItemType : i32 {
     ItemExtraLife = 6,   // 1UP：0x43d2f0（直接 +1 命，上限 8）
     ItemBomb = 7,        // 灵击：0x43d440（直接 +1 炸弹，上限 9）
     ItemBigPowerAlt = 8, // 大P 变体：0x43d210 + 满灵力 popup 100（score+100/10）
-    ItemSpiritDrop = 9,  // 消弹灵（state5→2 上升→追踪；收集 score+10 显示、max_point+2）
+    ItemSpiritDrop = 9,  // 消弹灵（state5→2 上升→追踪；收集 score+10 显示、max_point+10）
     ItemSpiritKind0 = 10, // 神霊 kind0（残机碎片灵）：0x438ec0 → 0x438730 case0
     ItemSpiritKind1 = 11, // 神霊 kind1
     ItemSpiritKind2 = 12, // 神霊 kind2（灵击碎片灵：0x43d480(+1)）
@@ -64,6 +65,7 @@ struct Item {
 struct Spirit {
     i32 state = 0;  // [0]：0 空 1 游离 2 追踪 4 慢速追踪(左下角) 5 场景门控
     i32 kind = 0;   // [1]（0x438ec0 param_3；==4 时落 1）
+    u32 serial = 0; // [3]: original birth counter, identifies slot reuse.
     float speed = 0;        // [4]（目标速度，state2/4 每帧 +0.3/+0.05 封顶）
     float move_speed = 0;   // [0xb]（位移速度快照；state1 每帧 -0.12666667）
     float x = 0, y = 0, z = 0;  // [5]/[6]/[7]
@@ -74,7 +76,9 @@ struct Spirit {
     // [0x18]：第一 VM 帧计数（出生 -1，每帧 +1）——到 480（0x1e0）时清 flags
     // bit1（0x438730:142：反弹门关、此后越界即回收）。不是倒计时寿命。
     i32 frame = -1;
+    Timer lifetime_clock;
     u32 flags = 0;          // [0x21] bit0 = kind 门、bit1 = 界外反弹门
+    bool fade_requested = false; // 00438a7c: deferred ANM label1 at frame480.
     bool alive = false;
 };
 
@@ -83,6 +87,8 @@ class ItemManager;
 // 玩家侧只读面（DAT_004c22c4 玩家结构 + 0x4be7b8 进度结构的收集域）。
 // StageBattle 每帧装配；数值域直接映射 SessionState/HudPlayerState。
 struct ItemCollector {
+    bool boss_present=false;
+    float boss_x=0,boss_y=0;
     float x = 0, y = 0;         // 玩家 +0x5B8/+0x5BC
     i32 state = 1;              // +0x65C（1 active / 2 dying / 4 deathbomb）
     bool focus = false;         // DAT_004e4c08 & 8
@@ -117,6 +123,7 @@ struct ItemEvent {
         FullPower = 3,   // 0x42a430（满灵力演出）
         Extend = 4,      // 0x43d330 满碎片 +1 命（sound 0x11）
         SpiritGained = 5,// 0x438730 → 0x43d530（灵界值累加）
+        BombGained = 6,  // 0x43d440/0x43d480 灵击 +1（sound 0x2e）
     };
     Kind kind = Kind::Collected;
     i32 value = 0;          // 弹出值/灵力增量/灵界增量
@@ -125,13 +132,24 @@ struct ItemEvent {
 
 class ItemManager final : public StageItemHost {
 public:
+    // Production queries the actual ANM handle at 00438aca, before collection.
+    // Standalone arithmetic tests have no animation host.
+    std::function<bool(u32 slot, u32 serial)> spirit_animation_alive;
+    // 42edc0/42e380 call 444df0 synchronously when collected power crosses a level.
+    std::function<void()> option_power_changed;
     // 原版槽量：0x42e380 循环上界 0xa57+1 = 2648（道具）；0x438ec0 扫描
     // 0x100 = 256 槽（步长 0x22 float）——满时静默丢弃（本函数返回不产件）。
     static constexpr i32 kItemCapacity = 2648;
     static constexpr i32 kSpiritCapacity = 256;
 
     explicit ItemManager(GameRandom* shared_random = nullptr)
-        : random_(shared_random) {}
+        : random_(shared_random) {
+        // 413e50 pushes ascending slot addresses onto two separate heads.
+        for (i32 i = 0; i < 600; ++i) ordinary_free_.push_back(i);
+        for (i32 i = 600; i < kItemCapacity; ++i) cancel_free_.push_back(i);
+    }
+
+    void reset_items(); // 413e50: ordinary/cancel pools; spirit manager is separate.
 
     void bind_random(GameRandom& random) { random_ = &random; }
 
@@ -139,6 +157,8 @@ public:
     // DAT_004be830>>8 & 1 = trance 激活位（0x438ec0:54 的 XOR 化简结果）。
     // 未绑定时按 0（未激活）处理——常规局主路径同原版。
     void bind_session(const SessionState& session) { session_ = &session; }
+    // 438ec0 queues the positional birth voice before it scans the pool.
+    std::function<void(i32, float)> spirit_birth_sound;
 
     // ---- StageItemHost（StageSim 注入调用面，见 StageSim.hpp）----
 
@@ -158,6 +178,8 @@ public:
     // u*3.5 + base_speed），顺序先角后速（00438ec0.c:94-115）。
     void spawn_value_item(i32 kind, float x, float y, float z,
                           float base_speed) override;
+    void spawn_value_item(i32 kind, float x, float y, float z,
+                          float base_speed, bool sound) override;
 
     // 0x4302a0：616 etClear 转换点登记（St1 未消费，登记待证面）。
     void on_et_clear(float x, float y, float z) override;
@@ -174,11 +196,12 @@ public:
 
     // 0x0042e380 ItemManager::update（道具池状态机 + 收集结算）。
     // 收集盒命中 → switch(type)：1→0x42edc0、2→点值公式、3/8→0x43d210、
-    // 4→0x43d330、5→0x43d480(+2)、6→0x43d2f0、7→0x43d440、9→score+10/max_point+2。
+    // 4→0x43d330、5→0x43d480(+2)、6→0x43d2f0、7→0x43d440、9→score+10/max_point+10。
     void update(const ItemCollector& player);
 
     // 0x438730 SpiritManager::update（神霊状态机 + 收集）。
     void update_spirits(const ItemCollector& player);
+    void set_spirit_trance(bool active); // 439280/4393a0: convert all live spirits.
 
     // 0x0044ad60 的调用面：收集时产生的弹出/声音/效果事件队列（每帧排空）。
     std::vector<ItemEvent>& events() { return events_; }
@@ -195,8 +218,8 @@ public:
     // 0x0043d210 大P：power += amount（未满时），满级溢出钳制 + 满灵力演出；
     // 返回是否跨档。
     bool collect_power_big(i32 amount);
-    // 0x0043d330 残机碎片 +1：0x4bb994[下标] 循环扣减，满 → +1 命/下标++。
-    void collect_life_piece();
+    // 0x0043d330 adds EAX pieces, then applies the 0x4bb994 thresholds.
+    void collect_life_piece(i32 amount = 1);
     // 0x0043d480 灵击碎片 +amount：满 8 → +1 炸弹（上限 9）。
     void collect_bomb_piece(i32 amount);
     // 0x0043d2f0 1UP：+1 命（上限 8）。
@@ -217,6 +240,7 @@ private:
     void push_level_up(const Item& item);
     float angle_to_player(const Spirit& s, const ItemCollector& player);
     void collect_spirit(Spirit& s, const ItemCollector& player);
+    void add_max_point(float displayed_increment);  // 0042f510: ftol(value * 100), cap.
 
     GameRandom* random_ = nullptr;
     const SessionState* session_ = nullptr;
@@ -232,11 +256,13 @@ private:
     //（r4 勘误：此前按跨阶段单调累计实现是错的）。
     i32 spirit_overflow_ = 0;
     i32 spirit_window_ = 0;  // mgr+0x8828（0x438ec0:132 置 0x3c=60）
+    Timer spirit_window_clock_;
     // 0x42f020 type9 出场延迟源：0x79dcf8（累计，0x413e50 构造清零）与
     // 0x79dcfc（每帧，0x42e380:74 每步清零）。读式（0042f020.c:79-107）：
     // 波数<0x100 → total&3；<0x200 → (total&7)+4；<0x400 → (total&0xf)+8；
-    // 否则 (total&0x1f)+0x10。【增量写点不在 decomp 全集，按每 type9 产件
-    // 双双 +1 建模——延迟 0..3 帧为主路径，>4 同帧连发时逐步拉开】。
+    // 否则 (total&0x1f)+0x10。42f020仅读；不能按生成次数自行递增。
+    std::vector<i32> ordinary_free_, cancel_free_;
+    void retire_item(Item& item);
     i32 cancel_total_ = 0;
     i32 cancel_wave_ = 0;
     i32 point_items_ = 0;    // 0x4be7d8 点道具收集计数

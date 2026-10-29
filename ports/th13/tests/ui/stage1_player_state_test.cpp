@@ -279,12 +279,17 @@ struct Fixture {
 
     explicit Fixture(const char* event_path = nullptr, i32 bombs = 2, i32 power = 100,
                      bool trance = false, i32 extra_lives = 99, i32 power_step = 100,
-                     const char* sht_name = "pl02a.sht") {
+                     const char* sht_name = "pl02a.sht", i32 character = 0) {
         player.bombs = bombs;
         player.power = power;
         player.power_step = power_step;
         player.extra_lives = extra_lives;
-        if (trance) progress.run_mode_flags |= kTranceActiveFlag;
+        progress.character = character;  // bomb/射击均为分角色实装（vtable 004aa5bc）
+        // 0x4057f0:15：激活门槛=满 600；只置位不置槽值会被首帧 drain 立即结束。
+        if (trance) {
+            progress.run_mode_flags |= kTranceActiveFlag;
+            progress.ending_points = 600;
+        }
         provider.anim_list = &battle.sim.anim_list;
         battle.sim.anm_effects_noop = true;
         loaded = battle.load(provider, "st01.ecl", 1 << 3, host, progress, player, score,
@@ -338,6 +343,9 @@ i32 death_power(i32 start, bool capture, i32 step = 100, StateSections* state = 
     if (!f.loaded) return -1;
     f.place_bullet_at_player();
     CHECK(f.step(0, 0));
+    // 00444ca0/00443240：碰撞先入 8 帧决死窗口（不 bomb 则死亡），Dying 第
+    // 3 帧才扣 power（0x445a20）。推进到 Dying 第 4 帧，远离 30 帧复活点。
+    for (int frame = 0; frame < 12; ++frame) CHECK(f.step(0, 0));
     if (state) *state = production_state(f.battle, f.progress, f.player, f.score);
     CHECK_EQ(f.player.deaths, 1);
     return f.player.power;
@@ -431,19 +439,26 @@ TEST(shot_table_fields_match_original_layout) {
 
 TEST(main_shot_uses_record_speed_damage_and_animation) {
     const char* files[] = {"pl00a.sht", "pl01a.sht", "pl02a.sht", "pl03a.sht"};
-    for (const char* name : files) {
-        Fixture f(nullptr, 2, 100, false, 99, 100, name);
+    for (i32 character = 0; character < 4; ++character) {
+        Fixture f(nullptr, 2, 100, false, 99, 100, files[character], character);
         CHECK(f.loaded);
         if (!f.loaded) continue;
-        for (u32 frame = 1; frame <= 3; ++frame)
+        // 0x443240：射击控制器启动计时器 >19 才使能，且自机 60 帧入场期间
+        //（Entering）不射。先空跑过入场与启动门，再按住射击键。
+        for (u32 frame = 0; frame < 65; ++frame) CHECK(f.step(0, 0));
+        for (u32 frame = 1; frame <= 2; ++frame)
             CHECK(f.step(0x01u, frame == 1 ? 0x01u : 0u));
+        // 出膛帧不移动（0x445c40 建伤害矩形于出身位，次帧才起步）。
         bool found = false;
         for (const auto& shot : f.battle.shots) {
-            if (shot.script != 10 || shot.x != f.battle.player_x - 10.0f) continue;
+            // 0x473780 尾部经 0x497670(floor) 做 floor(x*100)/100 量化；
+            // vx = 24*cos(-π/2-ε) 恒负（f32 角度略过 π/2），x = -10-1e-6
+            // 量化到 -10.01（+10 侧对称到 9.99），非 -10.00。
+            if (shot.script != 10 || shot.x != f.battle.player_x - 10.01f) continue;
             found = true;
             CHECK_EQ(shot.damage, 15.0f);
             CHECK_EQ(shot.speed, 24.0f);
-            CHECK_EQ(shot.y, f.battle.player_y - 8.0f - 24.0f);
+            CHECK_EQ(shot.y, f.battle.player_y - 8.0f - 24.0f);  // 次帧移动一个 speed
         }
         CHECK(found);
     }
@@ -490,13 +505,15 @@ TEST(bomb_preserves_stage_controller) {
     Fixture f;
     CHECK(f.loaded);
     if (!f.loaded) return;
-    auto* root = f.enemy(0);
+    // 418d30 reserves serial 0 and 418f40 assigns serial 1 to the first
+    // controller. Keep this test's preservation check on that actual entity.
+    auto* root = f.enemy(1);
     CHECK(root != nullptr);
     if (!root) return;
     CHECK_EQ(root->routine, std::string("main"));
     CHECK_EQ(root->life, 0.0f);
     CHECK(f.step(0x02, 0x02));
-    root = f.enemy(0);
+    root = f.enemy(1);
     CHECK(root != nullptr);
     if (!root) return;
     CHECK(!root->dead);
@@ -524,19 +541,40 @@ TEST(bomb_respects_enemy_damage_gate) {
 }
 
 TEST(bomb_still_damages_vulnerable_enemy) {
-    Fixture f;
+    // 霊夢 bomb（vtable 004aa5bc 之一）：8 个环绕 orb（vtable 004aa5bc），触发
+    // 帧 age=0（%3==0）对 56px 内敌机每 orb +10，单帧 00446870 上限 80。
+    // 敌机默认自顶部入场，距玩家远：搬进 orb 范围并抬高 life 观察每帧伤害。
+    Fixture f(nullptr, 2, 100, false, 99, 100, "pl00a.sht", 0);
     CHECK(f.loaded);
     if (!f.loaded) return;
     auto* target = f.vulnerable_enemy();
     CHECK(target != nullptr);
     if (!target) return;
+    // A newly constructed enemy skips its next manager visit (0041a8a0).
+    // Let that birth gate clear before measuring an age-0 Bomb damage tick.
+    CHECK(f.step(0, 0));
     const u32 serial = target->serial;
+    target->life = 1000.0f;
+    target->invulnerable = 0;
+    target->position[0] = f.battle.player_x;
+    target->position[1] = f.battle.player_y - 30.0f;
+    // Enemy motion precedes damage (0041a8a0). Move the authoritative ECL
+    // absolute position too; changing only its published position is undone
+    // by that frame's movement before any Bomb geometry can be tested.
+    target->vel.pos[0] = target->position[0];
+    target->vel.pos[1] = target->position[1];
     const float life = target->life;
     CHECK(f.step(0x02, 0x02));
     target = f.enemy(serial);
     CHECK(target != nullptr);
     if (!target) return;
-    CHECK_EQ(target->life, life - StageBattle::kBombDamagePerFrame);
+    CHECK_EQ(target->life, life - 80.0f);
+    CHECK(f.step(0, 0));  // age=1 %3!=0，不得重复结算上一帧伤害。
+    target = f.enemy(serial);
+    CHECK(target != nullptr);
+    if (!target) return;
+    CHECK(!target->dead);
+    CHECK_EQ(target->life, life - 80.0f);
 }
 
 TEST(load_failure_is_a_real_failure) {

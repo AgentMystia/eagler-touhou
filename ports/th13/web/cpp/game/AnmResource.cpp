@@ -12,6 +12,7 @@ namespace {
 // sprite 的纹理索引加 texture_base。返回 false 即整体无效。
 bool parse_entries(const u8* data,u32 size,AnmResource& target){
     if(!data)return false;
+    const u32 sprite_base=u32(target.sprites.size()),script_base=u32(target.scripts.size());
     u32 base=0;
     do {
         if(!span(base,64,size))return false;
@@ -61,6 +62,7 @@ bool parse_entries(const u8* data,u32 size,AnmResource& target){
             }
             if(!terminated)return false;
             AnmScript script;script.source_id=read<i32>(h+entry);script.file_offset=base+off;
+            script.sprite_base=sprite_base;script.script_base=script_base;
             script.bytes.assign(h+off,h+cursor);target.scripts.push_back(std::move(script));
         }
         target.textures.push_back(std::move(texture));

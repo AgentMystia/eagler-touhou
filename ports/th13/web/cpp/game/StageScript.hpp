@@ -1,11 +1,12 @@
 // STD 相机脚本 VM（st01 实测指令面：ins_1 跳转(offset,time)/ins_2,3 位置/
-// ins_4,5 视线/ins_6 上向量/ins_7 视场角/ins_8,9 雾/ins_12 镜头摇晃/st05 ins_16
-// 中断标号；st02 ins_14 未定域——st01 窗口外，命中即显式报错不静默）。
+// ins_4,5 视线/ins_6 上向量/ins_7 视场角/ins_8,9 雾/ins_12 镜头摇晃/
+// ins_14 背景子 ANM 槽隐藏与重挂 / ins_16 中断标号）。
 #pragma once
 #include "Interpolation.hpp"
 #include "StageResource.hpp"
 #include "Timer.hpp"
 #include <array>
+#include <functional>
 namespace th13 {
 struct StageFog {
     float near_distance = 0, far_distance = 0;
@@ -25,6 +26,11 @@ struct StageCamera {
     float fov = 0;
     StageFog fog{};
 };
+// stage+0x20c 的八个内嵌 ANM 槽；指令按原始顺序交给 StageScenery。
+struct StageBackgroundAnm {
+    i32 script = -1;
+    bool visible = true;
+};
 struct StageScriptState {
     Timer timer{0, 0, 0, 0, 0};
     u32 instruction_offset = 0;
@@ -34,11 +40,13 @@ struct StageScriptState {
     StageFogInterpolation fog{};
     StageCamera camera{};
     float culling_distance_squared = 0;
+    std::array<StageBackgroundAnm, 8> background{};
 };
 class StageScript {
 public:
     StageScriptState state;
     std::string error;
+    std::function<bool(i32, i32)> background_command;
     explicit StageScript(const StageResource& file) : file_(file) {}
     bool step(float rate = 1);
     bool interrupt(i32 id);

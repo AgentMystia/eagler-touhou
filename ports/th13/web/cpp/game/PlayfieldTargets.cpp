@@ -112,6 +112,10 @@ bool PlayfieldTargets::compose(u32 index) {
     // and blend mode. The draw and its resource reads use the normal production
     // renderer/submission path, equally with tracing on and off.
     if (renderer.draw(compositors[index]) == -2) return fail(renderer.error);
+    // 0043c870/0043c920 draw the registered distortion strips immediately
+    // after their compositor, while the opposite @R surface is still bound.
+    if (index < 2 && !renderer.draw_layer(animations.registry.layer(29 + index)))
+        return fail(renderer.error);
     renderer.flush();
     return true;
 }

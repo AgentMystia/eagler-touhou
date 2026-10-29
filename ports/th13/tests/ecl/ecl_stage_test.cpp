@@ -65,7 +65,7 @@ TEST(stage1_sim_contract_smoke) {
     CHECK_EQ(first.anim_list[1], std::string("st01enm.anm"));
     // 首行契约：root 创建趟（frame 0）的第一个 enmCreate 事件。
     const char* kHead =
-        "{\"frame\":0,\"seq\":0,\"type\":\"enemy_spawn\",\"enemy\":1,\"routine\":\"MapleEnemy\"";
+        "{\"frame\":0,\"seq\":0,\"type\":\"enemy_spawn\",\"enemy\":2,\"routine\":\"MapleEnemy\"";
     CHECK(a.size() > std::strlen(kHead));
     CHECK(std::memcmp(a.data(), kHead, std::strlen(kHead)) == 0);
     // 逐行校验：键序与类型枚举（合同 §4）。

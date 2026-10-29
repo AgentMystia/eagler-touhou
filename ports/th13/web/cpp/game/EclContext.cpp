@@ -55,14 +55,14 @@ bool EclContext::integer(u32 argument, i32 literal, i32& value, bool pop) noexce
         value = signed_bits(bits(address));
         return true;
     }
-    // 0x478e9b：raw >= -100 → 表达式栈（SP + raw*8 + 4 为值、-4 为类型；'f' 经 0x4971f0 就近取整）。
+    // 0x478e9b：raw >= -100 → 表达式栈（SP + raw*8 + 4 为值、-4 为类型；'f' 经 0x4971f0 向零截断）。
     if (literal >= -100) {
         u32 raw;
         u8 type;
         const i32 offset = pop ? wrapping_sub(stack_pointer, 8) : wrapping_add(stack_pointer, literal * 8);
         if (!expression(offset, raw, type)) return false;
         if (pop) stack_pointer = offset;
-        value = type == 'f' ? nearest_int(as_float(raw)) : signed_bits(raw);
+        value = type == 'f' ? truncate_int(as_float(raw)) : signed_bits(raw);
         return true;
     }
     // 0x478ecb：raw < -100 → 宿主全局码（虚表 +4 → 0x420380）。
@@ -174,7 +174,7 @@ bool EclContext::pop(i32& value) noexcept {
     const i32 offset = wrapping_sub(stack_pointer, 8);
     if (!expression(offset, raw, type)) return false;
     stack_pointer = offset;
-    value = type == 'f' ? nearest_int(as_float(raw)) : signed_bits(raw);
+    value = type == 'f' ? truncate_int(as_float(raw)) : signed_bits(raw);
     return true;
 }
 
@@ -296,7 +296,7 @@ bool EclContext::call_into(EclContext& target, u32 skipped_arguments) {
             if (bytes[offset + 1] == 'f')
                 std::memcpy(target.stack.data() + arguments_offset + n * 4, &value, 4);
             else {
-                const i32 converted = nearest_int(value);
+                const i32 converted = truncate_int(value);
                 std::memcpy(target.stack.data() + arguments_offset + n * 4, &converted, 4);
             }
         } else {
@@ -349,6 +349,11 @@ bool EclContext::call_into(EclContext& target, u32 skipped_arguments) {
 
 // 返回（0x4772a0 case 10）：弹帧恢复 {SP,time,Q,routine}；栈底帧返回 = 线程结束。
 int EclContext::return_from_call() noexcept {
+    //4772ff calls479a60 even for a root with SP=FP=0. It restores SP
+    // from FP, then477307 sees zero and terminates. No caller frame exists.
+    if (stack_pointer==0 && local_base==0) {
+        routine=instruction_offset=-1;instruction=nullptr;return -1;
+    }
     if (!leave_frame()) return -2;
     if (!stack_pointer) {
         routine = instruction_offset = -1;

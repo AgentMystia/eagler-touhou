@@ -14,6 +14,55 @@ using namespace th13;
 using namespace th13::test;
 
 namespace {
+
+std::vector<u8> encrypt_text(const std::string& plain) {
+    std::vector<u8> out;
+    u32 key = 0x77, inc = 0x07;
+    for (char ch : plain) {
+        out.push_back(u8(u8(ch) ^ key));
+        key = (key + inc) & 0xFF;
+        inc = (inc + 0x10) & 0xFF;
+    }
+    out.push_back(u8(key));
+    return out;
+}
+
+struct InstructionBuilder {
+    std::vector<u8> bytes;
+    void add(u16 time, u8 opcode, const std::vector<u8>& args = {}) {
+        bytes.push_back(u8(time & 0xFF));
+        bytes.push_back(u8(time >> 8));
+        bytes.push_back(opcode);
+        bytes.push_back(u8(args.size()));
+        bytes.insert(bytes.end(), args.begin(), args.end());
+    }
+    void text(u16 time, const std::string& plain) { add(time, 0x11, encrypt_text(plain)); }
+    void end(u16 time) {
+        add(time, 0);
+        bytes.insert(bytes.end(), 4, 0);
+    }
+};
+
+void append_u32(std::vector<u8>& out, u32 value) {
+    for (u32 i = 0; i < 4; i++) out.push_back(u8(value >> (i * 8)));
+}
+
+std::vector<u8> build_msg(const std::vector<std::vector<u8>>& entries) {
+    std::vector<u8> out;
+    append_u32(out, u32(entries.size()));
+    u32 offset = 4 + u32(entries.size()) * 8;
+    std::vector<u32> offsets;
+    for (const auto& entry : entries) {
+        offsets.push_back(offset);
+        offset += u32(entry.size());
+    }
+    for (u32 value : offsets) {
+        append_u32(out, value);
+        append_u32(out, 0x100);
+    }
+    for (const auto& entry : entries) out.insert(out.end(), entry.begin(), entry.end());
+    return out;
+}
 // 合成 stage ECL：main = wait(600) 后 return（root 结束 → 敌链空转，见
 // StageSim::step_frame 空链门）；ANIM 名单两项供装载核验。
 std::vector<u8> synthetic_stage_ecl() {
@@ -66,9 +115,15 @@ struct RunHost final : RunSceneServices {
     ZunGraphics* graphics = nullptr;
     int pauses = 0, game_overs = 0;
     std::vector<std::string> lines;
+    std::vector<MsgLine> dialogue_lines;
     std::map<std::string, std::vector<u8>> assets;
     explicit RunHost(AnmManager& manager) : manager(manager) {
         assets["st01.ecl"] = synthetic_stage_ecl();
+    }
+    bool dialogue_line(i32 row, const MsgLine& line, float box_x, float box_y) override {
+        (void)row; (void)box_x; (void)box_y;
+        dialogue_lines.push_back(line);
+        return true;
     }
     bool request_pause() override {
         ++pauses;
@@ -76,6 +131,9 @@ struct RunHost final : RunSceneServices {
     }
     bool request_game_over() override {
         ++game_overs;
+        return true;
+    }
+    bool request_practice_end() override {
         return true;
     }
     bool hud_sound(i32) override { return true; }
@@ -132,12 +190,14 @@ struct RunHarness {
     RunHost host{manager};
     std::unique_ptr<RunScene> scene;
 
-    RunHarness() {
-        CHECK(load_bank(manager, 3, synthetic_anm(8, trivial_scripts(46))));  // front 0..45
+    explicit RunHarness(i32 character = 0) {
+        progress.character = character;
+        CHECK(load_bank(manager, 3, synthetic_anm(8, trivial_scripts(176))));  // front 0..175（0x425170 灵界计主脚本 171 spawn 172-175）
         CHECK(load_bank(manager, 2, synthetic_anm(8, trivial_scripts(46))));  // ascii（boss 计时数字 2/3）
         CHECK(load_bank(manager, 4, synthetic_anm(8, trivial_scripts(4))));   // stage 合并位
         CHECK(load_bank(manager, 5, synthetic_anm(8, trivial_scripts(1))));   // bullet
-        CHECK(load_bank(manager, 6, synthetic_anm(64, trivial_scripts(3))));  // player 0..2
+        CHECK(load_bank(manager, 6, synthetic_anm(64, trivial_scripts(35))));  // plXX 0..34: options, Bomb roots/backgrounds and portraits.
+        CHECK(load_bank(manager, 26, synthetic_anm(8, trivial_scripts(3)))); // stage title and boss music logo
         host.assets["stage_a.anm"] = synthetic_anm(8, trivial_scripts(1));
         host.assets["stage_b.anm"] = synthetic_anm(8, trivial_scripts(1));
         host.assets["st01.std"] = synthetic_std();
@@ -147,7 +207,11 @@ struct RunHarness {
         scene = std::make_unique<RunScene>(progress, player, score, manager, renderer,
                                            environment, host, scheduler, banks, 3, 2, 7,
                                            "st01.std");
-        CHECK(scene->initialize());
+        scene->hud.stage_logo_bank = 26;
+        const bool initialized = scene->initialize();
+        if (!initialized)
+            std::printf("run_scene initialize error: %s\n", scene->error.c_str());
+        CHECK(initialized);
     }
 };
 }  // namespace
@@ -174,7 +238,13 @@ TEST(run_scene_frame_and_score_convergence) {
     RunHarness harness;
     harness.score.score = 40000;
     const i32 before = harness.progress.stage_frame;
-    for (int frame = 0; frame < 200; frame++) CHECK(harness.scheduler.update() >= 0);
+    for (int frame = 0; frame < 200; frame++) {
+        const int stepped = harness.scheduler.update();
+        if (stepped < 0)
+            std::printf("scheduler error at %d: scene=[%s]\n", frame,
+                        harness.scene->error.c_str());
+        CHECK(stepped >= 0);
+    }
     CHECK(harness.progress.stage_frame > before + 100);   // 帧钟推进
     CHECK_EQ(harness.scene->hud.displayed_score, 40000);  // 分数收敛
     CHECK(harness.scene->error.empty());
@@ -194,6 +264,28 @@ TEST(run_scene_player_controls_and_shots) {
     CHECK(harness.scene->battle.player_x < start_x - 100.0f);
     CHECK(!harness.scene->battle.shots.empty());
     CHECK(harness.scene->error.empty());
+}
+
+TEST(run_scene_score_display_precedes_this_frames_battle_awards) {
+    // Native42c550 calls42a370 before enemy damage and spell awards. A new
+    // score is first visible to convergence on the following update.
+    RunHarness harness;
+    for (int n = 0; n < 3; ++n) CHECK(harness.scheduler.update() >= 0);
+    harness.score.score = harness.scene->hud.displayed_score = 100000;
+    harness.progress.high_score = 100000;
+    harness.scene->battle.sim.enemy_hit = [&](StageEnemy&) {
+        harness.score.score = 200000;
+    };
+    CHECK(harness.scheduler.update() >= 0);
+    CHECK_EQ(harness.score.score,200000);
+    CHECK_EQ(harness.scene->hud.displayed_score,100000);
+    CHECK_EQ(harness.progress.high_score,100000);
+    CHECK(harness.scheduler.update() >= 0);
+    CHECK_EQ(harness.scene->hud.displayed_score,103125);
+    CHECK_EQ(harness.progress.high_score,103125);
+    harness.progress.scene_flags |= 0x10;
+    CHECK(harness.scheduler.update() >= 0);
+    CHECK(harness.scene->hud.displayed_score > 103125);
 }
 
 TEST(run_scene_bomb_consumes_stock_and_clears) {
@@ -219,6 +311,110 @@ TEST(run_scene_draws_hud_text) {
     CHECK(harness.scene->error.empty());
 }
 
+TEST(run_scene_draws_dialogue_japanese_and_ruby) {
+    InstructionBuilder entry;
+    entry.add(0, 12); // Native MSG12 releases ECL519 for the following stage update.
+    entry.text(0, "|4,14,\x82\xb1\x82\xb1"); // |4,14,ここ
+    entry.text(0, "\x8d\x87\x90\xac\x91\xe5\x8f\xaa"); // 合成大賞
+    entry.add(0, 0x0b, {0x58, 0x02, 0, 0}); // opcode 11 的 i32 超时参数 600
+    entry.end(10);
+    const auto msg_data = build_msg({entry.bytes});
+
+    GameRandom random;
+    AnmEnvironment environment;
+    AnmManager manager{random, environment};
+    NullGraphics graphics;
+    AnmRenderer renderer{graphics};
+    SessionState progress;
+    HudPlayerState player;
+    HudScoreState score;
+    FrameScheduler scheduler;
+    RunHost host{manager};
+
+    CHECK(load_bank(manager, 3, synthetic_anm(8, trivial_scripts(176))));
+    CHECK(load_bank(manager, 2, synthetic_anm(8, trivial_scripts(46))));
+    CHECK(load_bank(manager, 4, synthetic_anm(8, trivial_scripts(4))));
+    CHECK(load_bank(manager, 5, synthetic_anm(8, trivial_scripts(1))));
+    CHECK(load_bank(manager, 6, synthetic_anm(64, trivial_scripts(22))));
+    // 41aad0 默认死亡特效 = effect.anm（Banks.effect 槽 8）脚本 34（StageSim.cpp:484-485）。
+    CHECK(load_bank(manager, 8, synthetic_anm(8, trivial_scripts(35))));
+    host.assets["stage_a.anm"] = synthetic_anm(8, trivial_scripts(1));
+    host.assets["stage_b.anm"] = synthetic_anm(8, trivial_scripts(1));
+    host.assets["st01.std"] = synthetic_std();
+    host.assets["scenery.anm"] = synthetic_anm(8, trivial_scripts(1));
+    host.assets["st01a.msg"] = msg_data; // 在 initialize 前装入
+    host.graphics = &graphics;
+
+    StagePresentation::Banks banks{4, 5, 6};
+    progress.stage = 1;
+    progress.character = 0;
+    auto scene = std::make_unique<RunScene>(progress, player, score, manager, renderer,
+                                           environment, host, scheduler, banks, 3, 2, 7,
+                                           "st01.std");
+    CHECK(scene->initialize());
+
+    // 428820 opens entry then405b80 ends any active Trance.
+    progress.ending_points = 277;
+    trance_begin(progress);
+    scene->open_dialog(0);
+    if (!scene->error.empty())
+        std::printf("open_dialog(0) scene error: %s\n", scene->error.c_str());
+    CHECK(scene->dialog_active());
+    CHECK(!trance_active(progress));
+    CHECK_EQ(progress.ending_points,77);
+    CHECK_EQ(scene->battle.invulnerable,70);
+
+    // 原版 0x428ae0 在 update 内写 text.anm；提交必须先于层 26 绘制。
+    host.lines.clear();
+    host.dialogue_lines.clear();
+    GameInput in;
+    scene->controls(in);
+    const i32 stepped = scheduler.update();
+    if (stepped < 0)
+        std::printf("dialogue scheduler error: %s\n", scene->error.c_str());
+    CHECK(stepped >= 0);
+    CHECK(scene->dialog_active());
+    CHECK(scene->dialog_wait_released());
+    // 0041e407 -> 00418090 must observe +0x174 while the dialogue still exists.
+    auto& sim = scene->battle.sim;
+    sim.current = sim.enemies.front().get();
+    EclContext context;
+    CHECK_EQ(sim.commands.execute(context, 519), 0);
+    CHECK(scene->draw());
+    // 应该通过 dialogue_line 服务接收到保留 CP932 原文与 ruby 注音的 MsgLine
+    bool found_japanese = false;
+    bool found_ruby = false;
+    for (const auto& line : host.dialogue_lines) {
+        if (line.text_cp932.find("\x8d\x87\x90\xac\x91\xe5\x8f\xaa") != std::string::npos) found_japanese = true;
+        if (line.has_ruby && line.ruby_cp932.find("\x82\xb1\x82\xb1") != std::string::npos) found_ruby = true;
+    }
+    CHECK(found_japanese);
+    CHECK(found_ruby);
+    CHECK(scheduler.update() >= 0); // MSG interpreter decrements +0x174 on reentry.
+    CHECK(scene->dialog_active());
+    CHECK(!scene->dialog_wait_released());
+    sim.current = sim.enemies.front().get();
+    CHECK_EQ(sim.commands.execute(context, 519), 1);
+    sim.current = nullptr;
+}
+
+TEST(run_scene_ecl_alpha_sees_same_turn_slot_four_birth) {
+    RunHarness h;auto& sim=h.scene->battle.sim;auto& enemy=*sim.enemies.front();
+    auto* saved=sim.current;sim.current=&enemy;EclContext context;
+    const auto op=[&](u16 id,std::initializer_list<u32> args){
+        std::vector<u8> code;th13test::emit(code,0,id,0,255,0,args);
+        context.instruction=reinterpret_cast<const EclInstruction*>(code.data());
+        return sim.commands.execute(context,id);
+    };
+    CHECK_EQ(op(302,{2}),0);CHECK_EQ(op(303,{4,0}),0);
+    CHECK_EQ(op(328,{4,30,0,64}),0);
+    auto* vm=h.manager.registry.find(enemy.anm_slot_handle[4]);CHECK(vm);
+    if(vm){CHECK_EQ(vm->interpolators.alpha.duration,30);CHECK_EQ(vm->interpolators.alpha.end[0],64);}
+    CHECK_EQ(op(329,{4,float_to_bits(-200),float_to_bits(800)}),0);
+    if(vm){CHECK_EQ(vm->visual.scale.x,-200.0f);CHECK_EQ(vm->visual.scale.y,800.0f);}
+    CHECK(sim.anm_effects.empty());sim.current=saved;
+}
+
 TEST(run_scene_freezes_when_paused) {
     RunHarness harness;
     for (int i = 0; i < 10; i++) CHECK(harness.scheduler.update() >= 0);
@@ -231,12 +427,273 @@ TEST(run_scene_freezes_when_paused) {
     CHECK(harness.progress.stage_frame > frozen);
 }
 
+TEST(run_scene_replay_input_is_consumed_only_by_unfrozen_gameplay) {
+    RunHarness harness;
+    GameInput recorded;
+    int reads = 0;
+    bool ended = false;
+    harness.scene->playback_input = [&]() -> const GameInput* {
+        ++reads;
+        if (ended) return nullptr;
+        recorded.update(0);
+        return &recorded;
+    };
+    const i32 start = harness.progress.stage_frame;
+    CHECK(harness.scheduler.update() >= 0);
+    CHECK_EQ(reads, 1);
+    CHECK_EQ(harness.progress.stage_frame, start + 1);
+    harness.environment.paused = true;
+    for (int n = 0; n < 10; ++n) CHECK(harness.scheduler.update() >= 0);
+    CHECK_EQ(reads, 1);
+    harness.environment.paused = false;
+    harness.progress.scene_flags |= 0x10;
+    CHECK(harness.scheduler.update() >= 0);
+    CHECK_EQ(reads, 1);
+    harness.progress.scene_flags &= ~0x10u;
+    CHECK(harness.scheduler.update() >= 0);
+    CHECK_EQ(reads, 2);
+    CHECK_EQ(harness.progress.stage_frame, start + 2);
+    ended = true;
+    CHECK(harness.scheduler.update() >= 0);
+    CHECK_EQ(reads, 3);
+    CHECK_EQ(harness.progress.stage_frame, start + 2);
+}
+
 TEST(run_scene_requests_pause_and_game_over) {
     RunHarness harness;
     harness.scene->request_pause();
     harness.scene->request_game_over();
     CHECK_EQ(harness.host.pauses, 1);
     CHECK_EQ(harness.host.game_overs, 1);
+}
+
+TEST(ecl_shake_uses_scheduled_anm_random_and_preserves_overlap_order) {
+    RunHarness h;
+    auto& sim = h.scene->battle.sim;
+    StageEnemy enemy;
+    sim.current = &enemy;
+    EclContext context;
+    std::vector<u8> code;
+    th13test::emit(code,0,517,0,255,0,{30,12,0});
+    context.instruction = reinterpret_cast<const EclInstruction*>(code.data());
+    CHECK_EQ(sim.commands.execute(context,517),0);
+    sim.current = nullptr;
+    h.random.reseed_restore(12345);
+    const auto game_index = sim.random.index();
+    CHECK_EQ(h.random.index(),0u);
+    CHECK(h.scheduler.update()>=0);
+    // Independent original45f7c0 sample: duration30/start12/end0, seed12345.
+    CHECK_EQ(float_to_bits(h.environment.screen_shake_offset.x),3241777562u);
+    CHECK_EQ(float_to_bits(h.environment.screen_shake_offset.y),1094293914u);
+    CHECK_EQ(h.random.index(),4u);
+    CHECK_EQ(sim.random.index(),game_index);
+    h.environment.paused = true;
+    const Vec2 frozen = h.environment.screen_shake_offset;
+    CHECK(h.scheduler.update()>=0);
+    CHECK_EQ(h.random.index(),4u);
+    CHECK_EQ(h.environment.screen_shake_offset.x,frozen.x);
+    h.environment.paused = false;
+    h.progress.scene_flags |= 0x20;
+    CHECK(h.scheduler.update()>=0);
+    CHECK_EQ(h.random.index(),4u);
+    h.progress.scene_flags &= ~0x20u;
+    // 470990 inserts new equal-priority callbacks before older ones.
+    CHECK(sim.screen_shake(10,100,0));
+    GameRandom expected = h.random;
+    ScreenShake newer(10,100,0), older(30,12,0);
+    older.age.set(1);
+    Vec2 offset{};
+    CHECK(newer.advance(expected,1,offset));
+    CHECK(older.advance(expected,1,offset));
+    CHECK(h.scheduler.update()>=0);
+    CHECK_EQ(h.random.index(),expected.index());
+    CHECK_EQ(h.environment.screen_shake_offset.x,offset.x);
+    CHECK_EQ(h.environment.screen_shake_offset.y,offset.y);
+    h.scene.reset();
+    CHECK(h.scheduler.update()>=0);
+    CHECK_EQ(h.random.index(),expected.index());
+}
+
+TEST(ecl_shake_completion_keeps_last_offset_without_extra_rng) {
+    RunHarness h;
+    CHECK(h.scene->battle.sim.screen_shake(3,12,0));
+    h.random.reseed_restore(12345);
+    CHECK(h.scheduler.update()>=0);
+    CHECK(h.scheduler.update()>=0);
+    const Vec2 last = h.environment.screen_shake_offset;
+    const auto index = h.random.index();
+    CHECK(h.scheduler.update()>=0);
+    CHECK(h.scheduler.update()>=0);
+    CHECK_EQ(h.random.index(),index);
+    CHECK_EQ(h.environment.screen_shake_offset.x,last.x);
+    CHECK_EQ(h.environment.screen_shake_offset.y,last.y);
+}
+
+TEST(sanae_bomb_shake_uses_original_game_rng_envelope_and_lifetime) {
+    // Original f3694 trace: seed6706, first two returns choose - then +;
+    // the stored 45f8c0 magnitude bits are 1014350479 (3 * 1/200).
+    GameRandom random(6706);
+    ScreenShake shake = ScreenShake::bomb(3, 200, 60, 30);
+    Vec2 offset{};
+    CHECK(shake.advance(random, 1.f, offset));
+    CHECK_EQ(float_to_bits(offset.x), 1014350479u | 0x80000000u);
+    CHECK_EQ(float_to_bits(offset.y), 1014350479u);
+    CHECK_EQ(random.index(), 4u);
+    CHECK_EQ(random.seed(), 27566u);
+    CHECK(shake.advance(random, 1.f, offset));
+    CHECK_EQ(float_to_bits(offset.x), 1022739087u | 0x80000000u);
+    CHECK_EQ(float_to_bits(offset.y), 0u);
+    for (int i = 2; i < 289; ++i) CHECK(shake.advance(random, 1.f, offset));
+    CHECK_EQ(random.index(), 1156u);
+    const Vec2 last = offset;
+    CHECK(!shake.advance(random, 1.f, offset));
+    CHECK_EQ(random.index(), 1156u);
+    CHECK_EQ(offset.x, last.x); CHECK_EQ(offset.y, last.y);
+}
+
+TEST(sanae_bomb_registers_game_shake_for_following_scheduler_frame) {
+    RunHarness h(2);
+    for (int i = 0; i < 25; ++i) CHECK(h.scheduler.update() >= 0);
+    auto& game = h.scene->battle.sim.random;
+    game.reseed_restore(6706);
+    const auto visual = h.random.index();
+    GameInput input; input.update(2);
+    h.scene->controls(input);
+    CHECK(h.scheduler.update() >= 0);
+    CHECK_EQ(game.index(), 0u); // constructor frame
+    input.update(0); h.scene->controls(input);
+    CHECK(h.scheduler.update() >= 0);
+    CHECK_EQ(game.index(), 4u);
+    CHECK_EQ(game.seed(), 27566u);
+    CHECK_EQ(h.random.index(), visual);
+    CHECK_EQ(float_to_bits(h.environment.screen_shake_offset.x), 1014350479u | 0x80000000u);
+    CHECK_EQ(float_to_bits(h.environment.screen_shake_offset.y), 1014350479u);
+    h.progress.scene_flags |= 4u;
+    CHECK(h.scheduler.update() >= 0);
+    CHECK_EQ(game.index(), 4u);
+    h.progress.scene_flags &= ~4u;
+    CHECK(h.scheduler.update() >= 0);
+    CHECK_EQ(game.index(), 8u);
+}
+
+TEST(bomb_shake_callbacks_overlap_in_original_priority_order) {
+    RunHarness h;
+    auto& game = h.scene->battle.sim.random;
+    game.reseed_restore(6706);
+    CHECK(h.scene->battle.bomb_screen_shake(3, 200, 60, 30));
+    CHECK(h.scene->battle.bomb_screen_shake(1, 6, 230, 30));
+    GameRandom expected(6706);
+    auto older = ScreenShake::bomb(3, 200, 60, 30);
+    auto newer = ScreenShake::bomb(1, 6, 230, 30);
+    Vec2 offset{};
+    CHECK(newer.advance(expected, 1.f, offset));
+    CHECK(older.advance(expected, 1.f, offset));
+    CHECK(h.scheduler.update() >= 0);
+    CHECK_EQ(game.index(), expected.index()); CHECK_EQ(game.seed(), expected.seed());
+    CHECK_EQ(float_to_bits(h.environment.screen_shake_offset.x), float_to_bits(offset.x));
+    CHECK_EQ(float_to_bits(h.environment.screen_shake_offset.y), float_to_bits(offset.y));
+}
+
+TEST(sanae_shake_precedes_enemy_spirit_birth_in_original_rng_order) {
+    RunHarness h(2);
+    auto& game = h.scene->battle.sim.random;
+    auto& items = h.scene->battle.item_manager;
+    // Reproduce the original first slot's serial 313 without retaining
+    // preceding spirits. Reset RNG to the observed f3715 end state afterward.
+    for (int i = 0; i < 312; ++i) {
+        items.spawn_value_item(3, 0.f, 0.f, 0.f, 0.5f, false);
+        items.spirits()[0].alive = false;
+    }
+    game.reseed_restore(36132);
+    CHECK(h.scene->battle.bomb_screen_shake(3, 200, 60, 30));
+    struct Birth { RunHarness* harness; u32 index = 0; u16 seed = 0; } birth{&h};
+    FrameCallback callback; callback.owner = &birth; callback.enabled = true;
+    callback.run = [](void* p) {
+        auto& b = *static_cast<Birth*>(p);
+        auto& sim = b.harness->scene->battle.sim;
+        b.index = sim.random.index(); b.seed = sim.random.seed();
+        auto& items = b.harness->scene->battle.item_manager;
+        items.spawn_value_item(1, 89.4f, 175.57f, 0.f, 0.5f, false);
+        ItemCollector collector; collector.x = -100.f; collector.y = 400.f;
+        collector.progress = &b.harness->progress; collector.player = &b.harness->player;
+        collector.score = &b.harness->score;
+        items.update_spirits(collector);
+        return i32(FrameAction::Remove);
+    };
+    CHECK(h.scheduler.add(callback, FramePass::Update, 21) >= 0);
+    CHECK(h.scheduler.update() >= 0);
+    // f3716 45f983/45f9bc finish before 438ec0's first RNG call.
+    CHECK_EQ(birth.index, 4u); CHECK_EQ(birth.seed, 35005u);
+    CHECK_EQ(items.spirits()[0].serial, 313u);
+    CHECK_EQ(items.spirits()[0].x, 89.89f);
+    CHECK_EQ(items.spirits()[0].y, 176.63f);
+}
+
+TEST(reimu_explosion_shake_uses_visual_rng_and_shared_offset) {
+    RunHarness h;
+    h.random.reseed_restore(12345);
+    auto& game = h.scene->battle.sim.random;
+    const auto game_index = game.index();
+    CHECK(h.scene->battle.reimu_explosion_shake());
+    CHECK_EQ(h.random.index(), 0u);
+    CHECK(h.scheduler.update() >= 0);
+    CHECK_EQ(h.random.index(), 4u);
+    CHECK_EQ(game.index(), game_index);
+    // 45f7c0 duration8, 6→6: magnitude stays exactly 6.
+    CHECK_EQ(h.environment.screen_shake_offset.x, -6.f);
+    CHECK_EQ(h.environment.screen_shake_offset.y, 6.f);
+}
+
+TEST(run_scene_global_rate_reaches_player_shots_and_animation_without_skipping_inputs) {
+    RunHarness h;
+    GameInput input;input.held=0x80; // right, fixed-point movement
+    h.scene->controls(input);
+    const float x=h.scene->battle.player_x;
+    const auto frame=h.progress.stage_frame;
+    h.scene->battle.sim.set_time_rate(.5f);
+    CHECK_EQ(h.progress.rate,.5f);CHECK_EQ(h.manager.rate,.5f);
+    PlayerShot shot;shot.x=0;shot.y=200;shot.angle=0;shot.speed=4;
+    shot.script=-1;shot.alive=true;
+    h.scene->battle.shots.push_back(shot);
+    CHECK(h.scene->update());
+    CHECK_EQ(h.progress.stage_frame,frame+1);
+    CHECK_EQ(h.scene->battle.player_x,float(x+float(h.scene->battle.speed_orth/2)/128));
+    CHECK_EQ(h.scene->battle.shots[0].x,2.f);
+    CHECK_EQ(h.scene->battle.shots[0].age,0);
+    CHECK_EQ(h.scene->battle.shots[0].age_clock.fractional,.5f);
+    CHECK(h.scene->update());
+    CHECK_EQ(h.progress.stage_frame,frame+2);
+    CHECK_EQ(h.scene->battle.shots[0].x,4.f);
+    CHECK_EQ(h.scene->battle.shots[0].age,1);
+}
+
+TEST(ecl317_flushes_pending_birth_and_defers_interrupt_for_root_and_children) {
+    RunHarness h;auto& sim=h.scene->battle.sim;
+    const auto data=synthetic_anm(8,{
+        {spawn(1),wait(),label(10),AnmIns{402,0,{i32(float_to_bits(3.f)),i32(float_to_bits(3.f))}},wait(),stop()},
+        {wait(),label(10),AnmIns{402,0,{i32(float_to_bits(9.f)),i32(float_to_bits(9.f))}},wait(),stop()}
+    });
+    h.manager.unload(4);CHECK(load_bank(h.manager,4,data));
+    StageEnemy* enemy=sim.enemies.front().get();sim.current=enemy;
+    enemy->anm_file=2;
+    EclContext context;
+    const auto op=[&](u16 id,std::initializer_list<u32> args){
+        std::vector<u8> bytes;th13test::emit(bytes,0,id,0,255,0,args);
+        context.instruction=reinterpret_cast<const EclInstruction*>(bytes.data());
+        return sim.commands.execute(context,id);
+    };
+    CHECK_EQ(op(303,{0,0}),0);CHECK_EQ(op(317,{0,65546}),0);
+    const u32 handle=enemy->anm_slot_handle[0];CHECK(handle!=0);
+    auto* vm=h.manager.registry.find(handle);CHECK(vm);if(!vm)return;
+    auto children=h.manager.registry.children(*vm);CHECK_EQ(children.size(),size_t(1));
+    CHECK_EQ(vm->pending_interrupt,10);CHECK_EQ(vm->visual.scale.x,1.f);
+    if(children.empty())return;
+    CHECK_EQ(children[0]->pending_interrupt,10);CHECK_EQ(children[0]->visual.scale.x,1.f);
+    CHECK(h.manager.update());CHECK_EQ(vm->visual.scale.x,3.f);CHECK_EQ(children[0]->visual.scale.x,9.f);
+    CHECK_EQ(enemy->anm_slot_handle[0],handle); // no replacement identity
+    CHECK_EQ(op(317,{0,65535}),0);CHECK_EQ(vm->pending_interrupt,-1);
+    CHECK_EQ(op(317,{u32(StageEnemy::kAnimationSlots-1),10}),0); // no VM is a no-op
+    sim.current=nullptr;
 }
 
 int main() { return th13test::run_all("对局场景"); }

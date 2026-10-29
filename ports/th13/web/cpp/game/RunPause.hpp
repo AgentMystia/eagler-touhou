@@ -8,8 +8,11 @@
 #include "AnmManager.hpp"
 
 namespace th13 {
+struct HudDrawServices;
 
-enum class PauseEntrance { Pause, GameOver };
+// GameOver = 0x43f570 mode0（0x43fa90/142）；BGameOver = 0x43f570 mode≠0
+// （0x440960 态 0x18/147，三项：标题/录像/重试，无续关）。
+enum class PauseEntrance { Pause, GameOver, PracticeEnd, ExtraEnd, BGameOver };
 
 struct RunPausePlatform {
     virtual ~RunPausePlatform() = default;
@@ -18,6 +21,16 @@ struct RunPausePlatform {
     virtual bool resume_music() { return true; }
     virtual bool restart_run() = 0;        // pending_destination = 13
     virtual bool return_to_title() = 0;    // pending_destination = 4
+    virtual bool continue_run() { return false; }
+    virtual bool save_replay() { return false; }
+    virtual bool open_pause_options() { return false; }
+    virtual bool can_open_pause_options() const { return false; }
+    virtual bool save_replay_slot(i32, const std::string&) { return false; }
+    virtual bool change_pause_option(i32, i32) { return false; }
+    virtual i32 pause_option_value(i32) const { return 0; }
+    virtual bool record_result_name(const std::string&) { return false; }
+    virtual bool result_needs_name() const { return false; }
+    virtual bool can_save_replay() const { return false; }
 };
 
 class RunPause final : private PauseMenuServices {
@@ -32,6 +45,9 @@ class RunPause final : private PauseMenuServices {
     // PauseMenuServices
     bool sound(i32) override;
     bool finish_selection(i32 entry) override;
+    bool save_replay_slot(i32 slot, const std::string& name) override;
+    bool change_option(i32 row, i32 delta) override;
+    bool record_result_name(const std::string& name) override;
 
 public:
     PauseState state;
@@ -48,6 +64,7 @@ public:
     void controls(const PauseFrameInput& input) noexcept { frame.controls(input); }
     void disable() noexcept { frame.enable(false); }
     bool active() const noexcept { return state.screen != PauseScreen::Inactive; }
+    bool draw_overlay(HudDrawServices& sink);
 };
 
 }  // namespace th13

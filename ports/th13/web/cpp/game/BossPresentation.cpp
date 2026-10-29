@@ -4,6 +4,7 @@
 #include "BossPresentation.hpp"
 
 #include <cmath>
+#include <algorithm>
 
 namespace th13 {
 
@@ -36,6 +37,8 @@ bool BossPresentation::initialize() {
 
 void BossPresentation::release() {
     retire_ring();
+    if (name_handle_) animations_.retire(name_handle_);
+    for(auto& handle:remaining_star_handles_)if(handle){animations_.retire(handle);handle=0;}
     for (auto& handle : star_handles_) {
         if (handle && !animations_.retire(handle)) fail("Boss star retire failed");
         handle = 0;
@@ -100,26 +103,28 @@ bool BossPresentation::create_stars() {
 
 bool BossPresentation::ensure_marker() {
     if (marker_handle_) return true;
-    // 0x425170:447-508：ctx+0xa0 常备空白 VM（位标字节 +0x52b 驱动者）。
-    auto* vm = animations_.registry.allocate();
-    if (!vm) {
-        fail("Boss marker pool exhausted");
-        return false;
-    }
-    vm->initialize_unbound();
-    marker_handle_ = animations_.registry.submit(*vm);
-    if (!marker_handle_) {
-        fail(animations_.registry.error.c_str());
-        return false;
-    }
+    // 425d90 loads front.anm script111 (sprite81, layer25), not an
+    // unbound VM. Its labels7..10 animate the phase-HP warning flash.
+    marker_handle_=animations_.create(banks_.front,111,-1,0);
+    if(!marker_handle_){fail("Boss marker animation unavailable");return false;}
+
     return true;
 }
 
 void BossPresentation::spell_started() {
-    // 0x412890：两数字 VM pending_interrupt = 2。
-    for (u32 handle : {digit_tens_, digit_ones_}) {
-        if (auto* vm = animations_.registry.find(handle)) vm->pending_interrupt = 2;
-    }
+    // 00412890 consumes label2 immediately, before the later HUD update.
+    for (u32 handle : {digit_tens_, digit_ones_})
+        if (!animations_.interrupt(handle, 2, true)) fail("Boss timer spell interrupt failed");
+}
+
+float BossPresentation::timer_text_x() const noexcept {
+    const auto* vm = animations_.registry.find(digit_tens_);
+    return (vm ? vm->variables.position.x : 208.f) + 16.f;
+}
+
+float BossPresentation::timer_text_y() const noexcept {
+    const auto* vm = animations_.registry.find(digit_tens_);
+    return (vm ? vm->variables.position.y : 39.f) - 7.f;
 }
 
 void BossPresentation::interrupt_digits(i32 label) {
@@ -135,14 +140,18 @@ u32 BossPresentation::timer_digit_color() const {
 }
 
 bool BossPresentation::marker_visible() const noexcept {
-    // 门 + 敌位标显隐（0x4265a0:630-739：boss 位 0x521c bit0/bit5 均 0）。
-    return gate_;
+    const auto* vm=animations_.registry.find(marker_handle_);
+    return vm&&(vm->visual.flags&3u)==3u;
 }
 
 bool BossPresentation::update(const BossFrameInput& input,
                               const std::function<bool(i32)>& sound) {
     const StageEnemy* boss = input.boss;
-    // 0x4265a0:98-107 门控：boss 槽存活 && !boss_leaving && !dialog && 计时>=0。
+    if (!boss && name_handle_ && !animations_.retire(name_handle_)) {
+        fail("Boss name retirement failed");
+        return false;
+    }
+    // 004265a0 timer gate is separate from ring/name visibility.
     const bool gate = boss != nullptr && !input.boss_leaving && !input.dialog_active &&
                       input.timer_seconds >= 0;
     if (gate != gate_) {
@@ -156,47 +165,35 @@ bool BossPresentation::update(const BossFrameInput& input,
                     vm->visual.flags &= ~kFlagVisible;
             }
         }
-        if (!gate) {
-            // 0x4265a0:100-107 失活支路：环组/星 VM 回收（0x46fc30×7）。
-            retire_ring();
-            for (auto& handle : star_handles_) {
-                if (handle && !animations_.retire(handle))
-                    fail("Boss star retire failed on gate close");
-                handle = 0;
-            }
-            stars_created_ = false;
-            if (auto* vm = animations_.registry.find(marker_handle_))
-                vm->visual.flags &= ~kFlagVisible;
-            displayed_ratio_ = target_ratio_ = 0;
+    }
+    // 4265a0+15c: ten remaining-card stars are independent of timer/ring gates.
+    for(size_t i=0;i<remaining_star_handles_.size();++i) {
+        auto& handle=remaining_star_handles_[i];
+        if(i<size_t(std::max(0,input.remaining_stars))) {
+            if(!handle)handle=animations_.create(banks_.front,68+i32(i),-1,0);
+            if(!handle){fail("Boss remaining-star animation unavailable");return false;}
+        } else if(handle) {
+            if(!animations_.interrupt(handle,1,false)){fail("Boss remaining-star exit failed");return false;}
+            handle=0;
         }
     }
-    if (!gate || !boss) return true;
-
+    if(gate) {
     // ---- 计时秒数与警告（0x4265a0:147-177）----
     timer_seconds_ = input.timer_seconds;
     timer_frames_ = input.timer_frames;
+    timer_centiseconds_=input.timer_centiseconds;
     const i32 seconds = input.timer_seconds;
     if (seconds != timer_displayed_) {
-        if (seconds < timer_displayed_) {
-            // 递减：<5 声 0xc、<10 声 0xb（0x460bc0(vm,id)）+ 数字 VM 中断
-            //（0x4126b0 的 EDI 标签未还原，仅保留声与精灵刷新）。
-            if (seconds < 5) {
-                if (warn_state_ != 2) {
-                    warn_state_ = 2;
-                    if (sound && !sound(0xc)) fail("Boss timer sound service failed");
-                    interrupt_digits(4);
-                }
-            } else if (seconds < 10) {
-                if (warn_state_ < 1) {
-                    warn_state_ = 1;
-                    if (sound && !sound(0xb)) fail("Boss timer sound service failed");
-                    interrupt_digits(4);
-                }
+        if(seconds<timer_displayed_) {
+            // 4267db / 426808: every decremented second, labels9/8, sounds12/11.
+            if(seconds<10) {
+                warn_state_=seconds<5?2:1;
+                interrupt_digits(seconds<5?9:8);
+                if(sound&&!sound(seconds<5?12:11))fail("Boss timer sound service failed");
             }
         } else {
-            // 复位/增长：仅中断（0x4265a0:160-163）。
-            interrupt_digits(4);
-            warn_state_ = 0;
+            interrupt_digits(7); // 42683b: reset/increase label7
+            warn_state_=0;
         }
         // 数字精灵 = 270 + 数位（0x461a60 同式：sprite 直选 + uv/矩阵重算）。
         if (auto* vm = animations_.registry.find(digit_tens_))
@@ -222,6 +219,23 @@ bool BossPresentation::update(const BossFrameInput& input,
         }
     }
 
+    } // timer gate
+    if(!update_marker(input))return false;
+    // 4265a0 ring gate is independent of a valid timer: non-invulnerable,
+    // normal visible boss, below100000HP, outside dialogue.
+    const bool ring_gate=boss&&!input.boss_leaving&&!input.dialog_active&&
+        boss->life<100000.f&&!(boss->flags&0x31u)&&boss->invulnerable<1;
+    if(!ring_gate) {
+        retire_ring();
+        for(auto& handle:star_handles_)if(handle){animations_.retire(handle);handle=0;}
+        stars_created_=false;
+        if(!boss){displayed_ratio_=target_ratio_=0;}
+        return error.empty();
+    }
+    if (input.name_script >= 0 && !name_handle_) {
+        name_handle_ = animations_.create(banks_.front, input.name_script);
+        if (!name_handle_) { fail("Boss name animation unavailable"); return false; }
+    }
     // ---- 血环比值（0x4265a0:225-239）----
     if (input.life_initial > 0 && input.boss_life >= 0) {
         target_ratio_ = float(input.boss_life) / float(input.life_initial);
@@ -235,26 +249,8 @@ bool BossPresentation::update(const BossFrameInput& input,
                                ? target_ratio_
                                : displayed_ratio_ + 0.025f;
 
-    // ---- 玩家邻近隐藏（0x4265a0:484-516，迟滞 80/96）----
-    {
-        const float dx = boss->position[0] - input.player_x;
-        const float dy = boss->position[1] - input.player_y;
-        const float distance_squared = dx * dx + dy * dy;
-        if (!proximity_hidden_ && distance_squared < 6400.f) {
-            proximity_hidden_ = true;
-            retire_ring();
-            for (auto& handle : star_handles_) {
-                if (handle && !animations_.retire(handle)) fail("Boss star retire failed");
-                handle = 0;
-            }
-            stars_created_ = false;
-        } else if (proximity_hidden_ && distance_squared >= 9216.f) {
-            proximity_hidden_ = false;  // 本帧环段按常态重建
-        }
-    }
-
     // ---- 环根与跟随（0x4265a0:416-447 + 0x426f9e-0x427091 写入点）----
-    const bool life_ratio_ready = input.life_initial > 0 && !proximity_hidden_;
+    const bool life_ratio_ready = input.life_initial > 0;
     if (life_ratio_ready) {
         if (!create_ring()) return false;
         // 驱动：VM+0x18|=4、rotation.x = -displayed*2π（0x426fcc-0x426fd8）。
@@ -274,12 +270,10 @@ bool BossPresentation::update(const BossFrameInput& input,
     }
 
     // ---- 阶段星（0x4265a0:448-482）----
-    const bool markers_present = input.markers[0].ratio > 0 || input.markers[1].ratio > 0 ||
-                                 input.markers[2].ratio > 0 || input.markers[3].ratio > 0;
-    if (markers_present && !proximity_hidden_) {
+    if (life_ratio_ready) {
         if (!stars_created_ && !create_stars()) return false;
         for (i32 i = 0; i < 4; i++) write_star(star_handles_[u32(i)], input, i);
-    } else if (stars_created_ && (!markers_present || proximity_hidden_)) {
+    } else if (stars_created_) {
         for (auto& handle : star_handles_) {
             if (handle && !animations_.retire(handle)) fail("Boss star retire failed");
             handle = 0;
@@ -287,36 +281,64 @@ bool BossPresentation::update(const BossFrameInput& input,
         stars_created_ = false;
     }
 
-    // ---- 底部敌位标（0x4265a0:630-739）----
+    // 42721b/427296 send labels 2/3 to all seven existing VMs; the
+    // scripts animate the transition, so their handles and clocks survive.
+    if (life_ratio_ready) {
+        const float dx = boss->position[0] - input.player_x;
+        const float dy = boss->position[1] - input.player_y;
+        const float distance_squared = dx * dx + dy * dy;
+        const i32 label = !proximity_hidden_ && distance_squared < 6400.f ? 3 :
+                          proximity_hidden_ && distance_squared >= 9216.f ? 2 : 0;
+        if (label) {
+            for (u32 handle : {ring_arc_, ring_overlays_[0], ring_overlays_[1],
+                               star_handles_[0], star_handles_[1], star_handles_[2],
+                               star_handles_[3]})
+                if (!animations_.interrupt(handle, label, false)) {
+                    fail("Boss proximity interrupt failed");
+                    return false;
+                }
+            proximity_hidden_ = label == 3;
+        }
+    }
+
+
+    return true;
+}
+
+bool BossPresentation::update_marker(const BossFrameInput& input) {
+    const auto* boss=input.boss;
+    if(!boss||(boss->flags&0x21u)) {
+        if(auto* vm=animations_.registry.find(marker_handle_))vm->visual.flags&=~kFlagVisible;
+        return true;
+    }
     if (!ensure_marker()) return false;
     if (auto* vm = animations_.registry.find(marker_handle_)) {
         vm->visual.flags |= kFlagVisible | kFlagSelected;
         // offset = (boss_x + 32 + 192, 480)（0x4265a0:717-719）。
         vm->visual.translation = {boss->position[0] + 32.f + 192.f, 480.f, 0.f};
         // 字节 +0x52b = '@' + round(|dx|*191/64)；|dx|>=64 → 0xff、横向出界 → 0。
-        // 原版该字节由 ascii 字模层消费；本作 AnmVm 无对应槽，落本类状态面
-        //（marker_glyph_，文本层接线后消费）。
+        // Native vm+52b is alpha; retain the observed value for diagnostics.
         const float dx = std::fabs(boss->position[0] - input.player_x);
         i32 glyph = 0xff;
         if (dx < 64.f) glyph = '@' + i32(std::nearbyint(dx * 191.f * 0.015625f));
         if (boss->position[0] < -192.f || boss->position[0] > 192.f) glyph = 0;
         marker_glyph_ = glyph;
-        // 计时衰减阶段中断（0x4265a0:640-716：<700/400/200（trance 2000/1000/400）；
-        // 帧值口径待 StageSim 供给，暂以秒 60fps 换算驱动态机）。
-        const i32 frames_left = seconds * 60;
+        vm->visual.color=(vm->visual.color&0xffffffu)|(u32(glyph)<<24);
+        // 4265a0 reads remaining phase HP (+5140), not remaining time.
+        const i32 life_left=boss->phase_life_remaining;
         const i32 t1 = input.trance_mode ? 2000 : 700;
         const i32 t2 = input.trance_mode ? 1000 : 400;
         const i32 t3 = input.trance_mode ? 400 : 200;
-        if (escalate_state_ == 0 && frames_left < t1) {
+        if (escalate_state_ == 0 && life_left < t1) {
             vm->pending_interrupt = 7;
             escalate_state_ = 1;
-        } else if (escalate_state_ == 1 && frames_left < t2) {
+        } else if (escalate_state_ == 1 && life_left < t2) {
             vm->pending_interrupt = 8;
             escalate_state_ = 2;
-        } else if (escalate_state_ == 2 && frames_left < t3) {
-            if (sound && !sound(0x2e)) fail("Boss escalate sound service failed");
+        } else if (escalate_state_ == 2 && life_left < t3) {
+            vm->pending_interrupt=9;
             escalate_state_ = 3;
-        }
+        } else if(escalate_state_==3&&life_left>t3){vm->pending_interrupt=10;escalate_state_=0;}
     }
     return true;
 }
@@ -325,15 +347,17 @@ void BossPresentation::write_star(u32 handle, const BossFrameInput& input, i32 i
     auto* vm = animations_.registry.find(handle);
     if (!vm) return;
     const float angle = input.markers[u32(index)].ratio;
-    // 0x4270be-0x4270fa：angle==0 或 displayed >= angle → 隐藏（清 bit1）。
-    if (angle == 0.f || displayed_ratio_ >= angle) {
+    // Native4270eb..427100 component probe: displayed<=threshold hides,
+    // displayed>threshold shows. A remaining phase marker disappears as HP
+    // falls through it; it is not a marker for already depleted phases.
+    if (angle == 0.f || displayed_ratio_ <= angle) {
         vm->visual.flags &= ~kFlagVisible;
         return;
     }
     vm->visual.flags |= kFlagVisible | kFlagSelected;
     // 0x427100-0x427139：bit1|bit2 置、rotation.z = normalize(−π − a*2π)
     //（0x4ae880=−π、0x4ae850=2π、0x472f30 归一）。
-    const float t = normalize_angle(float(-kPi - angle * kTwoPi));
+    const float t = normalize_angle(float(-double(kPi) - double(angle) * double(kTwoPi)));
     vm->variables.rotation.z = t;
     // 0x42713c-0x427193：offset = boss + 56·(cos t, sin t, 0)
     //（0x4aef18=56、0x472fc0 极坐标旋转基向量 (56,0)）。

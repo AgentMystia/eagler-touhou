@@ -440,7 +440,7 @@ st01.ecl 使用集（86 op）、default.ecl（17）、st01bs.ecl（65）已列�
 | 624/625 | etSpeedD/etCountD ★ | 0x41da32/0x41dad7：四难度参数选写 +0x163/速率、+0x235/数目 |
 | 626/627/628 | etOffsetRad/etDist/etOffsetAbs ★ | 0x41d837/0x41d8ac/0x41d8e2：出生点极坐标/距离/绝对 |
 | 629 | fog ★ | 0x41f344：屏幕雾对象（0x18 字节分配 + {中心,半径,速率,颜色}） |
-| 630 | callSTD ◇ | 0x41f3f6：调用标准 ECL（default.ecl）函数 |
+| 630 | interruptSTD ★ | 0x41f3f6 → 0x409100：触发 STD 相机脚本 ins_16 标号中断（扫描 [stage+0x1c] 找 opcode==16 且 arg0==id 的标号，游标跳标号后首指令、计时三槽设为目标 time；旧记 "callSTD 调用 default.ecl 函数" 有误，capstone 更正） |
 | 631 | lifeHide ★ | 0x41b32f |
 | 632 | funcSet ★ | 0x41d137：置 mgr+0x7C bit0 并登记每帧回调（enemy+0x40E8 槽被 0x41a8a0 调用） |
 | 633/634 | flagExtDmg/setHitboxFunc ◇ | 0x41d183/0x41d19f |
@@ -466,7 +466,7 @@ st01.ecl 使用集（86 op）、default.ecl（17）、st01bs.ecl（65）已列�
 
 | op | 名称 | 语义 |
 |---|---|---|
-| 800 | enmCall ◇ | 0x41f5e9（case 0x96）：按 id 取敌人（0x417f10）后经 0x479a90 调其原生方法 |
+| 800 | enmRestart ★ | 0x41f5e9（case 0x96）：按 id 取敌（0x417f40；id 0/空表走默认尾）后 0x4176c0 释放其异步子线程链 + 0x417740 复位 ECL 上下文 + 0x479a90 用指令 +0x18 内联例程名经 0x4797d0 查号重挂（例程→[ctx+4]、time=0）；st04bs Boss 相位推进 11 处（旧记 "enmCall 调原生方法" 有误，capstone 更正） |
 | 801 | enmPos ★ | 0x41f516：按 id 设置敌人位置（+0x50/+0x54/+0x58） |
 | 802 | broadcastInterrupt ◇ | 0x41f565 |
 | 900 | debug900 ★（空操作） | **落默认分支 0x41f738**：字节表 bt[600]=0x9d（oracle 直读验证）；st01 的 `ins_900(4)` 在原版即 no-op，eclmap 的 "900 debug900" 在本构建未接线 |

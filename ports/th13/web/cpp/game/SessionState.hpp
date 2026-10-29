@@ -9,12 +9,16 @@ namespace th13 {
 struct SessionState {
     i32 stage = 1, stage_frame = 0, character = 0;
     i32 difficulty = 0, continues = 0;
+    // DAT_004be844: per-difficulty remaining continues, initialized from
+    // 0x4c0ae0 at 42b990 and decremented by the continue decision.
+    i32 continue_stock = 3;
     // hi-score（0x4be810，点值制）：新档默认 = score file 行 hi 100000
     //（0x449760 默认表首行 100000；0x403fd0 显示 ×10 ⇒ 1,000,000）。
     // Application 按存档状态预置；对局中只增（0x42a370/0x43d650）。
     i32 high_score = 100000, high_score_extra = 0;
     i32 configured_lives = 3;
     i32 starting_stage = 1;
+    i32 chapter = 0, chapter_frame = 0; // be824/be82c, 524 ->424310.
     float rate = 1;
     u32 scene_flags = 0;
     bool new_run = true;
@@ -22,8 +26,12 @@ struct SessionState {
     // DAT_004be830：bit4-5 = mode（0=故事/Extra 1=关卡练习 2=符卡练习）、
     // bit6 = 演示回放；0x42cd40 以 (flags>>4)&3 取 mode、&0x30==0x20 门符卡练习。
     u32 run_mode_flags = 0;
-    // GameInf+0x74 模式参数（0=常规 1=练习）：非 0 时关终改走结算A（0x43e5a0）。
+    // GameInf+0x74 场景参数（0=普通开局，1=Replay/练习入口）：
+    // 43c1c0 case0xd →42c490(1)；非0时终局改走结算A（43e5a0）。
     i32 practice_mode = 0;
+    // DAT_004be7d4: -1 for ordinary/Stage Practice, selected card for Spell Practice.
+    // Both ECL getters (00420380/00420d00) read this same session value.
+    i32 selected_spell_id = -1;
     // DAT_004be808：灵界（trance）计，0..600（每 200 一魂；0x42b030 段划分，
     // 0x4aeca8=3.0 / 0x4aece8=200.0）。asm 0x43fa90:546 与 0x4406b6 是同一
     // 条续关决策写（results-flow.md §3：光标0 续关 → be7c8++/be844--，同时
@@ -34,7 +42,7 @@ struct SessionState {
     // 同时是终局门（0x42cd40:34：>599 → 好结局资格）。字段名沿用旧登记
     // 「白点/ending_points」，跨 owner 重命名 pending，语义以本注释为准。
     i32 ending_points = 0;
-    // DAT_004be83c（好结局资格计数；残≥3 时置 3，结局选择门见 results-flow.md §4.2）。
+    // DAT_004be83c（好结局资格计数；灵击≥3 时置 3，结局选择门见 results-flow.md §4.2）。
     i32 good_endings = 0;
     // GameInf+0x2ac：本次关终 clear bonus 累计（0x42abf0 覆盖写、六面/Extra
     // 再 += 同式原值；HUD 通关演出消费——显示 TODO）。
@@ -65,6 +73,11 @@ struct SessionState {
     // （demo-original-live/passive-audio-obs/stage1-check2.png 实证）。
     i32 life_piece_threshold_index = 0;
 };
+
+// E/N/H/L/Extra/Overdrive occupy six distinct ECL rank bits.
+inline u8 ecl_difficulty_mask(i32 difficulty) noexcept {
+    return difficulty >= 0 && difficulty < 6 ? u8(1u << difficulty) : 0;
+}
 
 // Original 0x42b990:70-72 records stage-played only for an ordinary run.
 // Replay/Practice/Spell/Extra must not manufacture Practice unlocks.

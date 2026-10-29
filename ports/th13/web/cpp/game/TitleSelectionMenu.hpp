@@ -116,11 +116,10 @@ public:
     bool draw_texts(HudDrawServices&);
 };
 
-// 角色菜单行位（root2 子脚本 49-55，推定：1-4 为可选角色，0/5 为 EX/LUNATIC
-// 字条位图（用途待锚定），6 为やめる）。
-constexpr i32 kTitleCharacterRows = 7;
-constexpr i32 kTitleCharacterFirst = 1;   // 霊夢行
-constexpr i32 kTitleCharacterLast = 4;    // 妖夢行
+// 0x451450 case 0: the cursor count is four, directly indexed by character.
+constexpr i32 kTitleCharacterRows = 4;
+constexpr i32 kTitleCharacterFirst = 0;
+constexpr i32 kTitleCharacterLast = 3;
 inline i32 title_character_at(i32 row) { return row - kTitleCharacterFirst; }
 
 }  // namespace th13

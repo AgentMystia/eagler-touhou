@@ -64,34 +64,57 @@ bool GameHud::bombs(i32 stock, i32 pieces) {
 }
 
 bool GameHud::stage_logo(i32 scene_destination) {
-    // Stage 场景资产（st01logo 等）随 Stage 分期接入；UI 基座仅认非转场入口。
-    return scene_destination == 8;
+    // 42adc0 copies script0 from the loaded stage logo bank; the animation
+    // owns its lifetime. Transition destination 8 and mode bit 0x40 skip it.
+    if (scene_destination == 8 || (progress.run_mode_flags & 0x40u)) return true;
+    if (stage_logo_bank < 0) {
+        error = "Stage logo animation bank unavailable";
+        return false;
+    }
+    return create(stage_logo_bank, 0, 0) != 0;
+}
+
+bool GameHud::stage_music_logo() {
+    // MSG opcode19: 429a24 creates script2 in the same stage-logo bank.
+    if (stage_logo_bank < 0) {
+        error = "Stage logo animation bank unavailable";
+        return false;
+    }
+    return create(stage_logo_bank, 2, 0) != 0;
+}
+
+bool GameHud::begin_stage_clear() {
+    // 42abf0 uses the main chain, with zero translation/anmArg and the
+    // template's coordinate flags intact (unlike widget()). create() uses
+    // the same template -> initial tick -> submit path as this constructor.
+    clear_banner = create(front, 115, 0);
+    if (!clear_banner) return false;
+    flags |= 0x100u;
+    clear_age.set(0);
+    return true;
+}
+
+bool GameHud::finish_stage_clear() {
+    // 42ad40 sends pending label1 rather than destroying the live VM.
+    // Missing/expired handles are accepted by46fc30 as well.
+    if (!check(animations.interrupt(clear_banner, 1, false))) return false;
+    flags &= ~0x100u;
+    clear_age.set(0);
+    return true;
 }
 
 bool GameHud::initialize(const HudEntryContext& context) {
     if (!error.empty()) return false;
     if (!root && (root = widget(0)) == 0) return false;
-    // 灵界计（agauge）创建：原版 0x425170 以 FUN_0046f820(script 0xab=171)
-    // 建 front.anm 根 VM，存 stage ctx+0x11c，并立即调 0x42b030 刷值。
-    // 171 主脚本 ins_400(-196,448) 自定位左下并 ins_500 spawn 172-175；
-    // 值显示映射见 update_trance（0x42b030），不是固定图片。
-    // 生产语义：171 缺失是资源/脚本错误，必须保留 create() 的 error 并失败；
-    // 不因合成测试 bank 无 171 而吞错（测试夹具需自带 171，或原样暴露失败）。
-    if (!gauge_main) {
-        gauge_main = create(front, 171, 0);
-        if (!gauge_main) return false;
-        if (auto* vm = animations.registry.find(gauge_main))
-            vm->visual.render_flags &= ~0xc000u;
-    }
     if (!life_icons[0]) {
         for (u32 i = 0; i < 8; i++) {
-            life_icons[i] = create(front, i32(i) + 30, 0);
+            life_icons[i] = create(front, i32(i) + 29, 0);
             auto* vm = animations.registry.find(life_icons[i]);
             if (!vm) return false;
             vm->visual.render_flags &= ~0xc000u;
         }
         for (u32 i = 0; i < 8; i++) {
-            bomb_icons[i] = create(front, i32(i) + 38, 0);
+            bomb_icons[i] = create(front, i32(i) + 37, 0);
             auto* vm = animations.registry.find(bomb_icons[i]);
             if (!vm) return false;
             vm->visual.render_flags &= ~0xc000u;
@@ -111,18 +134,30 @@ bool GameHud::initialize(const HudEntryContext& context) {
     if (progress.stage == 1 && progress.practice_mode == 0 && progress.continues == 0 &&
         !create(front, 67, 0))
         return false;
-    // 00425170 尾部：front[79+difficulty] 是右下角通知，
-    // front[85+difficulty] 是右上角常驻标签；ANM 自驱160帧入场。
-    // 不能发 label3 到常驻标签（它没有该标签），也不能拿 th15 的+86。
+    // 00425170 starts the temporary difficulty notice through label3;
+    // its script moves away from the FPS corner and terminates after164 ticks.
     if (progress.difficulty < 0 || progress.difficulty > 5) {
         error = "HUD difficulty outside front animation range";
         return false;
     }
-    if (!difficulty_notice &&
-        !(difficulty_notice = widget(79 + progress.difficulty))) return false;
-    if (!difficulty_label &&
-        !(difficulty_label = widget(85 + progress.difficulty))) return false;
-    (void)context;
+    // 43c1c0 sets DAT_004dcc30 for fresh entries/retries and clears it for
+    // destination0xc.425170 always creates the stage's difficulty label;
+    // its notice and gauge creation are conditional on that fresh flag.
+    // Overwriting a HUD handle does not retire the preceding label VM.
+    if (context.new_run) {
+        difficulty_notice = widget(79 + progress.difficulty);
+        if (!difficulty_notice || !animations.interrupt(difficulty_notice, 3, false)) return false;
+    }
+    difficulty_label = widget(85 + progress.difficulty);
+    if (!difficulty_label || !animations.interrupt(difficulty_notice, 3, false)) return false;
+    if (context.new_run) {
+        // 425170's final creation is171, followed by42b030. Its children
+        // 172–175 are created by the script and survive along with the HUD.
+        gauge_main = widget(171);
+        if (!gauge_main) return false;
+        trance_skull_label = 0;
+        if (!update_trance()) return false;
+    }
     return true;
 }
 
@@ -134,7 +169,7 @@ bool GameHud::reset_for_retry() {
 // 0x42b030 值→显示（每帧幂等）：只读 trance_value(SessionState)
 //（DAT_004be808 灵界计，旧登记名白点/ending_points），不持第二份计量。
 // 172: 标签 2 (>=200) / 3；173: scale.x=uv_scale.x=floor(g/200)/3；
-// 175: scale.x=uv_scale.x=(g%200)/200、offset.x=frac*16；174 原版不写。
+// 175: scale.x=uv_scale.x=(g%200)/200、offset.x=floor(g/200)*16；174 原版不写。
 bool GameHud::update_trance() {
     if (!gauge_main) return true;
     auto* root = animations.registry.find(gauge_main);
@@ -168,7 +203,9 @@ bool GameHud::update_trance() {
         const float fraction = float(value % kTranceSegment) / float(kTranceSegment);
         partial->visual.scale.x = fraction;
         partial->visual.uv_scale.x = fraction;
-        partial->visual.translation.x = fraction * 16.f;  // VM+0x574 offset.x
+        // 42b1dc multiplies the retained quotient, not the fractional ST0
+        // value stored to scale above (42b16a leaves the quotient on x87).
+        partial->visual.translation.x = float(value / kTranceSegment) * 16.f;
         partial->visual.flags |= 0x18;
     }
     return true;

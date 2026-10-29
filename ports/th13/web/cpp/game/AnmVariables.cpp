@@ -23,7 +23,7 @@ float AnmVariables::floating(float value,GameRandom& rng)noexcept{
     if(id==10022)return float(rng.next32());
     if(id>=10023&&id<=10025){const float p[]={rotation.x,rotation.y,rotation.z};return p[id-10023];}
     if(id==10027)return random_scale;if(id==10028)return random_angle;if(id==10029)return float(random_bound);
-    // 10030-10032 与 10010-10012 同式（00461e80.c case 0x272e-0x2730），同一游戏 RNG。
+    // Callers pass the stream selected by 461e80: 10030–10032 use game RNG.
     if(id==10030)return float(rng.signed_unit()*random_angle);
     if(id==10031)return float(rng.unit()*random_scale);
     if(id==10032)return float(rng.signed_unit()*random_scale);

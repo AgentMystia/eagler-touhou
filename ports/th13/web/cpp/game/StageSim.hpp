@@ -12,6 +12,9 @@
 #include "EclThreads.hpp"
 #include "Rng.hpp"
 #include "StageEvent.hpp"
+#include "SpellState.hpp"
+#include "CurveLaserPath.hpp"
+#include "EnemyFog.hpp"
 #include "Types.hpp"
 
 #include <functional>
@@ -21,11 +24,14 @@
 
 namespace th13 {
 
+struct SessionState;
+class AnmVm;
+
 // 极坐标插值通道（0x4234b0/0x423900 步进）。
 struct StagePolarItp {
     float from_a = 0, from_b = 0, to_a = 0, to_b = 0;
     float duration = 0;
-    i32 elapsed = 0;
+    float elapsed = 0;
     i32 mode = 0;
     bool active() const { return i32(duration) > 0; }
     void setup(float dur, i32 new_mode, float fa, float fb, float ta, float tb) {
@@ -45,8 +51,10 @@ struct StagePosItp {
     float start[3] = {0, 0, 0}, target[3] = {0, 0, 0};
     float p1[3] = {0, 0, 0}, p2[3] = {0, 0, 0};
     float duration = 0;
-    i32 elapsed = 0;
+    float elapsed = 0;
     i32 mode = 0;
+    bool per_axis = false;
+    i32 axis_mode[3] = {};
     bool active() const { return i32(duration) > 0; }
 };
 
@@ -55,10 +63,16 @@ struct StageMover {
     float pos[3] = {0, 0, 0};      // [0..2] 累积子位置
     float speed = 0, angle = 0;    // [6]/[7]（圆周模式下 [7]=当前角、[6]=角速度）
     float radius = 0, growth = 0;  // [8]/[9]
+    float ellipse_angle = 0, ellipse_ratio = 0; // [10]/[11], ECL 420/422
+    float origin[3] = {0, 0, 0}; // [3..5], mode4's moving sine-wave center
+    float sine_phase = 0;         // [12], mode4 phase (473713)
     float aux[3] = {0, 0, 0};      // [0xD..0xF]：mode0=每帧位移，mode2=圆心
     u32 mode = 0;                  // [0x10] 低 4 位
     StagePolarItp polar;           // {angle, speed} 插值
+    FloatInterpolation<2> radial;  // 460/4a4 ->423900: radius/growth independently timed
     StagePosItp postime;           // 位置插值（活动期间覆写 pos）
+    void advance(float rate);       // 4736a0 followed by 473780
+    void accumulate(float rate = 1.0f); // 473780; also used by immediate ECL positioning
 };
 
 // ECL 30x ANM 创建请求（0x41b260 分发 → 0x4243e0/0x41fe80：拷脚本模板 →
@@ -83,7 +97,12 @@ struct AnmEffectRequest {
 // （18 × 0x2C 字节），609-612 写入、601 etOn 时整块拷入弹体 +0xbd8。
 struct StageEt {
     u32 sprite = 0, subtype = 0;       // et[0]/et[1]（602 etSprite）
-    float spawn[3] = {0, 0, 0};        // et[2..4]（etOn 时写）
+    // Shared storage: 601 writes xyz; 700 writes laser length parameters.
+    // 703 reads spawn[0] as initial length and spawn[1] as target length.
+    float spawn[3] = {0, 0, 0};        // enemy+0x578/57c/580 + slot*0x380
+    float laser_width = 0;            // enemy+0x8b0 (700 arg4)
+    i32 sound = 21, transform_sound = 38; // 41d5b7/41d5c7: 600 defaults
+    i32 laser_timing[5] = {};         // enemy+0x8c0..8d0 (701 args1..5)
     float angle1 = 0, angle2 = 0;      // et[5]/et[6]（604 etAngle）
     float speed1 = 2.0f, speed2 = 0;   // et[7]/et[8]（605 etSpeed）
     float spin = 0;                    // et[9]（出生自旋半径）
@@ -95,34 +114,104 @@ struct StageEt {
     float absolute[3] = {0, 0, 0};     // vm+0xF9C+slot*3（absolute[2] > 0.9 走绝对出生）
     // etEx（609-612，0x41b260 case 0x6a → 0x40ffe0 发射时拷入弹体 +0xbd8）的
     // 行为队列。队列每项 0x2c：+0x00..+0x0C 浮点参数 args[0..3]、+0x10..+0x1C
-    // 整型参数（args[4..7] 位型存储）、+0x20 op、+0x24 flags。op 是位型行为号，
+    // 整型参数、+0x20 op、+0x24 flags、+0x28 子程序指针。op 是位型行为号，
     // 消费语义见 0x40f030（弹体侧 process_bullet_queue）：flags==0 的项在
     // bb4 含任何活跃行为位时阻塞（串行），flags!=0 的项在 op 位未活跃时继续。
     struct Ex {
         u32 op = 0;                    // 队列 op id（位型：1/2/4/8/0x10/0x40/…）
         u32 flags = 0;
         float args[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+        // Original +0x10..1c dwords. Keep their integer precision for
+        // 40f030's enemy constructor arguments (including values > 2^24).
+        // args[4..7] remains the existing numeric view for other behaviors.
+        std::array<i32, 4> integer_arguments{};
+        // Original +0x28: points into this StageSim's owning ECL program.
+        const char* subroutine = nullptr;
     } ex[18];                           // 0xc6 dwords / 0x2c bytes per entry
     u32 ex_next = 0;  // enemy+0xf5c + emitter*4: 611/612 append cursor（609/610 同步写）
     void reset();                      // 600 etNew 默认（0x41d573）
 };
 
+// Infinite laser (703 -> 42fed0 type1, 433260/433470). IDs are ECL labels;
+// generation is an independent birth identity. Duplicate IDs never overwrite.
+struct StageLaser {
+    enum class Kind { Infinite, Line, Curve, Beam };
+    Kind kind = Kind::Infinite;
+    i32 id = 0;
+    u32 generation = 0;
+    float origin[3] = {}, velocity[3] = {};
+    float angle = 0, rotation = 0;
+    float length = 0, target_length = 0, length_speed = 0;
+    float width = 2, target_width = 0, start_offset = 0;
+    i32 timing[4] = {};
+    i32 time = 0, previous_time = -1;
+    float time_fraction = 0;
+    i32 phase = 3; // 3=warning, 4=opening, 2=active, 5=closing, 1=retire
+    u32 flags = 0, sprite = 0, subtype = 0;
+    u32 beam_descriptor_flags = 0; // type3 descriptor+38, virtual +8 writes bit0
+    i32 sound = -1, transform_sound = -1;
+    StageEt::Ex ex[18];
+    i32 ex_cursor = 0, cancel_protection = 0;
+    u32 behavior_flags = 0;
+    u32 anm_flags = 0x03000020; // 433260 body VM: type1, additive blend
+    bool active = true;
+    bool pending_remove = false; // line +7c: remove at the next manager traversal
+    bool has_updated = false;    // +7d: rectangle manager skips newborn nodes
+    float line_limit = 0;        // line descriptor +18, maximum travel of its tip
+    float line_descriptor_angle = 0, line_initial_length = 0;
+    CurveLaserPath curve_path;
+    std::vector<CurveLaserSample> curve_samples;
+    i32 acceleration_time=0,acceleration_duration=0;
+    float acceleration_fraction=0;
+    float acceleration=0,acceleration_velocity[3]={};
+    i32 wait_remaining=0;
+    float wait_fraction=0;
+    i32 cull_timer = 0, graze_timer = 0;
+    bool collision_enabled() const {
+        if (kind == Kind::Beam) return false;
+        return length > 16 && (kind == Kind::Line ? width > 3 : phase == 4 || phase == 2);
+    }
+    float collision_width() const;
+    i32 player_contact(float x, float y, float half_x, float half_y) const;
+    // Scalar update only. ANM/SFX and collision consumers are independent.
+    // Manager increments the phase timer AFTER this returns (42fcd0).
+    bool update(const float* first_boss_position, float rate = 1);
+};
+
+// 4183f0 receives these values before running the first enemy ECL update.
+struct StageSpawnArguments {
+    float z = 0;
+    i32 score = 0, drop_main = 0; // 4183f0 descriptor+0c/+10
+    std::array<i32, 4> integers{};
+    std::array<float, 8> floats{};
+};
+
 struct StageEnemy {
+    i32 native_function=0;
+    i32 native_function_mode=0; // inner40ec, 632 writes0 /639 writes1
+    std::unique_ptr<EnemyFog> fog;
     u32 serial = 0;
     i32 script_id = 0;  // +0x11E4，创建时 = 序号（0x418f40:96）
     i32 trace_id = 0;   // +0x11E8 = 创建者 script_id（0x41fcc0:72）
     std::string routine;
     float life = 0;
+    i32 spawn_score = 0; // outer+5134, enmCreate argument4
+    float bullet_protect_radius2=0; // inner+4044, ECL526
     StageMover vel, pos;
     float position[3] = {0, 0, 0};  // vm+0x44 主位置
+    float previous_position[3] = {};
+    float motion_delta[3] = {};  // inner+0x78, before position quantization/clamping
+    i32 death_sound = 0, death_effect = 0, death_effect_file = 0;
     float age = 0;                  // vm+0x14AC（TIME）
     u32 flags = 0;                  // vm+0x4030：bit18 入场过、bit20 镜像、bit22 活动界限
     float hurtbox[2] = {24.0f, 24.0f};  // +0x110/+0x114（ctor 默认 24）
+    float hitbox[2] = {24.0f, 24.0f};   // +0x118/+0x11c（ctor 默认 24，ECL 501 setHitbox 写点）
+    float body_angle = 0.0f;            // 0x8000 旋转矩形朝向（slot 0 VM +0x50）
     float limit_center[2] = {0, 0};     // 504 moveLimit（+0x3F38/+0x3F3C）
     float limit_half[2] = {0, 0};       // +0x3F40/+0x3F44
     StageEt et[8];
     i32 i_slots[4] = {0, 0, 0, 0};      // +0x1474..（I0-I3）
-    float f_slots[4] = {0, 0, 0, 0};    // +0x1484..（F0-F3）
+    float f_slots[8] = {};             // +0x1484..0x14a0（F0-F7）
     std::unique_ptr<EclThreads> threads;
     bool dead = false;
     // 0x418e00:19-20 的 0x80000 自门（0x41a8a0:30-31）：构造趟置位后，次帧
@@ -133,6 +222,11 @@ struct StageEnemy {
     // Manager state belongs to the enemy, not to any one async ECL thread.
     std::array<EclContext::Interrupt, 8> interrupts{};
     i32 invulnerable = 0;  // +0x3fd0; 515 setInvuln / 513 reset
+    Timer invulnerable_clock;
+    i32 body_invulnerable = 0;  // +0x3fe4; ECL 541
+    Timer body_invulnerable_clock;
+    i32 damage_function = 0; // +40f0: ECL633 table4bba18, 1=422cd0 ship.
+    i32 pending_damage = 0;  // +3fb0: consumed by419a90 after geometric queries.
     bool spell_active = false;  // +0x3f64 bit0
     i32 spell_base_life = 0, spell_life = 0;  // +0x3f50 / +0x3f58 (7x)
     i32 spell_id = -1;
@@ -143,28 +237,38 @@ struct StageEnemy {
     // main = dword 0xFDA（510 dropMain / 507 id 0：死亡时产 1 个该 kind 的
     // 道具）；extra[k] = dword 0xFDB+k（507 dropExtra id k+1）：散落 kind
     // k+1 的数量（k = 0..13）；area = 0xFEA/0xFEB（508 dropArea 散布幅度，
-    // 构造/506 后为 0）。561 die / 509 dropItems 按表产道具并清表。
+    // 构造为32（418f40 outer+5194/5198）；506不清主掉落或area。
+    // 561 die / 509 dropItems 按表产道具并清数量，保留area。
     i32 drop_main = 0;
     i32 drop_extra[14] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    float drop_area[2] = {0, 0};
+    float drop_area[2] = {32, 32};
     // ---- 命中/积分灵域（0x419a90；I 模块伤害池路径消费）----
-    // pending_damage = mgr+0x28 命中池（伤害帧写入、下一帧敌机更新入命，
-    // G 状态流 f96/f98 池实证）；spirit_accum/spirit_threshold = +0x3f60/
-    // +0x3ffc（积分灵累计对阈值）；hit_anim_timer = +0x4004 命中演出计时
-    // （伤害帧置 30，>19 门控积分灵产出；递减点未单独取证，按帧递减）。
-    float pending_damage = 0;
+    // spirit_accum/spirit_threshold = +0x3f60/+0x3ffc；伤害同趟入命并累加。
+    // hit_anim_timer = +0x4004，命中置 30，>19 门控积分灵产出。
     float spirit_accum = 0;
     i32 spirit_threshold = 0;
     i32 hit_anim_timer = 0;
+    i32 hit_feedback_cooldown = 0; // inner+3fc0, separate from spirit timer
+    i32 hit_sound = -1;            // inner+3fc8, ECL 553; negative selects 34/35
+    bool periodic_flash = false;  // inner+4034 bit0
+    i32 death_spirit_limit = 60;  // +0x3ff4，ECL 1001
+    i32 death_spirit_count = 1;   // +0x3ff8，ECL 1002
+    bool damage_spirits_disabled = false;  // +0x4034 bit1，ECL 1003
+    std::string death_routine; // 556 -> inner+40e4, consumed by41aad0
     // ---- 交互模式的 ANM 接线记录（无头 oracle 契约不读这些字段）----
     // 302 anmSelect：敌机当前 ANM 文件槽（st01：2=enemy.anm、3=st01enm.anm）。
     i32 anm_file = 0;
+    i32 anm_base_script = 0; // inner+26c, set by306 slot0, retained across303.
     // 303 anmScript / 306 anmRun：槽位脚本（vm+0x120 起槽数组；槽 0 = 本体，
     // 记录 -1 表示清槽）。脚本号是 stage ANM 合并表的全局序号。
-    i32 anm_script[4] = {-1, -1, -1, -1};
+    static constexpr i32 kAnimationSlots = 14; // 41a8a0 loops0xe slots at inner+120
+    std::array<i32,kAnimationSlots> anm_script = [] {
+        std::array<i32,kAnimationSlots> value{}; value.fill(-1); return value;
+    }();
     // 303/306 真实现的槽位句柄（原版敌机+0x120 起槽数组，0x41fe80/case3
     // 创建后存句柄、重挂时先 0x470110 回收旧 VM）。
-    u32 anm_slot_handle[4] = {0, 0, 0, 0};
+    u32 anm_slot_handle[kAnimationSlots] = {};
+    Vec3 anm_slot_offset[kAnimationSlots] = {}; // inner+160; ECL320, 41a8a0 follow
     // slot0 附加尺寸字段（0x41fe80 → +0x3f30/0x3f34 与 case3 → +0xfcc/0xfcd：
     // VM 精灵像素宽高 × scale，公式 (h*scaleY, w*scaleX)）。事件窗 noop 不写。
     float anm_size_a[2] = {0, 0};
@@ -197,12 +301,14 @@ struct StageEnemy {
 //   0x40 边界反弹（0x410a80 + 0x4107f0/0x4108b0/0x410960/0x4109f0）、
 //   0x200 变弹型（0x40f030 case 0x200）、0x400 立即激活（0x411380）、
 //   0x2000 子弹发射（0x40f79a，下一条作为角度/条数描述符被双跳消费）、
-//   0x4000 透明占位、0x100000 命中位翻转、0x80000000 帧等待（0x40f030
+//   0x4000 透明占位、0x100000 ANM 混合模式、0x80000000 帧等待（0x40f030
 //   case 0x80000000 + 0x40db10 内联倒数）。
 // 每帧行为派发顺序 = 0x40ddb5..0x40dea7：op1 → op4 → 0x200000（未用）→
 // op8 → 0x10 → 0x40 → 0x20000（未用）→ 0x80000（未用）→ 0x100（未用）→
 // wait 位内联块；全部在 pos += vel 之前。
 struct StageBullet {
+    // 40d170/40e840 physical pool slot, distinct from active-list order.
+    i32 pool_slot = -1;
     float x = 0, y = 0, z = 0, angle = 0, speed = 0;
     float vel[3] = {0, 0, 0};   // +0xB7C/+0xB80/+0xB84：每帧位移向量
     u32 sprite = 0, subtype = 0;  // etSprite 的 (类型, 颜色)（0x200 可改写）
@@ -219,22 +325,45 @@ struct StageBullet {
     // ---- etEx 行为状态机（0x40f030 / 0x40db10）----
     StageEt::Ex ex[18];          // +0xBD8 起 0xc6 int 出生拷贝
     i32 ex_cursor = 0;           // +0xBD0：当前消费项（出生 = 种子项，st01 恒 0）
+    i32 native_trigger=0;        // +bc8: one-shot mark used by422d60/422e40
+    i32 transform_sound=38;      // +bcc, emitter608 second sound
     u32 behavior_flags = 0;      // +0xBB4：已激活行为位（池清零语义）
-    u16 state = 1;               // +0xBBE：1 活跃 / 2 延迟首帧（种子 op==2）/ 4 已消
+    float b98_mirror = 0;        // +0xB98：etEx op 0x8000 写点，全语料无读者（不影响弹道）
+    u16 state = 1;               // +0xBBE：1活跃 / 2等待ANM就绪 / 3消去演出
     u32 source_enemy = 0;        // 事件口径：发射者敌机 serial（子弹发射同源）
+    // Production ANM owns one VM per bullet node.  This serial is assigned at
+    // the 0x40e840 birth point and survives vector compaction, so presentation
+    // cannot accidentally transfer an animation clock to a different bullet.
+    u32 generation = 0;
     i32 delay = 0;               // +0x4C8：出场延迟计数（op 0x400 写 1，仅表现）
+    bool animation_ready = true; // bullet+4d4 = embedded ANM integer0
+    i32 animation_interrupt = 0;
+    // Pending 40fc1b write to embedded ANM+18, consumed before its next tick.
+    // -1 means no write; ANM instructions may subsequently change the blend.
+    i32 animation_blend = -1;
+    i32 state_age = 0;           // bullet+132c; collision gate for state2
+    i32 cancel_protection = 0;   // bullet+24: contact and cancellation protection
+    float state_time = 0;        // bullet+1330;40e360 increments after40db10
+    bool collision_ready = true;
+    bool animation_geometry = false;
+    float sprite_width = 0, sprite_height = 0;
+    i32 cull_grace = 5; // 40e840 -> bullet+bac
     // op 4 通道（0x4102b0 语义）：steer 向量（0x40f030 case4 以
     // 0x412510 = polar(resolved_target, step) 预计算）、时长与计时。
     float steer[3] = {0, 0, 0};  // f60/f64/f68（case4 写 steer xy，z 恒 0）
+    float ex4_acceleration = 0; // f4c, adds to speed even at zero velocity
     i32 ex4_duration = 0;        // f6c
     i32 ex4_timer = 0;           // f3c（FUN_004016c0(0)：int=0）
+    float ex4_time = 0;
     // op 1 通道（0x410230）：ef4 int 计时，ef8 float（速率 1，与 int 同步）。
     i32 ex1_timer = 0;
+    float ex1_time = 0;
     // op 8 通道（0x410520 语义，f94/f98/fb4/f84）。
     float ex8_speed_delta = 0;  // f94
     float ex8_angle_delta = 0;  // f98
     i32 ex8_duration = 0;       // fb4
     i32 ex8_timer = 0;          // f84
+    float ex8_time = 0;
     // op 0x10 通道（0x4105d0；spawn 写 fdc/fe0/ffc/1000/1004/1008/100c）。
     float ex10_speed = 0;       // fdc：转向后的恢复速度
     float ex10_angle = 0;       // fe0：目标角（mode 依 f6）
@@ -246,16 +375,23 @@ struct StageBullet {
     float ex10_time = 0;        // fd0（float 计时，速率 1）
     // op 0x40 通道（0x410a80；spawn 写 1024/102c/1030/1044/1048/1050）。
     float ex40_speed = 0;       // 1024（<-990 不覆盖）
-    float ex40_w = 448.0f;      // 102c（i5 bit5 未置时默认 448）
+    float ex40_w = 384.0f;      // 102c: original default 0x43c00000
     float ex40_h = 448.0f;      // 1030
     i32 ex40_bounces = 0;       // 1044
     i32 ex40_limit = 0;         // 1048（i4）
     u32 ex40_mode = 0;          // 1050（i5：bit1 顶、bit2 底、bit8 右、bit4 左、bit10 只计数）
-    // op 0x80000000 等待通道（0x40f030 case + 0x40de74 内联倒数）。
-    i32 wait_timer = 0;         // 1058（int = i4-1，倒计镜像）
-    float wait_time = 0;        // 105c（float = i4，>0 期间阻塞队列恢复）
+    i32 offscreen_timer = 0;    // 0x100 +120c: retention countdown
+    float offscreen_time = 0;  // +1210
+    i32 offscreen_directional = 0; // +123c: terminate when heading cannot reenter
+    // op 0x80000000 等待通道（0x40f030 case + 0x40db10 消费）。
+    i32 wait_timer = 0;         // 1058（40f030 写 (int)N-1；40db10 只读 wait_time）
+    float wait_time = 0;        // 105c（float = i4；<1 时 40db10 清 bb4 位并重进队列）
     // op 0x800000 出生快照（0x1264..0x1274；op 0x10 mode 2/3 消费）。
     float saved_speed = 0, saved_angle = 0, saved_pos[3] = {0, 0, 0};
+    // 40f030/410400: target-speed vector acceleration, independent of op4.
+    i32 target_speed_time=0,target_speed_duration=0;
+    float target_speed_fraction=0;
+    float target_speed_step=0,target_speed_velocity[3]={};
 };
 
 class StageSim;
@@ -273,12 +409,17 @@ struct StageItemHost {
     // （ECL 掉落 10..14 减 10），每次调用抽 signed_unit（象限角）+ unit
     // （速度 = unit*3.5 + base_speed）；pos 先按 x∈[-192,192]、y∈[0,384] 钳制。
     virtual void spawn_value_item(i32 kind, float x, float y, float z, float base_speed) = 0;
+    virtual void spawn_value_item(i32 kind, float x, float y, float z, float base_speed,
+                                  bool sound) {
+        (void)sound;
+        spawn_value_item(kind, x, y, z, base_speed);
+    }
     // 0x4302a0：616 etClear 的转换点登记（道具管理侧决定语义）。
     virtual void on_et_clear(float x, float y, float z) = 0;
 };
 
 // 对话系统宿主接口（ins_518/519 的接口位）：原版 0x428820(param>=0) 建
-// 0x1a8 对话对象挂 stage ctx+0x198，519 dialogWait 以 +0x198==0 放行。
+// 0x1a8 对话对象挂 stage ctx+0x198；519 在对象缺席或 +0x174 非零时放行。
 // 无头契约路径（stage1/replay 窗）不注入——msgmgr 合成态恒 0 的旧行为
 // 保持逐字节不变（event-contract.md §7.1【待校准】）；交互模式由 RunScene
 // 注入 MsgPlayer 实现。
@@ -286,6 +427,7 @@ struct StageDialogHost {
     virtual ~StageDialogHost() = default;
     virtual void open_dialog(i32 entry) = 0;     // 0x428820 else 分支
     virtual bool dialog_active() const = 0;      // stagectx+0x198 != 0
+    virtual bool dialog_wait_released() const { return !dialog_active(); }
 };
 
 // 全局变量供给（0x420380/0x420d00 行为子集；current 指向正在步进的敌机）。
@@ -314,10 +456,16 @@ private:
 
 class StageSim {
     GameRandom owned_random_{0};
+    float standalone_rate_ = 1;
 
 public:
     explicit StageSim(GameRandom* shared_random = nullptr)
-        : random(shared_random ? *shared_random : owned_random_) {}
+        : random(shared_random ? *shared_random : owned_random_) {
+        for (i32 slot = 0; slot < 2000; ++slot) bullet_free_slots_.push_back(slot);
+    }
+    float time_rate() const;
+    void set_time_rate(float rate);
+    std::function<void(float)> time_rate_changed;
     // resource_dir：含 st01.ecl/default.ecl/st01bs.ecl 与 ANM 名单核验的 raw 目录。
     bool load(const char* resource_dir, const char* event_path, const char* stage = nullptr);
     // 交互模式装载：资源经 provider 供给（浏览器侧读 /assets），难度位 =
@@ -344,13 +492,54 @@ public:
     StageEventSink sink;
     std::vector<std::unique_ptr<StageEnemy>> enemies;
     std::vector<StageBullet> bullets;  // 交互模式弹体（直进；无头路径恒空）
+    std::function<bool(StageBullet&, bool)> bullet_animation;
+    // 00461cb0 initialization is synchronous within40e840/etEx200, before
+    // queue continuation, collision/culling and the frame's final ANM tick.
+    std::function<bool(StageBullet&, i32)> bullet_animation_initialize;
+    std::function<bool(i32, const Vec3&)> scene_effect;  // kind + 敌机VM+0x44（op334 41b7ac→415650 init 位置）
+    std::function<bool(i32, i32, i32)> screen_shake;
+    std::function<void(i32, i32, u32, float, float)> stage_fog;
+    // ECL 630 → STD 相机脚本 ins_16 标号中断（0x41f3f6 → 0x409100 扫
+    // [stage+0x1c]）。交互模式由 RunScene 接 StageScenery::script.interrupt；
+    // 无头契约路径不接（StageCommands case 630 显式报错）。
+    std::function<bool(i32)> stage_script_interrupt;
+    std::function<bool()> stage_logo; // ECL554 ->0042adc0, stage ANM script0.
+    // Original bullet manager+68/+6c, set by ECL560; positive values
+    // override per-bullet reflection dimensions in410a80/4107f0..4109f0.
+    float bullet_bounce_size[2] = {0,0};
+    std::vector<StageLaser> lasers;    // global laser manager objects
+    float active_bullet_protect_radius2=0; // bullet manager+60, scoped around ECL601
+    // Retail laser creation executes ANM immediately, before the next ECL op.
+    // The web host attaches these consumers; scalar-only diagnostics omit them.
+    std::function<bool(StageLaser&)> laser_birth, laser_animation;
+    std::function<void(u32)> laser_retire;
+    std::function<bool(i32)> laser_sound;
+    std::function<bool(i32, const Vec3&)> laser_cancel_effect;
+    std::function<i32(const StageLaser&)> laser_collision;
+    std::function<void(StageBullet&)> bullet_player_collision;
+    bool defer_laser_update = false; // RunScene schedules the laser manager at22.
     StageEnemy* current = nullptr;  // 正在步进的敌机（gvars/commands 用）
     u32 frame = 0;
     float player_x = 192.0f, player_y = 420.0f;  // 契约常量（交互模式每帧覆写）
     i32 boss_slot[3] = {-1, -1, -1};             // mgr+0x5C 起 3 槽（script_id 寻址）
+    i32 boss_timer_seconds=-1,boss_timer_centiseconds=0; // stage+1a0/+1a4, 4218f0
+    bool boss_leaving=false; // enemy manager+7c bit0, 631 / 417ef0
+    struct BossMarker {float ratio=0; i32 color=0;};
+    std::array<std::array<BossMarker,4>,3> boss_markers{}; // stage+1bc + slot*54
+    i32 boss_remaining_stars=0; // stage+15c, ECL540
     std::vector<std::string> anim_list;          // st01 的 ANIM 依赖清单（装载核验）
     // ECL 307/308 特效 VM 创建请求（AnmEffectRequest；sync 每帧排空后清）。
     std::vector<AnmEffectRequest> anm_effects;
+    // 41ffb0 resolves a live slot before reading mutation arguments.
+    std::function<AnmVm*(StageEnemy&, i32)> enemy_animation;
+    std::function<bool(StageEnemy&,i32,i32)> enemy_animation_interrupt;
+    std::function<bool(StageEnemy&,bool)> enemy_fog;
+    std::function<bool(StageEnemy&)> enemy_absorb_spirits;
+    std::function<bool(i32)> enemy_sound;
+    std::function<bool(i32, float)> enemy_position_sound;
+    std::function<bool(i32, float)> enemy_hit_sound;
+    std::function<bool(i32,i32,const Vec3&,float)> enemy_death_effect;
+    std::function<bool(i32,const Vec3&,i32)> player_effect;
     // 事件契约模式（stage1/replay 落盘）置 true：307/308 与 stage1 oracle 的
     // NOOP_OPS 同源不解析参数（参数解析对带掩码实参有 RNG 副作用，会移动
     // 事件时间线——replay 事件窗 frame124 分歧实证）；渲染/交互模式保持真实语义。
@@ -362,9 +551,21 @@ public:
     std::string error_;
     bool interactive = false;  // 交互模式：弹体实体 + 可写玩家位置（不落事件）
     i32 difficulty_rank = 0x08;
+    SessionState* session = nullptr;
+    SpellState spell;
+    bool bomb_active = false;
+    std::function<void(i32)> spell_award;
+    std::function<bool(const SpellEvent&, const StageEnemy&)> spell_event;
+    // 0041a8a0 -> 00419a90: each enemy, including its constructor update,
+    // resolves player attacks and body collision before its timers advance.
+    std::function<void(StageEnemy&)> enemy_hit;
+    std::function<void(StageEnemy&)> enemy_body_collision;
+    bool emit_spell(const SpellEvent& event, const StageEnemy& enemy);
     i32 diff = 3;             // DIFF（DAT_004be7c4 语义：0=E 1=N 2=H 3=L）；
                               // 535/536/548/624/625 的选参下标（begin 时取掩码尾零）
     i32 rank = 0;             // independent DAT_004be7cc; original .data initial value
+    std::array<i32,4> shared_integers{}; // enemy manager+2c..38, gvars-9926..-9923
+    std::array<float,8> shared_floats{}; // enemy manager+3c..58, gvars-9922..-9915
 
     StageEnemy* find_by_script_id(i32 id);  // 0x417f40（id 0 → null）
     StageEnemy* boss() const;
@@ -388,18 +589,31 @@ public:
     // DAT_004be830 的移植代理（509 dropItems 的 (flags & 0x30) != 0x20 门）。
     // 初值 0 = 常规对局（掉落执行）；0x20 态未被任何调用方建模。
     u32 mode_flags = 0;
+    i32 last_created_enemy_id = 0;  // 418f40: enemy manager+0xc0, ECL -9931
     // 建敌（enmCreate 族与 root 装载共用；含构造内首趟 0x41a8a0）。
     // mirror：0x4183f0:28 的 param2[6]（镜像位，构造趟前置入 flags bit20——
     // 构造趟内 404/405 族按镜像翻转角度）。
     StageEnemy* spawn_enemy(const char* routine, float x, float y, float life, StageEnemy* parent,
-                            bool inherit_anm, bool mirror = false);
+                            bool inherit_anm, bool mirror = false,
+                            const StageSpawnArguments* arguments = nullptr);
     // 交互模式伤害：扣血至 0 以下标 dead（下帧遍历摘链，与出界自杀同路）。
     // 回放对拍模式（§7.2）额外：落 kill 事件、清 boss_slot 指向
     // （oracle 侧同式写 mgr+0x5c 槽清零）。
     void damage(StageEnemy& enemy, float amount);
-    void clear_bullets() {
-        for (auto& bullet : bullets) bullet.alive = false;
-    }
+    bool death_effects_and_drops(StageEnemy& enemy); //41aad0, shared by damage and525
+    bool clear_enemies(); //41ac70; dialogue construction and ECL518/525 each invoke it
+    void update_enemy_feedback(StageEnemy& enemy); // 419a90 final ANM/sound branch
+    bool invoke_enemy_function(StageEnemy&,i32 index);
+    void clear_bullets(); //411df0: fade VM plus independent cancel particle.
+    bool cancel_bullet(StageBullet&, bool interpolate = true, bool set_delay = true);
+    bool cancel_respawn_bullets(const Vec3& center, float radius); //411770 state4, no items
+    // 4114f0/411770/4119c0 shared tail: cancel callback, half-step, optional
+    // on-screen kind-9 item, then state 4. 4114f0 does not consult protection;
+    // 411770/4119c0 do. 4119c0 creates the item after the half-step.
+    bool cancel_bullet_state4(StageBullet&, bool spawn_cancel, bool item_after_half_step,
+                              bool respect_protection);
+    std::function<bool(i32,const Vec3&)> stationary_cancel_effect;
+    std::function<bool(i32,const Vec3&,const Vec3&)> bullet_cancel_effect;
     // ---- etEx 行为队列（0x40f030 / 0x40db10 / 0x40f79a / 0x4114f0）----
     // 消费弹体 ex 队列到首个阻塞项（op 0 / flags 门 / op 位已活跃）。
     // spawn_time=true 时为 0x40e840 尾的出生消费（事件窗 RNG 次序敏感）。
@@ -411,6 +625,15 @@ public:
     void drop_table(StageEnemy& enemy);
     // 0x4114f0：615/616 半径消弹；spawn_cancel = 615（场内弹产取消道具）。
     void cancel_bullets_radius(const StageEnemy& enemy, float radius, bool spawn_cancel);
+    void cancel_bullets_radius(const Vec3& center, float radius, bool spawn_cancel,
+                               bool respect_protection = false);
+    // 0x4119c0：旋转矩形 + 384x448 屏内矩形消弹（Marisa/Sanae/Youmu）。
+    // Explicit radius permits point geometry in diagnostics. Retail 4119c0
+    // uses each bullet's hit_scale * hit_size[0] for both rectangles.
+    void cancel_bullets_box(const Vec3& center, const Vec3& size, float angle,
+                            float bullet_radius, bool spawn_cancel,
+                            bool respect_protection = false,
+                            bool use_bullet_radius = false);
     // 0x40ffe0/0x40e840 的发射内核：按 et 视图逐 (way, idx) 产事件与弹体
     // （StageCommands::fire_et 与 etEx op 0x2000 子弹发射共用）。
     // slot = 事件口径的发射器号（601 的实参；0x2000 子发射按 oracle 的
@@ -418,6 +641,25 @@ public:
     // et dword 0x23A 默认；0x2000 子弹 = 打包 i4 的 byte0）。
     void emit_et(const StageEt& et, u32 enemy_serial, u32 slot, const float spawn[3], float aim,
                  u32 ex_seed = 0);
+    void advance_lasers();
+    void cancel_lasers(bool reset_protection = true); // 545/613 -> 434940, including effects
+    bool cancel_laser(StageLaser&); // virtual+1c: cancellation, without clearing protection/ID
+    void cancel_lasers_radius(const Vec3&, float radius, bool respect_protection = true);
+    void cancel_lasers_box(const Vec3&, const Vec3& size, float angle,
+                           bool items = false, bool respect_protection = true);
+    void split_laser(size_t index, const Vec3&, const Vec3& size, float angle,
+                     bool circle, bool items, bool respect_protection);
+    bool laser_effect(const StageLaser&, const Vec3&, bool rectangle = false);
+    void append_laser(StageLaser);
+    StageLaser* find_laser(i32 id);
+    void emit_infinite_laser(const StageEt&, const StageEnemy&, i32 id);
+    void emit_beam_laser(const StageEt&, const StageEnemy&, i32 id);
+    void emit_line_laser(const StageEt&,const StageEnemy&);
+    void emit_curve_laser(const StageEt&,const StageEnemy&);
+    void split_curve_laser(size_t index,const Vec3&,const Vec3&,float angle,
+                           bool circle,bool spawn_items,bool respect_protection);
+    bool advance_line_behaviors(StageLaser&);
+    u32 laser_serial = 0x10000; // 42fc20 / 42fed0 global allocation serial
 
 private:
     // 0x40db10 的逐帧行为派发（op1/op4/op8/0x10/0x40/wait），行为可能改写
@@ -431,7 +673,12 @@ private:
     void integrate(StageEnemy& enemy);   // 0x419450 + 0x419950 子集
     bool in_bounds(StageEnemy& enemy);   // 0x419450 出界自杀
     u32 spawned_ = 0;
-    u32 next_serial_ = 0;
+    // 00418d30 zeroes the manager, reserves serial 0, then sets +bc to 1.
+    u32 next_serial_ = 1;
+    u32 next_bullet_generation_ = 0;
+    std::vector<i32> bullet_free_slots_;
+    std::vector<size_t> bullet_pool_order() const;
+    void release_bullet_slot(StageBullet& bullet);
 };
 
 }  // namespace th13

@@ -171,6 +171,14 @@ int main() {
     CHECK(!bomb.step(300, rng4).has_value(), "age 300 无生成");
     CHECK(rng4.index() == idx_end, "终止后不抽随机");
 
+    // 40ceac uses the global-rate pointer for the slot's scale timer.
+    bomb.reset();
+    (void)bomb.step(0, rng4);
+    bomb.set_vm(0, true, 0, .5f);
+    CHECK(bomb.rect_scale(0) == 0 && bomb.scale(0) == .5f, "half-rate first tick");
+    bomb.set_vm(0, true, 0, .5f);
+    CHECK(bomb.rect_scale(0) == .5f && bomb.scale(0) == 1.f, "half-rate second tick");
+
     if (failures == 0) std::printf("youmu_bomb_test: ALL PASS\n");
     return failures == 0 ? 0 : 1;
 }

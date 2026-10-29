@@ -73,6 +73,10 @@ struct PresentationFixture {
         CHECK(manager.load(5, bytes.data(), u32(bytes.size())));
         CHECK(read_file(player_anm, bytes));
         CHECK(manager.load(6, bytes.data(), u32(bytes.size())));
+        // 00405530: astral.anm 装在原版槽 25，神霊 VM（0x439088 kind*6+1）
+        // 由 StagePresentation 的 spirit bank 25 创建。
+        CHECK(read_file("artifacts/reference/raw/astral.anm", bytes));
+        CHECK(manager.load(25, bytes.data(), u32(bytes.size())));
     }
 };
 
@@ -115,15 +119,27 @@ TEST(spirit_vm_submit_layer8_and_follow) {
             if (candidate->source_script == 1) { vm = candidate; break; }
     CHECK(vm != nullptr);
     if (!vm) return;
-    CHECK(vm->visible);
-    CHECK_EQ(vm->visual.layer, 8);  // ins_304(8)：draw-layer 提交
-    CHECK_EQ(vm->sprite->width, 32.0f);  // 真实 enemy.anm 32x32 神霊帧
+    // astral.anm script1：ins_3(-1 t=200) 先挂起（visible=0），首帧后由
+    // ins_304(6)/ins_500 子链推进；slot 25 的精灵由子脚本 2/3（30x30）绘制。
+    CHECK(!vm->visible);
+    CHECK_EQ(vm->visual.layer, 6);  // astral.anm script1 ins_304(6)
+    CHECK_EQ(vm->visual.translation.y, 300.0f);
     CHECK_NEAR(vm->visual.translation.x, 10.0f, 1e-5f);
-    CHECK_NEAR(vm->visual.translation.y, 300.0f, 1e-5f);
+    // 真实精灵源：astral.anm 子脚本 2/3 的 30x30 sprite（不是旧 enemy.anm 32x32）。
+    bool saw_child_sprite = false;
+    for (u32 h = 1; h < 0x10000u; ++h)
+        if (auto* child = fx.manager.registry.find(h))
+            if (child->source_script == 2 || child->source_script == 3) {
+                saw_child_sprite = true;
+                CHECK(child->sprite != nullptr);
+                if (child->sprite) CHECK_EQ(child->sprite->width, 30.0f);
+            }
+    CHECK(saw_child_sprite);
     // 位移跟随（0x438730 尾 +0x574 回写）。
     s.y = 280.0f;
     CHECK(fx.presentation.sync(battle, 0));
     CHECK_NEAR(vm->visual.translation.y, 280.0f, 1e-5f);
+    CHECK_NEAR(vm->visual.translation.x, 10.0f, 1e-5f);
 }
 
 TEST(spirit_vm_kind1_and_trance_variant_script) {
@@ -274,7 +290,7 @@ TEST(item_vm_two_scripts_layer0_and_collect_retire) {
     // 收集：玩家 (0,200) 盒内 → type1 小P power+1；两 VM 同帧 retire。
     auto collector = collector_for(progress, player, score, 10.0f, 205.0f);
     battle.item_manager.update(collector);
-    CHECK(!battle.item_manager.items()[0].alive);
+    CHECK(!battle.item_manager.items()[599].alive);
     CHECK_EQ(player.power, 101);
     CHECK(fx.presentation.sync(battle, 0));
     CHECK(fx.manager.update());
@@ -326,6 +342,46 @@ TEST(youmu_slash_vm_script19_layer11_and_lifecycle) {
     }
     CHECK(!battle.youmu_bomb_.has_anm(0));
     CHECK(!battle.youmu_bomb_.active(0));
+}
+
+TEST(power_rebuild_creates_option_trees_with_deferred_translation) {
+    PresentationFixture fx("artifacts/reference/raw/pl03.anm");
+    StageBattle battle; SessionState progress; HudPlayerState player; HudScoreState score;
+    struct ShtProvider : EclResourceProvider {
+        std::vector<u8> sht;
+        bool read(const std::string&, std::vector<u8>& bytes) override { bytes = sht; return true; }
+        bool animation(u32, const std::string&) override { return true; }
+    } provider;
+    CHECK(read_file("artifacts/reference/raw/pl03a.sht", provider.sht));
+    progress.character = 3; progress.stage = 2;
+    CHECK(battle.prepare_player(provider, progress, player, "player.sht", true));
+    battle.restore_replay_player(0, 51200, false);
+    CHECK(fx.presentation.sync_player_options(battle));
+    player.power = 300;
+    battle.restore_replay_player(6400, 12800, false);
+    const u32 before = fx.random.index();
+    CHECK(fx.presentation.sync_player_options(battle, true));
+    CHECK_EQ(fx.random.index() - before, 12u);
+    int found = 0;
+    for (u32 i = 0; i < fx.manager.registry.ordered_count(false); ++i) {
+        auto* vm = fx.manager.registry.find(fx.manager.registry.ordered_handle(false, i));
+        if (!vm || vm->source_script != 15 || (vm->visual.render_flags & 0x20)) continue;
+        ++found;
+        CHECK_EQ(vm->visual.translation.x, 0.f);
+        CHECK_EQ(vm->visual.translation.y, -32.f);
+        CHECK_EQ(fx.manager.registry.children(*vm).size(), size_t(1));
+    }
+    CHECK_EQ(found, 3);
+    CHECK(fx.presentation.sync_player_options(battle)); // same frame sync
+    CHECK(fx.presentation.sync_player_options(battle)); // next frame
+    found = 0;
+    for (u32 i = 0; i < fx.manager.registry.ordered_count(false); ++i) {
+        auto* vm = fx.manager.registry.find(fx.manager.registry.ordered_handle(false, i));
+        if (!vm || vm->source_script != 15 || (vm->visual.render_flags & 0x20)) continue;
+        ++found; CHECK_EQ(vm->visual.translation.x, 50.f);
+        CHECK_EQ(vm->visual.translation.y, 100.f);
+    }
+    CHECK_EQ(found, 3);
 }
 
 int main() {

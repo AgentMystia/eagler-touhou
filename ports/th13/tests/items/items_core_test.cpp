@@ -70,12 +70,13 @@ bool has_event(ItemManager& mgr, ItemEvent::Kind kind, i32 value) {
 
 }  // namespace
 
+// 413e50/42f020: ordinary slots start at599, cancel slots at2647.
 // ---- 生成与钳制（0x42f020）----
 
 TEST(item_spawn_state_and_clamp) {
     ItemManager mgr;
     mgr.spawn_item(300.0f, 200.0f, 0.0f, 1, -1.5707964f, 2.2f);
-    const Item& it = mgr.items()[0];
+    const Item& it = mgr.items()[599];
     CHECK(it.alive);
     CHECK_EQ(it.state, 1);
     CHECK_EQ(it.type, 1);
@@ -90,13 +91,13 @@ TEST(item_spawn_state_and_clamp) {
 TEST(item_cancel_spawn_state5_delay) {
     ItemManager mgr;
     mgr.spawn_item(0.0f, 300.0f, 0.0f, 9, -1.5707964f, 2.2f);
-    const Item& first = mgr.items()[0];
+    const Item& first = mgr.items()[2647];
     CHECK_EQ(first.state, 5);
     CHECK_EQ(first.type, 9);
     CHECK_EQ(first.type2, 9);
     CHECK_EQ(first.sprite, 0);  // 首件 total&3 = 0
     mgr.spawn_item(10.0f, 300.0f, 0.0f, 9, -1.5707964f, 2.2f);
-    CHECK_EQ(mgr.items()[1].sprite, 1);  // 次件 total=1 &3
+    CHECK_EQ(mgr.items()[2646].sprite, 0);  // native42f020 does not increment the counter
 }
 
 // ---- 落下/追踪状态机（0x42e380）----
@@ -106,7 +107,7 @@ TEST(item_falling_physics_old_velocity_first) {
     ItemManager mgr;
     mgr.spawn_item(0.0f, 300.0f, 0.0f, 1, -1.5707964f, 2.2f);
     mgr.update(fix.collector);
-    const Item& it = mgr.items()[0];
+    const Item& it = mgr.items()[599];
     CHECK_EQ(it.state, 1);
     CHECK_NEAR(it.y, 300.0f - 2.2f, 1e-4f);  // 旧速位移
     CHECK_NEAR(it.vy, -2.2f + 0.03f, 1e-5f);  // 后加减速
@@ -119,7 +120,7 @@ TEST(item_falling_vy_nonnegative_zeroes_vx) {
     ItemManager mgr;
     mgr.spawn_item(0.0f, 300.0f, 0.0f, 1, 0.0f, 2.2f);  // 水平初速
     mgr.update(fix.collector);
-    const Item& it = mgr.items()[0];
+    const Item& it = mgr.items()[599];
     CHECK_NEAR(it.x, 2.2f, 1e-5f);  // 首帧仍按旧 vx 位移
     mgr.update(fix.collector);
     CHECK_NEAR(it.x, 2.2f, 1e-5f);  // vy>=0 → vx 清零
@@ -131,7 +132,7 @@ TEST(item_bottom_recycle_no_reward) {
     ItemManager mgr;
     mgr.spawn_item(0.0f, 475.0f, 0.0f, 1, -1.5707964f, 2.2f);
     mgr.update(fix.collector);
-    CHECK(!mgr.items()[0].alive);  // y>472 回收，无结算
+    CHECK(!mgr.items()[599].alive);  // y>472 回收，无结算
     CHECK(mgr.events().empty());
 }
 
@@ -140,7 +141,7 @@ TEST(item_pickup_line_homing) {
     ItemManager mgr;
     mgr.spawn_item(10.0f, 200.0f, 0.0f, 1, -1.5707964f, 2.2f);
     mgr.update(fix.collector);
-    const Item& it = mgr.items()[0];
+    const Item& it = mgr.items()[599];
     CHECK_EQ(it.state, 3);
     // 追踪步：位移恰 3.0（collector.homing_speed），初速 +0.2。
     const float dx = -10.0f, dy = -100.0f;
@@ -154,7 +155,7 @@ TEST(item_state2_to3_transition_frame_homes) {
     Fixture fix(0.0f, 100.0f);
     ItemManager mgr;
     mgr.spawn_item(0.0f, 300.0f, 0.0f, 9, -1.5707964f, 2.2f);
-    Item& it = mgr.items()[0];
+    Item& it = mgr.items()[2647];
     it.sprite = 0;
     mgr.update(fix.collector);  // state5 → 2（无位移）
     CHECK_EQ(it.state, 2);
@@ -171,11 +172,11 @@ TEST(item_deathbomb_reverts_homing) {
     ItemManager mgr;
     mgr.spawn_item(10.0f, 200.0f, 0.0f, 1, -1.5707964f, 2.2f);
     mgr.update(fix.collector);
-    CHECK_EQ(mgr.items()[0].state, 3);
+    CHECK_EQ(mgr.items()[599].state, 3);
     ItemCollector dying = fix.collector;
     dying.state = 4;  // 决死窗（player+0x65c == 4）
     mgr.update(dying);
-    const Item& it = mgr.items()[0];
+    const Item& it = mgr.items()[599];
     CHECK_EQ(it.state, 1);  // LAB_0042e7d7：3/4 同门回落
     CHECK_NEAR(it.vx, 0.0f, 1e-6f);
     CHECK_NEAR(it.vy, 0.0f, 1e-6f);
@@ -188,7 +189,7 @@ TEST(item_collect_small_power_and_level_cross) {
     ItemManager mgr;
     mgr.spawn_item(0.0f, 200.0f, 0.0f, 1, -1.5707964f, 2.2f);
     mgr.update(fix.collector);
-    CHECK(!mgr.items()[0].alive);
+    CHECK(!mgr.items()[599].alive);
     CHECK_EQ(fix.hud.power, 101);  // 100 → 101 无跨档
     CHECK(!has_event(mgr, ItemEvent::Kind::PowerLevelUp, -1));
     mgr.clear_events();
@@ -234,7 +235,7 @@ TEST(item_big_power_variant_full_adds_two_max_point) {
     ItemManager mgr;
     mgr.spawn_item(0.0f, 200.0f, 0.0f, 8, -1.5707964f, 2.2f);
     mgr.update(fix.collector);
-    CHECK_EQ(fix.progress.max_point, 10002);  // 0x42f510(2.0) 非 100
+        CHECK_EQ(fix.progress.max_point, 20000);  // 0x42f510: fmul 100.0 @4ae868 → 100×100
     CHECK(has_event(mgr, ItemEvent::Kind::ScorePopup, 100));
 }
 
@@ -263,7 +264,7 @@ TEST(item_point_value_high_and_low) {
         fix.progress.max_point = 10000;
         ItemManager mgr;
         mgr.spawn_item(0.0f, 250.0f, 0.0f, 2, -1.5707964f, 2.2f);
-        Item& it = mgr.items()[0];
+        Item& it = mgr.items()[599];
         it.state = 3;  // 追踪态 → 高位公式
         for (int i = 0; i < 100 && it.alive; ++i) mgr.update(fix.collector);
         CHECK(!it.alive);
@@ -384,12 +385,12 @@ TEST(item_cancel_spirit_collect) {
     fix.progress.max_point_cap = 10000000;
     ItemManager mgr;
     mgr.spawn_item(0.0f, 200.0f, 0.0f, 9, -1.5707964f, 2.2f);
-    Item& it = mgr.items()[0];
+    Item& it = mgr.items()[2647];
     it.state = 2;  // 越过 state5 计时直入上升态
     mgr.update(fix.collector);
     CHECK(!it.alive);
     CHECK_EQ(fix.score.score, 1);          // 10/10 原值
-    CHECK_EQ(fix.progress.max_point, 10002);  // 0x42f510(2)
+    CHECK_EQ(fix.progress.max_point, 10010);  // 0x42f510: fmul 100.0 → 0.1×100
 }
 
 // ---- 吸附盒（0x42e380:305-315）----
@@ -400,7 +401,7 @@ TEST(item_auto_collect_box_to_state4) {
     mgr.spawn_item(30.0f, 100.0f, 0.0f, 1, -1.5707964f, 2.2f);
     mgr.update(fix.collector);
     // y<128 且玩家活跃 → state3 追踪而非吸附。吸附盒仅在「未追踪」时触发。
-    CHECK_EQ(mgr.items()[0].state, 3);
+    CHECK_EQ(mgr.items()[599].state, 3);
 }
 
 TEST(item_auto_collect_box_while_falling) {
@@ -409,7 +410,7 @@ TEST(item_auto_collect_box_while_falling) {
     ItemManager mgr;
     mgr.spawn_item(30.0f, 300.0f, 0.0f, 1, -1.5707964f, 2.2f);
     mgr.update(fix.collector);
-    const Item& it = mgr.items()[0];
+    const Item& it = mgr.items()[599];
     CHECK_EQ(it.state, 4);
     CHECK_NEAR(it.homing_speed, 1.0f, 1e-5f);  // 3.0/3
     CHECK(it.alive);  // 未收集（在收集盒外）
@@ -422,7 +423,7 @@ TEST(item_dialog_blocks_magnet_only) {
     ItemCollector dialog = fix.collector;
     dialog.dialog = true;
     mgr.update(dialog);
-    CHECK_EQ(mgr.items()[0].state, 3);  // 对话 → 磁门关 → 追踪
+    CHECK_EQ(mgr.items()[599].state, 3);  // 对话 → 磁门关 → 追踪
 }
 
 // ---- 神霊生成（0x438ec0）----
@@ -518,6 +519,51 @@ TEST(spirit_free_to_tracking) {
     CHECK_NEAR(s.speed, 0.9f, 1e-5f);  // 每帧 +0.3
 }
 
+TEST(spirit_motion_quantizes_after_float_velocity_like_original) {
+    struct Case { float x, y, speed, angle, expected_x, expected_y; };
+    for (const auto value : {Case{-10.123f, 100.007f, 1.0f, 0.0f, -9.13f, 100.0f},
+                             Case{-10.123f, 100.007f, 1.0f, -1.5707963705062866f,
+                                  -10.13f, 99.0f},
+                             Case{0.0f, 0.0f, 3.125f, 0.7853981852531433f, 2.2f, 2.2f}}) {
+        GameRandom random(3);
+        ItemManager mgr(&random);
+        Fixture fix(180.0f, 400.0f);
+        mgr.spawn_value_item(1, value.x, value.y, 0, 0.5f);
+        Spirit& spirit = mgr.spirits()[0];
+        spirit.state = 2;
+        spirit.x = value.x;
+        spirit.y = value.y;
+        spirit.angle = value.angle;
+        spirit.speed = value.speed;
+        fix.collector.x = value.x + std::cos(value.angle) * 1000.0f;
+        fix.collector.y = value.y + std::sin(value.angle) * 1000.0f;
+        mgr.update_spirits(fix.collector);
+        CHECK_EQ(spirit.x, value.expected_x);
+        CHECK_EQ(spirit.y, value.expected_y);
+        CHECK(spirit.alive);
+    }
+}
+
+TEST(spirit_right_edge_reflects_when_other_axis_is_outside) {
+    // Marisa replay f5147: x==192 while y<0. 40bb70 opens the bounce
+    // branch for y; 43878b–438798 includes the right-edge equality.
+    GameRandom random(3);
+    ItemManager mgr(&random);
+    Fixture fix(0.f, 300.f);
+    mgr.spawn_value_item(3, 0.f, 0.f, 0.f, 0.5f);
+    Spirit& spirit = mgr.spirits()[0];
+    spirit.x = 192.f; spirit.y = -0.59f;
+    spirit.angle = 0.f; spirit.move_speed = 0.1f;
+    mgr.update_spirits(fix.collector);
+    CHECK_EQ(spirit.x, 191.9f);
+
+    // At the same right edge inside the box, 40bb70 keeps the branch shut.
+    spirit.x = 192.f; spirit.y = 100.f;
+    spirit.angle = 0.f; spirit.move_speed = 0.1f;
+    mgr.update_spirits(fix.collector);
+    CHECK_EQ(spirit.x, 192.1f);
+}
+
 TEST(spirit_collect_kind0_common_trance_and_piece) {
     GameRandom random(3);
     ItemManager mgr(&random);
@@ -530,6 +576,29 @@ TEST(spirit_collect_kind0_common_trance_and_piece) {
     CHECK_EQ(fix.progress.ending_points, 2);   // 公共 trance +2
     CHECK_EQ(fix.hud.life_pieces, 1);          // kind0 → 残机碎片
     CHECK(has_event(mgr, ItemEvent::Kind::Collected, 10));
+}
+
+TEST(trance_born_life_spirit_adds_two_pieces_and_crosses_threshold_once) {
+    // 438d09 passes EAX=2 to43d330; ordinary-born 438b5d passes1. The
+    // decision follows the spirit's birth flag even after Trance has ended.
+    GameRandom random(3);
+    SessionState session; trance_begin(session);
+    ItemManager mgr(&random); mgr.bind_session(session);
+    Fixture fix(0, 200, 20);
+    fix.hud.extra_lives = 2; fix.hud.life_pieces = 7;
+    fix.score.score = 1234;
+    mgr.spawn_value_item(0, 0, 200, 0, .5f);
+    auto& spirit = mgr.spirits()[0];
+    CHECK(spirit.flags & 1u);
+    spirit.x = 5; spirit.y = 205;
+    trance_end(session, false);
+    mgr.update_spirits(fix.collector);
+    CHECK(!spirit.alive);
+    CHECK_EQ(fix.hud.extra_lives, 3);
+    CHECK_EQ(fix.hud.life_pieces, 1);
+    CHECK_EQ(fix.progress.life_piece_threshold_index, 1);
+    CHECK_EQ(fix.progress.ending_points, 0);
+    CHECK_EQ(fix.score.score, 1234);
 }
 
 TEST(spirit_collect_kind3_score_and_trance) {
@@ -574,7 +643,8 @@ TEST(spirit_collect_kind1_max_point_and_char2_trance) {
     Spirit& s = mgr.spirits()[0];
     s.x = 5.0f; s.y = 205.0f;
     mgr.update_spirits(fix.collector);
-    CHECK_EQ(fix.progress.max_point, 10002);
+    // 0x438baf: fld 10.0 → 0x42f510 fmul 100.0 → +1000
+    CHECK_EQ(fix.progress.max_point, 11000);
     CHECK_EQ(fix.progress.ending_points, 3);  // +2 公共 +1 角色门
 }
 

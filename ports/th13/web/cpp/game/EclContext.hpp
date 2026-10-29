@@ -19,7 +19,8 @@ class EclContext;
 class EclThreads;
 
 // 游戏指令（opcode > 93）回调：原版经 EnemyInf 虚表槽 +0（0x41b250→0x41b260）分发。
-// 返回契约（§3.2）：0 前移；1 本帧让出（不前移，下帧重取）；-1 线程终止；-2 错误。
+// 返回契约：0 前移；1 冻结指令及脚本时钟（519/520，原版返回-1）；
+// -1 本次解释器让出；-2 错误。让出仍推进插值通道。
 class EclCommands {
 public:
     virtual ~EclCommands() = default;

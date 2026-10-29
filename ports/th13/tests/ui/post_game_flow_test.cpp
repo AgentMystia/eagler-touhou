@@ -1,11 +1,16 @@
 // 对局内覆盖层 PostGameFlow 单测（S3 第一阶段）：0x42cd40 关终了主干
 //（每关百万奖/换关请求/关号推进）、计分公式边界（点值制与 999,999,999 封顶）、
 // 六面通关演出 180f/379f、Extra/练习/符卡练习/全灭入口分流。
+// Ending 链（fix-ending-20261028）：0xf 请求 → EndingScene（0x416570）→
+// 脚本 END → 0x10 请求（0x416610）——宿主侧 0x10 → 标题变体 3 属 sdl 层
+// apply_destination，本套件验证 game 层 0xf→EndingScene→0x10 全链。
 #include "../harness/test_framework.hpp"
 
+#include "game/EndingScene.hpp"
 #include "game/PostGameFlow.hpp"
 #include "game/ScoreBoard.hpp"
 
+#include <map>
 #include <vector>
 
 using namespace th13;
@@ -14,8 +19,14 @@ namespace {
 
 struct RecordPlatform final : PostGamePlatform {
     std::vector<i32> requests, bgms;
+    int practice_ends = 0;
+    bool practice_end_result = true;
     void request_destination(i32 raw) override { requests.push_back(raw); }
     void bgm(i32 id) override { bgms.push_back(id); }
+    bool request_practice_end() override {
+        ++practice_ends;
+        return practice_end_result;
+    }
 };
 
 struct FlowHarness {
@@ -39,13 +50,15 @@ TEST(score_formulas_byte_semantics) {
     // 0x42abf0：bonus = 关号×1,000,000（点值 /10 入账）。
     CHECK_EQ(stage_clear_bonus(1), 1000000);
     CHECK_EQ(stage_clear_bonus(6), 6000000);
-    // 0x42ce96-0x42ced0 四难度六面全通奖（残=3 灵=1 例）。
-    CHECK_EQ(all_clear_bonus(0, 3, 1), (3 + 1 * 4) * 250000);
-    CHECK_EQ(all_clear_bonus(1, 3, 1), (3 + 1 * 3) * 1000000);
-    CHECK_EQ(all_clear_bonus(2, 3, 1), 1 * 5000000 + 3 * 1500000);
-    CHECK_EQ(all_clear_bonus(3, 3, 1), (3 + 1 * 5) * 2000000);
-    // 0x42cfb3：Extra (残+灵×10)×4,000,000。
-    CHECK_EQ(extra_clear_bonus(2, 3), (2 + 3 * 10) * 4000000);
+    // 0x42cd40:43-53 四难度六面全通奖：残 = DAT_004be7f4、灵 = DAT_004be800。
+    // 0x444a10 在残机扣减后调 FUN_0042ae90(残 HUD)；0x40a3b0 在灵击扣减后
+    // 调 FUN_0042af60(灵 HUD)，故残=3、灵=1 例：case0 = (灵 + 残×4)。
+    CHECK_EQ(all_clear_bonus(0, 3, 1), (1 + 3 * 4) * 250000);
+    CHECK_EQ(all_clear_bonus(1, 3, 1), (1 + 3 * 3) * 1000000);
+    CHECK_EQ(all_clear_bonus(2, 3, 1), 3 * 5000000 + 1 * 1500000);
+    CHECK_EQ(all_clear_bonus(3, 3, 1), (1 + 3 * 5) * 2000000);
+    // 0x42cd40:76：Extra (灵 + 残×10)×4,000,000。
+    CHECK_EQ(extra_clear_bonus(2, 3), (3 + 2 * 10) * 4000000);
     // 点值制入账 + 封顶（0x3b9ac9ff，0x42cef3/0x42cfe7 比较语义）。
     CHECK_EQ(add_bonus_capped(0, 1000000), 100000u);
     CHECK_EQ(add_bonus_capped(999999999, 1000000), 999999999u);
@@ -119,10 +132,20 @@ TEST(stage6_all_clear_and_ending_sequence) {
     CHECK_EQ(harness.host.requests.size(), 1u);
     CHECK_EQ(harness.host.requests[0], 0xf);  // 请求结局
     CHECK(!harness.flow.clear_sequence());
-    // 残>=3 时资格计数置 3（0x42cd40:36-38）。
+    // 0x42cd40:36-38：`if (2 < DAT_004be800) good_endings = 3`。DAT_004be800
+    // 是灵击库存（0x40a3b0 扣减并调 FUN_0042af60 灵 HUD），不是残机。
+    // 残=3/灵=2 不满足 0x42cd40:37 的灵门。
+    FlowHarness lives_high;
+    lives_high.progress.stage = 6;
+    lives_high.player.extra_lives = 3;
+    lives_high.player.bombs = 2;
+    lives_high.flow.on_stage_clear();
+    CHECK_EQ(lives_high.progress.good_endings, 0);
+    // 灵=3 满足 0x42cd40:37。
     FlowHarness capped;
     capped.progress.stage = 6;
-    capped.player.extra_lives = 3;
+    capped.player.extra_lives = 0;
+    capped.player.bombs = 3;
     capped.flow.on_stage_clear();
     CHECK_EQ(capped.progress.good_endings, 3);
 }
@@ -156,6 +179,88 @@ TEST(game_over_entry_freezes) {
     CHECK(harness.flow.frozen());
     CHECK_EQ(harness.host.bgms.size(), 1u);  // BGM th128_08（音频 TODO 记号）
     CHECK(harness.host.requests.empty());
+}
+
+TEST(practice_end_forwards_to_platform_and_checks_error) {
+    FlowHarness harness;
+    // 成功路径
+    CHECK(harness.flow.on_practice_end());
+    CHECK_EQ(harness.host.practice_ends, 1);
+    CHECK_EQ(int(harness.flow.state()), int(OverlayState::PracticeEntry));
+    CHECK(harness.flow.frozen());
+    CHECK(harness.flow.error.empty());
+
+    // 失败路径：宿主返回 false 时不吞没，记录 error 并返回 false
+    harness.host.practice_end_result = false;
+    CHECK(!harness.flow.on_practice_end());
+    CHECK_EQ(harness.host.practice_ends, 2);
+    CHECK(!harness.flow.error.empty());
+}
+
+TEST(stage6_clear_chain_runs_ending_scene_to_after_ending_request) {
+    // 0x42c550 0x4000 出口（0xf）→ 0x416570 Ending 场景 → 脚本 END →
+    // 0x416610 置 0x10（宿主 apply_destination 0x10 case → 拆卸 + 标题变体 3）。
+    FlowHarness harness;
+    harness.progress.stage = 6;
+    harness.progress.difficulty = 1;
+    harness.progress.character = 0;
+    harness.flow.on_stage_clear();
+    for (u32 frame = 0; frame < 380; frame++) harness.flow.update();
+    CHECK_EQ(harness.host.requests.size(), 1u);
+    CHECK_EQ(harness.host.requests[0], 0xf);
+
+    // Ending 侧（同一 SessionState）：结局索引 1（e01，char0 无续关）→ END → 0x10。
+    struct Save final : EndingSaveBytes {
+        std::array<u8, 13> bytes{};
+        u8 read(i32 index) const override {
+            return index >= 0 && index < 13 ? bytes[u32(index)] : u8(0);
+        }
+        void write(i32 index, u8 value) override {
+            if (index >= 0 && index < 13) bytes[u32(index)] = value;
+        }
+    };
+    struct Host final : EndingPlatform {
+        Save* save;
+        std::map<std::string, std::vector<u8>> assets;
+        std::vector<i32> requests;
+        bool read_asset(const std::string& name, std::vector<u8>& bytes,
+                        bool) override {
+            const auto found = assets.find(name);
+            if (found == assets.end()) return false;
+            bytes = found->second;
+            return true;
+        }
+        EndingSaveBytes* save_bytes() override { return save; }
+        bool request_destination(i32 raw) override {
+            requests.push_back(raw);
+            return true;
+        }
+        bool queue_music(i32, i32, const std::string&) override { return true; }
+        bool fade_out_music(i32) override { return true; }
+        bool advance_sound() override { return true; }
+        bool ending_page_line(i32, u32, const std::string&) override { return true; }
+    };
+    Save save;
+    Host host;
+    host.save = &save;
+    // e01 式短脚本：op5 等待（按下放行）→ END。
+    std::vector<u8> message{1, 0, 0, 0, 0x0c, 0, 0, 0, 0x00, 0x01, 0, 0};
+    const u8 wait[8] = {0, 0, 5, 4, 0x80, 0x8d, 0x5b, 0x00};
+    const u8 end[4] = {1, 0, 0, 0};
+    message.insert(message.end(), wait, wait + 8);
+    message.insert(message.end(), end, end + 4);
+    host.assets["e01.msg"] = std::move(message);
+    EndingScene ending(harness.progress, host);
+    CHECK(ending.initialize());
+    CHECK_EQ(ending.ending_index(), 1);
+    GameInput input;
+    CHECK(ending.update(input));   // 行 0：op5 进入等待
+    input.pressed = 0x1;           // Z 按下放行
+    CHECK(ending.update(input));   // op5 放行 → 行推进到 1
+    CHECK(ending.update(input));   // 行 1：END
+    CHECK(ending.finished());
+    CHECK_EQ(host.requests.size(), 1u);
+    CHECK_EQ(host.requests[0], 0x10);  // AfterEnding（拆卸 → 标题变体 3）
 }
 
 int main() { return th13test::run_all("对局内覆盖层"); }

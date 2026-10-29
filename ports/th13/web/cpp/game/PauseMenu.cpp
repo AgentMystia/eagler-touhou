@@ -32,9 +32,11 @@ bool PauseMenu::navigate(u32 pressed, u32 repeated, i32 label) {
 }
 
 // front132: 120/121/122/154/123；front133: 124/125/126（槽 0/1/4）；
+// front134: 127/128（槽 1/4）；
 // front142: 137/138/139/140/141。槽号同时决定 interrupt 7+slot。
 i32 PauseMenu::entry_script(i32 entry) const {
     if (state.screen == PauseScreen::GameOver) return 137 + entry;
+    if (state.screen == PauseScreen::PracticeEnd) return entry == 4 ? 128 : 127;
     if (state.practice) return entry == 4 ? 126 : 124 + entry;
     constexpr i32 scripts[] = {120, 121, 122, 154, 123};
     return scripts[entry];
@@ -42,17 +44,33 @@ i32 PauseMenu::entry_script(i32 entry) const {
 
 bool PauseMenu::configure_entries() {
     auto& menu = state.menu;
+    // 0x440960 态 0x17/0x18 共用三项菜单（0x19）：0 标题 / 1 录像保存 /
+    // 2 重试。态 0x18（BGameOver）在 0x15030(0) 之后追加 0x15030(2)，默认
+    // 光标落重试；没有续关项，不能 Continue。
+    if (state.screen == PauseScreen::ExtraEnd || state.screen == PauseScreen::BGameOver) {
+        menu.count=3; menu.wrapping=true; menu.disabled_count=0;
+        if (!state.can_save_replay && !menu.disable(1)) return false;
+        menu.select(state.screen == PauseScreen::BGameOver ? 2 : 0);
+        return true;
+    }
     menu.count = 5;
     menu.wrapping = true;
     menu.disabled_count = 0;
-    // 录像保存与设置尚未接入；保留原版槽位并用脚本的 disabled 标签显示。
-    for (i32 entry : {2, 3})
+    // 43e780 disables save/options in practice; 43fa90 disables save after
+    // a continue. PracticeEnd cannot resume.
+    for (i32 entry : {2, 3}) {
+        if ((entry == 2 && state.can_save_replay && !state.practice) ||
+            (entry == 3 && state.can_open_options && !state.practice && state.screen != PauseScreen::PracticeEnd)) continue;
         if (!menu.disable(entry) ||
-            ((!state.practice || state.screen == PauseScreen::GameOver) &&
+            (((!state.practice && state.screen != PauseScreen::PracticeEnd) ||
+              state.screen == PauseScreen::GameOver) &&
              !child(entry_script(entry), 14))) return false;
-    if (state.screen == PauseScreen::GameOver &&
+    }
+    if ((state.screen == PauseScreen::PracticeEnd ||
+         (state.screen == PauseScreen::GameOver && !state.can_continue)) &&
         (!menu.disable(0) || !child(entry_script(0), 14))) return false;
-    menu.select(state.screen == PauseScreen::GameOver ? 1 : 0);
+    menu.select((state.screen == PauseScreen::PracticeEnd ||
+                 (state.screen == PauseScreen::GameOver && !state.can_continue)) ? 1 : 0);
     return true;
 }
 
@@ -69,6 +87,10 @@ bool PauseMenu::update(u32 pressed, u32 repeated) {
     switch (state.phase) {
     case 0:  // 入场延迟后展开菜单
         if (age <= 9) break;
+        if ((state.screen == PauseScreen::ExtraEnd || state.screen == PauseScreen::GameOver) && state.result_needs_name) {
+            state.name_is_result=true; state.replay_name.clear(); state.name_cursor=90;
+            state.result_needs_name=false; phase(18); break;
+        }
         phase(6);
         if (!interrupt(state.menu_animation, 3, true) || !configure_entries()) return false;
         return
@@ -77,22 +99,39 @@ bool PauseMenu::update(u32 pressed, u32 repeated) {
         if (!navigate(pressed, repeated, 7)) return false;
         if (pressed & 0x80001) {
             if (!host.sound(7)) return false;
+            if (state.screen == PauseScreen::ExtraEnd || state.screen == PauseScreen::BGameOver) {
+                // 440960 state19: title, replay, retry (shared by 0x17/0x18).
+                state.selected_action = menu.cursor == 0 ? 1 : menu.cursor == 1 ? 2 : 4;
+                if (menu.cursor != 1 && !close()) return false;
+                phase(16); return true;
+            }
             state.selected_action = menu.cursor;
             if (menu.cursor == 0 || state.screen == PauseScreen::GameOver) {
-                if (!close()) return false;
+                if (menu.cursor != 2 && menu.cursor != 3 && !close()) return false;
                 phase(16);
             } else {
                 if (!child(entry_script(menu.cursor), 6)) return false;
-                phase(8);  // 原版 0043e780 case5：先闪烁20帧，再打开 Yes/No。
+                // 43e97e/43ea10: flash the selected child with label6 even
+                // for GameInf+74 != 0; that mode skips the Yes/No phase.
+                phase(state.practice ? 16 : 8);
             }
+            return true;
+        }
+        // 43e780 state 3: R selects retry and Q selects title directly.
+        if (state.screen == PauseScreen::Pause &&
+            (pressed & (0x10000u | 0x200000u))) {
+            state.selected_action = (pressed & 0x10000u) ? 1 : 4;
+            menu.select(state.selected_action);
+            if (!host.sound(7) || !close()) return false;
+            phase(16);
             return true;
         }
         if ((pressed & 0x100) && state.screen == PauseScreen::Pause) {
             if (!close()) return false;
             state.selected_action = 0;
             phase(16);
-        } else if ((pressed & 0x102) && state.screen == PauseScreen::GameOver) {
-            // GameOver 不能用 Esc 恢复一个已经死亡的对局。
+        } else if ((pressed & 0x102) && (state.screen == PauseScreen::GameOver || state.screen == PauseScreen::PracticeEnd)) {
+            // GameOver 与 PracticeEnd 不能用 Esc 恢复一个已经结束的对局。
             menu.select(1);
             return interrupt(state.menu_animation, 8) && host.sound(9);
         }
@@ -125,7 +164,7 @@ bool PauseMenu::update(u32 pressed, u32 repeated) {
     case 10:
         if (age < 20) break;
         if (menu.cursor == 0) {
-            if (!close()) return false;
+            if (state.selected_action != 2 && state.selected_action != 3 && !close()) return false;
             phase(16);
         } else {
             const i32 selected = state.selected_action;
@@ -137,9 +176,77 @@ bool PauseMenu::update(u32 pressed, u32 repeated) {
         break;
     case 16:  // 动画收场后执行所选动作
         if (age < 12) break;
+        if (state.selected_action == 2) {
+            state.replay_slot = 1; state.replay_name.clear(); state.name_cursor = 90; state.name_is_result=false;
+            phase(17); break;
+        }
+        if (state.selected_action == 3) {
+            state.option_row = 0; phase(19); break;
+        }
         if (!check(host.finish_selection(state.selected_action), "Pause selected action failed"))
             return false;
+        if (state.selected_action == 2 || state.selected_action == 3) {
+            const i32 selected = state.selected_action;
+            if (!interrupt(state.menu_animation, 3, true) || !configure_entries()) return false;
+            menu.select(selected);
+            if (!interrupt(state.menu_animation, 7 + selected)) return false;
+            phase(6);
+            break;
+        }
         state.select(PauseScreen::Inactive);
+        break;
+    case 17: // 43e780 state9: select one of 25 replay slots.
+        if (age <= 9) break;
+        if ((pressed | repeated) & 0x10) state.replay_slot = (state.replay_slot + 23) % 25 + 1;
+        if ((pressed | repeated) & 0x20) state.replay_slot = state.replay_slot % 25 + 1;
+        if (pressed & 0x80001) { state.replay_name.clear(); state.name_cursor=90; phase(18); }
+        else if (pressed & 0x102) {
+            if (state.screen == PauseScreen::ExtraEnd ||
+                state.screen == PauseScreen::BGameOver ||
+                state.screen == PauseScreen::GameOver) {
+                if (!interrupt(state.menu_animation,3,true) || !configure_entries()) return false;
+                phase(6); break;
+            }
+            if (!close()) return false;
+            state.selected_action=1; phase(16);
+        }
+        break;
+    case 18: { // Name entry, up to eight characters.
+        if (age <= 9) break;
+        constexpr i32 count = 91;
+        if ((pressed | repeated) & 0x10) state.name_cursor=(state.name_cursor+count-13)%count;
+        if ((pressed | repeated) & 0x20) state.name_cursor=(state.name_cursor+13)%count;
+        if ((pressed | repeated) & 0x40) state.name_cursor=(state.name_cursor+(state.name_cursor%13 == 0 ? 12 : count-1))%count;
+        if ((pressed | repeated) & 0x80) state.name_cursor=(state.name_cursor+(state.name_cursor%13 == 12 ? count-12 : 1))%count;
+        if (pressed & 0x80001) {
+            if (state.name_cursor == 89) {
+                if (!state.replay_name.empty()) state.replay_name.pop_back();
+            } else if (state.name_cursor == 90) {
+                if (state.name_is_result) {
+                    if (!host.record_result_name(state.replay_name) ||
+                        !interrupt(state.menu_animation,3,true) || !configure_entries()) return false;
+                    phase(6); break;
+                }
+                if (!host.save_replay_slot(state.replay_slot,state.replay_name)) return false;
+                phase(17);
+            } else {
+                const char ch=state.name_cursor == 88 ? ' ' : kResultNameCharacters[state.name_cursor];
+                if (state.replay_name.size() < 8) state.replay_name += ch;
+                else state.replay_name[7]=ch;
+                if (state.replay_name.size() >= 8) state.name_cursor=90;
+            }
+        } else if (pressed & 0x102) {
+            if (!state.replay_name.empty()) state.replay_name.pop_back();
+            else if (state.name_is_result) { if (!configure_entries()) return false; phase(6); }
+            else phase(17);
+        }
+        break;
+    }
+    case 19:
+        if ((pressed | repeated) & 0x30) state.option_row ^= 1;
+        if ((pressed | repeated) & 0x40) { if (!host.change_option(state.option_row,-5)) return false; }
+        if ((pressed | repeated) & 0x80) { if (!host.change_option(state.option_row,5)) return false; }
+        if (pressed & (0x80001|0x102)) { if (!configure_entries()) return false; phase(6); }
         break;
     }
     return true;

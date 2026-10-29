@@ -36,15 +36,17 @@ void PostGameFlow::on_stage_clear() {
             clear_sequence_ = true;
             clear_frame_ = 0;
             if (progress_.ending_points > 599) progress_.good_endings++;
-            if (player_.extra_lives > 2) progress_.good_endings = 3;
+            if (player_.bombs > 2) progress_.good_endings = 3;
             const i32 bonus = all_clear_bonus(progress_.difficulty, player_.extra_lives,
                                               player_.bombs);
             score_.score = i32(add_bonus_capped(u32(score_.score), bonus));
             progress_.stage_clear_bonus += bonus;  // +0x2ac 累计
             // 通关次数 / 无续关通关计数（score 块 +0x7c8/+0x7e4，练习不记）
             // —— ScoreFile 落档期 TODO。
-            // 练习与常规六面都走 0x4000 演出（0x42c550 的 +0x78>0x17b 出口
-            // 才分练习→0x43e5a0 / 常规→请求 0xf）。
+            // 42cd40 checks GameInf+74 immediately after awarding the bonus.
+            // Replay/practice opens43e5a0 here; its0x10 freeze also suspends
+            // the0x4000 clear sequence. Only ordinary play waits for Ending.
+            if (practice) on_practice_end();
             return;
         }
         if (progress_.stage == 7) {
@@ -83,10 +85,17 @@ void PostGameFlow::on_stage_clear() {
 void PostGameFlow::on_game_over() {
     // 0x43f570 骨架：mode0 → 态 0xe（GameOver 展示）；mode≠0 → 0x18（结算B
     // GameOver 变体）；置 0x10、BGM th128_08、slow rate 记录 TODO。
+    // Live production routing is host-owned: RunScene calls
+    // RunSceneServices::request_game_over and Application opens
+    // PauseEntrance::GameOver/BGameOver. This method only mirrors the overlay
+    // state machine (tests/diagnostics) and does not drive the real menu.
     host_.bgm(7);  // 「th128_08」（0x43f570:58；音频接线 TODO，先记号）
     const u32 mode = (progress_.run_mode_flags >> 4) & 3;
     if (mode == 0) {
         enter(OverlayState::GameOverShow);
+        // The retail menu enables Continue only while DAT_004be844 > 0.
+        // Keep the decision source in session state for the pause host.
+        if (progress_.continue_stock < 0) progress_.continue_stock = 0;
         // 后续：0x43d650 落分 stage ctx+0x144/刷新 be810 → 0x43f8f0 排名门
         // → +0x1f8==0 态 0x13 否则态 0xf+建脚本 142。菜单交互/续关执行
         //（态 0x15：残2/灵2/灵力0/白点200 重置、be7c8++/be844--）TODO。
@@ -96,11 +105,14 @@ void PostGameFlow::on_game_over() {
     }
 }
 
-void PostGameFlow::on_practice_end() {
+bool PostGameFlow::on_practice_end() {
     // 0x43e5a0 骨架：态 2（练习结算入场）+ 结算页变体 1（DAT_004df120）。
     enter(OverlayState::PracticeEntry);
-    // 数字文本族（0x4971f0×4 + 0x4418b0）、主菜单（态 3）/退出口（态 4）的
-    // 菜单交互与脚本 75/134 创建 TODO（结算A 窗 oracle 落地后接）。
+    if (!host_.request_practice_end()) {
+        if (error.empty()) error = "Practice end request failed";
+        return false;
+    }
+    return true;
 }
 
 void PostGameFlow::on_extra_end() {
@@ -116,6 +128,7 @@ void PostGameFlow::on_extra_end() {
         enter(OverlayState::BClear);  // 0x1f：+0x50 后 0x441930 + 0x43d820
                                       // small score 落档 TODO
     }
+    if (!host_.request_extra_results()) error = "Extra results request failed";
 }
 
 void PostGameFlow::update() {
@@ -127,7 +140,10 @@ void PostGameFlow::update() {
         if (frozen()) return;
         clear_frame_++;
         if (clear_frame_ == 180) {
-            // 0x44 字节淡出任务（回调 0x45f430/0x45f3a0）——视觉 TODO。
+            if (!host_.request_stage6_fade()) {
+                error = "Stage 6 clear fade request failed";
+                return;
+            }
         }
         if (clear_frame_ > 379) {
             clear_sequence_ = false;

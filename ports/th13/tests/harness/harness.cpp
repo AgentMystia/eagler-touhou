@@ -140,9 +140,12 @@ bool read_whole_file(const std::string& path, std::vector<th13::u8>& out) {
 // 字段/键序与 oracle/battle_oracle.py _write_state_sample 一一对应；帧相位：
 // -1 = 装载完成后、首帧步进前（oracle 的 scene7 首帧/检测帧对应物），0 起
 // 每帧步进后一行。port 只读既有公开状态（StageBattle/HudPlayerState/
-// SessionState/HudScoreState），不改游戏代码；无对应来源的字段原样输出
-// null（spell_id、raw_enemy_manager、raw_globals.004be814——契约见
-// oracle/state_compare.py 模块 docstring，null 字段不进入裁决面）。
+// SessionState/HudScoreState），不改游戏代码。004be814 = DAT_004be814
+//（hi-score 达成时的续关数，0x42a370:35-38 每帧写 be814=be7c8）由
+// SessionState.high_score_extra 真映射（GameHudDraw.cpp:56-60 生产写点）；
+// 无对应来源的字段原样输出 null（spell_id：0x4be7d4 符卡练习选择，port
+// 无符卡练习模式；raw_enemy_manager：port 无 0x4c2188 ctl 完整镜像——契约
+// 见 oracle/state_compare.py 模块 docstring，null 字段不进入裁决面）。
 // player_position 与 oracle player+0x5B8/0x5BC 同基（game 坐标，非屏幕系）。
 void state_keys(th13::u16 state, std::string& out) {
     // oracle REPLAY_INPUT_VK：位→VK；输出按 VK 升序（oracle sorted()）。
@@ -173,11 +176,12 @@ void write_state_row(std::FILE* log, int frame, const th13::StageBattle& battle,
                  "\"power\":%d,\"power_step\":%d,\"spell_id\":null,"
                  "\"keys\":[%s],"
                  "\"raw_globals\":{\"004be7c0\":%d,\"004be7c8\":%d,"
-                 "\"004be810\":%d,\"004be814\":null},"
+                 "\"004be810\":%d,\"004be814\":%d},"
                  "\"raw_enemy_manager\":null}\n",
                  frame, double(battle.player_x), double(battle.player_y),
                  player.power, player.power_step, keys.c_str(),
-                 score.score, progress.continues, progress.high_score);
+                 score.score, progress.continues, progress.high_score,
+                 progress.high_score_extra);
 }
 
 
@@ -218,6 +222,12 @@ public:
     bool request_destination(i32 raw) override {
         destination = raw;
         return true;  // 生产由 Application 接线换场景；harness 记账并收窗
+    }
+    // harness 独占无音频服务模拟：记录请求并显式返回 true，不改 RunSceneServices 生产默认值
+    std::vector<std::tuple<i32, i32, std::string>> music_requests;
+    bool queue_music(i32 code, i32 value, const std::string& name) override {
+        music_requests.emplace_back(code, value, name);
+        return true;
     }
     bool read_asset(const std::string& name, std::vector<th13::u8>& bytes,
                     bool required) override {
@@ -325,6 +335,7 @@ struct ReplayRunSession {
         if (auto* file = animations.resource(4))
             capture.register_texture(file, 0, th13::u32(file->textures.size()), 6);
         if (!read_bank("bullet.anm", 5, 7)) return false;  // 原版槽 7
+        if (!read_bank("astral.anm", 25, 25)) return false; // 00405530 / 00438ec0.
         char player_anm[16];
         std::snprintf(player_anm, sizeof player_anm, "pl%02d.anm", replay_file.character & 3);
         if (!read_bank(player_anm, 6, 9)) return false;  // kPlayerBank；原版槽 9
@@ -489,7 +500,11 @@ int replay_runscene(const char* replay_path, const char* resource_dir,
             if (session->run->battle.sim.boss_nonspell_frame >= 0 && !nonspell_seen) {
                 nonspell_seen = true;
                 nonspell_frame = session->run->battle.sim.boss_nonspell_frame;
-                stop_after = consumed + 300;  // 非符锚点 +300 帧（§7.3 同窗）
+                // 当显式指定 frames（如用户整关 11675）或环境变量 TH13_REPLAY_FULL=1 时，不强制截断；
+                // 仅在默认旧短窗（frames==0 且未置 TH13_REPLAY_FULL）时保留 +300 截断
+                if (!frames && !std::getenv("TH13_REPLAY_FULL")) {
+                    stop_after = consumed + 300;  // 非符锚点 +300 帧（§7.3 同窗）
+                }
             }
         }
         if (session->host.game_over || session->host.destination) terminal = true;
@@ -673,6 +688,11 @@ bool DrawsSession::load_banks(DrawsProvider& provider, const char* player_anm) {
         return fail("effect.anm load failed: " + animations.error);
     if (auto* file = animations.resource(kDrawsEffectBank))
         capture.register_texture(file, 0, th13::u32(file->textures.size()), 8);
+    if (!read_whole_file(provider.dir + "/astral.anm", bytes) ||
+        !animations.load(25, bytes.data(), th13::u32(bytes.size())))
+        return fail("astral.anm load failed: " + animations.error);
+    if (auto* file = animations.resource(25))
+        capture.register_texture(file, 0, th13::u32(file->textures.size()), 25);
     // st01.ecl ANIM 名单合并 bank（web begin_run 同式；名单序 = mgr 槽 10 起）。
     std::vector<th13::u8> ecl;
     if (!read_whole_file(provider.dir + "/st01.ecl", ecl))

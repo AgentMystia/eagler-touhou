@@ -37,6 +37,22 @@ constexpr AddressAnchor kAnchors[] = {
                                    // Extra 0x42cfb3）；C++ 对应物 game/PostGameFlow::on_stage_clear
     {"post-game-overlay", 0x43dbc0},  // 覆盖层 31 态分发（结算A 0x43e780/GameOver 0x43fa90/
                                       // 结算B 0x440960）；C++ 对应物 game/PostGameFlow 骨架
+    // Ending 场景（2026-10-28，s6-full-20261028 Part B 反汇编规格）：
+    {"ending-scene", 0x416130},   // 结局场景初始化（0x416570 建对象；结局索引
+                                  // 0x41624e-0x416297/落档位 0x1b26a 区/e##.msg 名表
+                                  // 0x4bba20/0x4166d0 滚屏对象）；C++ 对应物
+                                  // game/EndingScene::initialize
+    {"ending-update", 0x416a10},  // 结局脚本解释器（每帧 0x416610 壳；记录
+                                  // [u16 行][u8 op][u8 len]，op 表 0x4171e8；
+                                  // END → 0x4dcc24=0x10）；C++ 对应物
+                                  // game/EndingScene::update
+    {"scene-dispatch", 0x43c1c0}, // supervisor 场景调度（case0xf → 0x42c500 战斗
+                                  // 拆卸 + 0x416570 Ending；case0x10 → 0x4165f0
+                                  // 拆卸 → 4 + dc670=3）；C++ 对应物
+                                  // sdl/ApplicationState::apply_destination
+    {"score-save", 0x449e50},     // scoreth13.dat 落盘序列化（'CR' 块 0x56dc×5 +
+                                  // 0x1b254 尾 + 0x4723a0 加密；0x42bfa0 首指令
+                                  // 调用）；C++ 对应物 sdl/FileStore::save（子集）
 };
 
 }  // namespace th13::rebuild

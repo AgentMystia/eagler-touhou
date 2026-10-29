@@ -85,8 +85,8 @@ private:
     touhou::graphics::PipelineState pipeline_state;
 };
 
-// 真实资源 bank 面：stage=st01enm.anm（ECL 文件索引 3 的文件内局部脚本号，
-// 与原版 0x4243e0(file_table[3], script) 同构）、bullet/player/effect 实物。
+// 生产 stage bank 按 ECL ANIM 表合并 enemy.anm 与 st01enm.anm。
+// 文件 3 的局部脚本号必须映射到第二份资源的合并偏移。
 struct PresentationRig {
     GameRandom random;
     AnmEnvironment environment;
@@ -94,6 +94,7 @@ struct PresentationRig {
     NullGraphics graphics;
     AnmRenderer renderer{graphics};
     std::unique_ptr<StagePresentation> presentation;
+    i32 enemy_script_count = 0;
 
     bool load_real_banks(th13test::TestFileReader& reader) {
         const auto load = [&](i32 bank, const char* name) {
@@ -102,7 +103,14 @@ struct PresentationRig {
                 return false;
             return manager.load(bank, bytes.data(), u32(bytes.size()));
         };
-        if (!load(4, "st01enm.anm")) return false;  // banks.stage
+        std::vector<u8> bytes;
+        AnmResource stage;
+        if (!reader.read("artifacts/reference/raw/enemy.anm", bytes) ||
+            !stage.append(bytes.data(), u32(bytes.size()))) return false;
+        enemy_script_count = i32(stage.scripts.size());
+        if (!reader.read("artifacts/reference/raw/st01enm.anm", bytes) ||
+            !stage.append(bytes.data(), u32(bytes.size())) ||
+            !manager.adopt(4, std::move(stage))) return false;
         if (!load(5, "bullet.anm")) return false;   // banks.bullet
         if (!load(6, "pl00.anm")) return false;     // banks.player
         // effect.anm（bank 8）真实文件装载现报 "Animation template 32:
@@ -188,12 +196,18 @@ TEST(anm_flip_commands_decode_and_submit) {
     for (auto& enemy : battle.sim.enemies)
         if (enemy->serial == battle.sim.anm_effects[0].serial) root = enemy.get();
     CHECK(root != nullptr);
-    CHECK(rig.presentation->sync(battle, 0));
+    if (!root) return;
+    bool synced = rig.presentation->sync(battle, 0);
+    CHECK(synced);
+    if (!synced) {
+        std::printf("  presentation error: %s\n", rig.presentation->error().c_str());
+        return;
+    }
     CHECK(root->anm_slot_handle[0] != 0);
     {
         const AnmVm* vm = rig.manager.registry.find(root->anm_slot_handle[0]);
         CHECK(vm != nullptr);
-        CHECK_EQ(vm->source_script, 0);
+        CHECK_EQ(vm->source_script, rig.enemy_script_count);
         CHECK_EQ(vm->visual.layer, 8);  // [+0x278]+7，构造默认 1
     }
     CHECK(battle.sim.anm_effects.empty());  // sync 清空（真实提交）
@@ -210,12 +224,17 @@ TEST(anm_flip_commands_decode_and_submit) {
         CHECK_EQ(request.slot, 0);
         CHECK_EQ(request.serial, root->serial);
     }
-    CHECK(rig.presentation->sync(battle, 0));
+    synced = rig.presentation->sync(battle, 0);
+    CHECK(synced);
+    if (!synced) {
+        std::printf("  presentation error: %s\n", rig.presentation->error().c_str());
+        return;
+    }
     CHECK(root->anm_slot_handle[0] != 0);
     {
         const AnmVm* vm = rig.manager.registry.find(root->anm_slot_handle[0]);
         CHECK(vm != nullptr);
-        CHECK_EQ(vm->source_script, 5);  // 重挂到翻转脚本
+        CHECK_EQ(vm->source_script, rig.enemy_script_count + 5);  // 重挂到翻转脚本
         CHECK_EQ(vm->visual.layer, 8);
     }
 
@@ -230,12 +249,17 @@ TEST(anm_flip_commands_decode_and_submit) {
         CHECK_EQ(request.script, 6);
         CHECK_EQ(request.slot, 0);
     }
-    CHECK(rig.presentation->sync(battle, 0));
+    synced = rig.presentation->sync(battle, 0);
+    CHECK(synced);
+    if (!synced) {
+        std::printf("  presentation error: %s\n", rig.presentation->error().c_str());
+        return;
+    }
     CHECK(root->anm_slot_handle[0] != 0);
     {
         const AnmVm* vm = rig.manager.registry.find(root->anm_slot_handle[0]);
         CHECK(vm != nullptr);
-        CHECK_EQ(vm->source_script, 6);
+        CHECK_EQ(vm->source_script, rig.enemy_script_count + 6);
         CHECK_EQ(vm->visual.layer, 8);
     }
 
@@ -243,6 +267,34 @@ TEST(anm_flip_commands_decode_and_submit) {
     CHECK(root->anm_size_a[0] != 0.0f || root->anm_size_a[1] != 0.0f);
     // 306 slot0 附加的镜像门保持置位；313/316 不写 anm_size_b（case3 专属）。
     CHECK((root->flags & 0x200000u) != 0);
+
+    // Stage2 Boss2 uses320 on slots3/4. Retail41b3ae writes the offset
+    // independently from the live VM;41a8a0 consumes it on every follow.
+    EclContext context;
+    battle.sim.current = root;
+    const auto execute = [&](u16 op, std::initializer_list<u32> args) {
+        std::vector<u8> bytes;
+        th13test::emit(bytes,0,op,0,255,0,args);
+        context.instruction = reinterpret_cast<const EclInstruction*>(bytes.data());
+        return battle.sim.commands.execute(context,op);
+    };
+    CHECK_EQ(execute(303,{3,0}),0);
+    CHECK_EQ(execute(320,{3,bits_of(-1.f),bits_of(224.f)}),0);
+    CHECK_EQ(root->anm_slot_offset[3].x,-1.f);
+    CHECK_EQ(root->anm_slot_offset[3].y,224.f);
+    CHECK_EQ(root->anm_slot_offset[3].z,0.f);
+    CHECK(rig.presentation->sync(battle,0));
+    const AnmVm* offset_vm = rig.manager.registry.find(root->anm_slot_handle[3]);
+    CHECK(offset_vm != nullptr);
+    if (offset_vm) {
+        CHECK_EQ(offset_vm->visual.translation.x,root->position[0]-1.f);
+        CHECK_EQ(offset_vm->visual.translation.y,root->position[1]+224.f);
+        root->flags |= 0x8000000u;
+        CHECK(rig.presentation->sync(battle,0));
+        CHECK_EQ(offset_vm->visual.translation.x,root->position[0]);
+        CHECK_EQ(offset_vm->visual.translation.y,root->position[1]);
+    }
+    battle.sim.current = nullptr;
 }
 
 int main() { return th13test::run_all("ecl-effect-commands"); }

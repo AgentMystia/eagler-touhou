@@ -19,6 +19,25 @@ struct BulletAppearance {
 };
 
 const BulletAppearance* bullet_appearance(i32 type) noexcept;
+// 40e840/40f6a4 initialize bullet+bb0 from type and color, for411df0's
+// separate cancel animation (not the bullet VM's interrupt1 sprite).
+inline i32 bullet_cancel_script(i32 type,i32 color) noexcept {
+    const auto* entry=bullet_appearance(type);
+    if(!entry||color<0||color>=16)return -1;
+    switch(entry->cancel_kind){
+    case 0:return color*2+4;
+    case 1:{constexpr i32 scripts[]={4,8,12,16,20,24,28,34};return color<8?scripts[color]:-1;}
+    case 2:return -1;
+    case 3:return 16;
+    case 4:return 6;
+    case 6:return entry->colors[u32(color)].cancel;
+    case 7:return 197;
+    case 8:return 199;
+    case 9:return 201;
+    case 10:return 207;
+    default:return -1;
+    }
+}
 
 // 0x4120b0：类型未映射（首色弹体精灵 <0）时原样返回参数。
 inline i32 bullet_animation_parameter(i32 type, i32 color, i32 parameter) noexcept {

@@ -2,9 +2,8 @@
 // th13 差异（docs/plans/anm-pipeline.md §四 + 反编译逐 case 核对）：
 //   - 入口序（00462450.c:291-309）：前置回调 vm+0x590 → IP/停机检查 →
 //     render_flags bit8(0x100) 置位时倍率强制 1（th15 为 bit9）→ 中断 → 暂停；
-//   - opcode 裁剪：dump 频次实证 th13 未用的 108-111/123/126-130/422/507/509/
-//     609-611 一律按未实现报错（§六策略）；202-213 仅 204 有用例，但分发器
-//     case 存在，保留；
+//   - opcode 裁剪：dump 频次实证 th13 未用的 108-111/123/126-130/422/507/509；
+//     609-611 走原版默认空操作；202-213 case 存在，保留；
 //   - 几何形态模式号按 th13 分发器实测：600→9（00462450.c:1411，if 分支而非
 //     switch case，计划风险表第 1 条"分发器未见 case"据此更正）、601→13、
 //     602→14、603→15、604→16、605→17、606→19、607→20、608→21（均为清
@@ -16,6 +15,10 @@
 #include "AnmVm.hpp"
 #include <cmath>
 namespace th13 {
+// Optional read-only diagnostic observer. It sees the VM and the RNG state
+// around a variable read, but never changes either or the read result.
+using AnmRandomObserver = void (*)(const AnmVm&, i32, i32, i32, u32, u32, u32, u32, bool);
+AnmRandomObserver anm_random_observer = nullptr;
 namespace {
 template<class T>T read(const u8* p){T result;std::memcpy(&result,p,sizeof result);return result;}
 bool span(u32 off,u32 n,u32 size){return off<=size&&n<=size-off;}
@@ -28,9 +31,11 @@ float float_math(float a,float b,u32 operation){switch(operation){case 0:return 
 bool AnmVm::bind(AnmScript& data){presentation_generation=++presentation_counter;presentation_motion=false;const i32 layer=visual.layer;const Vec3 translation=visual.translation;script=&data.bytes;resource=nullptr;source_script=-1;sprite=nullptr;sprite_resource=nullptr;sprite_source=nullptr;rotation_parent=nullptr;creation_parent=nullptr;slowdown=0;variables=AnmVariables{};visual=AnmVisualState{};visual.layer=layer;visual.translation=translation;visual.sprite_matrix.identity();interpolators=AnmInterpolators{};timer=Timer{};timer.set(0);age=Timer{};age.set(0);saved_timer=Timer{0,0,0,0,0};saved_offset=0;geometry.clear();instruction_offset=0;visible=false;pending_interrupt=0;error.clear();return script->size()>=8;}
 bool AnmVm::bind(AnmResource& data,u32 index){if(index>=data.scripts.size()||!bind(data.scripts[index]))return false;resource=&data;source_script=i32(index);return true;}
 bool AnmVm::select_sprite(i32 index)noexcept{
+    const i32 local_index=index<0?301:index;
     AnmResource* source=resource;if(index<0){source=environment?environment->fallback_sprite_resource:nullptr;index=301;}
+    else if(source&&source_script>=0)index+=i32(source->scripts[u32(source_script)].sprite_base);
     if(!source||u32(index)>=source->sprites.size())return false;
-    sprite_resource=source;sprite=&source->sprites[index];visual.sprite=index;visual.sprite_size={sprite->width,sprite->height};
+    sprite_resource=source;sprite=&source->sprites[index];visual.sprite=local_index;visual.sprite_size={sprite->width,sprite->height};
     visual.uv[0]={sprite->u0,sprite->v0};visual.uv[1]={sprite->u1,sprite->v0};visual.uv[2]={sprite->u0,sprite->v1};visual.uv[3]={sprite->u1,sprite->v1};
     // 缩放因子 1/256=0.00390625（0x461a60 与 th15 select_sprite 同常数）。
     visual.sprite_matrix.identity();visual.uv_matrix.identity();visual.sprite_matrix.m[0]=float(visual.sprite_size.x*.00390625f);visual.sprite_matrix.m[5]=float(visual.sprite_size.y*.00390625f);visual.transform_matrix=visual.sprite_matrix;
@@ -41,13 +46,15 @@ float AnmVm::effective_slowdown()const noexcept{const AnmVm* source=this;for(u32
 int AnmVm::tick(GameRandom& rng,float rate){
     // 前置回调（vm+0x590）：非零返回即整帧跳过，不推进时间（00462450.c:293-300）。
     if(pre_tick&&pre_tick(*this))return 0;
+    if(geometry.wind&&environment&&!geometry.wind->update(*environment,visual.color>>24,rate))return 1;
     const float original_rate=rate,amount=effective_slowdown();
     if(visual.render_flags&0x100)rate=1;  // bit8（00462450.c:303），th15 为 bit9
     if(amount>0){rate=float(original_rate-float(amount*original_rate));if(rate<0)rate=0;}
-    if(geometry.gather||geometry.overlay){if(!object_host){error="Animation effect update host not bound";return -1;}const i32 result=object_host->update_effect(*this,rate);if(result){if(result<0&&error.empty())error="Animation effect update failed";return result;}}
+    if(geometry.gather||geometry.overlay||geometry.circle){if(!object_host){error="Animation effect update host not bound";return -1;}const i32 result=object_host->update_effect(*this,rate);if(result){if(result<0&&error.empty())error="Animation effect update failed";return result;}}
     if(geometry.trail){const i32 result=geometry.trail->update(rng,rate);if(result){if(result<0)error="Particle trail timer outside verified range";return result;}}
     if(geometry.distortion)geometry.distortion->update(variables.position,visual.translation,visual.color);
     if(!script||instruction_offset<0||(visual.flags&0x100000))return 0;
+    if(geometry.ribbon)geometry.ribbon->update(rng,rate);
     age.tick(&rate);
     if(!pending_interrupt&&environment&&environment->paused&&(visual.render_flags&0xc000)==0x4000)return 0;
     auto fail=[&](const char* reason){error=reason;return -1;};
@@ -80,12 +87,18 @@ int AnmVm::tick(GameRandom& rng,float rate){
         else if(opcode>=600&&opcode<=608)needed=opcode>=603?2:1;
         if(8+needed*4>length)return fail("Truncated animation arguments");
         auto arg=[&](u32 n){return p+8+n*4;};
-        auto integer=[&](u32 n){const i32 value=read<i32>(arg(n));return mask&(1u<<n)?variables.integer(value,rng):value;};
+        auto integer=[&](u32 n){const i32 value=read<i32>(arg(n));if(!(mask&(1u<<n)))return value;
+            const u32 before=rng.index(),seed=rng.seed();const i32 result=variables.integer(value,rng);
+            if(anm_random_observer&&before!=rng.index())anm_random_observer(*this,opcode,value,i32(n),before,seed,rng.index(),rng.seed(),false);return result;};
         bool unresolved=false;auto floating=[&](u32 n){const float value=read<float>(arg(n));if(!(mask&(1u<<n)))return value;const i32 id=truncate_int(value);
             // 10026：一层父的旋转 z + 自身 z，归一（00461e80.c case 0x272a）。
             if(id==10026)return normalize_angle(float(variables.rotation.z+(rotation_parent?rotation_parent->variables.rotation.z:0.f)));
             if(id>=10016&&id<=10021){if(!environment){unresolved=true;return 0.f;}const Vec3& a=id<=10018?environment->camera_origin:environment->reference_position;const float values[]={a.x,a.y,a.z};float result=values[(id-10016)%3];if(id<=10018){const float shifts[]={environment->screen_translation.x,environment->screen_translation.y,environment->screen_translation.z};result=float(result+shifts[id-10016]);}return result;}
-            return variables.floating(value,rng);
+            const bool game_stream=id>=10030&&id<=10032;
+            if(game_stream&&!environment){unresolved=true;return 0.f;}
+            GameRandom& source=game_stream?environment->distortion_random():rng;
+            const u32 before=source.index(),seed=source.seed();const float result=variables.floating(value,source);
+            if(anm_random_observer&&before!=source.index())anm_random_observer(*this,opcode,id,i32(n),before,seed,source.index(),source.seed(),game_stream);return result;
         };
         auto int_dest=[&](u32 n){auto* a=reinterpret_cast<i32*>(arg(n));return mask&(1u<<n)?variables.integer_destination(a):a;};
         auto float_dest=[&](u32 n){auto* a=reinterpret_cast<float*>(arg(n));return mask&(1u<<n)?variables.float_destination(a):a;};
@@ -116,16 +129,16 @@ int AnmVm::tick(GameRandom& rng,float rate){
             case 201:{auto* counter=int_dest(0);*counter=wrapping_add(*counter,-1);if(integer(0)>0){if(!jump(read<u32>(arg(1)),read<i32>(arg(2))))return fail("Invalid animation jump");continue;}break;}
             case 300:{visual.flags|=1;visible=true;const i32 parameter=integer(0),index=sprite_source?sprite_source->sprite_index(parameter):parameter;if(!select_sprite(index))return fail("Animation sprite not available");visual.sprite_frame=timer.current;break;}
             case 301:{visual.flags|=1;visible=true;const i32 first=integer(0);const u32 count=u32(integer(1));if(!count)return fail("Animation sprite random range is zero");const i32 parameter=signed_bits(rng.next32()%count+u32(first)),index=sprite_source?sprite_source->sprite_index(parameter):parameter;if(!select_sprite(index))return fail("Animation sprite not available");visual.sprite_frame=timer.current;break;}
-            case 302:{const u32 mode=read<u32>(arg(0));bits(visual.flags,mode,25,0x3e000000);if((mode&31)==10){if(!environment)return fail("Animation distortion random source not bound");geometry.clear();geometry.distortion=std::make_unique<AnmDistortion>();geometry.distortion->initialize(variables.position,visual.translation,environment->game_rng);geometry.allocation_bytes=1200;}break;}
+            case 302:{const u32 mode=read<u32>(arg(0));bits(visual.flags,mode,25,0x3e000000);if((mode&31)==10){if(!environment)return fail("Animation distortion random source not bound");geometry.clear();geometry.distortion=std::make_unique<AnmDistortion>();geometry.distortion->initialize(variables.position,visual.translation,environment->distortion_random());geometry.allocation_bytes=1200;}break;}
             case 303:bits(visual.flags,read<u32>(arg(0)),5,0x1e0);break;
             case 304:visual.set_layer(u8(read<u32>(arg(0))));break;
             case 305:bits(visual.flags,read<u32>(arg(0)),13,0x2000);break;
             case 306:bits(visual.flags,read<u32>(arg(0)),15,0x8000);break;
-            case 307:bits(visual.render_flags,u8(read<u32>(arg(0))),10,0x400);break;
+            case 307:bits(visual.render_flags,u8(read<u32>(arg(0))),9,0x200);break;
             case 308:visual.flags=(visual.flags^0x800)|8;visual.scale.x=float(-visual.scale.x);break;
             case 309:visual.flags=(visual.flags^0x1000)|8;visual.scale.y=float(-visual.scale.y);break;
             case 310:bits(visual.flags,read<u32>(arg(0)),0,1);visible=visual.visible();break;
-            case 311:bits(visual.render_flags,read<u32>(arg(0)),11,0x800);break;
+            case 311:bits(visual.render_flags,read<u32>(arg(0)),10,0x400);break;
             case 312:bits(visual.render_flags,u32(integer(0)),0,3);bits(visual.flags,u32(integer(1)),30,0xc0000000);break;
             case 313:bits(visual.render_flags,u32(integer(0)),20,0x700000);break;
             case 314:bits(visual.render_flags,u32(integer(0)),23,0x800000);break;
@@ -155,14 +168,14 @@ int AnmVm::tick(GameRandom& rng,float rate){
                 interpolators.position.begin(frames,8,{from.x,from.y,from.z},{x,y,z});interpolators.position.control1={c1x,c1y,c1z};interpolators.position.control2={c2x,c2y,c2z};break;}
             case 421:{if(length<12)return fail("Truncated animation arguments");bits(visual.flags,read<u16>(p+8),21,0x600000);bits(visual.flags,read<u16>(p+10),23,0x1800000);break;}
             case 423:bits(visual.flags,u8(read<u32>(arg(0))),17,0x60000);break;
-            case 424:bits(visual.render_flags,u8(read<u32>(arg(0))),7,0x80);break;
+            case 424:bits(visual.render_flags,u8(read<u32>(arg(0))),6,0x40);break;
             case 425:visual.uv_velocity.x=floating(0);visual.render_flags|=0x1000000;break;
             case 426:visual.uv_velocity.y=floating(0);visual.render_flags|=0x1000000;break;
             case 427:case 428:{const float target=floating(2);const i32 frames=integer(0);auto& interpolation=opcode==427?interpolators.uv_x:interpolators.uv_y;interpolation.control1={};interpolation.control2={};interpolation.begin(frames,read<i32>(arg(1)),{opcode==427?visual.uv_velocity.x:visual.uv_velocity.y},{target});break;}
             case 429:visual.uv_scale.x=floating(0);visual.uv_scale.y=floating(1);visual.flags|=0x10;break;
             case 430:interpolate2(interpolators.uv_scale,visual.uv_scale);visual.flags|=0x10;break;
-            case 431:bits(visual.render_flags,u8(read<u32>(arg(0))),8,0x100);break;
-            case 432:bits(visual.render_flags,u32(integer(0)),9,0x200);break;
+            case 431:bits(visual.render_flags,u8(read<u32>(arg(0))),7,0x80);break;
+            case 432:bits(visual.render_flags,u32(integer(0)),8,0x100);break;
             case 433:{const i32 frames=integer(0);const Vec3 from=visual.flags&0x400?visual.child_anchor:variables.position;const float radius=floating(3),angle=floating(2),x=float(std::cos(double(angle))*double(radius)),y=float(std::sin(double(angle))*double(radius));interpolators.position.control1={};interpolators.position.control2={};interpolators.position.begin(frames,read<i32>(arg(1)),{from.x,from.y,from.z},{x,y,0});break;}
             case 434:visual.secondary_scale.x=floating(0);visual.secondary_scale.y=floating(1);visual.flags|=8;break;
             case 435:interpolate2(interpolators.secondary_scale,visual.scale);visual.flags|=8;break;
@@ -183,6 +196,8 @@ int AnmVm::tick(GameRandom& rng,float rate){
             case 600:case 601:case 602:{const u32 mode=opcode==600?9:opcode==601?13:14;visual.flags=(visual.flags&~((mode^31u)<<25))|(mode<<25);if(!geometry.allocate(integer(0),false))return fail("Animation geometry count outside range");break;}
             case 603:case 606:case 607:case 608:{const u32 mode=opcode==603?15:opcode==606?19:opcode==607?20:21;visual.flags=(visual.flags&~((mode^31u)<<25))|(mode<<25);visual.sprite_size={floating(0),floating(1)};break;}
             case 604:case 605:{const u32 mode=opcode==604?16:17;visual.flags=(visual.flags&~((mode^31u)<<25))|(mode<<25);visual.sprite_size.x=floating(0);variables.integers[0]=integer(1);break;}
+            // 00462450's >600 switch ends at 608 and advances unknown opcodes.
+            case 609:case 610:case 611:break;
             default:error="Unimplemented ANM opcode "+std::to_string(opcode);return -1;
         }
         if(unresolved)return fail("Animation external variable not bound");instruction_offset+=length;

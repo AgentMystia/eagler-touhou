@@ -18,7 +18,7 @@
 //   004265a0.c:417-447  环根 rotation = -displayed*2π（原版写 VM+0x48）、
 //                        跟随 VM offset(+0x574..) = boss 世界位
 //   004265a0.c:448-482  四枚阶段星：displayed<角度 显示、rotation(-π-a*2π)
-//   004265a0.c:484-516  玩家-boss 距离 <80 隐藏环组 / >=96 复原（迟滞）
+//   004271b7-004272b5  玩家-boss 距离 <80 中断3淡出 / >=96 中断2复原（迟滞）
 //   004265a0.c:630-739  底部敌位标（ctx+0xa0）：offset=(boss_x+224,480)、
 //                        字节 +0x52b = '@'+round(|dx|*191/64)，|dx|>=64 或
 //                        boss 横向出界时隐藏；计时 <700/400/200（trance 组
@@ -26,11 +26,10 @@
 //   00427910.c:253-274  计时文本：'.' 与百分秒锚定数字 VM 位置(+0x3c/+0x40)
 //                        +16/-7（数字 VM ascii.anm script2/3 dump：208/220,39）
 //
-// 字段缺口（向主会话报备，owner 未落地前对应功能按原版语义保持待命）：
-//   - StageEnemy 初值生命（+0x513c，0x4183f0:26 创建写）：血环比值分母
-//   - mgr+0x7c bit0（boss 离场位，512 setBoss 清、BossDead/BossEscape 置）
-//   - ECL 540/527 → ctx+0x1bc 四对 {frame,ratio} 阶段星数据（现 no-op）
-//   - 符卡时长（ECL 537 duration 参现被丢弃）→ ctx+0x1a0 计时秒
+// Live state comes from ECL511/527/540 and4218f0 via RunScene. Remaining
+// card stars (front68..77) and circular phase markers(front243) are distinct.
+// Bottom Enemy marker is front111 (425d90), with phase-HP flash labels7..10.
+// Independent original GPU pixel equivalence remains unverified.
 //
 // 【认证状态】环/星 VM 身份与写入语义已由原版运行时取证闭合（UC 池模板
 // hash + 反汇编写入点，见 kRingArcScript 注与 r4/boss-hud/pool-map/）：
@@ -52,18 +51,21 @@ namespace th13 {
 // 宿主装配的每帧 boss 视图（RunScene/测试填充；不复制 sim 状态）。
 struct BossFrameInput {
     const StageEnemy* boss = nullptr;  // mgr+0x5c 槽 0（sim.boss()）
-    bool boss_leaving = false;         // mgr+0x7c bit0【缺口】
+    bool boss_leaving = false;         // mgr+0x7c bit0
     bool dialog_active = false;        // ctx+0x198（对话进行中）
     float player_x = 0, player_y = 0;  // DAT_004c22c4+0x5b8/+0x5bc（世界位）
-    i32 timer_seconds = -1;            // ctx+0x1a0；-1 = 无计时【缺口：符卡时长】
+    i32 timer_seconds = -1;            // ctx+0x1a0；-1 = 无计时
     i32 timer_frames = 0;              // 帧内计数（百分秒 = frames*100/60）
+    i32 timer_centiseconds=-1; // native4218f0 already converts remainder to hundredths
+    i32 remaining_stars=0; // ECL540, front scripts68..77
+    i32 name_script = -1; // stage table +74/+78 plus155, 0042b1f0
     i32 boss_life = 0;                 // 敌机+0x5138（int 口径）
-    i32 life_initial = 0;              // 敌机+0x513c【缺口；<=0 时环隐藏】
+    i32 life_initial = 0;              // 敌机+0x513c；<=0 时环隐藏
     struct PhaseMarker {
-        i32 frame = 0;   // ctx+0x1c0+id*8
-        float ratio = 0; // ctx+0x1bc+id*8【缺口：ECL 540/527】
+        i32 frame = 0;   // ctx+0x1c0+id*8, packed color (legacy field name)
+        float ratio = 0; // ctx+0x1bc+id*8（ECL527）
     } markers[4];
-    bool trance_mode = false;  // DAT_004c2178+0x7c bit1（阈值组切换）
+    bool trance_mode = false;  // legacy name; native SPELL active bit0 selects HP thresholds
 };
 
 // Boss HUD 状态机 + VM 面。逻辑帧 update() 与文本面 draw 查询分离，
@@ -99,6 +101,11 @@ public:
 
     // 0x425170:181-287：数字 VM 常备、初始隐藏（flags bit1 清）。
     bool initialize();
+    // 00424fd0 resets HUD+1a0/+1a8 when loading the next stage, while
+    // retaining the timer VMs and the HUD's other persistent state.
+    void prepare_stage_assets() noexcept {
+        timer_seconds_ = timer_displayed_ = -1;
+    }
     // 场景卸载：环组/数字 VM 全量回收（0x4265a0 失活支路 0x46fc30×7 同义）。
     void release();
 
@@ -114,11 +121,11 @@ public:
     bool timer_visible() const noexcept { return gate_ && timer_seconds_ >= 0; }
     i32 timer_seconds() const noexcept { return timer_seconds_; }
     i32 timer_centiseconds() const noexcept {
-        return timer_visible() ? timer_frames_ * 100 / 60 : 0;
+        return timer_visible() ? (timer_centiseconds_>=0?timer_centiseconds_:timer_frames_*100/60) : 0;
     }
     // 数字 VM 脚本位（208/220,39）+16/-7 锚（0x427910:255-257）。
-    float timer_text_x() const noexcept { return 208.f + 16.f; }
-    float timer_text_y() const noexcept { return 39.f - 7.f; }
+    float timer_text_x() const noexcept;
+    float timer_text_y() const noexcept;
     u32 timer_digit_color() const;  // 数字 VM 色（VM+0x528 → visual.color）
 
     // 诊断/测试面。
@@ -144,7 +151,8 @@ private:
     void retire_ring();                     // 0x46fc30 家族回收
     bool create_stars();                    // 槽 243×4 → front 243
     void write_star(u32 handle, const BossFrameInput& input, i32 index);
-    bool ensure_marker();                   // ctx+0xa0 常备（0x425170:447-508）
+    bool ensure_marker();
+    bool update_marker(const BossFrameInput&);                   // ctx+0xa0 常备（0x425170:447-508）
     void fail(const char* why) {
         if (error.empty()) error = why;
     }
@@ -159,6 +167,8 @@ private:
     i32 timer_seconds_ = -1;         // +0x1a0（输入镜像）
     i32 timer_displayed_ = -1;       // +0x1a8
     i32 timer_frames_ = 0;
+    i32 timer_centiseconds_=-1;
+    std::array<u32,10> remaining_star_handles_{};
     i32 warn_state_ = 0;             // 0x4265a0:147-163 警告档
     u32 move_state_ = 0;             // +0x180 bits9-10（0/1 移开迟滞）
     i32 escalate_state_ = 0;         // +0x180 bits1-2（<700/400/200 阶段）
@@ -173,6 +183,7 @@ private:
     std::array<u32, 2> ring_overlays_{};   // +0x1e0/+0x1e4（front 241/242）
     std::array<u32, 4> star_handles_{};    // +0x1e8..+0x1f4（front 243 ×4）
     u32 marker_handle_ = 0;                // +0xa0 底部敌位标
+    u32 name_handle_ = 0;                  // +0xdc Boss nameplate
 };
 
 }  // namespace th13

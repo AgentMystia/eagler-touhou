@@ -1,4 +1,5 @@
 #include "AnmManager.hpp"
+#include "AnmOverlay.hpp"
 namespace th13 {
 void AnmManager::unload(i32 id){auto found=banks.find(id);if(found==banks.end())return;auto* resource=&found->second->data;registry.retire_resource(resource);if(environment.fallback_sprite_resource==resource)environment.fallback_sprite_resource=nullptr;retired_banks.push_back(std::move(found->second));banks.erase(found);resource_names.erase(id);collect_resources();}
 void AnmManager::collect_resources(){
@@ -48,27 +49,78 @@ u32 AnmManager::create(i32 id,i32 script,i32 layer,u32 ordering,const Vec3& tran
     if(!initial_tick(*vm))return 0;vm->ordering=ordering;return registry.submit(*vm,ordering);
 }
 AnmVm* AnmManager::spawn_child(AnmVm& source,i32 script,u32 ordering){
-    if(!source.resource){error="Child animation source has no resource";return nullptr;}auto* vm=instantiate(*source.resource,script);if(!vm)return nullptr;
+    if(!source.resource){error="Child animation source has no resource";return nullptr;}auto* vm=instantiate(*source.resource,source.local_script_index(script));if(!vm)return nullptr;
     // 0x46f990：位置清零、layer 继承父、父指针直挂本源、0x200 活动位。
     vm->visual.translation={};vm->visual.layer=source.visual.layer;vm->creation_parent=&source;vm->rotation_parent=&source;vm->visual.render_flags|=0x200;
     if(!initial_tick(*vm))return nullptr;vm->ordering=ordering;if(!registry.submit(*vm,ordering)||!registry.attach(*vm,source)){error=registry.error;registry.destroy_tree(*vm);return nullptr;}return vm;
 }
 AnmVm* AnmManager::spawn_detached(AnmVm& source,i32 script){
-    if(!source.resource){error="Detached animation source has no resource";return nullptr;}auto* vm=instantiate(*source.resource,script);if(!vm)return nullptr;
+    if(!source.resource){error="Detached animation source has no resource";return nullptr;}auto* vm=instantiate(*source.resource,source.local_script_index(script));if(!vm)return nullptr;
     // 0x46fab0：layer/平移/旋转继承父，锚点=父脚本位置，主链尾入链。
     vm->visual.render_flags|=0x200;vm->visual.layer=source.visual.layer;
     vm->visual.translation=source.visual.translation;vm->variables.rotation=source.variables.rotation;vm->visual.child_anchor=source.variables.position;
     if(!initial_tick(*vm))return nullptr;vm->ordering=0;if(!registry.submit(*vm)){error=registry.error;registry.destroy_tree(*vm);return nullptr;}return vm;
 }
-bool AnmManager::spawn_effect(AnmVm& vm,i32 script){if(effect)return effect(vm,script);error="Scene effect manager not bound";return false;}
-i32 AnmManager::update_effect(AnmVm& vm,float rate){if(effect_update)return effect_update(vm,rate);vm.error="Scene effect update not bound";return -1;}
-bool AnmManager::interrupt_effect(AnmVm& vm,i32 label,float rate){return !effect_interrupt||effect_interrupt(vm,label,rate);}
+bool AnmManager::spawn_effect(AnmVm& vm,i32 script){if(effect)return effect(vm,script);if(script==0){
+ // 402ff0 copies four effect templates and the astral template into its
+ // embedded VMs. Resolve the astral bank by its declared resource name.
+ AnmResource* astral=nullptr;
+ for(const auto& item:resource_names)if(item.second=="astral.anm"){astral=resource(item.first);break;}
+ if(!vm.resource||!astral){error="Scene effect 0 requires effect and astral animation banks";return false;}
+ vm.geometry.clear();vm.geometry.overlay=std::make_unique<AnmOverlay>();
+ vm.geometry.allocation_bytes=0x1c3c;vm.visual.layer=0;
+ if(!vm.geometry.overlay->initialize(*vm.resource,*astral,vm,random)){
+  error="Scene effect 0 overlay initialization failed";return false;
+ }
+ return true;
+ }if(script==2){
+  vm.geometry.clear();vm.geometry.circle=std::make_unique<AnmCircle>();
+  const auto p=vm.visual.translation;
+  vm.geometry.circle->initialize({float(p.x+384.f),float(p.y+16.f),p.z},128.f);
+  vm.visual.translation={};vm.geometry.allocation_bytes=0x2c;vm.visual.layer=13;return true;
+ }if(script==5){vm.geometry.clear();vm.geometry.ribbon=std::make_unique<AnmRibbon>();vm.geometry.ribbon->initialize(random);vm.geometry.allocation_bytes=0x418;vm.visual.layer=13;return true;}if(script==6){
+ vm.geometry.clear();vm.geometry.wind=std::make_unique<AnmWindTrail>();
+ vm.geometry.wind->initialize(random,environment);vm.geometry.allocation_bytes=0x97c;
+ vm.visual.translation={};vm.visual.layer=2;
+ vm.visual.flags=(vm.visual.flags&0xfffffe3fu)|0x20u;
+ vm.interpolators.alpha.begin(160,0,{64},{0});return true;
+ }if(script==1||script==3){
+ // 4bba80[1]（401000/401190/4012c0）：8 段轨迹；位置=op334 传入的敌机 VM+0x44
+ // （41b7ac→415650），经 translation 携带；415650 先清 VM 绘制位再调 init，故读后清零。
+ vm.geometry.clear();vm.geometry.trail=std::make_unique<AnmTrail>();
+ const Vec3 effect_position=vm.visual.translation;
+ vm.geometry.trail->initialize_small(effect_position,random);
+ if(script==3){
+  // 401310 shares 401190/4012c0 with kind1, but starts in the
+  // supplied coordinate system and uses the blue/green palette.
+  vm.geometry.trail->points[0]={effect_position.x,effect_position.y};
+  for(u32 i=0;i<8;++i){
+   u32 color=0xff40ff00u | u32(u8(255-i*32));
+   if(i>=4)color=(color&0xffffffu)|(u32(u8(255-(i-4)*16))<<24);
+   vm.geometry.trail->colors[i]=color;
+  }
+ }
+ vm.geometry.allocation_bytes=0x78;
+ vm.visual.translation={};vm.visual.layer=13;
+ if(script==1)vm.visual.flags=(vm.visual.flags&0xfffffe3fu)|0x20u;
+ return true;
+ }error="Scene effect manager not bound";return false;}
+i32 AnmManager::update_effect(AnmVm& vm,float rate){if(effect_update)return effect_update(vm,rate);if(vm.geometry.overlay)return vm.geometry.overlay->tick(random,rate);if(vm.geometry.circle){
+ auto& circle=*vm.geometry.circle;if(circle.age.current>=50)return 1;
+ if(circle.age.current!=circle.age.previous){
+  const i32 bank=resource_id(vm.resource);
+  for(int i=0;i<2;++i){const u32 h=create(bank,0,-1,0,circle.center);auto* child=registry.find(h);if(!child||!spawn_effect(*child,1)){vm.error=error;return -1;}}
+ }
+ circle.rim_color=(circle.rim_color&0x00ffffffu)|(((circle.rim_color>>24)+3u)&255u)<<24;
+ circle.radius=float(circle.radius-1.5f);circle.age.tick(&rate);circle.rebuild();return 0;
+ }vm.error="Scene effect update not bound";return -1;}
+bool AnmManager::interrupt_effect(AnmVm& vm,i32 label,float rate){if(effect_interrupt&&!effect_interrupt(vm,label,rate))return false;if(vm.geometry.overlay){if(!vm.geometry.overlay->interrupt(label,random,rate))return false;if(label>=7&&label<=9)vm.visual.layer=label==7?26:label==8?20:6;}return true;}
 bool AnmManager::rebind(u32& handle,i32 script){
     auto* old=registry.find(handle);if(!old)return true;old->visual.flags&=~1u;old->visible=false;old->instruction_offset=-1;
-    auto* vm=instantiate(*old->resource,script);if(!vm)return false;vm->visual.render_flags|=0x200;vm->visual.translation={};vm->variables.rotation.z=0;
+    auto* vm=instantiate(*old->resource,old->local_script_index(script));if(!vm)return false;vm->visual.render_flags|=0x200;vm->visual.translation={};vm->variables.rotation.z=0;
     if(!initial_tick(*vm))return false;vm->ordering=0;handle=registry.submit(*vm);return handle!=0;
 }
-bool AnmManager::retire(u32& handle){auto* vm=registry.find(handle);if(vm){vm->visual.render_flags=(vm->visual.render_flags&~64u)|32;if(!registry.retire_children(*vm))return false;}handle=0;return true;}
+bool AnmManager::retire(u32& handle){auto* vm=registry.find(handle);if(vm){vm->visual.render_flags=vm->visual.render_flags|32;if(!registry.retire_children(*vm))return false;}handle=0;return true;}
 bool AnmManager::pause(u32 handle,bool paused){auto* vm=registry.find(handle);return !vm||registry.pause_tree(*vm,paused);}
 bool AnmManager::interrupt(u32 handle,i32 label,bool immediate){auto* vm=registry.find(handle);if(!vm||registry.interrupt(*vm,label,random,rate,immediate))return true;error=registry.error;return false;}
 bool AnmManager::update(){if(registry.update(random,rate)){collect_resources();return true;}error=registry.error;return false;}

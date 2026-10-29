@@ -20,7 +20,12 @@ struct TitleHost final : TitleScenePlatform {
     AnmManager& manager;
     i32 start_stage = -1, exit_destination = -1;
     int sounds = 0;
+    bool extra = false;  // Extra 解锁门数据源（原版 0x44c570 case0 +0x5c40 bit1）
+    u32 extra_character_mask = 0xfu;  // 默认四角色全解锁
     explicit TitleHost(AnmManager& manager) : manager(manager) {}
+    bool extra_unlocked(i32 character) override {
+        return extra && ((extra_character_mask >> (character & 3)) & 1u);
+    }
     bool clear_title_overlay() override { return true; }
     bool queue_title_music(i32, i32, const std::string&) override { return true; }
     bool clear_current_wave() override { return true; }
@@ -145,6 +150,30 @@ struct TitleHarness {
 };
 }  // namespace
 
+TEST(title_selection_stays_highlighted_and_exits_on_confirmation) {
+    TitleHarness harness;
+    harness.reach_menu();
+    for (int i = 0; i < 20; ++i) {
+        harness.frame();
+        CHECK(harness.scheduler.draw() >= 0);
+    }
+    auto* root = harness.manager.registry.find(harness.scene->state.handles[0]);
+    CHECK(root != nullptr);
+    auto* selected = harness.manager.registry.find_child_script(*root, 3, 0);
+    auto* white = harness.manager.registry.find_child_script(*root, 13, 0);
+    CHECK(selected != nullptr);
+    CHECK(white != nullptr);
+    CHECK_EQ(selected->visual.color >> 24, 255u);
+    CHECK_EQ(white->visual.color >> 24, 0u);
+    // Run the menu update before the scheduler consumes the pending label.
+    TitleMainMenu menu(harness.scene->state, harness.progress, harness.selection,
+                       harness.manager, TitleSceneResources{});
+    menu.play_sound = [](i32) { return true; };
+    CHECK(menu.update(0x01, 0));
+    CHECK_EQ(selected->pending_interrupt, 6);
+    CHECK_EQ(white->pending_interrupt, 6);
+}
+
 // 真机时序锚：g181 建背景/LOGO（标题任务使能帧）、g361 建菜单+版本条、
 // g372 起可交互（oracle/title_oracle.py docstring + title-draws.jsonl 帧序）。
 TEST(title_boot_introduces_menu_per_real_timeline) {
@@ -189,18 +218,18 @@ TEST(title_full_chain_start_game) {
     harness.advance(20);
     CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Character));
     CHECK_EQ(harness.progress.difficulty, 2);
-    CHECK(harness.scene->state.handles[2] != 0);    // 角色根（script2）
+    CHECK(harness.scene->state.handles[2] == 0);    // [oracle 定案] 自机页不建名行树 script2（title-draws-b f650-749：属 PlayerData 段位屏）
     CHECK(harness.scene->state.handles[129] != 0);  // 立绘/武器根（script129）
-    // 角色：行 1-4 为角色（推定），→ 到魔理沙(行 2) 确认。
+    // 0x451450 case0：四角色直接使用 0..3 的光标。
     harness.advance(10);
     CHECK_EQ(harness.scene->state.substate, 2);
-    CHECK_EQ(harness.scene->state.menu.cursor, 1);  // 初始 = preferred(0)+1 = 霊夢行
+    CHECK_EQ(harness.scene->state.menu.cursor, 0);  // 霊夢
     harness.frame(0x80);                            // →
-    CHECK_EQ(harness.scene->state.menu.cursor, 2);
+    CHECK_EQ(harness.scene->state.menu.cursor, 1);
     harness.frame(0x01);  // 确认：转场 + age>39 → start_game
     harness.advance(45);
     CHECK_EQ(harness.host.start_stage, 1);
-    CHECK_EQ(harness.progress.character, 1);  // 行 2 → 角色 1（魔理沙）
+    CHECK_EQ(harness.progress.character, 1);  // 魔理沙
     CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::StartGame));
     CHECK(harness.scene->error.empty());
     CHECK_EQ(harness.host.exit_destination, -1);  // 开局排队后 Quit 分支不触发
@@ -379,6 +408,87 @@ TEST(title_difficulty_anatomy_choreography) {
     CHECK(bg != nullptr);
     CHECK_EQ(registry.find_child_script(*bg, 93, 0)->visual.layer, 22);
     CHECK_EQ(registry.find_child_script(*bg, 92, 0)->visual.layer, 0);
+    CHECK(harness.scene->error.empty());
+}
+
+// Extra 全链（0x44cd10 case4 case1 → 0x450fb0 → 0x451450）：解锁后主菜单
+// 确认 → 难度屏单行 EXTRA（count=1、根 124、无导航、难度恒 4）→ 确认进
+// 角色屏（EX 根 130）→ 确认开局 stage 7（stage 表行 0x4bb854）。
+TEST(title_extra_entry_routes_through_single_row_rank_and_ex_character_root) {
+    TitleHarness harness;
+    harness.host.extra = true;
+    harness.reach_menu();
+    harness.frame(0x20);  // ↓ → 1（Extra 解锁，光标停留）
+    CHECK_EQ(harness.scene->state.menu.cursor, 1);
+    harness.frame(0x01);  // Z
+    harness.advance(25);
+    CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Difficulty));
+    CHECK_EQ(harness.scene->state.menu.count, 1);  // 0x450fb0 case0：Extra 单行
+    CHECK_EQ(harness.progress.difficulty, 4);
+    CHECK(harness.scene->state.handles[124] != 0);  // 根 0x7c
+    harness.advance(10);
+    CHECK_EQ(harness.scene->state.substate, 2);
+    harness.frame(0x20);  // ↓ 不移动（原版 case2 只 <4 导航）
+    CHECK_EQ(harness.scene->state.menu.cursor, 0);
+    harness.frame(0x01);  // Z 确认 EXTRA
+    harness.advance(15);
+    CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Character));
+    CHECK_EQ(harness.progress.difficulty, 4);       // LAB_00451363：<4 才取光标
+    CHECK(harness.scene->state.handles[130] != 0);  // 0x451450 case0：(be7c4==4)+0x81
+    harness.advance(10);
+    CHECK_EQ(harness.scene->state.substate, 2);
+    CHECK_EQ(harness.scene->state.menu.cursor, 0);  // 霊夢
+    harness.frame(0x01);  // 确认霊夢 → 转场 → 开局
+    harness.advance(45);
+    CHECK_EQ(harness.host.start_stage, 7);  // 0x451450 case4 尾：be81c=7
+    CHECK_EQ(harness.progress.starting_stage, 7);
+    CHECK(harness.scene->error.empty());
+}
+
+// Extra 取消链（0x450fb0 case4）：难度屏 Esc → 难度按 +0x59b0 暂存恢复
+//（0x44cd10 case1 进屏时所存），不残留 4。
+TEST(title_extra_cancel_restores_saved_difficulty) {
+    TitleHarness harness;
+    harness.host.extra = true;
+    harness.progress.difficulty = 2;  // 进入前难度（Hard）
+    harness.reach_menu();
+    harness.frame(0x20);
+    harness.frame(0x01);  // Extra 确认
+    harness.advance(25);
+    CHECK_EQ(harness.progress.difficulty, 4);
+    harness.advance(10);
+    CHECK_EQ(harness.scene->state.substate, 2);
+    harness.frame(0x100);  // Esc
+    harness.advance(8);
+    CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Main));
+    CHECK_EQ(harness.progress.difficulty, 2);  // 0x59b0 恢复
+    CHECK(harness.scene->error.empty());
+}
+
+// Extra 角色级解锁禁用（0x451450 case0）：
+// 若部分角色未解锁 Extra（0x1b26c 族 bit0x10 为 0），在角色屏中相应行被 disable，
+// 且初始光标跳过未解锁角色；导航时自动跳过被禁用的角色。
+TEST(title_extra_character_selective_unlock_disables_locked_characters) {
+    TitleHarness harness;
+    harness.host.extra = true;
+    // 仅解锁角色 1（魔理沙，mask bit 1 = 2），角色 0（霊夢）未解锁
+    harness.host.extra_character_mask = 2u;
+    harness.reach_menu();
+    harness.frame(0x20);  // ↓ → ExtraStart
+    harness.frame(0x01);  // Z 确认
+    harness.advance(25);
+    CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Difficulty));
+    harness.advance(10);
+    harness.frame(0x01);  // Z 确认单行 EXTRA
+    harness.advance(15);
+    CHECK_EQ(int(harness.scene->state.screen), int(TitleScreen::Character));
+    harness.advance(10);
+    CHECK_EQ(harness.scene->state.substate, 2);
+    // 初始光标跳过未解锁的霊夢（0），落入魔理沙（1）。
+    CHECK_EQ(harness.scene->state.menu.cursor, 1);
+    // 只有魔理沙解锁，向左仍选中该角色。
+    harness.frame(0x40);
+    CHECK_EQ(harness.scene->state.menu.cursor, 1);
     CHECK(harness.scene->error.empty());
 }
 

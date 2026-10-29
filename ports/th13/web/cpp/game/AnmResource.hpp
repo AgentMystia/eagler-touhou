@@ -37,6 +37,9 @@ struct AnmScript {
     i32 source_id=0;
     u32 file_offset=0;
     std::vector<u8> bytes;
+    // 00461a60 / 0046f990 index the owning file, not other ANM files
+    // packed into the same web bank. Every entry in one file shares these.
+    u32 sprite_base=0,script_base=0;
 };
 class AnmResource {
 public:
@@ -44,9 +47,9 @@ public:
     std::vector<AnmSprite> sprites;
     std::vector<AnmScript> scripts;
     bool open(const u8* bytes,u32 size);
-    // 追加另一 ANM 归档（0x46e0b0/0x46e230 全局表语义：sprite/script 按表序
-    // 连续编号，跨文件的脚本号 = 前文件脚本数起算——ECL 302/303/306 引用的
-    // 即该全局序号）。sprite 的纹理索引按已有纹理数偏移。
+    // Pack another file while retaining its local sprite/child-script domain.
+    // ECL file+script pairs are translated by StagePresentation; instructions
+    // inside each ANM continue to use that file's original local indices.
     bool append(const u8* bytes,u32 size);
 };
 }

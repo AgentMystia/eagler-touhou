@@ -63,12 +63,12 @@ public:
     }
 
     // 0x472c20：单步 16 位变体（rand16）。与 next() 共用状态；计数 +1；
-    // 返回本步的 A 值。moveRand（412）象限掷币用（% 3 判定）。
+    // 返回旋转后的新种子。moveRand（412）象限掷币用（% 3 判定）。
     uint16_t step16() {
         const uint16_t a = static_cast<uint16_t>((seed_ ^ 0x9630u) - 0x6553u);
         seed_ = static_cast<uint16_t>((a >> 14) + a * 4);
         index_ += 1;
-        return a;
+        return seed_;
     }
 
     float signed_unit() {  // 0x472e10 的浮点化（fild→×2^-31→−1.0）

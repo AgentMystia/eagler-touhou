@@ -1,4 +1,5 @@
 #include "ReplaySession.hpp"
+#include "StageBattle.hpp"
 
 namespace th13 {
 
@@ -9,9 +10,23 @@ u32 rd32(const u8* at) {
 i32 as_i32(u32 raw) { return i32(raw); }
 }  // namespace
 
+i32 ReplaySession::stage_index(const ReplayFile& file, i32 stage_number) {
+    for (u32 index = 0; index < file.stages.size(); ++index)
+        if (file.stages[index].number == stage_number) return i32(index);
+    return -1;
+}
+
+bool ReplaySession::restore_player_start(const ReplayStage& stage,StageBattle& battle,std::string& error) {
+    if(stage.header.size()<0x70){error="Replay player-start header truncated";return false;}
+    // 448ec0 uses header+0c/+10 as signed1/128 coordinates, +6c as focus.
+    battle.restore_replay_player(as_i32(rd32(stage.header.data()+0x0c)),
+        as_i32(rd32(stage.header.data()+0x10)),rd32(stage.header.data()+0x6c)!=0);
+    return true;
+}
+
 bool ReplaySession::restore_stage(const ReplayFile& file, u32 stage_index,
                                   const ReplayRestoreTarget& target, ReplayRestoreLog& log,
-                                  std::string& error) {
+                                  std::string& error, ReplayRestorePhase phase) {
     if (!target.progress || !target.player || !target.score) {
         error = "Replay restore target missing";
         return false;
@@ -27,15 +42,14 @@ bool ReplaySession::restore_stage(const ReplayFile& file, u32 stage_index,
         error = "Replay stage header truncated (need 0xC4 raw header)";
         return false;
     }
-    // ---- 种子恢复（0x449070:40-42；先于资源块，与原版同序）----
-    // DAT_004dc324 与 DAT_004dc31c 同置 *(u16*)(iVar2+2)；仅 0x4dc324 的调用
-    // 计数 _DAT_004dc328 清零（reseed_restore），0x4dc31c 计数原版不清
-    //（reseed 只写种子）。
+    // 447900:200-201 and 449070:40-42 both set the game seed and clear its
+    // counter. Only 449070 writes the visual seed; its counter is preserved.
     const u16 stamp = u16(stage.header[2]) | u16(stage.header[3]) << 8;
     log.seed = stamp;
     log.stage_number = stage.number;
     if (target.game_random) target.game_random->reseed_restore(stamp);
-    if (target.visual_random) target.visual_random->reseed(stamp);
+    if (phase == ReplayRestorePhase::Transition && target.visual_random)
+        target.visual_random->reseed(stamp);
     // ---- 顶层头 +0x5C/+0x60/+0x64（0x447900:197-199；先写，随后被覆盖）----
     if (file.top_header.size() >= 0x68) {
         target.progress->character = as_i32(rd32(&file.top_header[0x5C]));
@@ -54,7 +68,7 @@ bool ReplaySession::restore_stage(const ReplayFile& file, u32 stage_index,
     target.progress->continues = b[4];                    // 0x4BE7C8 +0x24 续关计数
     /* b[5] +0x28 0x4BE7CC 未定名 —— 无归属 */
     target.progress->graze = b[6];                        // 0x4BE7D0 +0x2C
-    /* b[7] +0x30 0x4BE7D4 符卡/练习选择 —— port 无符卡练习模式，无归属 */
+    target.progress->selected_spell_id = b[7];            // 0x4BE7D4 +0x30
     /* b[8] +0x34 0x4BE7D8 未定名计数 —— 无归属 */
     target.progress->max_point = b[9];                    // 0x4BE7DC +0x38 当前最大得点
     /* b[10] +0x3C 0x4BE7E0 最大得点基准 —— port 无独立字段，无归属 */
@@ -69,6 +83,23 @@ bool ReplaySession::restore_stage(const ReplayFile& file, u32 stage_index,
     target.player->bomb_pieces = b[19];                   // 0x4BE804 +0x60 灵击碎片
     target.progress->ending_points = b[20];               // 0x4BE808 +0x64 灵界值
     /* b[21] +0x68 0x4BE80C 灵界 UI 辅助（语义未定名）—— 无归属 */
+    // ---- 00447900:209-219 原版 normalize（保留原分支，不删）----
+    // 反编译逐行：
+    //   if (DAT_004be7d4 < 0) {
+    //     if ((DAT_004be830 & 0x30) != 0x20) DAT_004be7d4 = -1;
+    //     DAT_004be830 &= 0xffffffcf;              // 清 bit4/bit5
+    //   } else {
+    //     if ((DAT_004be830 & 0x30) != 0x20) DAT_004be7d4 = -1;
+    //     DAT_004be830 = DAT_004be830 & 0xffffffef | 0x20;  // 清 bit4 置 bit5
+    //   }
+    // 即：卡号 >=0 时模式位一律归 0x20（即使同分支把卡号清 -1）；卡号 <0 时
+    // 模式位一律清 0。模式位本身来自顶层头 +0x0a bit1（447900:64-68 录制 /
+    // begin_replay_stage 的 4525b0 读取），不来自 stage 头。
+    const bool selected_spell = target.progress->selected_spell_id >= 0;
+    if ((target.progress->run_mode_flags & 0x30u) != 0x20u)
+        target.progress->selected_spell_id = -1;
+    target.progress->run_mode_flags = (target.progress->run_mode_flags & ~0x30u) |
+                                     (selected_spell ? 0x20u : 0u);
     return true;
 }
 

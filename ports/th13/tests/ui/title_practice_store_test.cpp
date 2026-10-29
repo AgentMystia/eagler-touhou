@@ -128,4 +128,51 @@ TEST(practice_corrupt_truncated_or_overlong_saves_revert_to_defaults) {
     }
 }
 
+// Extra 解锁位持久化（0x416130 通关落档 0x1b26b+char*2 bit0x10 → port
+// v2 reserved[0] 低 4 位）：写点 Application.cpp 通关结算（难度>0），读点
+// TitleMainMenu::extra_gate（0x44c570 case0 +0x5c40 bit1，任一角色即开）。
+TEST(practice_v2_roundtrips_extra_unlock_mask) {
+    fixture_path();
+    {
+        FileStore files;
+        CHECK(files.initialize());
+        files.set_extra_unlocked(0);
+        files.set_extra_unlocked(3);
+        CHECK(files.save());
+    }
+    FileStore reloaded;
+    CHECK(reloaded.initialize());
+    CHECK(reloaded.loaded);
+    CHECK(reloaded.extra_unlocked(0));
+    CHECK(!reloaded.extra_unlocked(1));
+    CHECK(!reloaded.extra_unlocked(2));
+    CHECK(reloaded.extra_unlocked(3));
+    // v1 档（合法，无 extra 字节）：装载成功但不发明解锁位（缺省 0）。
+    const std::string legacy = fixture_path();
+    write_fixture(legacy, legacy_save());
+    FileStore v1;
+    CHECK(v1.initialize());
+    CHECK(v1.loaded);
+    for (i32 character = 0; character < 4; ++character)
+        CHECK(!v1.extra_unlocked(character));
+    // 默认手柄五键绑定
+    const std::array<i16, 5> expected_defaults = {0, 1, 2, 3, 4};
+    CHECK(v1.pad_bindings == expected_defaults);
+}
+
+TEST(pad_bindings_v3_roundtrip_and_defaults) {
+    fixture_path();
+    {
+        FileStore files;
+        CHECK(files.initialize());
+        files.pad_bindings = {4, 3, 2, 1, 0};
+        CHECK(files.save());
+    }
+    FileStore reloaded;
+    CHECK(reloaded.initialize());
+    CHECK(reloaded.loaded);
+    const std::array<i16, 5> expected_custom = {4, 3, 2, 1, 0};
+    CHECK(reloaded.pad_bindings == expected_custom);
+}
+
 int main() { return th13test::run_all("Practice save migration"); }

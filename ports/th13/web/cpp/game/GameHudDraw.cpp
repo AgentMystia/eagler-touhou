@@ -54,13 +54,45 @@ void GameHud::update_score() {
         if (score.score <= displayed_score) score_increment = 0;
     }
     if (progress.high_score < displayed_score) {
+        progress.run_mode_flags |= 4; // 0042a370 writes DAT_004be830, not a HUD-local word.
         progress.high_score_extra = progress.continues;
-        player.mode_flags |= 4;
+        player.mode_flags |= 4; // Retain the legacy HUD projection mirror.
         progress.high_score = displayed_score;
     }
 }
 
+bool GameHud::draw_trance_countdown(HudDrawServices& services) {
+    if (!trance_active(progress)) return true;
+    // 405d60 ->405940: screen-space ASCII font7 at(224,112), gauge/60 seconds.
+    HudTextStyle style;
+    style.font = 7;
+    style.alignment = 0;
+    const i32 gauge = progress.ending_points;
+    const bool red = gauge < 30 ? (gauge & 1) != 0 : gauge < 90 && (gauge & 7) != 0;
+    style.color = red ? 0xffff0000u : 0xffffffffu;
+    if (services.hud_text({{224,112,0},style,format("%.2fs",double(gauge)/60.0)})) return true;
+    error = "Trance countdown text service failed";
+    return false;
+}
+
 bool GameHud::draw(const HudDrawContext& context, HudDrawServices& services) {
+    // 427910 draws the clear bonus while HUD+110 resolves, including the
+    // VM's label1 tail. Use that live VM's primary alpha (VM+52b), not the
+    // clear flag or the independently timed normal HUD icon alpha.
+    if (auto* banner = animations.registry.find(clear_banner)) {
+        HudTextStyle clear_style;
+        clear_style.font = 4;
+        clear_style.alignment = clear_style.vertical_alignment = 0;
+        clear_style.shadow = true;
+        clear_style.color = alpha(0xffffffffu, banner->visual.color);
+        if (!services.hud_text({{320,200,0}, clear_style,
+                               grouped_number(u32(progress.stage_clear_bonus))})) {
+            error = "Stage clear bonus text service failed";
+            return false;
+        }
+    } else {
+        clear_banner = 0;
+    }
     // 灵界计值显示（0x42b030）随帧刷新；只消费 SessionState.ending_points
     //（DAT_004be808 灵界计，单一状态，不另建 HUD 私有计量）。
     if (!update_trance()) return false;

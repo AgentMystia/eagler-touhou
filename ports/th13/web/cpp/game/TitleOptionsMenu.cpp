@@ -31,11 +31,13 @@ bool TitleOptionsMenu::open() {
     row_ = 0;
     if (!pushed_) {
         state.menu.push();
-        state.menu.wrapping = true;
-        state.menu.count = kOptionRows;
-        state.menu.select(0);
         pushed_ = true;
     }
+    // 从キー配置屏返回时 Option 光标栈条目未 pop，但本屏 case0 仍按原版
+    // FUN_00415030(0) 归位；count 重新落 5（键配置屏曾改为 7）。
+    state.menu.wrapping = true;
+    state.menu.count = kOptionRows;
+    state.menu.select(0);
     if (state.handles[kOptionRoot]) {
         if (!visuals.interrupt(kOptionRoot, 1, false)) return fail(visuals.error);
         state.handles[kOptionRoot] = 0;
@@ -99,6 +101,13 @@ bool TitleOptionsMenu::leave(bool to_key_config) {
     if (to_key_config) {
         if (!host.open_key_config())
             return fail("Title option key config screen not wired");
+        // 原版 case4 行2：0044bac0(...,4) + 00473190 push，root1 不显式收面；
+        // 移植侧两屏字条同坐标（root1/root2 均 (70,312)），必须收 Option 面
+        // 再切屏，避免与键配置 7 行重叠（视觉等价，生命周期差异登记）。
+        (void)visuals.interrupt(kOptionRoot, 1, false);
+        state.handles[kOptionRoot] = 0;
+        // 光标栈 push 归键配置屏 case0（与 00473190 净效果相同）。
+        state.change_screen(TitleScreen::KeyConfig);
         return true;
     }
     if (!host.persist_options(volumes)) fail("Title option persistence unavailable");

@@ -4,6 +4,7 @@
 #include "EclContext.hpp"
 
 #include <cmath>
+#include <cstring>
 
 namespace th13 {
 namespace {
@@ -198,8 +199,8 @@ int EclContext::step(float elapsed) {
                     adjust = true;
                     break;
                 }
-                // 同步调用：先把本指令 stack_adjust 清 0（0x477030 同款），切换游标后
-                // 本帧继续执行被调者首指令。
+                // 004772a0 case0xb passes the current context to00477030.
+                // The callee shares its stack and suspends the caller until ret.
                 case Op::Call:
                     const_cast<EclInstruction*>(instruction)->stack_adjust = 0;
                     if (!call_into(*this)) return -2;
@@ -462,14 +463,14 @@ int EclContext::step(float elapsed) {
                 }
                 default:
                     // 游戏指令（>93）：0 前移 / 1 让出本帧 / -1 终止 / -2 错误。
-                    // 0x4772a0 caseD：result==1 → LAB_00477383 跳出执行循环，
-                    // time += elapsed、步进插值通道后返回——Q 不前移，下帧重取。
+                    // Port result1 is StageCommands' blocked519/520 result.
+                    // Retail returns-1 here and jumps478bac ->4773a3,
+                    // bypassing the time increment; interpolation still ticks.
                     if (commands) {
                         const int result = commands->execute(*this, u16(op));
                         if (result == -2) return result;
                         if (result == -1) return finish(elapsed);
                         if (result == 1) {
-                            time = float(time + elapsed);
                             return finish(elapsed);
                         }
                         adjust = true;

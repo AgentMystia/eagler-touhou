@@ -18,12 +18,23 @@ mkdir -p "$out_dir"
 # 游戏源与套件均自动发现，使任意历史提交点可独立构建当时的测试。
 sources=(eagler-touhou/ports/th13/web/cpp/game/*.cpp)
 
+object_dir="$(mktemp -d "$out_dir/objects.XXXXXX")"
+trap 'rm -rf -- "$object_dir"' EXIT
+objects=()
 status=0
+for source in "${sources[@]}"; do
+  object="$object_dir/$(basename "${source%.cpp}").o"
+  g++ -std=c++17 $flags -fno-exceptions -fno-rtti -ffp-contract=off \
+    -Ieagler-touhou/ports/th13/web/cpp -c "$source" -o "$object" || status=1
+  objects+=("$object")
+done
+(( status )) && exit 1
+
 for suite in "$script_dir"/ecl_*_test.cpp; do
   name="$(basename "$suite" .cpp)"
   g++ -std=c++17 $flags -fno-exceptions -fno-rtti -ffp-contract=off \
     -Ieagler-touhou/ports/th13/web/cpp \
-    "${sources[@]}" "$suite" \
+    "${objects[@]}" "$suite" \
     -o "$out_dir/$name" || status=1
 done
 (( status )) && exit 1

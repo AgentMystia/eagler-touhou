@@ -35,11 +35,11 @@ void AnmRenderer::set_viewport(const GraphicsViewport& value){flush();viewport=v
 void AnmRenderer::set_camera(const AnmCamera& value){flush();graphics.presentation_camera(false);camera=value;graphics.set_matrix(MatrixKind::View,camera.view);graphics.set_matrix(MatrixKind::Projection,camera.projection);}
 u32 AnmRenderer::tint_color(u32 color)const noexcept{return tint_enabled?multiply_color(color,tint):color;}
 bool AnmRenderer::material(AnmVm& vm,bool textured){
-    if(textured){auto* source=vm.sprite_resource?vm.sprite_resource:vm.resource;if(!source||vm.visual.sprite<0||u32(vm.visual.sprite)>=source->sprites.size()){error="Animation texture source unavailable: script="+std::to_string(vm.source_script)+" sprite="+std::to_string(vm.visual.sprite)+" mode="+std::to_string(vm.visual.draw_mode())+" flags="+std::to_string(vm.visual.flags)+" resource="+(source&&!source->textures.empty()?source->textures[0].name:"none")+" sprites="+std::to_string(source?source->sprites.size():0);return false;}
+    if(textured){auto* source=vm.sprite_resource?vm.sprite_resource:vm.resource;const auto* sprite=vm.texture_sprite();if(!source||!sprite){error="Animation texture source unavailable: script="+std::to_string(vm.source_script)+" sprite="+std::to_string(vm.visual.sprite)+" mode="+std::to_string(vm.visual.draw_mode())+" flags="+std::to_string(vm.visual.flags)+" resource="+(source&&!source->textures.empty()?source->textures[0].name:"none")+" sprites="+std::to_string(source?source->sprites.size():0);return false;}
         // The original material lookup uses the bank and sprite index even before
         // an ANM script has executed sprite selection (chapter root 241 does this).
         // Keep its zero geometry/UVs; selecting a sprite here would change them.
-        const u32 texture=graphics.texture(*source,source->sprites[u32(vm.visual.sprite)].texture);if(texture!=bound_texture){flush();bound_texture=texture;graphics.bind_texture(texture);}}
+        const u32 texture=graphics.texture(*source,sprite->texture);if(texture!=bound_texture){flush();bound_texture=texture;graphics.bind_texture(texture);}}
     const auto& v=vm.visual;auto next=graphics.pipeline();const u32 mode=v.blend_mode();next.alphaTest=true;
     // [原版机制·黑块根因] 原版 ANM quad 全族以 ALPHABLENDENABLE=TRUE 绘制
     // （oracle title-draws 全窗 blend 三元组实证：mode0=[5,6,1]、mode1=[5,2,1]、
@@ -63,7 +63,7 @@ bool AnmRenderer::material(AnmVm& vm,bool textured){
     case 9:next.sourceBlend=BlendFactor::SourceAlpha;next.destinationBlend=BlendFactor::One;next.blendEquation=BlendEquation::Maximum;break;
     default:break;
     }
-    next.minFilter=next.magFilter=v.render_flags&0x800?Filter::Nearest:Filter::Linear;const u32 u=v.render_flags&3,w=v.flags>>30;
+    next.minFilter=next.magFilter=v.render_flags&0x400?Filter::Nearest:Filter::Linear;const u32 u=v.render_flags&3,w=v.flags>>30;
     if(u<3)next.addressU=u==0?Address::Repeat:u==1?Address::Clamp:Address::Mirror;if(w<3)next.addressV=w==0?Address::Repeat:w==1?Address::Clamp:Address::Mirror;
     next.textureTransform=false;next.color.operation=next.alpha.operation=ColorOperation::Multiply;next.color.first=next.alpha.first={ArgumentSource::Texture};next.color.second=next.alpha.second={ArgumentSource::Diffuse};
     if(!graphics.pipeline().compatible(next))flush();graphics.pipeline()=next;return true;
@@ -74,17 +74,21 @@ int AnmRenderer::shape(AnmVm& vm){
     if(vm.creation_parent&&!(v.render_flags&0x10000)){const auto& parent=*vm.creation_parent;width=float(parent.visual.scale.x*width);height=float(parent.visual.scale.y*height);angle=float(parent.variables.rotation.z+angle);}
     const u32 resolution=v.render_flags>>20&7;if(resolution==1||resolution==2){if(!vm.environment){error="Primitive animation scene scale unavailable";return -2;}const float factor=resolution==1?vm.environment->resolution_scale:float(vm.environment->resolution_scale*.5f);width=float(factor*width);height=float(factor*height);}
     flush();if(!material(vm,false))return -2;TH13_DRAW_SPRITE(vm);auto& state=graphics.pipeline();state.textureTransform=false;state.color.operation=state.alpha.operation=ColorOperation::First;state.color.first=state.alpha.first={ArgumentSource::Diffuse};graphics.set_layout(VertexLayout::ScreenColor);
-    // th13 形态分族（0x46a700 分发表）：603/606 → 15/19 = 旋转实心矩形
-    // （0046ad00：宽高+锚点，无段数）；607/608 → 20/21 = 矩形族 0046afa0；
-    // 604/605 → 16/17 = 环/扇（0046b050/0046b3c0，段数 = vm+0x4AC）。
-    // th15 的矩形分支是 16,20-22（其 603/606-608 映射不同），不能照搬。
-    if(mode==15||mode==19||mode>=20){const u32 ax=v.flags>>21&3,ay=v.flags>>23&3;if(ax>2||ay>2){error="Primitive animation anchor outside range";return -2;}constexpr float xs[3][2]={{-.5f,.5f},{0,1},{-1,0}},ys[3][2]={{-.5f,.5f},{0,1},{-1,0}};const float sine=float(std::sin(double(angle))),cosine=float(std::cos(double(angle)));const u32 primary=v.color,secondary=mode==20||mode==22?v.secondary_color:v.color;
+    // 0046a700/0046aa2d pass primary and secondary to opposite rectangle
+    // edges; 604 is a filled fan, while 605 is an outline, not a strip.
+    if(mode==15||mode==19||mode>=20){const u32 ax=v.flags>>21&3,ay=v.flags>>23&3;if(ax>2||ay>2){error="Primitive animation anchor outside range";return -2;}constexpr float xs[3][2]={{-.5f,.5f},{0,1},{-1,0}},ys[3][2]={{-.5f,.5f},{0,1},{-1,0}};const float sine=float(std::sin(double(angle))),cosine=float(std::cos(double(angle)));const u32 primary=v.color,secondary=mode==19||mode==21?v.secondary_color:primary;
         const auto rectangle=[&](float w,float h,u32 a,u32 b){ColorVertex data[4];for(u32 i=0;i<4;i++){const float x=float(xs[ax][i&1]*w),y=float(ys[ay][i>>1]*h);data[i]={{float(float(float(x*cosine)-float(y*sine))+center.x),float(float(float(y*cosine)+float(x*sine))+center.y),0},1,i&1?b:a};}submit(vm,Topology::Strip,2,data,sizeof(ColorVertex));};
-        if(mode==21||mode==22)rectangle(float(width+1),float(height+1),((primary>>1)&0x7f000000)|(primary&0xffffff),((secondary>>1)&0x7f000000)|(secondary&0xffffff));rectangle(width,height,primary,secondary);return 0;
+        if(mode==20||mode==21)rectangle(float(width+1),float(height+1),((primary>>1)&0x7f000000)|(primary&0xffffff),((secondary>>1)&0x7f000000)|(secondary&0xffffff));rectangle(width,height,primary,secondary);return 0;
     }
-    const i32 count=vm.variables.integers[0];if(count<1||count>0x100000){error="Primitive animation segment count invalid";return -2;}shapes.clear();const float step=float(6.283185482025146484375f/float(count));if(mode==17)shapes.push_back({{center.x,center.y,0},1,v.color});
-    for(i32 i=0;i<=count;i++){const auto point=[&](float radius){return Vec3{float(float(std::cos(double(angle))*double(radius))+center.x),float(float(std::sin(double(angle))*double(radius))+center.y),0};};if(mode==19){shapes.push_back({point(float(width-float(height*.5f))),1,v.color});shapes.push_back({point(float(float(height*.5f)+width)),1,v.color});}else shapes.push_back({point(width),1,mode==17?v.secondary_color:v.color});angle=normalize_angle(float(angle+step));}
-    if(mode==17){state.cull=Cull::None;submit(vm,Topology::Fan,count,shapes.data(),sizeof(ColorVertex));}else if(mode==18)submit(vm,Topology::LineStrip,count,shapes.data(),sizeof(ColorVertex));else submit(vm,Topology::Strip,count*2,shapes.data(),sizeof(ColorVertex));return 0;
+    const i32 count=vm.variables.integers[0];if(count<1||count>0x100000){error="Primitive animation segment count invalid";return -2;}shapes.clear();const float step=float(6.283185482025146484375f/float(count));if(mode==16)shapes.push_back({{center.x,center.y,0},1,v.color});
+    for(i32 i=0;i<=count;i++){const Vec3 point{float(float(std::cos(double(angle))*double(width))+center.x),float(float(std::sin(double(angle))*double(width))+center.y),0};shapes.push_back({point,1,mode==16?v.secondary_color:v.color});angle=normalize_angle(float(angle+step));}
+    if(mode==16){state.cull=Cull::None;submit(vm,Topology::Fan,count,shapes.data(),sizeof(ColorVertex));}else submit(vm,Topology::LineStrip,count,shapes.data(),sizeof(ColorVertex));return 0;
+}
+int AnmRenderer::circle(AnmVm& vm){
+    auto& data=*vm.geometry.circle;flush();if(!material(vm,false))return -2;TH13_DRAW_SPRITE(vm);
+    auto& state=graphics.pipeline();state.color.operation=state.alpha.operation=ColorOperation::First;state.color.first=state.alpha.first={ArgumentSource::Diffuse};graphics.set_layout(VertexLayout::ScreenColor);
+    shapes.clear();for(const auto& v:data.vertices)shapes.push_back({v.position,1,tint_color(v.color)});
+    state.cull=Cull::None;submit(vm,Topology::Fan,32,shapes.data(),sizeof(ColorVertex));return 0;
 }
 int AnmRenderer::draw_glyph(AnmVm& vm){
     if(anm_draw_probe.enabled)++anm_draw_probe.glyphs;
@@ -92,7 +96,7 @@ int AnmRenderer::draw_glyph(AnmVm& vm){
     // Preserve original atlas glyphs. At integer high-resolution scale, sample
     // their texels directly rather than blurring them a second time.
     const u32 flags=vm.visual.render_flags;
-    if(vm.environment&&vm.environment->raster_scale>1&&vm.visual.scale.x==1&&vm.visual.scale.y==1)vm.visual.render_flags|=0x800;
+    if(vm.environment&&vm.environment->raster_scale>1&&vm.visual.scale.x==1&&vm.visual.scale.y==1)vm.visual.render_flags|=0x400;
     const int result=quad(vm,true);vm.visual.render_flags=flags;return result;
 }
 int AnmRenderer::quad(AnmVm& vm,bool pixel){
@@ -134,9 +138,9 @@ int AnmRenderer::world_quad(AnmVm& vm){
     const bool fog=state.fog;if(v.draw_mode()==15)state.fog=true;submit(vm,Topology::Strip,2,data,sizeof(Vertex));if(v.draw_mode()==15)state.fog=false;else state.fog=fog;return 0;
 }
 int AnmRenderer::mesh(AnmVm& vm){
-    const i32 count=vm.variables.integers[0];if(count<1||u32(count)>vm.geometry.world_vertices.size()/2){error="World animation mesh buffer unavailable";return -2;}Matrix4 world;if(!anm_mesh_transform(vm,world)){error="World animation mesh transform unavailable";return -2;}
+    const i32 count=vm.geometry.wind?32:vm.geometry.ribbon?16:vm.variables.integers[0];if(count<1||(!vm.geometry.wind&&!vm.geometry.ribbon&&u32(count)>vm.geometry.world_vertices.size()/2)){error="World animation mesh buffer unavailable";return -2;}Matrix4 world;if(!anm_mesh_transform(vm,world)){error="World animation mesh transform unavailable";return -2;}
     flush();if(!material(vm))return -2;TH13_DRAW_SPRITE(vm);auto& state=graphics.pipeline();state.depthWrite=!(vm.visual.flags&0x2000);state.textureTransform=true;
-    graphics.set_matrix(MatrixKind::World,world);graphics.set_matrix(MatrixKind::Texture,anm_texture_transform(vm));graphics.set_layout(VertexLayout::WorldColorUv);submit(vm,Topology::Strip,u32(count)*2-2,vm.geometry.world_vertices.data(),sizeof(AnmWorldVertex));return 0;
+    graphics.set_matrix(MatrixKind::World,world);graphics.set_matrix(MatrixKind::Texture,anm_texture_transform(vm));graphics.set_layout(VertexLayout::WorldColorUv);submit(vm,Topology::Strip,u32(count)*2-2,(vm.geometry.wind?vm.geometry.wind->vertices.data():vm.geometry.ribbon?vm.geometry.ribbon->vertices.data():vm.geometry.world_vertices.data()),sizeof(AnmWorldVertex));return 0;
 }
 int AnmRenderer::trail(AnmVm& vm){
     auto& data=*vm.geometry.trail;const i32 count=data.age.current;if(count<1||count>64){error="Particle trail vertex count outside range";return -2;}const auto& v=vm.visual;const auto& p=vm.variables.position;Vec3 center{float(float(v.child_anchor.x+v.translation.x)+p.x),float(float(v.child_anchor.y+p.y)+v.translation.y),float(float(v.child_anchor.z+p.z)+v.translation.z)};if(!anm_adjust_position(vm,center)){error="Particle trail position unavailable";return -2;}
@@ -160,9 +164,23 @@ int AnmRenderer::draw(AnmVm& vm){
     // 其入口就地登记（掩蔽 flush 的遗留批次语义维持历史行为，非 overlay 路径
     // 已在各绘制路径 material 后挂钩修正）；overlay 面板经 draw() 递归自挂。
     if(vm.geometry.overlay){TH13_DRAW_SPRITE(vm);return overlay(vm);}
+    if(vm.geometry.circle)return circle(vm);
     if(vm.geometry.trail)return trail(vm);
+    if(vm.geometry.wind){
+        // 402340 draws in the STD camera inherited from406d90/407310. The
+        // web scheduler restores a2D camera at the end of its STD pass, so
+        // select that same saved STD state explicitly for this world effect.
+        const auto saved_camera=camera;const auto saved_viewport=viewport;
+        if(scenery_camera_ready){set_viewport(scenery_viewport);set_camera(scenery_camera);}
+        flush();graphics.set_fog_color(camera.fog_color);graphics.set_fog_range(camera.fog_near,camera.fog_far);
+        graphics.set_fog(true);graphics.set_depth_compare(Compare::LessEqual);
+        const int result=mesh(vm);flush();graphics.set_depth_compare(Compare::Always);graphics.set_fog(false);
+        if(scenery_camera_ready){set_viewport(saved_viewport);set_camera(saved_camera);}
+        return result;
+    }
+    if(vm.geometry.ribbon){flush();graphics.set_fog(true);const int result=mesh(vm);flush();graphics.set_fog(false);return result;}
     const auto& v=vm.visual;if(vm.geometry.distortion){flush();if(!material(vm))return -2;TH13_DRAW_SPRITE(vm);graphics.set_depth_mask(false);graphics.set_layout(VertexLayout::ScreenColorUv);submit(vm,Topology::Fan,31,vm.geometry.distortion->vertices.data(),sizeof(AnmGeometryVertex));}
-    if((v.flags&3)!=3||(v.render_flags&0x60))return -1;const u32 mode=v.draw_mode();if(mode==8){if(!(v.color>>24)&&!(v.secondary_color>>24))return -1;return world_quad(vm);}if(mode==24||mode==25)return mesh(vm);
+    if((v.flags&3)!=3||(v.render_flags&0x20))return -1;const u32 mode=v.draw_mode();if(mode==8||mode==18){if(!(v.color>>24)&&!(v.secondary_color>>24))return -1;if(mode==18){flush();graphics.set_fog(true);}const int result=world_quad(vm);if(mode==18){flush();graphics.set_fog(false);}return result;}if(mode==24||mode==25)return mesh(vm);
     if(graphics.pipeline().depthWrite){flush();graphics.set_depth_mask(false);}if(mode>=15&&mode<=22)return shape(vm);if(mode<=3){if(!(v.color>>24)&&!(v.secondary_color>>24))return -1;return quad(vm,mode==0);}
     if(mode==4||mode==6){if(!(v.color>>24)&&!(v.secondary_color>>24))return -1;return projected_quad(vm,mode==6);}
     if(mode==10||mode==23||mode>25)return 0;if(mode==9||mode==11||mode==12||mode==13||mode==14){if(mode!=11&&!(v.color>>24))return -1;const i32 count=vm.variables.integers[0];if(count<2||u32(count)>vm.geometry.screen_vertices.size()/2){error="Animation strip buffer unavailable";return -2;}flush();if(!material(vm))return -2;TH13_DRAW_SPRITE(vm);graphics.set_layout(VertexLayout::ScreenColorUv);submit(vm,mode==11?Topology::Fan:Topology::Strip,u32(count)*2-2,vm.geometry.screen_vertices.data(),sizeof(AnmGeometryVertex));return 0;}

@@ -61,7 +61,7 @@ public:
     // 每帧对每槽回填真实 pl03 VM 状态（step 之后、命中查询之前）。
     // alive=false：清槽（anm id 置 0；scale/counter 冻结——原版死槽不 tick）。
     // alive=true：以当前 scale 生成本帧矩形参数，随后 tick（scale += 1.0f）。
-    void set_vm(int slot, bool alive, float rotation_z);
+    void set_vm(int slot, bool alive, float rotation_z, float rate = 1.0f);
 
     // —— 只读视图（供 Combat 接线/对拍） ——
     bool active(int slot) const;

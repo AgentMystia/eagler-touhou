@@ -16,25 +16,25 @@ namespace th13 {
 constexpr i32 stage_clear_bonus(i32 stage) { return stage * 1000000; }
 
 // 六面全通奖四难度跳表（0x42cd40 switch DAT_004be7c4，0x42ce96-0x42ced0）：
-//   Easy (残+灵×4)×250,000 / Normal (残+灵×3)×1,000,000
-//   Hard 灵×5,000,000+残×1,500,000 / Lunatic (残+灵×5)×2,000,000
-// 残 = DAT_004be800、灵 = DAT_004be7f4。
+// 残 = DAT_004be7f4、灵 = DAT_004be800。
 constexpr i32 all_clear_bonus(i32 difficulty, i32 lives, i32 bombs) {
     switch (difficulty) {
         case 0:
-            return (lives + bombs * 4) * 250000;
+            return (bombs + lives * 4) * 250000;
         case 1:
-            return (lives + bombs * 3) * 1000000;
+            return (bombs + lives * 3) * 1000000;
         case 2:
-            return bombs * 5000000 + lives * 1500000;
+            return lives * 5000000 + bombs * 1500000;
+        case 3:
+            return (bombs + lives * 5) * 2000000;
         default:
-            return (lives + bombs * 5) * 2000000;
+            return 0;
     }
 }
 
-// Extra（st7）通关奖（0x42cfb3-c4）：(残 + 灵×10) × 4,000,000。
+// Extra（st7）通关奖（0x42cfb3-c4）：(灵 + 残×10) × 4,000,000。
 constexpr i32 extra_clear_bonus(i32 lives, i32 bombs) {
-    return (lives + bombs * 10) * 4000000;
+    return (bombs + lives * 10) * 4000000;
 }
 
 // 入账：score（点值）+= bonus/10，封顶 999,999,999（64 位中间量防环绕）。

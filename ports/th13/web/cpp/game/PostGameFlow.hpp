@@ -17,6 +17,8 @@
 // 随结算窗 oracle 一起校准）。
 #pragma once
 
+#include <string>
+
 #include "SessionState.hpp"
 #include "Types.hpp"
 
@@ -63,6 +65,11 @@ enum class OverlayState : u8 {
 struct PostGamePlatform {
     virtual ~PostGamePlatform() = default;
     virtual void request_destination(i32 raw) = 0;
+    virtual bool practice_end() { return true; }
+    virtual bool request_practice_end() { return practice_end(); }
+    // 42c550 frame 180: fullscreen black fade, duration 200.
+    virtual bool request_stage6_fade() { return false; }
+    virtual bool request_extra_results() { return false; }
     // GameOver/结算B 的 BGM「th128_08」（0x43f570:58）与音效族；id 先以
     // 0x15030(菜单音)/7(暂停 BGM 位) 语义透传，音频接线属 TODO。
     virtual void bgm(i32 id) = 0;
@@ -83,10 +90,12 @@ public:
     void on_stage_clear();
     // 0x43f570 全灭入口（mode0 → 态 0xe 族；mode≠0 → 结算B）。
     void on_game_over();
-    // 0x43e5a0 练习关终入口（结算A）——菜单交互 TODO，先入态冻结。
-    void on_practice_end();
+    // 0x43e5a0 练习关终入口（结算A）——触发平台练习结算覆盖层。
+    bool on_practice_end();
     // 0x43f720 Extra/符卡终局入口（结算B）——同上骨架。
     void on_extra_end();
+
+    std::string error;
 
     // 每帧推进（覆盖层激活与六面通关演出；0x43dbc0 分发的行为子集）。
     void update();

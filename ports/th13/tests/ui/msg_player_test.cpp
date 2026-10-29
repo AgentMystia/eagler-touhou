@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace th13;
@@ -78,13 +79,21 @@ std::vector<u8> build_msg(const std::vector<std::vector<u8>>& entries) {
 }
 
 struct RecordHost final : MsgHost {
-    std::vector<i32> bgm_calls, clears, boss_calls, interrupts, speakers;
+    std::vector<i32> bgm_calls, clears, boss_calls, interrupts, speakers, releases;
+    // 22/27 只调用 0x43af70（原版 0x428ae0 case 0x16/case 0x1b），
+    // 与 Boss 战设置无关；记录 (opcode, seconds) 以区分两条指令。
+    std::vector<std::pair<i32, float>> music_fades;
     i32 portraits = 0, blips = 0;
     void msg_bgm(i32 opcode) override { bgm_calls.push_back(opcode); }
     void msg_portrait_load() override { portraits++; }
     void msg_boss_battle() override { boss_calls.push_back(1); }
+    void msg_music_fade(i32 opcode) override { music_fades.emplace_back(opcode, -1.f); }
+    void msg_music_fade(i32 opcode, float seconds) override {
+        music_fades.emplace_back(opcode, seconds);
+    }
     void msg_stage_clear() override { clears.push_back(1); }
     void msg_advance_blip() override { blips++; }
+    void msg_release(i32 opcode) override { releases.push_back(opcode); }
     void msg_portrait_interrupt(i32 opcode, i32 label) override {
         interrupts.push_back(opcode * 1000 + label);
     }
@@ -150,7 +159,7 @@ TEST(msg_opcode21_fires_at_scheduled_clock) {
     entry.text(0, "First line");
     entry.integer(10, 0x0b, 600);  // 11;600 等输入
     entry.add(30, 0x15);           // 21 ★关终了
-    entry.add(31, 0x16);           // 22 Boss 战设置
+    entry.add(31, 0x16);           // 22 音乐淡出（0x428ae0 case 0x16 → 0x43af70）
     entry.integer(40, 0x0a, 0);
     entry.end(50);
     const auto bytes = build_msg({entry.bytes});
@@ -160,25 +169,63 @@ TEST(msg_opcode21_fires_at_scheduled_clock) {
     RecordHost host;
     MsgPlayer player;
     CHECK(player.open(file, 0, host, error));
-    // 前 31 帧不含 clock=30（0x428ae0 时间门：clock >= time 执行；第 k 帧先
-    // 执行后 +1，故 time=30 在第 31 次 step 命中）。11;600 处按原版给 Z 放行
-    //（无被动放行路径：r4 起 429938/429940 证据，快进/输入/超时三路之外
-    // 持续阻塞）——Z 在第 21 帧按下，11 让路后流指针到 21@30 时间门。
+    // 原版 428ae0：等待期间脚本钟停在 10。第 21 帧按 Z 后继续走时间门，
+    // 另需 19 帧到 clock=30；下一次更新才执行 Stage clear。
     for (int frame = 0; frame < 20; frame++) CHECK(player.step(false));
     CHECK(player.step(true));  // Z 边沿放行 opcode 11
-    for (int frame = 0; frame < 9; frame++) CHECK(player.step(false));
+    CHECK_EQ(player.clock(), 11u);
+    for (int frame = 0; frame < 19; frame++) CHECK(player.step(false));
+    CHECK_EQ(player.clock(), 30u);
     CHECK_EQ(host.clears.size(), 0u);
     CHECK(player.step(false));
     CHECK_EQ(host.clears.size(), 1u);
-    CHECK_EQ(host.boss_calls.size(), 0u);  // 22 在 time=31，尚未到
+    CHECK_EQ(host.music_fades.size(), 0u);  // 22 在 time=31，尚未到
     CHECK(player.step(false));
-    CHECK_EQ(host.boss_calls.size(), 1u);
+    CHECK_EQ(host.music_fades.size(), 1u);  // 22 → 0x43af70 音乐淡出
+    if (host.music_fades.size() == 1u) {
+        CHECK_EQ(host.music_fades[0].first, 0x16);
+        CHECK_EQ(host.music_fades[0].second, 0.0f);  // case 0x16 无浮点参数
+    }
+    CHECK_EQ(host.boss_calls.size(), 0u);  // 0x428ae0 case 0x16 不调用 Boss 战设置
     // 终止指令（time=50）后 done 且不再活跃。
     while (player.step(false)) {
     }
     CHECK(!player.active());
     CHECK(player.done());
     CHECK_EQ(host.clears.size(), 1u);
+}
+
+TEST(msg_music_fade_opcodes_22_and_27_do_not_start_boss_battle) {
+    // 原版 0x428ae0：case 0x16 与 case 0x1b 都只调用 0x43af70（音乐淡出）。
+    // 22 无浮点参数；27 的淡出秒数取指令 f32 参数。二者均不进入 Boss 战设置。
+    std::vector<u8> seconds(4);
+    const float fade = 3.5f;
+    std::memcpy(seconds.data(), &fade, sizeof fade);
+    InstructionBuilder entry;
+    entry.add(0, 0x16);              // 22
+    entry.add(1, 0x1b, seconds);     // 27;3.5
+    entry.end(2);
+    const auto bytes = build_msg({entry.bytes});
+    MsgFile file;
+    std::string error;
+    CHECK(file.open(bytes.data(), u32(bytes.size()), error));
+    RecordHost host;
+    MsgPlayer player;
+    CHECK(player.open(file, 0, host, error));
+    CHECK(player.step(false));  // time=0：op22
+    CHECK_EQ(host.music_fades.size(), 1u);
+    if (host.music_fades.size() == 1u) {
+        CHECK_EQ(host.music_fades[0].first, 0x16);
+        CHECK_EQ(host.music_fades[0].second, 0.0f);
+    }
+    CHECK(player.step(false));  // time=1：op27
+    CHECK_EQ(host.music_fades.size(), 2u);
+    if (host.music_fades.size() == 2u) {
+        CHECK_EQ(host.music_fades[1].first, 0x1b);
+        CHECK_NEAR(host.music_fades[1].second, 3.5f, 1e-6);
+    }
+    CHECK(host.boss_calls.empty());  // 0x428ae0 case 0x16/0x1b 不调用 Boss 战设置
+    CHECK(host.clears.empty());      // 21 的 0x42cd40 未触发
 }
 
 TEST(msg_wait_blocks_until_z_or_auto) {
@@ -198,10 +245,15 @@ TEST(msg_wait_blocks_until_z_or_auto) {
     for (int frame = 0; frame < 60; frame++) player.step(false);
     CHECK(player.active());                  // 无 Z：仍阻塞
     CHECK_EQ(player.state().lines.size(), 1u);
-    CHECK(player.step(true));                // Z 边沿放行：行块清、指针前进
-    CHECK_EQ(player.state().lines.size(), 0u);
-    for (int frame = 0; frame < 40; frame++) player.step(false);  // 时钟至 100
-    CHECK_EQ(player.state().lines.size(), 1u);  // time=100 的次句入块
+    CHECK(player.step(true));                // Z 边沿放行：指针前进
+    // 0x428ae0:378-379/393-394 只清 +0x5f/+0x60，不擦已写入的 text VM；
+    // 旧行保持到下一块首行（RunScene 用 lines_meta 维持纹理）。
+    CHECK_EQ(player.state().lines.size(), 1u);
+    for (int frame = 0; frame < 99; frame++) player.step(false);
+    CHECK_EQ(player.clock(), 100u);
+    CHECK_EQ(player.state().lines.size(), 1u);  // 下一句执行前仍保留旧行
+    player.step(false);  // time=100 的次句执行
+    CHECK_EQ(player.state().lines.size(), 1u);  // time=100 的次句入块（旧块被替换）
     CHECK_EQ(player.state().lines[0], std::string("After"));
 }
 
@@ -226,19 +278,24 @@ TEST(msg_wait_release_paths_original_semantics) {
     // 被动等待：远超 0x14 帧仍阻塞（429938/429940 缺快进位即回阻塞）。
     for (int frame = 0; frame < 40; frame++) player.step(false);
     CHECK_EQ(player.state().lines.size(), 1u);
-    CHECK_EQ(player.clock(), 41u);
+    CHECK_EQ(player.clock(), 0u);  // 原版等待不推进脚本钟
     // Ctrl 持续但未满 0x14：仍阻塞。
     for (int frame = 0; frame < 19; frame++) {
         MsgAdvance input;
-        input.held = 0x200;  // Ctrl 位（0x4e4c14）
+        input.held = 0x200;
+        input.pressed = frame == 0 ? 0x200 : 0;  // 新按下才能锁存快进请求
         input.ctrl_frames = u32(frame + 1);
         player.step(input);
     }
     CHECK_EQ(player.state().lines.size(), 1u);
-    // 第 20 帧（≥0x14）：静默放行——无计声、行块清、次句入块。
+    // 第 20 帧静默放行；下条 time=1 的时间门仍需本次 +1。
     MsgAdvance skip;
     skip.held = 0x200;
     skip.ctrl_frames = 0x14;
+    player.step(skip);
+    CHECK_EQ(player.clock(), 1u);
+    // 放行不擦旧文字（原版只清 +0x5f/+0x60）；下一句执行时才换块。
+    CHECK_EQ(player.state().lines.size(), 1u);
     player.step(skip);
     CHECK_EQ(player.state().lines.size(), 1u);
     CHECK_EQ(player.state().lines[0], std::string("Next"));
@@ -268,7 +325,7 @@ TEST(msg_wait_skip_requires_auto_bit_and_keys) {
         player.step(input);
     }
     CHECK_EQ(player.state().lines.size(), 1u);  // 仍停在首句
-    // 自动位置位但无键持续（skip 位由 held 置位）：不放行。
+    // 自动位置位但无按下边沿：不放行。
     InstructionBuilder auto_entry;
     auto_entry.integer(0, 0x0a, 1);
     auto_entry.text(0, "A");
@@ -283,24 +340,25 @@ TEST(msg_wait_skip_requires_auto_bit_and_keys) {
     CHECK(auto_player.open(auto_file, 0, auto_host, error));
     auto_player.step(false);
     for (int frame = 0; frame < 30; frame++) {
-        MsgAdvance input;  // held=0：skip_request 不置位
+        MsgAdvance input;  // pressed=0：skip_request 不置位
         input.ctrl_frames = 0x14;  // 持续计数即使非零也无快进位
         auto_player.step(input);
     }
     CHECK_EQ(auto_player.state().lines.size(), 1u);
-    // Z 持续计数（0x42b3f0(0)）同样参与快进：Z 持续位本身会先走 a) 计声
-    // 路径（0x42991f 含 0x1），故 Z 计数路径用「skip 位由 Ctrl 置位 + Z
-    // 计数器 ≥0x14」触发（42995a-429969），保持静默。
+    // Ctrl 边沿锁存请求，已持续 20 帧的 Z 走静默路径。
     MsgAdvance z_skip;
-    z_skip.held = 0x200;
+    z_skip.pressed = 0x200;
+    z_skip.held = 0x201;
     z_skip.z_frames = 0x14;
+    auto_player.step(z_skip);
+    z_skip.pressed = 0;
     auto_player.step(z_skip);
     CHECK_EQ(auto_player.state().lines[0], std::string("B"));
     CHECK_EQ(auto_host.blips, 0);
 }
 
-TEST(msg_wait_timeout_blips_and_enter_holds) {
-    // a) arg 倒计时耗尽 → 计声放行；b) Z/Enter 持续位 → 计声放行。
+TEST(msg_wait_timeout_blips_and_enter_press) {
+    // arg 倒计时耗尽、Z/Enter 按下均计声放行；开场前已按住不触发。
     InstructionBuilder entry;
     entry.text(0, "T");
     entry.integer(0, 0x0b, 5);  // 短超时
@@ -318,8 +376,10 @@ TEST(msg_wait_timeout_blips_and_enter_holds) {
     CHECK_EQ(player.state().lines.size(), 1u);  // 倒计时未尽
     player.step(false);                          // 耗尽帧：计声放行
     CHECK_EQ(host.blips, 1);
+    CHECK_EQ(player.state().lines.size(), 1u);   // 旧行保留到下一句写入
+    player.step(false);                          // time=1
     CHECK_EQ(player.state().lines[0], std::string("Done"));
-    // Enter 持续位（0x80000）在下一处 11 立即计声放行。
+    // Enter 按下位（0x80000）立即计声放行。
     InstructionBuilder second;
     second.text(0, "E");
     second.integer(0, 0x0b, 600);
@@ -335,8 +395,59 @@ TEST(msg_wait_timeout_blips_and_enter_holds) {
     MsgAdvance enter;
     enter.held = 0x80000;
     second_player.step(enter);
+    CHECK_EQ(second_host.blips, 0);
+    enter.pressed = 0x80000;
+    second_player.step(enter);
     CHECK_EQ(second_host.blips, 1);
+    CHECK_EQ(second_player.state().lines.size(), 1u);  // 旧行保留到下一句写入
+    enter.pressed = 0;
+    second_player.step(enter);
     CHECK_EQ(second_player.state().lines[0], std::string("Go"));
+}
+
+TEST(msg_future_end_and_opcode12_do_not_bypass_time_gate) {
+    // Native 428ae0 synthetic stream: 12@0 continues to 12@6 in update 0;
+    // end@8 executes on update 8. Opcode 12 never forces an extra update.
+    InstructionBuilder entry;
+    entry.add(0, 12);
+    entry.add(6, 12);
+    entry.end(8);
+    const auto bytes = build_msg({entry.bytes});
+    MsgFile file; MsgPlayer player; RecordHost host; std::string error;
+    CHECK(file.open(bytes.data(), u32(bytes.size()), error));
+    CHECK(player.open(file, 0, host, error));
+    for (u32 update = 0; update < 8; ++update) {
+        CHECK(player.step(false));
+        CHECK_EQ(player.clock(), update + 1);
+    }
+    CHECK(!player.step(false));
+    CHECK_EQ(player.clock(), 8u);
+}
+
+TEST(msg_held_before_dialogue_does_not_arm_skip_and_zero_timeout_passes) {
+    InstructionBuilder entry;
+    entry.integer(0, 10, 1);
+    entry.integer(0, 11, 40);
+    entry.end(5);
+    const auto bytes = build_msg({entry.bytes});
+    MsgFile file; MsgPlayer player; RecordHost host; std::string error;
+    CHECK(file.open(bytes.data(), u32(bytes.size()), error));
+    CHECK(player.open(file, 0, host, error));
+    MsgAdvance input;
+    input.held = 1; input.z_frames = 100;
+    for (u32 frame = 0; frame < 30; ++frame) CHECK(player.step(input));
+    CHECK(!player.state().skip_request);
+    CHECK_EQ(player.clock(), 0u);
+    CHECK_EQ(host.blips, 0);
+    InstructionBuilder immediate;
+    immediate.integer(0, 11, 0);
+    immediate.end(0);
+    const auto zero_bytes = build_msg({immediate.bytes});
+    MsgFile zero;
+    CHECK(zero.open(zero_bytes.data(), u32(zero_bytes.size()), error));
+    CHECK(player.open(zero, 0, host, error));
+    CHECK(!player.step(false));
+    CHECK_EQ(host.blips, 1);
 }
 
 TEST(msg_expression_interrupt_labels_and_speaker_switch) {
@@ -426,6 +537,29 @@ TEST(msg_side_and_box_position) {
     CHECK_EQ(player.state().side, 1);
     CHECK_EQ(player.state().box_x, 336.f);
     CHECK_EQ(player.state().box_y, 272.f);
+    CHECK_EQ(player.state().lines_meta.size(), 1u);
+    // 右侧文字位置 = box_x-(bubble_width+30)（0x428ae0:499）；气泡宽度
+    // ((len-1)*8)&~0xf-28，len=5 → 4。
+    CHECK_EQ(player.state().lines_meta[0].side, 1);
+    CHECK_EQ(player.state().lines_meta[0].bubble_width, 4.0f);
+}
+
+TEST(msg_bubble_width_excludes_nul_terminator) {
+    // 0x428ae0:474：len = pcVar5-(pcVar3+1)（NUL 前字节数）。
+    // 3 个 CP932 汉字 = 6 字节 → ((6-1)*8)&~0xf-28 = 4。
+    InstructionBuilder entry;
+    entry.text(0, "\x82\xa0\x82\xa2\x82\xa4");
+    entry.end(5);
+    const auto bytes = build_msg({entry.bytes});
+    MsgFile file;
+    std::string error;
+    CHECK(file.open(bytes.data(), u32(bytes.size()), error));
+    RecordHost host;
+    MsgPlayer player;
+    CHECK(player.open(file, 0, host, error));
+    player.step(false);
+    CHECK_EQ(player.state().lines_meta.size(), 1u);
+    CHECK_EQ(player.state().lines_meta[0].bubble_width, 4.0f);
 }
 
 TEST(msg_real_st01a_bytes) {
@@ -484,6 +618,109 @@ TEST(msg_real_st01a_bytes) {
     CHECK_EQ(clears[1], 1);
     CHECK(texts_entry0 >= 10);
     CHECK_EQ(first_text, std::string(u8"さーて、幽霊の親玉を倒さないとね！"));
+    // 同句 34 CP932 字节（17 字）→ ((34-1)*8)&~0xf-28 = 228。
+    RecordHost host;
+    MsgPlayer player;
+    CHECK(player.open(file, 0, host, error));
+    for (int frame = 0; frame < 40 && player.state().lines_meta.empty(); frame++)
+        player.step(false);
+    CHECK_EQ(player.state().lines_meta.size(), 1u);
+    CHECK_EQ(player.state().lines_meta[0].bubble_width, 228.0f);
+}
+
+TEST(msg_ruby_and_cp932_metadata) {
+    InstructionBuilder entry;
+    // 构造伴随 ruby 的对话行：|x,spacing,ruby 前缀 + 正文
+    entry.text(0, "|4,14,\x82\xb1\x82\xb1"); // |4,14,ここ (CP932)
+    entry.text(0, "\x96\xbb\x8a\x45\x82\xc9\x97\x88\x82\xbd\x82\xcc\x82\xcd\x8c\xa9\x93\x96\x88\xe1\x82\xa2\x82\xc1\x82\xc4\x8e\x96\x81\x48"); // 冥界に来たのは見当違いって事？
+    entry.end(10);
+    const auto bytes = build_msg({entry.bytes});
+    MsgFile file;
+    std::string error;
+    CHECK(file.open(bytes.data(), u32(bytes.size()), error));
+    RecordHost host;
+    MsgPlayer player;
+    CHECK(player.open(file, 0, host, error));
+    player.step(false);
+
+    CHECK_EQ(player.state().lines.size(), 1u);
+    CHECK_EQ(player.state().lines_meta.size(), 1u);
+    const auto& meta = player.state().lines_meta[0];
+    CHECK(meta.has_ruby);
+    CHECK_EQ(meta.ruby_x, 4);
+    // 0x428ae0:464 → 0x46e8f0 第 5 参 → 0x45aef0 param_9：第二数是逐字
+    // 步进（不是 y）；真实 st01a `|4,14,ここ` 即 x=4, spacing=14。
+    CHECK_EQ(meta.ruby_spacing, 14);
+    CHECK_EQ(meta.ruby_utf8, std::string(u8"ここ"));
+    CHECK_EQ(meta.text_utf8, std::string(u8"冥界に来たのは見当違いって事？"));
+    CHECK(meta.bubble_width > 0.0f);
+    CHECK_EQ(meta.text_attr, 0u);
+}
+
+TEST(msg_release_ops_keep_lines_for_vm_fade) {
+    // 原版 opcode 6/18 不清 +0x5f/+0x60，也不清已写入文字；文本 VM 仅
+    // 由 0x46fc30 label1/label3 淡出。RunScene 通过 msg_release 接 fade。
+    for (u8 opcode : {u8(0x06), u8(0x12)}) {
+        InstructionBuilder entry;
+        entry.text(0, "Line");
+        entry.integer(0, 0x0b, 1);  // 1 帧超时放行
+        entry.add(0, opcode);
+        entry.end(5);
+        const auto bytes = build_msg({entry.bytes});
+        MsgFile file;
+        std::string error;
+        CHECK(file.open(bytes.data(), u32(bytes.size()), error));
+        RecordHost host;
+        MsgPlayer player;
+        CHECK(player.open(file, 0, host, error));
+        player.step(false);
+        CHECK_EQ(host.releases.size(), 1u);
+        CHECK_EQ(host.releases[0], i32(opcode));
+        // 行数据保留：RunScene 仍可提交同一行；纹理由 DialogueText::fade
+        // 保留像素，不会触发 blank_all。
+        CHECK_EQ(player.state().lines.size(), 1u);
+        CHECK_EQ(player.state().lines_meta.size(), 1u);
+        CHECK_EQ(player.state().lines_meta[0].text_utf8, std::string("Line"));
+    }
+}
+
+TEST(msg_text_attr_style_bits_follow_original_ops) {
+    // 0x428ae0：op26(+0x1a) → +0x5e |= 2（样式 5）；op7/8/9 → +0x5e &= ~2
+    // （样式 4）；op29(+0x1d) 只改 bit2-5，不碰样式位 bit1。
+    InstructionBuilder entry;
+    entry.integer(0, 0x1d, 1);  // 29;1 → bit2
+    entry.text(0, "A");
+    entry.integer(5, 0x0b, 600);
+    entry.integer(10, 0x1a, 0);  // 26 → bit1（样式 5）
+    entry.text(10, "B");
+    entry.integer(15, 0x0b, 600);
+    entry.add(20, 0x07);         // 7 → 清 bit1（样式 4）
+    entry.text(20, "C");
+    entry.integer(25, 0x0b, 600);
+    entry.end(30);
+    const auto bytes = build_msg({entry.bytes});
+    MsgFile file;
+    std::string error;
+    CHECK(file.open(bytes.data(), u32(bytes.size()), error));
+    RecordHost host;
+    MsgPlayer player;
+    CHECK(player.open(file, 0, host, error));
+    player.step(false);  // 29 + text A + time5 gate
+    CHECK_EQ(player.state().lines_meta.size(), 1u);
+    CHECK_EQ(player.state().lines_meta[0].text_attr, 4u);   // bit2
+    for (int frame = 0; frame < 5; frame++) player.step(false);  // clock 5；op11 阻塞
+    player.step(true);   // op11 放行；time10 门
+    for (int frame = 0; frame < 5; frame++) player.step(false);  // 26 + text B
+    CHECK_EQ(player.state().lines_meta.size(), 1u);
+    CHECK_EQ(player.state().lines_meta[0].text_attr, 6u);   // bit1|bit2
+    CHECK_EQ(((player.state().lines_meta[0].text_attr >> 1) & 1u) + 4u, 5u);
+    for (int frame = 0; frame < 5; frame++) player.step(false);  // clock 15；op11 阻塞
+    player.step(true);   // op11 放行；time20 门
+    for (int frame = 0; frame < 5; frame++) player.step(false);  // 7 + text C
+    CHECK_EQ(player.state().lines_meta.size(), 1u);
+    CHECK_EQ(player.state().lines_meta[0].text_attr, 4u);   // bit1 cleared
+    // 正文字体样式 = ((text_attr>>1)&1)+4：4 = 40px/400，5 = 40px/600。
+    CHECK_EQ(((player.state().lines_meta[0].text_attr >> 1) & 1u) + 4u, 4u);
 }
 
 int main() { return th13test::run_all("msg 对话系统"); }

@@ -23,6 +23,7 @@
 <div id="status">加载 th13 回放取帧…</div>
 <canvas id="canvas" tabindex="0"></canvas>
 <script type="module">
+import {runtimeAssets} from './runtime-assets.mjs';
 const status = text => document.getElementById('status').textContent = text;
 window.__th13_log = [];
 const note = (kind, text) => { window.__th13_log.push(kind + ' ' + text); };
@@ -52,27 +53,15 @@ try {
     printErr: t => { console.warn('[th13]', t); note('err', t); },
   });
   window.mod = mod;
-  const assets = [
-    'text.anm', 'sig.anm', 'ascii.anm', 'effect.anm', 'title.anm', 'title_v.anm', 'help.anm',
-    'front.anm', 'enemy.anm', 'st01enm.anm', 'bullet.anm',
-    'pl00.anm', 'pl01.anm', 'pl02.anm', 'pl03.anm',
-    'st01.ecl', 'default.ecl', 'st01bs.ecl', 'st01.std', 'st01wl.anm',
-    'st01a.msg', 'st01b.msg', 'st01c.msg', 'st01d.msg', 'st01logo.anm',
-    'st02.ecl', 'st02bs.ecl', 'st02mbs.ecl', 'st02.std', 'st02wl.anm', 'st02enm.anm', 'st02logo.anm',
-    'st02a.msg', 'st02b.msg', 'st02c.msg', 'st02d.msg',
-    // st03（本批 Bomb 帧窗所需：th13_01 stage_index 2 = 关3，X edge f6625；
-    // 与 st01/st02 同为 raw→assets 的原版派生 ignored 资产）。
-    'st03.ecl', 'st03bs.ecl', 'st03mbs.ecl', 'st03.std', 'st03wl.anm', 'st03enm.anm', 'st03logo.anm',
-    'st03menm.anm',
-    'st03a.msg', 'st03b.msg', 'st03c.msg', 'st03d.msg',
-    'staff.msg',
-  ];
+  const assets = runtimeAssets;
   mod.FS.mkdirTree('/assets');
   for (const name of [...assets, shtName]) {
     mod.FS.writeFile('/assets/' + name, await fetchBytes('assets/' + name));
     status('th13 资源装载中… ' + name);
   }
   mod.FS.writeFile('/assets/' + replayName, await fetchBytes('replays/' + replayName));
+  // Use the same font VFS path as the interactive page for dialogue/cards.
+  mod.FS.writeFile('/msgothic.ttc', await fetchBytes('assets/msgothic.ttc'));
   // 音频面（与生产 th13.html 同块镜像）：AudioDevice::initialize 强制装载
   // 原版 SE 表 + thbgm.ogg 单流——debug 页先前 0 项音频装载，_th13_initialize
   // 即败（Missing or invalid original TH13 sound）。仅测试接口补齐，不含

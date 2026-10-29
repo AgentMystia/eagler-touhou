@@ -9,17 +9,25 @@
 
 namespace th13 {
 
-// 0x472f30/0x472e90：角度归一到 [-π, π]。原版为逐次 ±2π 的浮点循环（上限 0x20 次），
+// 0x472f30/0x472e90：角度归一到 [-π, π]。原版为逐次 ±2π 的浮点循环，
 // 常量取 float π 的 double 视图（3.1415927410125732 / 6.2831854820251465）；
 // 每步减/加 2π 后落 f32 再继续（x87 (float) 舍入——逐帧对拍实证必需）。
+// 循环退出比较位于本次减法 f32 落盘之后（0x472e90/0x472f30 的
+// mov eax,ecx; inc ecx; fstp; cmp eax,0x20; jg——s5-drift-20261028 §2.2/§2.3
+// 位级复核）：正方向每次调用最多 34 次减法、第 34 次也落盘后才退出；
+// 负方向 do-while 对称（同为 34 次）。超范围角（ECL 累积自旋角
+// 780.3973388671875 rad）两条 wrap 链各耗尽 34 次减法，结果 =
+// 353.14031982421875（33 次链得 365.7066650390625，恰差 2×2π）。
 inline float wrap_angle(float value) {
     const double kPi = 3.1415927410125732;
     const double kTwoPi = 6.2831854820251465;
     double v = value;
     int up = 0;
     while (kPi < v) {
-        if (0x20 < up) break;
         v = static_cast<float>(v - kTwoPi);
+        // 0x472e90/0x472f30 正方向：计数比较在减法落盘之后——第 34 次
+        // （迭代序号 0x21）减法也落盘并以此退出；减前 break 只做 33 次。
+        if (0x20 < up) break;
         ++up;
     }
     if (-kPi <= v) return static_cast<float>(v);
@@ -95,6 +103,24 @@ inline float ease_interp(i32 mode, float elapsed, float duration) {
     }
     case 0xf: return 0.0f;
     case 0x10: return 1.0f;
+    case 18: // 473d4c: sine-out
+        return float(std::sin(double(float(x*double(3.1415927f)*.5))));
+    case 19: { // 473d77: sine-in
+        const float s=float(std::sin(double(float(x*double(3.1415927f)*.5+double(1.5707964f)))));
+        return float(1.0-double(s));
+    }
+    case 20: { // 473db4: out/in, argument continues through pi
+        const float twice=float(t*2);
+        const float s=float(std::sin(double(float(double(twice)*double(3.1415927f)*.5))));
+        return twice<1?float(double(s)*.5):float((1.0-double(s))*.5+.5);
+    }
+    case 21: { // 473e35: in/out, second half restarts the sine at zero
+        const float twice=float(t*2);
+        const float a=twice<1?float(double(twice)*double(3.1415927f)*.5+double(1.5707964f)):
+                             float((double(twice)-1)*double(3.1415927f)*.5);
+        const float s=float(std::sin(double(a)));
+        return twice<1?float((1.0-double(s))*.5):float(double(s)*.5+.5);
+    }
     case 0x16: return static_cast<float>((((x - 0.25) * (x - 0.25)) / 0.5625 - 0.11111111) / 0.8888889);
     case 0x17: return static_cast<float>((((x - 0.3) * (x - 0.3)) / 0.48999998 - 0.18367349) / 0.8163265);
     case 0x18: return static_cast<float>((((x - 0.35) * (x - 0.35)) / 0.42249995 - 0.28994083) / 0.71005917);

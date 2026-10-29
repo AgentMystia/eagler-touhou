@@ -48,6 +48,22 @@ public:
     const AnmSpriteSource* sprite_source=nullptr;
     AnmResource* resource=nullptr;const AnmSprite* sprite=nullptr;AnmResource* sprite_resource=nullptr;
     i32 source_script=-1;
+    i32 local_script_index(i32 index)const noexcept {
+        return index<0||!resource||source_script<0 ? index :
+            i32(resource->scripts[u32(source_script)].script_base)+index;
+    }
+    // Keep visual.sprite equal to the original file-local VM field. The
+    // renderer and diagnostics share the resolved sprite, including fallback
+    // selections and scripts that draw before their first sprite instruction.
+    const AnmSprite* texture_sprite()const noexcept {
+        if(sprite)return sprite;
+        const auto* source=sprite_resource?sprite_resource:resource;
+        if(!source||visual.sprite<0)return nullptr;
+        u32 index=u32(visual.sprite);
+        if(source==resource&&source_script>=0)
+            index+=source->scripts[u32(source_script)].sprite_base;
+        return index<source->sprites.size()?&source->sprites[index]:nullptr;
+    }
     u32 ordering=0;
     void copy_checkpoint(const AnmVm& source){*this=source;timer.set(source.timer.current);age.set(source.age.current);rotation_parent=creation_parent=nullptr;}
     bool bind(AnmScript&);int tick(GameRandom&,float rate=1);

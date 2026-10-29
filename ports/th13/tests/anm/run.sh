@@ -18,12 +18,32 @@ mkdir -p "$out_dir"
 # 游戏源与套件均自动发现，使任意历史提交点可独立构建当时的测试。
 sources=(eagler-touhou/ports/th13/web/cpp/game/*.cpp)
 
+object_dir="$(mktemp -d "$out_dir/objects.XXXXXX")"
+trap 'rm -rf -- "$object_dir"' EXIT
+objects=()
+pids=()
 status=0
+# Compile fresh product objects once per invocation; no old object cache is
+# accepted. Independent translation units use up to eight available cores.
+for source in "${sources[@]}"; do
+  object="$object_dir/$(basename "${source%.cpp}").o"
+  g++ -std=c++17 $flags -fno-exceptions -fno-rtti -ffp-contract=off \
+    -Ieagler-touhou/ports/th13/web/cpp -c "$source" -o "$object" &
+  pids+=("$!")
+  objects+=("$object")
+  if (( ${#pids[@]} == 8 )); then
+    for pid in "${pids[@]}"; do wait "$pid" || status=1; done
+    pids=()
+  fi
+done
+for pid in "${pids[@]}"; do wait "$pid" || status=1; done
+(( status )) && exit 1
+
 for suite in "$script_dir"/anm_*_test.cpp; do
   name="$(basename "$suite" .cpp)"
   g++ -std=c++17 $flags -fno-exceptions -fno-rtti -ffp-contract=off \
     -Ieagler-touhou/ports/th13/web/cpp \
-    "${sources[@]}" "$suite" \
+    "${objects[@]}" "$suite" \
     -o "$out_dir/$name" || status=1
 done
 (( status )) && exit 1

@@ -8,12 +8,19 @@ class AnmResource;
 // addresses or graphics API handles are visible to animation instructions.
 struct AnmEnvironment {
     GameRandom game_rng;
+    GameRandom* shared_game_rng=nullptr;
+    GameRandom& distortion_random() noexcept {
+        return shared_game_rng ? *shared_game_rng : game_rng;
+    }
     Vec3 camera_origin{},screen_translation{},reference_position{};
     AnmResource* fallback_sprite_resource=nullptr;
     float resolution_scale=1;std::array<i32,4> screen_offsets{};
     // Physical pixel grid; logical game coordinates and Replay stay unchanged.
     float raster_scale=1;
     Vec3 background_delta{};bool paused=false;
+    Vec2 screen_shake_offset{}; // 4dcbe8/4dcbec, copied to the STD camera by406d90/407310
+    Vec3 stage_direction{}; // raw camera direction dcb00; reference_position is normalized dcb18
+    i32 stage_difficulty=0; // original be824, extra depth displacement above Easy
     u32 screen_width=640,screen_height=480;
     // Overlay masking follows the screen alpha format, not a menu mode.
     bool render_target_has_alpha=false;
