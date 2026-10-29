@@ -304,7 +304,7 @@
     "th12": {
       "normal": "ports/th12",
       "multiplayer": "ports/th12-mp",
-      "base": "73394e8fcf16878f08cc5f10b01e6139779ec7a1",
+      "base": "de7385d78436a7a428b5ce545ee585cca361fbbe",
       "origin": {
         "normalCommit": "5e5081a1d2a434b2f8d785ebbd6b965f1058d828",
         "multiplayerCommit": "02e3a62a7ff38ca5ec1f3ad2007c117534e9ba26",
@@ -509,6 +509,40 @@
             "ports/th12-mp/tests/settled-animation.test.mjs"
           ],
           "note": "接收上游 main 的渲染捕获分配与 HUD 动画采样优化，普通版和 MP 的对应源码均已合入。目录历史合并保留 MP 回滚采样缓存、多人透明度、符卡实时间和专属 HUD；SDL 代码保持现有身份。"
+        },
+        {
+          "kind": "manual",
+          "base": "73394e8fcf16878f08cc5f10b01e6139779ec7a1",
+          "source": "de7385d78436a7a428b5ce545ee585cca361fbbe",
+          "targetHead": "de7385d78436a7a428b5ce545ee585cca361fbbe",
+          "paths": [
+            "ports/th12-mp/ADAPTATION.md",
+            "ports/th12-mp/README.md",
+            "ports/th12-mp/docs/DEVELOPMENT.md",
+            "ports/th12-mp/package.json",
+            "ports/th12-mp/portable/sdl/Application.cpp",
+            "ports/th12-mp/portable/sdl/FrameClock.hpp",
+            "ports/th12-mp/portable/sdl/Game.cpp",
+            "ports/th12-mp/portable/sdl/Game.hpp",
+            "ports/th12-mp/portable/sdl/GameHost.cpp",
+            "ports/th12-mp/portable/sdl/Host.cmake",
+            "ports/th12-mp/portable/sdl/PracticeOverlay.cpp",
+            "ports/th12-mp/portable/sdl/PracticeOverlay.hpp",
+            "ports/th12-mp/portable/sdl/README.md",
+            "ports/th12-mp/portable/sdl/Replay.cpp",
+            "ports/th12-mp/portable/sdl/Scene.cpp",
+            "ports/th12-mp/portable/sdl/Scene.hpp",
+            "ports/th12-mp/portable/sdl/TitleScenes.cpp",
+            "ports/th12-mp/portable/sdl/TitleScenes.hpp",
+            "ports/th12-mp/scripts/build-eagler.mjs",
+            "ports/th12-mp/scripts/check-sdl-browser.mjs",
+            "ports/th12-mp/scripts/package-sdl.mjs",
+            "ports/th12-mp/scripts/serve.mjs",
+            "ports/th12-mp/site/game-sdl.mjs",
+            "ports/th12-mp/site/sdl.html",
+            "ports/th12-mp/tests/sdl-clock.test.mjs"
+          ],
+          "note": "两侧正式入口均迁为 SDL3/GLES，沿用各自核心；多人新增 C++ 场景与 HUD、确认/回滚桥接、观战与已确认录像，THPrac 保持多人关闭。高刷外推、真实画面 FPS、只读触控交接与报告器同步；键盘跨界残留修复仅归属多人目录。"
         }
       ]
     }

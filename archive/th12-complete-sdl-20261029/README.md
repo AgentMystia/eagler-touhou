@@ -18,3 +18,9 @@
 ## 复现
 
 设置 `TH12_ASSETS` 为自行提取的素材目录，`TH12_FONTS` 为共享字体目录后，运行两侧的 `scripts/check-sdl-browser.mjs`／`scripts/check-sdl-multiplayer-browser.mjs`。多人用例输出于本地 `artifacts/sdl-multiplayer-browser`。构建身份登记于 JSON，子树检查记录标准导出、祖先与源码树核对结果。
+
+## 历史核对
+
+`source-history.json` 记录功能提交 `de7385d78` 的标准 `git subtree split` 结果、13 个来源锚点及逐项源码树和祖先核对。检查在 SSH 129 的临时源码验证目录运行，未修改站点。`directory-projection.json` 记录两侧目录投影；同步范围登记于 `docs/adaptation/port-sync.json`。后续凭据提交只修改这些记录。
+
+此前尚未合入的全屏性能目录投影保存在本地 `port-history/th12-fullscreen-stage-clear-20261029` 和 `port-history/th12mp-fullscreen-stage-clear-20261029`。默认 `port-history/th12`／`port-history/th12mp` 已按本轮源码重新生成，多人投影跟踪普通投影；未把这些投影作为额外父提交接回本轮分支。新增功能和凭据提交均无 `git-subtree-*` 控制标记。
