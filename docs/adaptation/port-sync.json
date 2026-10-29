@@ -304,7 +304,7 @@
     "th12": {
       "normal": "ports/th12",
       "multiplayer": "ports/th12-mp",
-      "base": "728d440a82f0e840d95fb7340477037c99a86579",
+      "base": "48d941d5e2db5f87291bd485e02bd38a701147d7",
       "origin": {
         "normalCommit": "5e5081a1d2a434b2f8d785ebbd6b965f1058d828",
         "multiplayerCommit": "02e3a62a7ff38ca5ec1f3ad2007c117534e9ba26",
@@ -640,6 +640,22 @@
             "ports/th12-mp/tests/sdl-replay.test.mjs"
           ],
           "note": "普通版与 MP 同步 SDL 模块诊断入口、原版录像边界与 FPS 游标修复；多人专属故障冻结和回房恢复保留在 MP。独立目录已合并双亲历史，完整 MP 树与已验证源码一致。"
+        },
+        {
+          "kind": "manual",
+          "base": "728d440a82f0e840d95fb7340477037c99a86579",
+          "source": "48d941d5e2db5f87291bd485e02bd38a701147d7",
+          "targetHead": "4c09680c9f407564688ae0abb0dedb1b868227a1",
+          "paths": [
+            "ports/th12-mp/portable/sdl/Animation.cpp",
+            "ports/th12-mp/portable/sdl/Animation.hpp",
+            "ports/th12-mp/portable/sdl/README.md",
+            "ports/th12-mp/site/game-sdl.mjs",
+            "ports/th12-mp/tests/native/sdl-animation-performance.cpp",
+            "ports/th12-mp/tests/sdl-animation.test.mjs",
+            "ports/th12-mp/tests/sdl-hot-path.test.mjs"
+          ],
+          "note": "普通版与多人版同步定长插值、子动画显示树复用、音乐路径缓存和输入采样；保留多人故障门控与房间入口。15项适配检查、6项原生检查、19项边界检查通过，原作ANM哈希一致，双人和三人回滚及录像重建通过。目录历史合并保留两侧父链，完整MP树与验证代码一致。"
         }
       ]
     }
