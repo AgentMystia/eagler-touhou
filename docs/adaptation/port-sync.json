@@ -304,7 +304,7 @@
     "th12": {
       "normal": "ports/th12",
       "multiplayer": "ports/th12-mp",
-      "base": "48d941d5e2db5f87291bd485e02bd38a701147d7",
+      "base": "c0042b6605ed25270496798b955dbaf0b859e9e1",
       "origin": {
         "normalCommit": "5e5081a1d2a434b2f8d785ebbd6b965f1058d828",
         "multiplayerCommit": "02e3a62a7ff38ca5ec1f3ad2007c117534e9ba26",
@@ -656,6 +656,45 @@
             "ports/th12-mp/tests/sdl-hot-path.test.mjs"
           ],
           "note": "普通版与多人版同步定长插值、子动画显示树复用、音乐路径缓存和输入采样；保留多人故障门控与房间入口。15项适配检查、6项原生检查、19项边界检查通过，原作ANM哈希一致，双人和三人回滚及录像重建通过。目录历史合并保留两侧父链，完整MP树与验证代码一致。"
+        },
+        {
+          "kind": "manual",
+          "base": "48d941d5e2db5f87291bd485e02bd38a701147d7",
+          "source": "c0042b6605ed25270496798b955dbaf0b859e9e1",
+          "targetHead": "8621034654f7548afa85580e60bd8edafead5205",
+          "paths": [
+            "ports/th12-mp/ADAPTATION.md",
+            "ports/th12-mp/README.md",
+            "ports/th12-mp/docs/BUILD.md",
+            "ports/th12-mp/docs/DEVELOPMENT.md",
+            "ports/th12-mp/docs/FULL_GAME_FLOW.md",
+            "ports/th12-mp/docs/LAUNCHER_INTEGRATION.md",
+            "ports/th12-mp/docs/WEB_ADAPTATION.md",
+            "ports/th12-mp/package.json",
+            "ports/th12-mp/portable/sdl/Application.cpp",
+            "ports/th12-mp/portable/sdl/Audio.cpp",
+            "ports/th12-mp/portable/sdl/FrameClock.hpp",
+            "ports/th12-mp/portable/sdl/Game.cpp",
+            "ports/th12-mp/portable/sdl/Game.hpp",
+            "ports/th12-mp/portable/sdl/README.md",
+            "ports/th12-mp/scripts/build-eagler.mjs",
+            "ports/th12-mp/scripts/build-sdl.mjs",
+            "ports/th12-mp/scripts/check-sdl-browser.mjs",
+            "ports/th12-mp/scripts/package-sdl.mjs",
+            "ports/th12-mp/scripts/sdl-build-inputs.mjs",
+            "ports/th12-mp/site/game-sdl.mjs",
+            "ports/th12-mp/src/managed-input.mjs",
+            "ports/th12-mp/src/managed-shell.mjs",
+            "ports/th12-mp/src/practice/DAMAGE-SOURCES.md",
+            "ports/th12-mp/src/practice/INTEGRATION.md",
+            "ports/th12-mp/tests/managed-adapter.test.mjs",
+            "ports/th12-mp/tests/native/sdl-audio.cpp",
+            "ports/th12-mp/tests/sdl-audio.test.mjs",
+            "ports/th12-mp/tests/sdl-build.test.mjs",
+            "ports/th12-mp/tests/sdl-clock.test.mjs",
+            "ports/th12-mp/tests/sdl-hot-path.test.mjs"
+          ],
+          "note": "同步 SDL 时钟、音频、输入归属、编译输入身份与正式入口测试，旧前端文档去重归档。多人使用独立产品路径、房间启动和按键调度、旁观及录像保存，保留对应指南与测试。普通版修改已同步到两侧，目录历史经真实合并写回，内容树与验证后的 MP 一致。"
         }
       ]
     }
