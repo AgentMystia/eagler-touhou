@@ -304,7 +304,7 @@
     "th12": {
       "normal": "ports/th12",
       "multiplayer": "ports/th12-mp",
-      "base": "48d941d5e2db5f87291bd485e02bd38a701147d7",
+      "base": "97df3629c0247a1a56f637d1e1e7f6d99d90db0e",
       "origin": {
         "normalCommit": "5e5081a1d2a434b2f8d785ebbd6b965f1058d828",
         "multiplayerCommit": "02e3a62a7ff38ca5ec1f3ad2007c117534e9ba26",
@@ -656,6 +656,25 @@
             "ports/th12-mp/tests/sdl-hot-path.test.mjs"
           ],
           "note": "普通版与多人版同步定长插值、子动画显示树复用、音乐路径缓存和输入采样；保留多人故障门控与房间入口。15项适配检查、6项原生检查、19项边界检查通过，原作ANM哈希一致，双人和三人回滚及录像重建通过。目录历史合并保留两侧父链，完整MP树与验证代码一致。"
+        },
+        {
+          "kind": "manual",
+          "base": "48d941d5e2db5f87291bd485e02bd38a701147d7",
+          "source": "97df3629c0247a1a56f637d1e1e7f6d99d90db0e",
+          "targetHead": "6ebabcd9c021662383e24a65afa5db83322eb20b",
+          "paths": [
+            "ports/th12-mp/portable/sdl/Application.cpp",
+            "ports/th12-mp/portable/sdl/Game.hpp",
+            "ports/th12-mp/portable/sdl/GameHost.cpp",
+            "ports/th12-mp/portable/sdl/Host.cmake",
+            "ports/th12-mp/portable/sdl/README.md",
+            "ports/th12-mp/site/game-sdl.mjs",
+            "ports/th12-mp/src/sdl-host-state.mjs",
+            "ports/th12-mp/tests/native/sdl-host-state.cpp",
+            "ports/th12-mp/tests/sdl-host-state.test.mjs",
+            "ports/th12-mp/tests/sdl-hot-path.test.mjs"
+          ],
+          "note": "普通版与多人版同步27项数值host-state接口、JSON兼容入口及内存增长读取；多人另合并自动保存调度、按确认/提交进度去重和停止前强制保存。40项边界检查、两侧无窗口原生夹具、两侧Web构建与打包、19目标适配检查通过。目录历史保留双亲，写回完整MP树与已验证源码相同。"
         }
       ]
     }
