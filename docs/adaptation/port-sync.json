@@ -304,7 +304,7 @@
     "th12": {
       "normal": "ports/th12",
       "multiplayer": "ports/th12-mp",
-      "base": "0649221333cf7728a63200c72ef8a4b62349aeda",
+      "base": "73394e8fcf16878f08cc5f10b01e6139779ec7a1",
       "origin": {
         "normalCommit": "5e5081a1d2a434b2f8d785ebbd6b965f1058d828",
         "multiplayerCommit": "02e3a62a7ff38ca5ec1f3ad2007c117534e9ba26",
@@ -492,6 +492,23 @@
             "ports/th12-mp/site/game-sdl.mjs"
           ],
           "note": "两侧同步 SDL 扩展录像编解码、练习开局与跨关伤害源、整曲音乐、触控按下信号和帧率显示；普通版浏览器桥接与代码包沿自身入口，MP 保留现有房间、回滚及多人录像宿主和模式专属文档。目录历史已合并，写回代码树保持已编译身份。"
+        },
+        {
+          "kind": "manual",
+          "base": "0649221333cf7728a63200c72ef8a4b62349aeda",
+          "source": "73394e8fcf16878f08cc5f10b01e6139779ec7a1",
+          "targetHead": "c1d2a7abb641e38baf8263eb4ef961286fa5c98b",
+          "paths": [
+            "ports/th12-mp/package.json",
+            "ports/th12-mp/src/animation.mjs",
+            "ports/th12-mp/src/draw-scheduler.mjs",
+            "ports/th12-mp/src/renderer.mjs",
+            "ports/th12-mp/tests/draw-scheduler.test.mjs",
+            "ports/th12-mp/tests/presentation.test.mjs",
+            "ports/th12-mp/tests/renderer-layering.test.mjs",
+            "ports/th12-mp/tests/settled-animation.test.mjs"
+          ],
+          "note": "接收上游 main 的渲染捕获分配与 HUD 动画采样优化，普通版和 MP 的对应源码均已合入。目录历史合并保留 MP 回滚采样缓存、多人透明度、符卡实时间和专属 HUD；SDL 代码保持现有身份。"
         }
       ]
     }
