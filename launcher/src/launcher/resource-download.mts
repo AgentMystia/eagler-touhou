@@ -75,7 +75,9 @@ export function createResourceDownloader({fetchImpl = globalThis.fetch, idleMs =
     const sources = route.sources.length ? route.sources : [url.href];
     const exhausted = new Set<string>(), compared = new Set<string>();
     const origin = (source: string) => new URL(source).origin;
-    const fail = (source: string) => {
+    const fail = (source: string, reason: unknown) => {
+      if (!exhausted.has(source)) console.warn('[EAGLER|下载节点异常]', {node:origin(source), path:url.pathname,
+        reason:reason instanceof Error ? reason.name : String(reason)});
       exhausted.add(source); failed.set(origin(source), Date.now() + cooldownMs);
       if (preferred.get(url.origin) === origin(source)) preferred.delete(url.origin);
     };
@@ -183,7 +185,7 @@ export function createResourceDownloader({fetchImpl = globalThis.fetch, idleMs =
               controllers.delete(controller); finish(transfer);
             } catch (error) {
               transfer?.close();
-              if (!settled) {lastError = error; fail(source); running--; controllers.delete(controller); launch();}
+              if (!settled) {lastError = error; fail(source, error); running--; controllers.delete(controller); launch();}
             }
           })();
         };
@@ -195,12 +197,18 @@ export function createResourceDownloader({fetchImpl = globalThis.fetch, idleMs =
     }
 
     let forced: string | undefined, nextTransfer: Transfer | undefined;
+    let lastNode: string | undefined;
     while (candidates().length) {
       if (signal?.aborted) {nextTransfer?.close(); throw aborted(signal);}
       let active: Transfer | undefined, comparison: AbortController | undefined;
       let slow: ReturnType<typeof setInterval> | undefined, replacement: string | undefined;
       try {
         active = nextTransfer ?? await select(forced); nextTransfer = undefined; forced = undefined;
+        const node = origin(active.response.url || active.source);
+        if (node !== lastNode) {
+          console.info('[EAGLER|下载]', {node, path:url.pathname, offset:loaded});
+          lastNode = node;
+        }
         // A server may ignore Range and send 200. Replace the prefix in that case.
         if (!resumable || active.response.status === 200) {chunks = []; loaded = 0;}
         const total = explicitRange ? Number(active.response.headers.get('Content-Length')) || 0 : (route.bytes ?? Number(active.response.headers.get('Content-Length'))) || 0;
@@ -231,8 +239,8 @@ export function createResourceDownloader({fetchImpl = globalThis.fetch, idleMs =
               }
               measured = true;
             } catch (error) {
-              if (controller.signal.reason === sampleEnd) {measured = !!probe?.received; if (!measured) fail(source);}
-              else if (!signal?.aborted && (controller.signal.reason?.name !== 'AbortError' || error !== controller.signal.reason)) fail(source);
+              if (controller.signal.reason === sampleEnd) {measured = !!probe?.received; if (!measured) fail(source, 'sampling-timeout');}
+              else if (!signal?.aborted && (controller.signal.reason?.name !== 'AbortError' || error !== controller.signal.reason)) fail(source, error);
             } finally {clearTimeout(deadline);}
             try {
               const elapsed = Math.max(performance.now() - began, 1);
@@ -282,7 +290,7 @@ export function createResourceDownloader({fetchImpl = globalThis.fetch, idleMs =
       } catch (error) {
         if (signal?.aborted) {nextTransfer?.close(); throw aborted(signal);}
         lastError = error;
-        if (active) fail(active.source);
+        if (active) fail(active.source, replacement ? 'slow-download' : error);
         if (replacement) forced = replacement;
         if (!resumable) {chunks = []; loaded = 0;}
       } finally {
