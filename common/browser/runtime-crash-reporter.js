@@ -57,8 +57,10 @@
       value.frame = scalar('_' + prefix + '_frame');
       value.phase = scalar('_' + prefix + '_phase');
       value.netplayStatus = words('_' + prefix + '_mp_status', 24);
-      const rollback = words('_' + prefix + '_mp_rollback_status', 9);
-      if (rollback) value.rollback = {version:rollback[0], enabled:!!rollback[1], corrections:rollback[2], replayedFrames:rollback[3], lastDepth:rollback[4], peakDepth:rollback[5], replayRemaining:rollback[6], fenceFrame:rollback[7], presentationFps:rollback[8]/100};
+      const rollback = words('_' + prefix + '_mp_rollback_status', prefix === 'th12' ? 8 : 9);
+      if (rollback) value.rollback = prefix === 'th12'
+        ? {version:rollback[0], corrections:rollback[1], replayedFrames:rollback[2], committedFrames:rollback[3], correcting:!!rollback[4], requestedFrame:rollback[5], frontier:rollback[6], worldReady:!!rollback[7]}
+        : {version:rollback[0], enabled:!!rollback[1], corrections:rollback[2], replayedFrames:rollback[3], lastDepth:rollback[4], peakDepth:rollback[5], replayRemaining:rollback[6], fenceFrame:rollback[7], presentationFps:rollback[8]/100};
       if (context) value.gameState = plain(context());
       if (prefix === 'th12' && value.gameState?.session) {
         if (typeof core._th12_stage_flow === 'function' && typeof core._th12_stage_flow_size === 'function') {

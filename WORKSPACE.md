@@ -13,7 +13,7 @@
 | th09 | `ports/th09` | `ports/th09` | 共用生产程序，保留普通版与 MP 产品身份 |
 | th10 | `ports/th10` | `ports/th10-mp` | 分目录、分模式构建 |
 | th11 | `ports/th11` | `ports/th11-mp` | 分目录、分模式构建 |
-| th12 | `ports/th12` | `ports/th12-mp` | Web 使用 `scripts/build-eagler.mjs`；CMake 可构建 SDL3 / GLES 3 普通版与多人平台库 |
+| th12 | `ports/th12` | `ports/th12-mp` | Web 使用 `scripts/build-eagler.mjs`；CMake 可构建 SDL3 / GLES 3 普通版与多人应用；两侧正式 Web 入口均为 SDL3／GLES |
 | th15 | `ports/th15` | `ports/th15-mp` | 分目录、分模式构建 |
 | th20 | `ports/th20` | — | 普通版实验适配 |
 

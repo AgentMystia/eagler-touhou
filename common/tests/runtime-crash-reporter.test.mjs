@@ -53,3 +53,14 @@ test('TH12 native gameplay getters wait until a session exists',()=>{
   api.bindCore(core,{context:()=>({session})});assert.equal(reads,0);
   session={stage:1};api.sample();assert.equal(reads,1);
 });
+test('TH12 reports its eight-word rollback ABI independently of TH15',()=>{
+  const {api}=fixture('th12',true),heap=new Uint8Array(256);
+  new Uint32Array(heap.buffer,16,8).set([1,7,42,120,1,118,130,1]);
+  api.bindCore({HEAPU8:heap,_th12_mp_rollback_status:()=>16});
+  api.fatal(new Error('report-only fixture'));
+  const state=api.report().samples.at(-1).rollback;
+  assert.equal(state.corrections,7);assert.equal(state.replayedFrames,42);
+  assert.equal(state.committedFrames,120);assert.equal(state.frontier,130);
+  assert.equal(state.requestedFrame,118);assert.equal(state.correcting,true);
+  assert(!Object.hasOwn(state,'presentationFps'));
+});

@@ -2003,10 +2003,10 @@
       "game": "th12",
       "variant": "multiplayer",
       "directory": "ports/th12-mp",
-      "sourceDigest": "6eee606ffa830e320ce151001c1feba52d15f7c3c4d819648636b6093018d057",
+      "sourceDigest": "1bee90492d16c39ff43b1b6877ced2f82355051346d896843e7e1420e192264f",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
-      "translationUnits": 78,
+      "translationUnits": 95,
       "features": {
         "thcrap": true,
         "thprac": false
@@ -2133,7 +2133,7 @@
       "game": "th12",
       "variant": "normal",
       "directory": "ports/th12",
-      "sourceDigest": "a3e868df4ab30ae6b7a66b9e04fb5d9c723471b1aba750c9baf4375c6f346455",
+      "sourceDigest": "bae8371f0d8849e37ceba955de36135f1ac70cdc610b32c57823d7c3129a4d97",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 81,
