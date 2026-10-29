@@ -265,7 +265,6 @@ const entries = [
   ["room.inputDelayMeasured", "实测 · {frames}f", "Measured · {frames}f"],
   ["room.enableRollback", "启用回滚(降低输入延迟，需要更高的性能)", "Enable rollback (lower input delay, requires higher performance)"],
   ["room.rollbackHint", "开启后输入延迟固定为 0 帧；关闭后使用所选输入延迟。开局后设置固定。", "When enabled, input delay is fixed at 0 frames. When disabled, use the selected input delay. Settings are fixed once the game starts."],
-  ["room.rollbackDelayHint", "开启回滚后仍可调整输入延迟。开局后设置固定。", "Input delay remains adjustable with rollback enabled. Settings are fixed once the game starts."],
   ["room.manualDelayHint", "每帧约 16.7 毫秒。延迟小，操作响应更快。延迟大，可减少网络波动引起的回滚。开局后固定。", "Each frame is about 16.7 ms. Lower delay responds faster; higher delay can reduce rollbacks caused by network jitter. Fixed once the game starts."],
   ["room.adonisTiming", "实验时序", "Experimental timing"],
   ["room.adonisRollback", "Rollback（原模式）", "Rollback (baseline)"],
