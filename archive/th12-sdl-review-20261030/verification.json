@@ -1,0 +1,683 @@
+{
+  "schema": "eagler-touhou/th12-sdl-review/1",
+  "date": "2026-10-30",
+  "pullRequest": 163,
+  "source": {
+    "reviewedHead": "2010c70ffd72be121af88c656ea0f4d6d91aedd6",
+    "integratedMain": "73c192244290e721c81d7294f6564f1cda004d64",
+    "repairs": "96919d3fe003a177e738ef96d1bde02cd40193d5",
+    "documentation": "b0adee3faa9477c1f21465f20cd81c233fadab57"
+  },
+  "environment": {
+    "platform": "Windows x64",
+    "webToolchain": "Emscripten 6.0.6-git / clang 24",
+    "ciToolchain": "Emscripten 6.0.9",
+    "nativeCompiler": "MSVC",
+    "fixtureCompiler": "clang++ with MSVC libraries",
+    "browser": "Desktop Chromium",
+    "privateInputs": "Locally supplied original th12 assets and DATA, OGG and shared fonts"
+  },
+  "unit": {
+    "normal": {
+      "tests": 25,
+      "passed": 25,
+      "failed": 0
+    },
+    "multiplayer": {
+      "tests": 41,
+      "passed": 41,
+      "failed": 0
+    },
+    "nativeMultiplayer": {
+      "tests": 2,
+      "passed": 2,
+      "failed": 0
+    },
+    "launcherCore": {
+      "passed": true
+    },
+    "desktopNormal": {
+      "compiled": true,
+      "linked": true,
+      "executed": false
+    }
+  },
+  "normalBrowser": [
+    {
+      "mode": "stream",
+      "passed": true,
+      "runtime": {
+        "entry": "f8aaa69efa9f094ab640d9df3b6b1281707ce9f79c2ce21301bb8b475c1a33c2",
+        "program": "1550eb52cbf0ecba07a922d932de8edbe7ecf7a86ccc1aa768f618f9d7b65f8b",
+        "module": "cb5273dc0b42ef5e35a41cbca7fd3c12e4234c7619ba3d5c27777b484632321f",
+        "wasm": "9058027952af7e580212d563fd19d73439f8dff934ed05f3d9d2306d6817213a"
+      },
+      "dataSha256": "bedf5456e7aa7a1db673dfca410aa97f35fbefefcd08997b3d64fa62e736fcc4",
+      "audioChecks": [
+        {
+          "action": "title",
+          "frames": 14336,
+          "peak": 0.9991068243980408
+        },
+        {
+          "action": "replay-pause",
+          "frames": 14336,
+          "peak": 0
+        },
+        {
+          "action": "replay-seek",
+          "frames": 14336,
+          "peak": 0
+        }
+      ],
+      "delivery": [
+        {
+          "kind": "script",
+          "bytes": 16799,
+          "sha256": "1550eb52cbf0ecba07a922d932de8edbe7ecf7a86ccc1aa768f618f9d7b65f8b"
+        },
+        {
+          "kind": "wasm",
+          "bytes": 3245954,
+          "sha256": "9058027952af7e580212d563fd19d73439f8dff934ed05f3d9d2306d6817213a"
+        }
+      ]
+    },
+    {
+      "mode": "full",
+      "passed": true,
+      "runtime": {
+        "entry": "f8aaa69efa9f094ab640d9df3b6b1281707ce9f79c2ce21301bb8b475c1a33c2",
+        "program": "1550eb52cbf0ecba07a922d932de8edbe7ecf7a86ccc1aa768f618f9d7b65f8b",
+        "module": "cb5273dc0b42ef5e35a41cbca7fd3c12e4234c7619ba3d5c27777b484632321f",
+        "wasm": "9058027952af7e580212d563fd19d73439f8dff934ed05f3d9d2306d6817213a"
+      },
+      "dataSha256": "bedf5456e7aa7a1db673dfca410aa97f35fbefefcd08997b3d64fa62e736fcc4",
+      "audioChecks": [
+        {
+          "action": "title",
+          "frames": 16384,
+          "peak": 1.0005208253860474
+        },
+        {
+          "action": "replay-pause",
+          "frames": 14336,
+          "peak": 0
+        },
+        {
+          "action": "replay-seek",
+          "frames": 16384,
+          "peak": 0
+        }
+      ],
+      "delivery": [
+        {
+          "kind": "script",
+          "bytes": 16799,
+          "sha256": "1550eb52cbf0ecba07a922d932de8edbe7ecf7a86ccc1aa768f618f9d7b65f8b"
+        },
+        {
+          "kind": "wasm",
+          "bytes": 3245954,
+          "sha256": "9058027952af7e580212d563fd19d73439f8dff934ed05f3d9d2306d6817213a"
+        }
+      ]
+    }
+  ],
+  "multiplayerBrowser": {
+    "passed": true,
+    "inputLatencyMs": 25,
+    "music": "ogg",
+    "runtime": {
+      "entry": "f8aaa69efa9f094ab640d9df3b6b1281707ce9f79c2ce21301bb8b475c1a33c2",
+      "program": "8f158e4b61d129b6f610a8c96e116f004aa3d03b517b6ab33319e84cc26f1525",
+      "module": "9ce565422be6e9953c0d5d140d47f02757be607961d63d58aa93d1ffcd6fdda8",
+      "wasm": "30363cffa0e543466fb488dbf6fd1112a7eb08a42398e540b52f355b9255a092"
+    },
+    "dataSha256": "bedf5456e7aa7a1db673dfca410aa97f35fbefefcd08997b3d64fa62e736fcc4",
+    "audioChecks": [
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-seek",
+        "frames": 18432,
+        "peak": 0
+      },
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-play",
+        "frames": 16384,
+        "peak": 0.9031537771224976
+      },
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-pause",
+        "frames": 16384,
+        "peak": 0
+      },
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-seek",
+        "frames": 16384,
+        "peak": 0
+      },
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-play",
+        "frames": 16384,
+        "peak": 0.9664887189865112
+      },
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-pause",
+        "frames": 18432,
+        "peak": 0
+      },
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-seek",
+        "frames": 16384,
+        "peak": 0
+      },
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-play",
+        "frames": 16384,
+        "peak": 0.9710379838943481
+      },
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-pause",
+        "frames": 16384,
+        "peak": 0
+      },
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-seek",
+        "frames": 14336,
+        "peak": 0
+      },
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-play",
+        "frames": 16384,
+        "peak": 0.8191689252853394
+      },
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-pause",
+        "frames": 16384,
+        "peak": 0
+      },
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-seek",
+        "frames": 16384,
+        "peak": 0
+      },
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-play",
+        "frames": 14336,
+        "peak": 0.8253396153450012
+      },
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-pause",
+        "frames": 14336,
+        "peak": 0
+      },
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-seek",
+        "frames": 16384,
+        "peak": 0
+      },
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-play",
+        "frames": 14336,
+        "peak": 0.9716333746910095
+      },
+      {
+        "count": 2,
+        "mode": 1,
+        "action": "spectator-pause",
+        "frames": 16384,
+        "peak": 0
+      },
+      {
+        "count": 2,
+        "mode": 0,
+        "action": "spectator-seek",
+        "frames": 20480,
+        "peak": 0
+      },
+      {
+        "count": 2,
+        "mode": 0,
+        "action": "spectator-play",
+        "frames": 20480,
+        "peak": 0.9056701064109802
+      },
+      {
+        "count": 2,
+        "mode": 0,
+        "action": "spectator-pause",
+        "frames": 20480,
+        "peak": 0
+      },
+      {
+        "count": 2,
+        "mode": 0,
+        "action": "spectator-seek",
+        "frames": 20480,
+        "peak": 0
+      },
+      {
+        "count": 2,
+        "mode": 0,
+        "action": "spectator-play",
+        "frames": 18432,
+        "peak": 0.9715173840522766
+      },
+      {
+        "count": 2,
+        "mode": 0,
+        "action": "spectator-pause",
+        "frames": 18432,
+        "peak": 0
+      },
+      {
+        "count": 2,
+        "mode": 0,
+        "action": "spectator-seek",
+        "frames": 14336,
+        "peak": 0
+      },
+      {
+        "count": 2,
+        "mode": 0,
+        "action": "spectator-play",
+        "frames": 16384,
+        "peak": 0.8032057881355286
+      },
+      {
+        "count": 2,
+        "mode": 0,
+        "action": "spectator-pause",
+        "frames": 16384,
+        "peak": 0
+      }
+    ],
+    "repeatedFinalProgram": [
+      {
+        "players": 2,
+        "mode": "delay",
+        "inputDelay": 0,
+        "automatic": false,
+        "rollbackRestores": [
+          0,
+          0
+        ],
+        "spectatorVerified": true,
+        "roomReturns": [
+          {
+            "round": 0,
+            "launchSerial": 2,
+            "sameCore": true,
+            "scene": "title",
+            "age": 192,
+            "ready": true,
+            "selection": 0
+          },
+          {
+            "round": 1,
+            "launchSerial": 3,
+            "sameCore": true,
+            "scene": "title",
+            "age": 192,
+            "ready": true,
+            "selection": 0
+          },
+          {
+            "round": 2,
+            "launchSerial": 4,
+            "sameCore": true,
+            "scene": "title",
+            "age": 192,
+            "ready": true,
+            "selection": 0
+          }
+        ],
+        "delivery": [
+          {
+            "kind": "script",
+            "bytes": 19385,
+            "sha256": "8f158e4b61d129b6f610a8c96e116f004aa3d03b517b6ab33319e84cc26f1525"
+          },
+          {
+            "kind": "script",
+            "bytes": 19385,
+            "sha256": "8f158e4b61d129b6f610a8c96e116f004aa3d03b517b6ab33319e84cc26f1525"
+          },
+          {
+            "kind": "script",
+            "bytes": 19385,
+            "sha256": "8f158e4b61d129b6f610a8c96e116f004aa3d03b517b6ab33319e84cc26f1525"
+          },
+          {
+            "kind": "wasm",
+            "bytes": 3222947,
+            "sha256": "30363cffa0e543466fb488dbf6fd1112a7eb08a42398e540b52f355b9255a092"
+          },
+          {
+            "kind": "wasm",
+            "bytes": 3222947,
+            "sha256": "30363cffa0e543466fb488dbf6fd1112a7eb08a42398e540b52f355b9255a092"
+          },
+          {
+            "kind": "wasm",
+            "bytes": 3222947,
+            "sha256": "30363cffa0e543466fb488dbf6fd1112a7eb08a42398e540b52f355b9255a092"
+          }
+        ]
+      },
+      {
+        "players": 2,
+        "mode": "delay",
+        "inputDelay": 0,
+        "automatic": false,
+        "rollbackRestores": [
+          0,
+          0
+        ],
+        "spectatorVerified": true,
+        "roomReturns": [
+          {
+            "round": 0,
+            "launchSerial": 2,
+            "sameCore": true,
+            "scene": "title",
+            "age": 184,
+            "ready": false,
+            "selection": 0
+          },
+          {
+            "round": 1,
+            "launchSerial": 3,
+            "sameCore": true,
+            "scene": "title",
+            "age": 195,
+            "ready": true,
+            "selection": 0
+          },
+          {
+            "round": 2,
+            "launchSerial": 4,
+            "sameCore": true,
+            "scene": "title",
+            "age": 187,
+            "ready": false,
+            "selection": 0
+          }
+        ],
+        "delivery": [
+          {
+            "kind": "script",
+            "bytes": 19385,
+            "sha256": "8f158e4b61d129b6f610a8c96e116f004aa3d03b517b6ab33319e84cc26f1525"
+          },
+          {
+            "kind": "script",
+            "bytes": 19385,
+            "sha256": "8f158e4b61d129b6f610a8c96e116f004aa3d03b517b6ab33319e84cc26f1525"
+          },
+          {
+            "kind": "script",
+            "bytes": 19385,
+            "sha256": "8f158e4b61d129b6f610a8c96e116f004aa3d03b517b6ab33319e84cc26f1525"
+          },
+          {
+            "kind": "wasm",
+            "bytes": 3222947,
+            "sha256": "30363cffa0e543466fb488dbf6fd1112a7eb08a42398e540b52f355b9255a092"
+          },
+          {
+            "kind": "wasm",
+            "bytes": 3222947,
+            "sha256": "30363cffa0e543466fb488dbf6fd1112a7eb08a42398e540b52f355b9255a092"
+          },
+          {
+            "kind": "wasm",
+            "bytes": 3222947,
+            "sha256": "30363cffa0e543466fb488dbf6fd1112a7eb08a42398e540b52f355b9255a092"
+          }
+        ]
+      },
+      {
+        "players": 2,
+        "mode": "rollback",
+        "inputDelay": 0,
+        "automatic": false,
+        "rollbackRestores": [
+          18,
+          17
+        ],
+        "spectatorVerified": true,
+        "roomReturns": [
+          {
+            "round": 0,
+            "launchSerial": 2,
+            "sameCore": true,
+            "scene": "title",
+            "age": 192,
+            "ready": true,
+            "selection": 0
+          },
+          {
+            "round": 1,
+            "launchSerial": 3,
+            "sameCore": true,
+            "scene": "title",
+            "age": 192,
+            "ready": true,
+            "selection": 0
+          },
+          {
+            "round": 2,
+            "launchSerial": 4,
+            "sameCore": true,
+            "scene": "title",
+            "age": 192,
+            "ready": true,
+            "selection": 0
+          }
+        ],
+        "delivery": [
+          {
+            "kind": "script",
+            "bytes": 19385,
+            "sha256": "8f158e4b61d129b6f610a8c96e116f004aa3d03b517b6ab33319e84cc26f1525"
+          },
+          {
+            "kind": "script",
+            "bytes": 19385,
+            "sha256": "8f158e4b61d129b6f610a8c96e116f004aa3d03b517b6ab33319e84cc26f1525"
+          },
+          {
+            "kind": "script",
+            "bytes": 19385,
+            "sha256": "8f158e4b61d129b6f610a8c96e116f004aa3d03b517b6ab33319e84cc26f1525"
+          },
+          {
+            "kind": "wasm",
+            "bytes": 3222947,
+            "sha256": "30363cffa0e543466fb488dbf6fd1112a7eb08a42398e540b52f355b9255a092"
+          },
+          {
+            "kind": "wasm",
+            "bytes": 3222947,
+            "sha256": "30363cffa0e543466fb488dbf6fd1112a7eb08a42398e540b52f355b9255a092"
+          },
+          {
+            "kind": "wasm",
+            "bytes": 3222947,
+            "sha256": "30363cffa0e543466fb488dbf6fd1112a7eb08a42398e540b52f355b9255a092"
+          }
+        ]
+      }
+    ],
+    "priorFiveScenarios": {
+      "runtime": {
+        "entry": "f8aaa69efa9f094ab640d9df3b6b1281707ce9f79c2ce21301bb8b475c1a33c2",
+        "module": "9ce565422be6e9953c0d5d140d47f02757be607961d63d58aa93d1ffcd6fdda8",
+        "wasm": "30363cffa0e543466fb488dbf6fd1112a7eb08a42398e540b52f355b9255a092"
+      },
+      "cases": [
+        {
+          "players": 2,
+          "mode": "delay",
+          "inputDelay": 0,
+          "automatic": false,
+          "rollbackRestores": [
+            0,
+            0
+          ],
+          "spectatorVerified": true,
+          "roomReturns": [
+            {
+              "round": 0,
+              "launchSerial": 2,
+              "sameCore": true,
+              "scene": "title",
+              "age": 196,
+              "ready": true,
+              "selection": 0
+            },
+            {
+              "round": 1,
+              "launchSerial": 3,
+              "sameCore": true,
+              "scene": "title",
+              "age": 192,
+              "ready": true,
+              "selection": 0
+            },
+            {
+              "round": 2,
+              "launchSerial": 4,
+              "sameCore": true,
+              "scene": "title",
+              "age": 192,
+              "ready": true,
+              "selection": 0
+            }
+          ]
+        },
+        {
+          "players": 2,
+          "mode": "rollback",
+          "inputDelay": 0,
+          "automatic": false,
+          "rollbackRestores": [
+            20,
+            15
+          ],
+          "spectatorVerified": true,
+          "roomReturns": [
+            {
+              "round": 0,
+              "launchSerial": 2,
+              "sameCore": true,
+              "scene": "title",
+              "age": 184,
+              "ready": false,
+              "selection": 0
+            },
+            {
+              "round": 1,
+              "launchSerial": 3,
+              "sameCore": true,
+              "scene": "title",
+              "age": 185,
+              "ready": false,
+              "selection": 0
+            },
+            {
+              "round": 2,
+              "launchSerial": 4,
+              "sameCore": true,
+              "scene": "title",
+              "age": 193,
+              "ready": true,
+              "selection": 0
+            }
+          ]
+        },
+        {
+          "players": 3,
+          "mode": "rollback",
+          "inputDelay": 0,
+          "automatic": false,
+          "rollbackRestores": [
+            19,
+            18,
+            30
+          ],
+          "spectatorVerified": false,
+          "roomReturns": []
+        },
+        {
+          "players": 3,
+          "mode": "delay",
+          "inputDelay": 3,
+          "automatic": false,
+          "rollbackRestores": [
+            0,
+            0,
+            0
+          ],
+          "spectatorVerified": false,
+          "roomReturns": []
+        },
+        {
+          "players": 2,
+          "mode": "delay",
+          "inputDelay": 0,
+          "automatic": true,
+          "rollbackRestores": [
+            0,
+            0
+          ],
+          "spectatorVerified": false,
+          "roomReturns": []
+        }
+      ]
+    }
+  },
+  "scope": {
+    "originalExecutableOracle": false,
+    "allStagePlaythrough": false,
+    "physicalTouchscreen": false,
+    "physicalGamepad": false,
+    "deviceSpeakerOutput": false,
+    "desktopExecution": false
+  }
+}

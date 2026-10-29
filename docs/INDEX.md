@@ -1,6 +1,6 @@
 # 文档总表
 
-共 360 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
+共 361 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
 
 项目说明按当前目录重写；许可证保留原文，生成报告由各自工具更新。原有 498 份 Markdown 的逐篇去向见[旧文档去向](history/INDEX.md)。
 
@@ -228,6 +228,7 @@
 | 历史记录 | [archive/th12-sdl-input-20261029/README.md](../archive/th12-sdl-input-20261029/README.md) | TH12 SDL 输入、菜单与呈现 |
 | 历史记录 | [archive/th12-sdl-performance-20261029/README.md](../archive/th12-sdl-performance-20261029/README.md) | TH12 SDL 迁移版性能验证 |
 | 历史记录 | [archive/th12-sdl-render-perf-20261029/README.md](../archive/th12-sdl-render-perf-20261029/README.md) | TH12 SDL 呈现工作复用 |
+| 历史记录 | [archive/th12-sdl-review-20261030/README.md](../archive/th12-sdl-review-20261030/README.md) | th12 SDL 入口审核 ｜ 2026-10-30 |
 | 历史记录 | [archive/th12-sdl-runtime-repair-20261029/README.md](../archive/th12-sdl-runtime-repair-20261029/README.md) | TH12 SDL 多人启动与故障恢复 |
 | 历史记录 | [archive/th12-text-outline-20261028/README.md](../archive/th12-text-outline-20261028/README.md) | TH12 结局与对话文字描边 |
 | 历史记录 | [archive/th12-web-acceptance-20261022/README.md](../archive/th12-web-acceptance-20261022/README.md) | 星莲船原 Web 前端验收记录 |
