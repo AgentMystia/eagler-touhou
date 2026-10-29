@@ -1,6 +1,6 @@
 # 文档总表
 
-共 347 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
+共 351 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
 
 项目说明按当前目录重写；许可证保留原文，生成报告由各自工具更新。原有 498 份 Markdown 的逐篇去向见[旧文档去向](history/INDEX.md)。
 
@@ -91,6 +91,7 @@
 | 作品源码文档 | [ports/th12-mp/docs/BUILD.md](../ports/th12-mp/docs/BUILD.md) | 本地构建与原版输入 |
 | 作品源码文档 | [ports/th12-mp/docs/CONTENT_PREPARATION.md](../ports/th12-mp/docs/CONTENT_PREPARATION.md) | 准备自己的 TH12 游戏资源 |
 | 作品源码文档 | [ports/th12-mp/docs/CPP-RESTORATION.md](../ports/th12-mp/docs/CPP-RESTORATION.md) | C++ runtime |
+| 作品源码文档 | [ports/th12-mp/docs/DEVELOPMENT.md](../ports/th12-mp/docs/DEVELOPMENT.md) | 星莲船多人版开发入口 |
 | 作品源码文档 | [ports/th12-mp/docs/FULL_GAME_FLOW.md](../ports/th12-mp/docs/FULL_GAME_FLOW.md) | TH12 完整游戏流程 |
 | 作品源码文档 | [ports/th12-mp/docs/HIGH_REFRESH.md](../ports/th12-mp/docs/HIGH_REFRESH.md) | TH12 fixed-tick / high-refresh presentation draft |
 | 作品源码文档 | [ports/th12-mp/docs/LAUNCHER_INTEGRATION.md](../ports/th12-mp/docs/LAUNCHER_INTEGRATION.md) | 真实 Launcher 接入 |
@@ -112,6 +113,7 @@
 | 作品源码文档 | [ports/th12/docs/BUILD.md](../ports/th12/docs/BUILD.md) | 本地构建与原版输入 |
 | 作品源码文档 | [ports/th12/docs/CONTENT_PREPARATION.md](../ports/th12/docs/CONTENT_PREPARATION.md) | 准备自己的 TH12 游戏资源 |
 | 作品源码文档 | [ports/th12/docs/CPP-RESTORATION.md](../ports/th12/docs/CPP-RESTORATION.md) | C++ runtime |
+| 作品源码文档 | [ports/th12/docs/DEVELOPMENT.md](../ports/th12/docs/DEVELOPMENT.md) | 星莲船开发入口 |
 | 作品源码文档 | [ports/th12/docs/FULL_GAME_FLOW.md](../ports/th12/docs/FULL_GAME_FLOW.md) | TH12 完整游戏流程 |
 | 作品源码文档 | [ports/th12/docs/HIGH_REFRESH.md](../ports/th12/docs/HIGH_REFRESH.md) | TH12 fixed-tick / high-refresh presentation draft |
 | 作品源码文档 | [ports/th12/docs/LAUNCHER_INTEGRATION.md](../ports/th12/docs/LAUNCHER_INTEGRATION.md) | 真实 Launcher 接入 |
@@ -218,7 +220,9 @@
 | 历史记录 | [archive/th12-multiplayer-20261028/th12-multiplayer-transfer-font-20261026.md](../archive/th12-multiplayer-20261028/th12-multiplayer-transfer-font-20261026.md) | TH12 多人资源传递提示 |
 | 历史记录 | [archive/th12-multiplayer-20261028/th12-visual-performance-20261025.md](../archive/th12-multiplayer-20261028/th12-visual-performance-20261025.md) | TH12 飞钵轮廓与展示性能 |
 | 历史记录 | [archive/th12-multiplayer-20261028/th12mp-localization-20261025.md](../archive/th12-multiplayer-20261028/th12mp-localization-20261025.md) | TH12 多人本地语言资源 |
+| 历史记录 | [archive/th12-sdl-completion-20261029/README.md](../archive/th12-sdl-completion-20261029/README.md) | TH12 SDL3 应用构建身份 |
 | 历史记录 | [archive/th12-text-outline-20261028/README.md](../archive/th12-text-outline-20261028/README.md) | TH12 结局与对话文字描边 |
+| 历史记录 | [archive/th12-web-acceptance-20261022/README.md](../archive/th12-web-acceptance-20261022/README.md) | 星莲船原 Web 前端验收记录 |
 | 历史记录 | [archive/th12mp-public-20261028/README.md](../archive/th12mp-public-20261028/README.md) | 星莲船正式发布 |
 | 历史记录 | [archive/th12mp-public-20261028/cn129.md](../archive/th12mp-public-20261028/cn129.md) | 原主站入口同步 |
 | 历史记录 | [archive/th15-bomb-snapshot-memory-20261028/README.md](../archive/th15-bomb-snapshot-memory-20261028/README.md) | TH15 多人放雷快照内存峰值 |
