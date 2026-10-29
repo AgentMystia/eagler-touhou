@@ -304,7 +304,7 @@
     "th12": {
       "normal": "ports/th12",
       "multiplayer": "ports/th12-mp",
-      "base": "918ee331791401021658125acfb3da5b2ec01016",
+      "base": "1a5b7400d95bbe9e158921e08427b0c10b82956e",
       "origin": {
         "normalCommit": "5e5081a1d2a434b2f8d785ebbd6b965f1058d828",
         "multiplayerCommit": "02e3a62a7ff38ca5ec1f3ad2007c117534e9ba26",
@@ -580,6 +580,29 @@
             "ports/th12-mp/scripts/package-sdl.mjs"
           ],
           "note": "SDL 正式打包同步包含 crash-code-identities.json，报告器引用纳入不可变代码闭包；两侧 WASM 与上一轮性能验证一致。发布目录契约允许精确命名的共享错误报告脚本，拒绝任意新增 JS 文件。"
+        },
+        {
+          "kind": "manual",
+          "base": "918ee331791401021658125acfb3da5b2ec01016",
+          "source": "1a5b7400d95bbe9e158921e08427b0c10b82956e",
+          "targetHead": "1a5b7400d95bbe9e158921e08427b0c10b82956e",
+          "paths": [
+            "ports/th12-mp/docs/DEVELOPMENT.md",
+            "ports/th12-mp/portable/sdl/Application.cpp",
+            "ports/th12-mp/portable/sdl/Game.cpp",
+            "ports/th12-mp/portable/sdl/GameHost.cpp",
+            "ports/th12-mp/portable/sdl/PracticeOverlay.cpp",
+            "ports/th12-mp/portable/sdl/PracticeOverlay.hpp",
+            "ports/th12-mp/portable/sdl/Renderer.cpp",
+            "ports/th12-mp/scripts/check-sdl-browser.mjs",
+            "ports/th12-mp/scripts/package-sdl.mjs",
+            "ports/th12-mp/site/game-sdl.mjs",
+            "ports/th12-mp/src/sdl-input.mjs",
+            "ports/th12-mp/src/sdl-lifecycle.mjs",
+            "ports/th12-mp/tests/sdl-input.test.mjs",
+            "ports/th12-mp/tests/sdl-lifecycle.test.mjs"
+          ],
+          "note": "两侧同步SDL触控Esc、iframe与CSS像素坐标、ImGui裁剪、退出诊断、640x480 Web离屏目标和背景复制缓存；房间标题只确认设置及launchSerial修复归多人目录。单人触控与THPrac、多人回滚/观战及确认录像回归通过。"
         }
       ]
     }
