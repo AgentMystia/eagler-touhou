@@ -38,6 +38,7 @@ for(const [name,file] of Object.entries(config.shared??{}))routes.set(`/shared/$
 const server=createServer(async(request,response)=>{
   try{
     const url=new URL(request.url,'http://localhost');
+    if(url.pathname==='/favicon.ico'){response.writeHead(204).end();return;}
     const selected=config.targets.find(target=>url.pathname===`/host/${target.id}`);
     if(selected){
       const epoch=Number(url.searchParams.get('epoch')??1);assert.ok(Number.isSafeInteger(epoch)&&epoch>0);

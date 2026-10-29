@@ -43,7 +43,7 @@ Object.assign(report,{players,route,frames:duration,
  waitEnd,stopStream,recover,restart,lifecycle,
  scope:'Actual native MP games and independent spectators through a real local relay and the production Runtime protocol',
  commit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),harnessSha256:sha(await readFile(new URL(import.meta.url))),cases:[]});
-report.relayConfig={freshPerCase:true,rtcTimeoutMs:30000,stunUrls:[]};
+report.relayConfig={freshPerCase:true,rtcTimeoutMs:30000,stunUrls:[],gameplayRelayFallback:route==='relay'};
 await writeFile(resolve(output,'harness.mjs'),await readFile(new URL(import.meta.url)));
 const patch=execFileSync('git',['diff','--binary','HEAD'],{cwd:root,maxBuffer:16*1024*1024});
 report.patchSha256=sha(patch);await writeFile(resolve(output,'source.patch'),patch);
@@ -65,7 +65,7 @@ process.on('message',message=>{if(message.operation==='drop-opening'){dropOpenin
 await import(pathToFileURL(${JSON.stringify(resolve(root,'services/relay/src/netplay-relay.mjs'))}).href);
 `);
 const child=spawn(process.execPath,[wrapper],{cwd:root,windowsHide:true,
- env:{...process.env,EAGLER_NETPLAY_RELAY_HOST:'127.0.0.1',EAGLER_NETPLAY_RELAY_PORT:'0',EAGLER_NETPLAY_RTC_TIMEOUT_MS:'30000',EAGLER_NETPLAY_PUBLIC_NICKNAMES:'0',EAGLER_NETPLAY_STUN_URLS:''},stdio:['ignore','pipe','pipe','ipc']});
+ env:{...process.env,EAGLER_NETPLAY_RELAY_HOST:'127.0.0.1',EAGLER_NETPLAY_RELAY_PORT:'0',EAGLER_NETPLAY_RTC_TIMEOUT_MS:'30000',EAGLER_NETPLAY_PUBLIC_NICKNAMES:'0',EAGLER_NETPLAY_STUN_URLS:'',EAGLER_NETPLAY_GAMEPLAY_RELAY_FALLBACK:route==='relay'?'1':'0'},stdio:['ignore','pipe','pipe','ipc']});
 child.stderr.on('data',b=>relayLog+=b);let startup='';
 const port=await new Promise((yes,no)=>{const timer=setTimeout(()=>no(Error('Relay startup timeout '+startup)),15000);
  child.once('error',no);child.stdout.on('data',b=>{relayLog+=b;startup+=b;const m=startup.match(/listening ws:\/\/127\.0\.0\.1:(\d+)/);if(m){clearTimeout(timer);yes(Number(m[1]));}});});
@@ -120,12 +120,12 @@ try{
    const runtime=r?.[Object.keys(r).find(k=>/^__th\d+Runtime$/.test(k))],module=runtime?.Module??r?.Module,core=runtime?.core??r?.core??module;
    const peer=r?.__eaglerPeerTransport??r?.[Object.keys(r).find(k=>/^__th\d+PeerTransport$/.test(k))];
    let native=null;
-   for(const name of ['th11_mp_status','_th15_mp_status'])if(typeof core?.[name]==='function')native=Array.from(new Uint32Array(core.memory?.buffer??module.HEAPU8.buffer,core[name](),24));
+   for(const name of ['th11_mp_status','_th12_mp_status','_th15_mp_status'])if(typeof core?.[name]==='function')native=Array.from(new Uint32Array(core.memory?.buffer??module.HEAPU8.buffer,core[name](),24));
    return {menu:r?.__eaglerSpectatorMenu===true,playback:[...events].reverse().find(e=>e.event==='runtime-info'&&Object.hasOwn(e,'spectatorPlayback'))?.spectatorPlayback??null,
     frame:r?.__eaglerNetplayLanFrame??native?.[3]??null,
     failed:!!r?.__eaglerNetplayFailed||native?.[23]===1||peer?.failed===true,
     error:r?.__eaglerNetplayError||(native?.[23]===1||peer?.failed===true?String(peer?.error||'native multiplayer failure'):''),native,
-    state:runtime?.status?.()??null,transport:peer?{route:peer.route,failed:peer.failed,error:peer.error,closed:peer.closed,peers:peer.peers?.size}:null,
+    state:runtime?.status?.()??null,world:runtime?.state?.()??null,menuState:runtime?.menu?.()??null,transport:peer?{route:peer.route,failed:peer.failed,error:peer.error,closed:peer.closed,peers:peer.peers?.size}:null,
     replayFile:peer?{uploaded:peer.sharedReplaySession,receiving:peer.replayReceiving?.offset,bytes:peer.spectatorReplay?.bytes?.length}:null,
     spectatorSession:peer?.spectatorSession??null,receiveEpoch:peer?.receiveEpoch??0,reconnectAttempt:peer?.reconnectAttempt??0,
     body:r?.document.body.innerText??'',options:module?.eaglerOptions??null,terminal:events.filter(e=>e.event==='error'||e.event==='exit')};
@@ -138,7 +138,7 @@ try{
     const free=core.deallocate??core.graphics_free??core.free??core._free??core._eagler_replay_free;
     const pointer=alloc(file.bytes.length);try{
      const heap=module?.HEAPU8??globalThis.HEAPU8??core.HEAPU8??new Uint8Array(core.memory.buffer);heap.set(file.bytes,pointer);
-     const validate=core.multiplayer_replay_validate??core.th11_mp_replay_validate??core._th15_mp_replay_validate??core._eagler_replay_inspect;
+     const validate=core.multiplayer_replay_validate??core.th11_mp_replay_validate??core._th12_mp_replay_validate??core._th15_mp_replay_validate??core._eagler_replay_inspect;
      return {valid:!!validate(pointer,file.bytes.length),bytes:file.bytes.length,name:file.name};
     }finally{free(pointer);}
    },bytes);
@@ -174,7 +174,7 @@ try{
     endpoint.frame=page.frames().find(f=>f.url().includes(`/runtime/${t.id}/`));assert.ok(endpoint.frame);
     if(lifecycle&&!spectator){
      await page.evaluate(sharedResources=>rpc('configure',{language:'ja',music:'none',resources:[],runtimeResources:[],thpracCatalog:[],
-      options:{runtimeVariant:'multiplayer',thpracEnabled:false,touchEnabled:false,renderScale:1},sharedResources}),shared);
+      options:{thpracEnabled:false,touchEnabled:false},sharedResources}),shared);
      await page.evaluate(()=>rpc('prepare-room'));await page.waitForTimeout(1000);
      const press=async(code,keyCode,key=code)=>{await page.evaluate(fields=>rpc('keyboard',fields),{code,key,keyCode,location:0,inputSource:'physical',down:true});
       await page.waitForTimeout(140);await page.evaluate(fields=>rpc('keyboard',fields),{code,key,keyCode,location:0,inputSource:'physical',down:false});await page.waitForTimeout(200);};
@@ -194,8 +194,8 @@ try{
      (row.nativeOptions??=[]).push({seat:member.seat,...preview});
      await press('Escape',27);await page.waitForTimeout(600);
     }
-    const nativeOptions={runtimeVariant:'multiplayer',thpracEnabled:false,touchEnabled:false,renderScale:1,...buildMultiplayerRuntimeOptions({...options,
-      player:endpoint.seat??0,spectator,spectatorId:spectator?member.client:'',url:`ws://127.0.0.1:${relayPort}/?`+new URLSearchParams({room,run:String(started.serial),member:member.member})},PRODUCT_GAMES[t.game].multiplayer),limitPresentationTo60:players===3};
+    const nativeOptions={thpracEnabled:false,touchEnabled:false,...buildMultiplayerRuntimeOptions({...options,
+      player:endpoint.seat??0,spectator,spectatorId:spectator?member.client:'',allowWebsocketFallback:route==='relay',url:`ws://127.0.0.1:${relayPort}/?`+new URLSearchParams({room,run:String(started.serial),member:member.member})},PRODUCT_GAMES[t.game].multiplayer),limitPresentationTo60:players===3};
     await page.evaluate(({options,sharedResources})=>rpc('configure',{language:'ja',music:'none',resources:[],runtimeResources:[],thpracCatalog:[],options,sharedResources}),{options:nativeOptions,sharedResources:shared});
     if(launchNow)await page.evaluate(()=>rpc('launch'));return endpoint;
    };
