@@ -510,7 +510,17 @@
     "normalPending": 0,
     "multiplayerAhead": 43,
     "contentUnchanged": true,
-    "originalAncestorsPreserved": true
+    "originalAncestorsPreserved": true,
+    "standardExport": {
+      "sourceAnchors": 13,
+      "subtrees": {
+        "ports/th12": "9d66747c77da1728ac98a2cb5c749006744bcc36",
+        "ports/th12-mp": "ca8a59efc439165f1f0090a2d7ebd09b82d47983",
+        "ports/th15-mp": "2ec7488734e343690e2580543f37520f98a0fe3a"
+      },
+      "checkedSourceHead": "8621034654f7548afa85580e60bd8edafead5205",
+      "currentSourceMatches": true
+    }
   },
   "documentation": {
     "checked": 361,
