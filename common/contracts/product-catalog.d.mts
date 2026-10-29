@@ -414,7 +414,6 @@ export declare const PRODUCT_GAMES: Readonly<{
                 rollbackLimit: 8;
                 measuredStartup: true;
                 manualDelayLimit: 9;
-                manualRollbackDelay: true;
             }>;
             playerCounts: readonly [2];
             difficulties: readonly string[];
@@ -851,7 +850,6 @@ export interface MultiplayerInputTimingConfig {
     sendPredictionLimit?: number;
     measuredStartup?: boolean;
     manualDelayLimit?: number;
-    manualRollbackDelay?: boolean;
 }
 export interface MultiplayerProductConfig {
     spectator?: boolean;
@@ -870,7 +868,6 @@ export interface MultiplayerProductConfig {
 export declare function multiplayerInputTimingPolicy(product: Pick<MultiplayerProductConfig, "inputTiming"> | null | undefined): {
     measuredStartup: boolean;
     rollback: boolean;
-    manualRollbackDelay: boolean;
     manualDelayLimit: number;
     predictionLimit: number;
 };
@@ -1295,7 +1292,6 @@ export declare function createLocalProductManifest(): {
                     rollbackLimit: 8;
                     measuredStartup: true;
                     manualDelayLimit: 9;
-                    manualRollbackDelay: true;
                 }>;
                 playerCounts: readonly [2];
                 difficulties: readonly string[];
