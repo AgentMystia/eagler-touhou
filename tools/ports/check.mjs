@@ -35,7 +35,7 @@ function evidenceSources(target) {
   const names = execFileSync('git', ['ls-files','--cached','--others','--exclude-standard','-z','--',
     target.directory,'launcher/app','launcher/src','launcher/lib','launcher/tests','launcher/package',
     'launcher/package.json','launcher/package-lock.json',
-    'launcher/config','common/include','common/contracts','common/testkit','tools/ports','tools/build','tools/browser'],
+    'launcher/config','common/include','common/contracts','common/testkit','tools/ports','tools/build','tools/browser','tools/testing'],
     {cwd:root,encoding:'utf8',windowsHide:true,maxBuffer:16*1024*1024}).split('\0').filter(Boolean);
   return [...ownSources, ...names.filter(name=>/\.(?:mjs|mts|ts|tsx|jsx|cpp|c|h|hpp|inc|html|json)$/.test(name))
     .map(name=>resolve(root,name)).filter(existsSync)];

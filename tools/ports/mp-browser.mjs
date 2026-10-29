@@ -6,17 +6,19 @@ import {resolve,relative,extname} from 'node:path';
 import {spawn,execFileSync} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {createHash,randomUUID,randomInt} from 'node:crypto';
-import {launchBrowser} from '../browser/launch.mjs';
+import {assertCliArguments} from '../testing/cli-options.mjs';
+import {runWithReport} from '../testing/cli-report.mjs';
+import {runtimeTestTargets,selectRuntimeInputs,resultCoverage,runtimeTargetKey} from './runtime-targets.mjs';
 import {PRODUCT_GAMES} from '../../common/contracts/product-catalog.mjs';
 
 const arg=(name,fallback)=>process.argv.find(v=>v.startsWith(`--${name}=`))?.slice(name.length+3)??fallback;
-assert.ok(arg('manifest')&&arg('output'),'Required: --manifest=private-runtime-inputs.json --output=results');
+assert.ok(arg('output'),'Required: --manifest=private-runtime-inputs.json --output=results');
 const root=resolve(import.meta.dirname,'../..'),output=resolve(arg('output'));
+const result=await runWithReport({output,schema:'eagler-touhou/mp-browser/1'},async(report,save)=>{
+assertCliArguments(process.argv.slice(2),{values:['manifest','output','game','players','route','challenge','frames','restart'],flags:['wait-end','stop-stream','recover','lifecycle']});
+assert.ok(arg('manifest'),'Required: --manifest=private-runtime-inputs.json');
 const config=JSON.parse(await readFile(resolve(arg('manifest')),'utf8'));
-const {build}=createRequire(resolve(root,'launcher/package.json'))('esbuild');
-const optionBundle=await build({entryPoints:[resolve(root,'launcher/src/launcher/multiplayer-runtime-options.mts')],bundle:true,platform:'node',format:'esm',write:false});
-const {buildMultiplayerRuntimeOptions}=await import('data:text/javascript;base64,'+Buffer.from(optionBundle.outputFiles[0].text).toString('base64'));
-const games=arg('game')?.split(','),players=Number(arg('players','2')),route=arg('route','rtc'),mode=arg('challenge','both');
+const players=Number(arg('players','2')),route=arg('route','rtc'),mode=arg('challenge','both');
 const duration=Number(arg('frames','1200'));
 const waitEnd=process.argv.includes('--wait-end');
 const stopStream=process.argv.includes('--stop-stream');
@@ -26,24 +28,30 @@ const restart=arg('restart','none');
 assert.ok(['none','quick','menu','both'].includes(restart));
 assert.ok([2,3].includes(players)&&['rtc','relay'].includes(route)&&['normal','challenge','both'].includes(mode));
 assert.ok(Number.isSafeInteger(duration)&&duration>=300,'--frames must be at least 300');
-const targets=config.targets.filter(t=>t.variant==='multiplayer'&&PRODUCT_GAMES[t.game]?.multiplayer?.gameplay==='cooperative'&&(!games||games.includes(t.game)));
-assert.ok(targets.length,'No cooperative multiplayer Runtime selected');
+const required=await runtimeTestTargets({game:arg('game'),variant:'multiplayer',gameplay:'cooperative'});
+report.requiredTargets=required.map(runtimeTargetKey);
+const targets=selectRuntimeInputs(config,required);
+const {build}=createRequire(resolve(root,'launcher/package.json'))('esbuild');
+const optionBundle=await build({entryPoints:[resolve(root,'launcher/src/launcher/multiplayer-runtime-options.mts')],bundle:true,platform:'node',format:'esm',write:false});
+const {buildMultiplayerRuntimeOptions}=await import('data:text/javascript;base64,'+Buffer.from(optionBundle.outputFiles[0].text).toString('base64'));
+const {launchBrowser}=await import('../browser/launch.mjs');
+const challenges=mode==='both'?[false,true]:[mode==='challenge'];
+const caseId=(target,challenge)=>`${target.game}-${players}p-${challenge?'challenge':'normal'}-${route}`;
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 await mkdir(output,{recursive:true});
-const report={schema:'eagler-touhou/mp-browser/1',startedAt:new Date().toISOString(),players,route,frames:duration,
+Object.assign(report,{players,route,frames:duration,
  waitEnd,stopStream,recover,restart,lifecycle,
  scope:'Actual native MP games and independent spectators through a real local relay and the production Runtime protocol',
- commit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),harnessSha256:sha(await readFile(new URL(import.meta.url))),cases:[]};
+ commit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),harnessSha256:sha(await readFile(new URL(import.meta.url))),cases:[]});
 report.relayConfig={freshPerCase:true,rtcTimeoutMs:30000,stunUrls:[]};
 await writeFile(resolve(output,'harness.mjs'),await readFile(new URL(import.meta.url)));
 const patch=execFileSync('git',['diff','--binary','HEAD'],{cwd:root,maxBuffer:16*1024*1024});
 report.patchSha256=sha(patch);await writeFile(resolve(output,'source.patch'),patch);
 report.untrackedSources={};
-for(const name of execFileSync('git',['ls-files','--others','--exclude-standard','--','common','tools/ports'],{cwd:root,encoding:'utf8'}).trim().split('\n').filter(Boolean)){
+for(const name of execFileSync('git',['ls-files','--others','--exclude-standard','--','common','tools/ports','tools/testing'],{cwd:root,encoding:'utf8'}).trim().split('\n').filter(Boolean)){
  const bytes=await readFile(resolve(root,name));report.untrackedSources[name]={bytes:bytes.length,sha256:sha(bytes)};
  await writeFile(resolve(output,'source-'+name.replaceAll('/','_')),bytes);
 }
-const save=()=>writeFile(resolve(output,'report.json'),JSON.stringify(report,null,2)+'\n');
 const WebSocket=createRequire(resolve(root,'services/relay/package.json'))('ws');
 let relayLog='',relay,relayPort;
 async function startRelay(){
@@ -100,10 +108,10 @@ async function lobby(room,client,member,create=false){
 async function send(socket,value,predicate){const start=socket.messages.length;socket.send(JSON.stringify(value));return until(()=>{
  const messages=socket.messages.slice(start),error=messages.find(m=>m.type==='error');if(error)throw Error(JSON.stringify(error));return messages.find(predicate);},value.type);}
 try{
- for(const t of targets)for(const challenge of mode==='both'?[false,true]:[mode==='challenge']){
+ for(const t of targets)for(const challenge of challenges){
   assert.ok(PRODUCT_GAMES[t.game].multiplayer.playerCounts.includes(players));
-  const row={game:t.game,challenge,players,route,steps:[],errors:[],httpErrors:[]};report.cases.push(row);
-  const id=`${t.game}-${players}p-${challenge?'challenge':'normal'}-${route}`;
+  const id=caseId(t,challenge);
+  const row={id,game:t.game,variant:t.variant,challenge,players,route,steps:[],errors:[],consoleErrors:[],httpErrors:[]};report.cases.push(row);
   const sockets=[],contexts=[],endpoints=[];let browser;
   const step=async(name,fn)=>{row.stage=name;row.steps.push({name,at:new Date().toISOString()});await save();return fn();};
   const inspect=async endpoint=>endpoint.page.evaluate(()=>{
@@ -161,7 +169,7 @@ try{
     if(route==='relay')await context.addInitScript(()=>Object.defineProperty(window,'RTCPeerConnection',{configurable:true,value:undefined}));
     const page=await context.newPage(),endpoint={page,member,spectator,seat:spectator?null:member.seat};endpoints.push(endpoint);
     page.on('pageerror',error=>row.errors.push(String(error)));page.on('response',r=>{if(r.status()>=400)row.httpErrors.push({url:r.url(),status:r.status()});});
-    page.on('console',message=>{(row.console??=[]).push({seat:endpoint.seat,spectator,type:message.type(),text:message.text()});if(row.console.length>128)row.console.shift();});
+    page.on('console',message=>{if(message.type()==='error')row.consoleErrors.push(message.text());(row.console??=[]).push({seat:endpoint.seat,spectator,type:message.type(),text:message.text()});if(row.console.length>128)row.console.shift();});
     await page.goto(`${base}/host/${t.id}`);await page.waitForFunction(()=>events.some(e=>e.event==='ready'),null,{timeout:120000});
     endpoint.frame=page.frames().find(f=>f.url().includes(`/runtime/${t.id}/`));assert.ok(endpoint.frame);
     if(lifecycle&&!spectator){
@@ -370,10 +378,13 @@ try{
      row.streamStopped={before,stopped,after};
     });
    }
-   assert.deepEqual(row.errors,[]);assert.deepEqual(row.httpErrors,[]);row.passed=true;
+   assert.deepEqual(row.errors,[]);assert.deepEqual(row.consoleErrors,[]);assert.deepEqual(row.httpErrors,[]);row.passed=true;
   }catch(error){row.passed=false;row.error=String(error.stack||error);row.failure=[];for(const [i,e]of endpoints.entries())try{row.failure.push(await inspect(e));await e.page.screenshot({path:resolve(output,`${id}-failure-${i}.png`)});}catch{}
   }finally{for(const c of contexts)await c.close().catch(()=>{});await browser?.close();for(const s of sockets)s.close();
-   await until(()=>sockets.every(s=>s.readyState===WebSocket.CLOSED),'lobby cleanup',10000);relay?.kill();await save();console.log(`${id} ${row.passed?'PASS':'FAIL'} ${row.stage} ${row.error?.split('\n')[0]??''}`);}
+   await until(()=>sockets.every(s=>s.readyState===WebSocket.CLOSED),'lobby cleanup',10000);relay?.kill();if(row.errors.length||row.consoleErrors.length||row.httpErrors.length)row.passed=false;await save();console.log(`${id} ${row.passed?'PASS':'FAIL'} ${row.stage} ${row.error?.split('\n')[0]??''}`);}
  }
 }finally{server.close();relay?.kill();report.finishedAt=new Date().toISOString();await writeFile(resolve(output,'relay.log'),relayLog);await save();}
-if(report.cases.some(c=>!c.passed))process.exitCode=1;
+report.coverage=resultCoverage(targets.flatMap(target=>challenges.map(challenge=>caseId(target,challenge))),report.cases);
+report.passed=report.coverage.complete;
+});
+if(!result.passed){console.error(result.failure??'MP cases failed');process.exitCode=1;}

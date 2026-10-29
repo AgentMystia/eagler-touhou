@@ -30,7 +30,7 @@ export const REQUIRED_ADAPTER_CAPABILITIES = Object.freeze([
     verification: ["repository:tests/test-touch-runtime-protocol.mjs", "workspace:tests/test-runtime-protocol-contract.mjs", "workspace:tests/test-portable-touch-controller-contract.mjs", "runtime:per-game touch/deathbomb/outside-touch gates"],
     summary: "touch controls, direct touch, cancellation and the shared sensitivity contract; touch resolves to the same authoritative input/Replay semantics as keyboard/controller" },
   { id: "restart-action", class: "required", owner: "launcher-runtime",
-    verification: ["workspace:tests/test-required-gameplay-actions.mjs"],
+    verification: ["repository:tests/test-touch-runtime-protocol.mjs", "browser:../tools/ports/mp-browser.mjs", "runtime:per-game pause/restart acceptance"],
     summary: "the shared Restart control maps R to the title's restart-current-run action while the pause UI owns input" },
   { id: "always-hitbox", class: "required", owner: "launcher-runtime",
     verification: ["workspace:tests/test-always-hitbox-contract.mjs", "runtime:per-game visual regression"],
