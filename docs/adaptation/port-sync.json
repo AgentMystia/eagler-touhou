@@ -304,7 +304,7 @@
     "th12": {
       "normal": "ports/th12",
       "multiplayer": "ports/th12-mp",
-      "base": "1a5b7400d95bbe9e158921e08427b0c10b82956e",
+      "base": "b4719ea488d5f4d89a45e57df91c8396af9893a7",
       "origin": {
         "normalCommit": "5e5081a1d2a434b2f8d785ebbd6b965f1058d828",
         "multiplayerCommit": "02e3a62a7ff38ca5ec1f3ad2007c117534e9ba26",
@@ -603,6 +603,30 @@
             "ports/th12-mp/tests/sdl-lifecycle.test.mjs"
           ],
           "note": "两侧同步SDL触控Esc、iframe与CSS像素坐标、ImGui裁剪、退出诊断、640x480 Web离屏目标和背景复制缓存；房间标题只确认设置及launchSerial修复归多人目录。单人触控与THPrac、多人回滚/观战及确认录像回归通过。"
+        },
+        {
+          "kind": "manual",
+          "base": "1a5b7400d95bbe9e158921e08427b0c10b82956e",
+          "source": "b4719ea488d5f4d89a45e57df91c8396af9893a7",
+          "targetHead": "b4719ea488d5f4d89a45e57df91c8396af9893a7",
+          "paths": [
+            "ports/th12-mp/docs/DEVELOPMENT.md",
+            "ports/th12-mp/portable/sdl/Animation.hpp",
+            "ports/th12-mp/portable/sdl/Game.cpp",
+            "ports/th12-mp/portable/sdl/Game.hpp",
+            "ports/th12-mp/portable/sdl/GameHost.cpp",
+            "ports/th12-mp/portable/sdl/PresentationOrder.hpp",
+            "ports/th12-mp/portable/sdl/Scene.cpp",
+            "ports/th12-mp/portable/sdl/Scene.hpp",
+            "ports/th12-mp/portable/sdl/TitlePresentation.cpp",
+            "ports/th12-mp/portable/sdl/TitlePresentation.hpp",
+            "ports/th12-mp/tests/native/sdl-animation-performance.cpp",
+            "ports/th12-mp/tests/native/sdl-order-performance.cpp",
+            "ports/th12-mp/tests/native/sdl-presentation-order.cpp",
+            "ports/th12-mp/tests/presentation-order.test.mjs",
+            "ports/th12-mp/tests/sdl-animation.test.mjs"
+          ],
+          "note": "两侧同步SDL优先级分桶和帧代次查找、背景及菜单缓冲复用、短中断内联存储；多人单独复用暂停、等待与高刷额外帧捕获，按世界帧/关卡/恢复序号失效。原版动画、七关顶点和排序哈希一致，单人触控/THPrac/录像及双人回滚、三人同步、观战回归通过。"
         }
       ]
     }
