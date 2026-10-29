@@ -183,7 +183,7 @@ test('rollback products default to D0 for both room creation and restored invite
     const socket=f.sockets[0],id=f.identity.lobbyClientId(product);socket.open();
     socket.message({type:'state',room:roomState(id,{predictionLimit:product==='th11mp'?12:8,seats:[{clientId:id,name:'A',loadout:0,ready:true},{clientId:'guest12345',name:'B',loadout:1,ready:true}]})});
     f.service.setTimingChoice(7);f.service.start();const started=socket.sent.findLast(m=>m.type==='start');
-    assert.ok(started,product);if(['th08mp','th09mp','th10mp'].includes(product)){assert.equal(started.adonisMode,0);assert.equal(started.inputDelay,product==='th09mp'?7:0);assert.equal(started.inputDelayAuto,false);
+    assert.ok(started,product);if(['th08mp','th09mp','th10mp'].includes(product)){assert.equal(started.adonisMode,0);assert.equal(started.inputDelay,0);assert.equal(started.inputDelayAuto,false);
       f.service.setRollbackEnabled(false);f.service.start();const delay=socket.sent.findLast(m=>m.type==='start');assert.equal(delay.adonisMode,1);assert.equal(delay.inputDelay,7);
     }
     if(product==='th11mp'){assert.equal(started.adonisMode,0);assert.equal(started.inputDelay,0);assert.equal(started.predictionLimit,12);}
