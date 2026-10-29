@@ -304,7 +304,7 @@
     "th12": {
       "normal": "ports/th12",
       "multiplayer": "ports/th12-mp",
-      "base": "b4719ea488d5f4d89a45e57df91c8396af9893a7",
+      "base": "728d440a82f0e840d95fb7340477037c99a86579",
       "origin": {
         "normalCommit": "5e5081a1d2a434b2f8d785ebbd6b965f1058d828",
         "multiplayerCommit": "02e3a62a7ff38ca5ec1f3ad2007c117534e9ba26",
@@ -627,6 +627,19 @@
             "ports/th12-mp/tests/sdl-animation.test.mjs"
           ],
           "note": "两侧同步SDL优先级分桶和帧代次查找、背景及菜单缓冲复用、短中断内联存储；多人单独复用暂停、等待与高刷额外帧捕获，按世界帧/关卡/恢复序号失效。原版动画、七关顶点和排序哈希一致，单人触控/THPrac/录像及双人回滚、三人同步、观战回归通过。"
+        },
+        {
+          "kind": "manual",
+          "base": "b4719ea488d5f4d89a45e57df91c8396af9893a7",
+          "source": "728d440a82f0e840d95fb7340477037c99a86579",
+          "targetHead": "6478db87e828f6dfb8c5613098ec850572263e6f",
+          "paths": [
+            "ports/th12-mp/portable/sdl/Replay.cpp",
+            "ports/th12-mp/site/game-sdl.mjs",
+            "ports/th12-mp/tests/native/sdl-replay.cpp",
+            "ports/th12-mp/tests/sdl-replay.test.mjs"
+          ],
+          "note": "普通版与 MP 同步 SDL 模块诊断入口、原版录像边界与 FPS 游标修复；多人专属故障冻结和回房恢复保留在 MP。独立目录已合并双亲历史，完整 MP 树与已验证源码一致。"
         }
       ]
     }
