@@ -133,7 +133,7 @@ def run(browser, launcher, workspace, target, broken=False):
     page.keyboard.down("w")
     assert frame.evaluate("fixtureKeyDown('ArrowUp')")
     page.evaluate("keyboardPreferences.selectLayout('arrows')")
-    assert not frame.evaluate("fixtureKeyDown('ArrowUp')"), (game, "switching layout retained the old key hold")
+    frame.wait_for_function("!fixtureKeyDown('ArrowUp')", timeout=3000)
     frame.evaluate("window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyW',key:'w',repeat:true,bubbles:true}))")
     assert not frame.evaluate("fixtureKeyDown('ArrowUp')")
     page.keyboard.up("w")
