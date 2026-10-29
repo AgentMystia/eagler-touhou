@@ -12,9 +12,9 @@
         0
       ],
       "slowPresentation": false,
-      "frames": 334,
-      "exactMatches": 225,
-      "hash": 2040570636,
+      "frames": 339,
+      "exactMatches": 219,
+      "hash": -1195588644,
       "spectatorVerified": true
     },
     {
@@ -29,9 +29,9 @@
         0
       ],
       "slowPresentation": false,
-      "frames": 378,
-      "exactMatches": 163,
-      "hash": 572933973,
+      "frames": 379,
+      "exactMatches": 120,
+      "hash": 1770943350,
       "spectatorVerified": false
     },
     {
@@ -41,13 +41,13 @@
       "automatic": false,
       "difficulty": 1,
       "restores": [
-        21,
-        19
+        22,
+        18
       ],
       "slowPresentation": false,
-      "frames": 409,
+      "frames": 414,
       "exactMatches": 0,
-      "hash": 617076927,
+      "hash": -1529141875,
       "spectatorVerified": true
     },
     {
@@ -58,13 +58,13 @@
       "difficulty": 1,
       "restores": [
         21,
-        20,
-        34
+        22,
+        35
       ],
       "slowPresentation": false,
-      "frames": 442,
+      "frames": 434,
       "exactMatches": 0,
-      "hash": 875095115,
+      "hash": -450945898,
       "spectatorVerified": false
     },
     {
@@ -78,9 +78,9 @@
         0
       ],
       "slowPresentation": false,
-      "frames": 335,
-      "exactMatches": 221,
-      "hash": 1046873492,
+      "frames": 337,
+      "exactMatches": 223,
+      "hash": 1699628707,
       "spectatorVerified": false
     }
   ]

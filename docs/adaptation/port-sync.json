@@ -304,7 +304,7 @@
     "th12": {
       "normal": "ports/th12",
       "multiplayer": "ports/th12-mp",
-      "base": "de7385d78436a7a428b5ce545ee585cca361fbbe",
+      "base": "e5517fab11ec3b67b7f559575c035b5b96868d9c",
       "origin": {
         "normalCommit": "5e5081a1d2a434b2f8d785ebbd6b965f1058d828",
         "multiplayerCommit": "02e3a62a7ff38ca5ec1f3ad2007c117534e9ba26",
@@ -543,6 +543,33 @@
             "ports/th12-mp/tests/sdl-clock.test.mjs"
           ],
           "note": "两侧正式入口均迁为 SDL3/GLES，沿用各自核心；多人新增 C++ 场景与 HUD、确认/回滚桥接、观战与已确认录像，THPrac 保持多人关闭。高刷外推、真实画面 FPS、只读触控交接与报告器同步；键盘跨界残留修复仅归属多人目录。"
+        },
+        {
+          "kind": "manual",
+          "base": "de7385d78436a7a428b5ce545ee585cca361fbbe",
+          "source": "7ad310d8c19162aea255c0de1cc904c836feb6e5",
+          "targetHead": "7ad310d8c19162aea255c0de1cc904c836feb6e5",
+          "paths": [
+            "ports/th12-mp/docs/DEVELOPMENT.md",
+            "ports/th12-mp/portable/sdl/Animation.cpp",
+            "ports/th12-mp/portable/sdl/Animation.hpp",
+            "ports/th12-mp/portable/sdl/Scene.cpp",
+            "ports/th12-mp/tests/native/sdl-animation-performance.cpp",
+            "ports/th12-mp/tests/native/sdl-background-performance.cpp",
+            "ports/th12-mp/tests/sdl-animation.test.mjs"
+          ],
+          "note": "两侧同步 SDL 呈现热路径优化：轨道缓存内登记帧代次，静止轨道在速度、插值和子节点全部结束后推进年龄，背景裁剪复用临时缓冲。沿用多人 Session 与回滚协议；33 个原版 ANM 和七关背景输出哈希与基线一致，双人/三人延迟网络及录像回归通过。"
+        },
+        {
+          "kind": "manual",
+          "base": "7ad310d8c19162aea255c0de1cc904c836feb6e5",
+          "source": "e5517fab11ec3b67b7f559575c035b5b96868d9c",
+          "targetHead": "e5517fab11ec3b67b7f559575c035b5b96868d9c",
+          "paths": [
+            "ports/th12-mp/portable/sdl/Animation.cpp",
+            "ports/th12-mp/tests/native/sdl-animation-performance.cpp"
+          ],
+          "note": "静止轨道年龄快进同时等待 UV 回绕归一化完成；两侧保持一致，新增超范围 UV 回归，原版脚本逐帧输出与显示 RNG 核对通过。"
         }
       ]
     }
