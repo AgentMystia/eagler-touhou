@@ -1,6 +1,6 @@
 # 画面与声音
 
-[适配流程](README.md) · [文档目录](../README.md)
+[适配流程](README.md) | [文档目录](../README.md)
 
 固定逻辑频率，画面跟随显示器刷新。声音事件按真实游戏事件输出。
 
@@ -42,6 +42,14 @@ th12 的托管帧循环检查直接运行浏览器循环、显示限频器和插
 ## 记录
 
 在本作 `ADAPTATION.md` 的“运行验收记录”按对应编号填写操作和结果。通过时链接[验证记录](record-template.md)，并写明本次构建模式。
+
+## 声音验收方法
+
+已有检查按音频路径复用：[共用 WebSfx 单测](../../common/tests/web-sfx-output.test.mjs)使用替身 AudioContext 检查节点、游标和资源释放；[th12 音乐单测](../../ports/th12/tests/music.test.mjs)检查选曲、异步加载、循环与停止；[th15 SDL 音频浏览器检查](../../ports/th15/web/tests/sdl/audio-browser.test.mjs)使用本作音效、曲目和音频测试构建检查混音、声道、暂停游标与队列。各入口按本作指南准备素材与产物。
+
+选择已知曲目与可重复触发的音效，分别记录标题、开局、暂停恢复、重开和退出时的结果。无 BGM 模式同时检查音效；资源错误使用缺失或损坏的文件复跑，核对提示与后续可选操作。切换音量时记录实际输出变化，音乐位置和循环状态单独观察。
+
+`npm --prefix launcher run test:audio-output:browser` 从生产 `WebSfx.hpp` 读取 JS，在 Chromium 的 `OfflineAudioContext` 中渲染实际 PCM。检查即时输出与另一条预排音轨叠加、双声道增益、暂停时游标保持、恢复、停止、清空及末尾静音，并确认延迟启动的错误实现会被断言检出。这是 WebSfx 组件测试；各作是否使用该组件、曲目是否正确及扬声器输出使用上表验收。
 
 ## 源码入口
 
