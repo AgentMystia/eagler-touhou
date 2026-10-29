@@ -149,7 +149,12 @@
       if (core?.HEAPU8) report.wasmMemoryBytes=core.HEAPU8.byteLength;
       const memory=performance.memory; if(memory)report.browserMemory={usedBytes:memory.usedJSHeapSize,totalBytes:memory.totalJSHeapSize,limitBytes:memory.jsHeapSizeLimit};
       const transport=globalThis.__eaglerPeerTransport;
-      if(transport)report.transport=plain({route:transport.route,connectionState:transport.connectionState,receivedQueued:transport.received?.length-(transport.receivedHead||0)});
+      if(transport)report.transport=plain({route:transport.route,connectionState:transport.connectionState,
+        receivedQueued:transport.received?.length-(transport.receivedHead||0),channelEvents:transport.channelEvents,
+        peers:transport.peers&&Array.from(transport.peers).slice(0,2).map(([peer,p])=>({peer,
+          connectionState:p.pc?.connectionState,iceConnectionState:p.pc?.iceConnectionState,sctpState:p.pc?.sctp?.state,
+          input:{readyState:p.inputDc?.readyState,bufferedAmount:p.inputDc?.bufferedAmount},
+          control:{readyState:p.controlDc?.readyState,bufferedAmount:p.controlDc?.bufferedAmount},route:p.adaptive?.snapshot?.()}))});
       let host=window;try{if(parent!==window&&parent.location.origin===location.origin)host=parent;}catch{}
       try{hostUI(host).show(report);}catch{hostUI(window).show(report);}
     } catch {}

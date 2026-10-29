@@ -47,6 +47,25 @@ test('rolling history stays bounded and circular values serialize safely',()=>{
   assert.equal(report.logs.length,100);assert.equal(report.samples.length,30);
   assert.match(JSON.stringify(report),/circular/);
 });
+
+test('RTC failures retain explicit browser cause fields and channel queues without signaling secrets',()=>{
+  const {api,world}=fixture('th12',true);
+  world.__eaglerPeerTransport={route:'rtc',received:[],receivedHead:0,
+    channelEvents:[{peer:1,kind:'control',event:'error',error:{name:'OperationError',message:'User-Initiated Abort',
+      errorDetail:'sctp-failure',sctpCauseCode:12},channel:{readyState:'closing',bufferedAmount:8192}}],
+    peers:new Map([[1,{pc:{connectionState:'connected',iceConnectionState:'connected',sctp:{state:'closed'},
+      localDescription:{sdp:'private-sdp'},configuration:{iceServers:[{credential:'private-turn'}]}},
+      inputDc:{readyState:'open',bufferedAmount:0},controlDc:{readyState:'closing',bufferedAmount:8192},
+      adaptive:{snapshot:()=>({pendingControl:2,pendingBytes:160})}}]])};
+  api.fatal(new Error('RTC peer P2 control channel error'));
+  const report=api.report();
+  assert.equal(report.transport.channelEvents[0].error.sctpCauseCode,12);
+  assert.equal(report.transport.channelEvents[0].error.errorDetail,'sctp-failure');
+  assert.equal(report.transport.peers[0].sctpState,'closed');
+  assert.equal(report.transport.peers[0].control.bufferedAmount,8192);
+  assert.equal(report.transport.peers[0].route.pendingControl,2);
+  assert(!JSON.stringify(report).includes('private-sdp'));assert(!JSON.stringify(report).includes('private-turn'));
+});
 test('TH12 native gameplay getters wait until a session exists',()=>{
   const {api}=fixture('th12',false);let reads=0,session=null;
   const core={HEAPU8:new Uint8Array(1024),_th12_hud:()=>{++reads;return 0;}};
