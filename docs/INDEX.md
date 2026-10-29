@@ -1,6 +1,6 @@
 # 文档总表
 
-共 361 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
+共 360 份可读文档，包含贡献入口、适配说明、服务文档、生成报告、许可证和历史记录。由 `npm run docs:index` 更新。
 
 项目说明按当前目录重写；许可证保留原文，生成报告由各自工具更新。原有 498 份 Markdown 的逐篇去向见[旧文档去向](history/INDEX.md)。
 
@@ -88,16 +88,15 @@
 | 作品源码文档 | [ports/th11/portable/presentation-lab/CAMPAIGN.md](../ports/th11/portable/presentation-lab/CAMPAIGN.md) | th11 帧间位移巡检 |
 | 作品源码文档 | [ports/th11/portable/presentation-lab/README.md](../ports/th11/portable/presentation-lab/README.md) | th11 Presentation Lab |
 | 作品源码文档 | [ports/th12-mp/decompiled/README.md](../ports/th12-mp/decompiled/README.md) | TH12 1.00b 反编译索引 |
-| 作品源码文档 | [ports/th12-mp/docs/BUILD.md](../ports/th12-mp/docs/BUILD.md) | 本地构建与原版输入 |
+| 作品源码文档 | [ports/th12-mp/docs/BUILD.md](../ports/th12-mp/docs/BUILD.md) | 构建与验证 |
 | 作品源码文档 | [ports/th12-mp/docs/CONTENT_PREPARATION.md](../ports/th12-mp/docs/CONTENT_PREPARATION.md) | 准备自己的 TH12 游戏资源 |
 | 作品源码文档 | [ports/th12-mp/docs/CPP-RESTORATION.md](../ports/th12-mp/docs/CPP-RESTORATION.md) | C++ runtime |
 | 作品源码文档 | [ports/th12-mp/docs/DEVELOPMENT.md](../ports/th12-mp/docs/DEVELOPMENT.md) | 星莲船多人版开发入口 |
-| 作品源码文档 | [ports/th12-mp/docs/FULL_GAME_FLOW.md](../ports/th12-mp/docs/FULL_GAME_FLOW.md) | TH12 完整游戏流程 |
+| 作品源码文档 | [ports/th12-mp/docs/FULL_GAME_FLOW.md](../ports/th12-mp/docs/FULL_GAME_FLOW.md) | th12 旧网页前端流程 |
 | 作品源码文档 | [ports/th12-mp/docs/HIGH_REFRESH.md](../ports/th12-mp/docs/HIGH_REFRESH.md) | TH12 fixed-tick / high-refresh presentation draft |
-| 作品源码文档 | [ports/th12-mp/docs/LAUNCHER_INTEGRATION.md](../ports/th12-mp/docs/LAUNCHER_INTEGRATION.md) | 真实 Launcher 接入 |
+| 作品源码文档 | [ports/th12-mp/docs/LAUNCHER_INTEGRATION.md](../ports/th12-mp/docs/LAUNCHER_INTEGRATION.md) | Launcher 接入 |
 | 作品源码文档 | [ports/th12-mp/docs/LOCALIZATION.md](../ports/th12-mp/docs/LOCALIZATION.md) | thcrap 本地化 |
 | 作品源码文档 | [ports/th12-mp/docs/ROLLBACK_CADENCE.md](../ports/th12-mp/docs/ROLLBACK_CADENCE.md) | 多人回滚与可见帧率 |
-| 作品源码文档 | [ports/th12-mp/docs/WEB_ADAPTATION.md](../ports/th12-mp/docs/WEB_ADAPTATION.md) | TH12 Web 适配现状与交付边界 |
 | 作品源码文档 | [ports/th12-mp/docs/behavior/animation.md](../ports/th12-mp/docs/behavior/animation.md) | 动画、场景与界面行为 |
 | 作品源码文档 | [ports/th12-mp/docs/behavior/combat.md](../ports/th12-mp/docs/behavior/combat.md) | 战斗行为与原版接口 |
 | 作品源码文档 | [ports/th12-mp/docs/behavior/ufo.md](../ports/th12-mp/docs/behavior/ufo.md) | UFO 与道具行为 |
@@ -110,15 +109,14 @@
 | 作品源码文档 | [ports/th12-mp/tools/frame-inspector/README.md](../ports/th12-mp/tools/frame-inspector/README.md) | TH12 原版逐帧检查 |
 | 作品源码文档 | [ports/th12-mp/tools/replay-verifier/README.md](../ports/th12-mp/tools/replay-verifier/README.md) | TH12 Replay verification |
 | 作品源码文档 | [ports/th12/decompiled/README.md](../ports/th12/decompiled/README.md) | TH12 1.00b 反编译索引 |
-| 作品源码文档 | [ports/th12/docs/BUILD.md](../ports/th12/docs/BUILD.md) | 本地构建与原版输入 |
+| 作品源码文档 | [ports/th12/docs/BUILD.md](../ports/th12/docs/BUILD.md) | 构建与验证 |
 | 作品源码文档 | [ports/th12/docs/CONTENT_PREPARATION.md](../ports/th12/docs/CONTENT_PREPARATION.md) | 准备自己的 TH12 游戏资源 |
 | 作品源码文档 | [ports/th12/docs/CPP-RESTORATION.md](../ports/th12/docs/CPP-RESTORATION.md) | C++ runtime |
 | 作品源码文档 | [ports/th12/docs/DEVELOPMENT.md](../ports/th12/docs/DEVELOPMENT.md) | 星莲船开发入口 |
-| 作品源码文档 | [ports/th12/docs/FULL_GAME_FLOW.md](../ports/th12/docs/FULL_GAME_FLOW.md) | TH12 完整游戏流程 |
+| 作品源码文档 | [ports/th12/docs/FULL_GAME_FLOW.md](../ports/th12/docs/FULL_GAME_FLOW.md) | th12 旧网页前端流程 |
 | 作品源码文档 | [ports/th12/docs/HIGH_REFRESH.md](../ports/th12/docs/HIGH_REFRESH.md) | TH12 fixed-tick / high-refresh presentation draft |
-| 作品源码文档 | [ports/th12/docs/LAUNCHER_INTEGRATION.md](../ports/th12/docs/LAUNCHER_INTEGRATION.md) | 真实 Launcher 接入 |
+| 作品源码文档 | [ports/th12/docs/LAUNCHER_INTEGRATION.md](../ports/th12/docs/LAUNCHER_INTEGRATION.md) | Launcher 接入 |
 | 作品源码文档 | [ports/th12/docs/LOCALIZATION.md](../ports/th12/docs/LOCALIZATION.md) | thcrap 本地化 |
-| 作品源码文档 | [ports/th12/docs/WEB_ADAPTATION.md](../ports/th12/docs/WEB_ADAPTATION.md) | TH12 Web 适配现状与交付边界 |
 | 作品源码文档 | [ports/th12/docs/behavior/animation.md](../ports/th12/docs/behavior/animation.md) | 动画、场景与界面行为 |
 | 作品源码文档 | [ports/th12/docs/behavior/combat.md](../ports/th12/docs/behavior/combat.md) | 战斗行为与原版接口 |
 | 作品源码文档 | [ports/th12/docs/behavior/ufo.md](../ports/th12/docs/behavior/ufo.md) | UFO 与道具行为 |
@@ -233,6 +231,7 @@
 | 历史记录 | [archive/th12-sdl-runtime-repair-20261029/README.md](../archive/th12-sdl-runtime-repair-20261029/README.md) | TH12 SDL 多人启动与故障恢复 |
 | 历史记录 | [archive/th12-text-outline-20261028/README.md](../archive/th12-text-outline-20261028/README.md) | TH12 结局与对话文字描边 |
 | 历史记录 | [archive/th12-web-acceptance-20261022/README.md](../archive/th12-web-acceptance-20261022/README.md) | 星莲船原 Web 前端验收记录 |
+| 历史记录 | [archive/th12-web-adaptation-20261020/README.md](../archive/th12-web-adaptation-20261020/README.md) | th12 旧网页前端接入记录 |
 | 历史记录 | [archive/th12mp-public-20261028/README.md](../archive/th12mp-public-20261028/README.md) | 星莲船正式发布 |
 | 历史记录 | [archive/th12mp-public-20261028/cn129.md](../archive/th12mp-public-20261028/cn129.md) | 原主站入口同步 |
 | 历史记录 | [archive/th15-bomb-snapshot-memory-20261028/README.md](../archive/th15-bomb-snapshot-memory-20261028/README.md) | TH15 多人放雷快照内存峰值 |
