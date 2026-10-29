@@ -131,7 +131,7 @@ def run(browser, launcher, workspace, target, broken=False):
     page.keyboard.up("w")
     page.evaluate("keyboardPreferences.selectLayout('wasd')")
     page.keyboard.down("w")
-    assert frame.evaluate("fixtureKeyDown('ArrowUp')")
+    frame.wait_for_function("fixtureKeyDown('ArrowUp')", timeout=3000)
     page.evaluate("keyboardPreferences.selectLayout('arrows')")
     frame.wait_for_function("!fixtureKeyDown('ArrowUp')", timeout=3000)
     frame.evaluate("window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyW',key:'w',repeat:true,bubbles:true}))")
@@ -167,10 +167,11 @@ def run(browser, launcher, workspace, target, broken=False):
 
     # Touch is already canonical and must not be remapped or own a physical H.
     page.keyboard.down("h")
+    frame.wait_for_function("fixtureKeyDown('KeyC')", timeout=3000)
     page.evaluate("touch(true);touch(false)")
-    assert frame.evaluate("fixtureKeyDown('KeyC')")
+    frame.wait_for_function("fixtureKeyDown('KeyC')", timeout=3000)
     page.keyboard.up("h")
-    assert not frame.evaluate("fixtureKeyDown('KeyC')")
+    frame.wait_for_function("!fixtureKeyDown('KeyC')", timeout=3000)
     page.keyboard.press("Alt+Enter")
     assert page.evaluate("fullscreens") == 1
     expect_held("Enter", 4096, False)
@@ -186,6 +187,7 @@ def run(browser, launcher, workspace, target, broken=False):
         assert page.evaluate("messages") > 0, "th12 production shell uses postMessage"
 
     page.keyboard.down("w")
+    expect_held("ArrowUp", 16)
     frame.evaluate("clearRuntime()")
     frame.evaluate("window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyW',key:'w',keyCode:87,repeat:true,bubbles:true,cancelable:true}))")
     expect_held("ArrowUp", 16, False)
