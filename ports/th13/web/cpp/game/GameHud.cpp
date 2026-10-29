@@ -105,6 +105,12 @@ bool GameHud::initialize(const HudEntryContext& context) {
     }
     if (!life(player.extra_lives, player.life_pieces) || !bombs(player.bombs, player.bomb_pieces))
         return false;
+    // 425170:509-512 creates front.anm script67 only for a fresh Stage 1
+    // ordinary run with no continues. The script owns its children and the
+    // full 198-tick presentation lifecycle; keep no HUD-local timer/handle.
+    if (progress.stage == 1 && progress.practice_mode == 0 && progress.continues == 0 &&
+        !create(front, 67, 0))
+        return false;
     // 00425170 尾部：front[79+difficulty] 是右下角通知，
     // front[85+difficulty] 是右上角常驻标签；ANM 自驱160帧入场。
     // 不能发 label3 到常驻标签（它没有该标签），也不能拿 th15 的+86。
