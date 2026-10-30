@@ -394,5 +394,22 @@
   "newInvariantAcceptance": {
     "AUDIO-07": "pending per-title acceptance",
     "TOUCH-09": "expanded scope pending per-title acceptance"
-  }
+  },
+  "history": {
+    "sourceAnchors": 13,
+    "subtrees": {
+      "ports/th12": "5eaa2f162f5911b954b19a277cfb0daf256e8c33",
+      "ports/th12-mp": "01016b9f892d156f25ba5b47da8e82bb71d6e2b0",
+      "ports/th15-mp": "c8070f97953e1c6ce41314580c26b795141608ea"
+    },
+    "head": "a304d443ec0d1fece26610a3f65c0a2e025b55ec",
+    "base": "8b310587cd3c2184a7922cd8c432021cfb87bd5d",
+    "normalProjection": "7103607dd7ff163d460387e2cb33e962da477e7d",
+    "multiplayerProjection": "01016b9f892d156f25ba5b47da8e82bb71d6e2b0",
+    "normalPending": 0,
+    "multiplayerAhead": 47,
+    "writeback": "b58daac14bb91df873ee4649ca26d5e4a94c4d70",
+    "reviewedTreePreserved": true
+  },
+  "launcherTypecheck": "passed"
 }
