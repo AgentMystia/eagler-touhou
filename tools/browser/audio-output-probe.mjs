@@ -30,3 +30,19 @@ export async function samplePcm(frame){
   await new Promise(resolve=>setTimeout(resolve,300));
   return frame.evaluate(()=>({frames:__sdlAudioProbe.frames,peak:__sdlAudioProbe.peak}));
 }
+
+// Observe the actual browser start calls separately from the queued SDL mixer.
+export function installSfxStartProbe(){
+  globalThis.__sfxStarts=[];
+  const prototype=globalThis.AudioBufferSourceNode?.prototype;if(!prototype)return;
+  const start=prototype.start;
+  prototype.start=function(when=0,...args){
+    let peak=0;const buffer=this.buffer;
+    if(buffer)for(let channel=0;channel<buffer.numberOfChannels;channel++){
+      const pcm=buffer.getChannelData(channel);
+      for(let i=0;i<Math.min(pcm.length,4096);i++)peak=Math.max(peak,Math.abs(pcm[i]));
+    }
+    if(globalThis.__sfxStarts.length<256)globalThis.__sfxStarts.push({when,peak,channels:buffer?.numberOfChannels});
+    return start.call(this,when,...args);
+  };
+}

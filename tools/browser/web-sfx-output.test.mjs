@@ -80,3 +80,25 @@ test('output assertions reject an SFX start delayed behind a queued track', {tim
   const result = await render(broken);
   assert.throws(() => assertOutput(result), /PCM window 0\.\.512/);
 });
+
+test('SFX renders while a separate music loading/decoding task is unresolved', {timeout: 30000}, async () => {
+  const page=await browser.newPage();
+  try {
+    const result=await page.evaluate(async body=>{
+      const ctx=new OfflineAudioContext(2,512,48000),heap=new Uint8Array(512*2*4);
+      new Float32Array(heap.buffer).fill(.25);
+      let completeMusic,musicReady=false;
+      const music=new Promise(resolve=>{completeMusic=resolve;}).then(()=>{musicReady=true;});
+      const Module={SDL3:{audioContext:ctx}};
+      const command=new Function('Module','HEAPU8','op','id','pcm','frames','channels','rate','format','value',body);
+      const call=op=>command(Module,heap,op,1,0,512,2,48000,0,0);
+      const uploaded=call(0),started=call(2),rendered=await ctx.startRendering();
+      const pending=!musicReady;
+      let deviation=0;
+      for(let channel=0;channel<2;channel++)for(const sample of rendered.getChannelData(channel))deviation=Math.max(deviation,Math.abs(sample-.25));
+      completeMusic();await music;call(12);
+      return {uploaded,started,pending,deviation};
+    },body);
+    assert.deepEqual(result,{uploaded:1,started:1,pending:true,deviation:0});
+  } finally {await page.close();}
+});

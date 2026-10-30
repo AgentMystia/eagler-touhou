@@ -15,7 +15,8 @@
 | 启动、暂停、重开 | `npm run ports:runtime -- --manifest=/absolute/inputs.json --output=/absolute/results`；合作 MP 使用 `ports:mp` 的 `--lifecycle` | 使用私有 DATA 和真实 Runtime，执行驱动中的协议与生命周期断言。记录实际选择的作品、模式和动作。 |
 | 键盘与手柄映射 | `npm --prefix launcher run test:keyboard-mapping:browser` | 从产品、构建和源码目录配置枚举 STG 普通版与 MP，在 Chromium 中检查生产 JS 接收代码和键值记录端，包含虚拟手柄。角色移动、触屏和实体控制器按 [INPUT／TOUCH](input.md) 验收。th075 使用格斗输入，执行本作专项测试。 |
 | 射击、Bomb、决死 | [逐作自动检查与 STG 动作验收](input.md#stg-动作验收) | th11、th12、th15 等已有原生行为对照，按本作脚本准备输入并运行。Launcher 动作送达、原生效果和窗口边界分别记录。 |
-| 音乐与音效 | `npm --prefix launcher run test:audio-output:browser` | 浏览器离线渲染生产 WebSfx 的双声道 PCM、音量、暂停恢复、停止和清空。各作曲目、音频接入与设备输出按 [AUDIO／MIDI](presentation.md) 验收。 |
+| 保持触点与禁移恢复 | `node --test tools/ports/touch-continuity.test.mjs` | 按构建目录枚举生产输入架构，检查触点、增量消费或格斗方向输入在暂时禁移后的连续性。th12 同时核对状态生成与输入接线。游戏内死亡、决死窗口与设备事件按 [INPUT／TOUCH](input.md) 验收。 |
+| 音乐与音效 | `node --test tools/ports/sfx-routing.test.mjs`、`npm --prefix launcher run test:audio-output:browser` | 前者逐构建核对生产音效接线与头文件输入，后者离线渲染生产 WebSfx 的双声道 PCM、音量、暂停恢复、停止、清空及音乐任务未完成时的输出，并校验延迟输出反例。各作曲目与设备输出按 [AUDIO／MIDI](presentation.md) 验收。 |
 
 根 CI 的 `shared-input-audio` 运行上述改键与 WebSfx 浏览器测试，以及已有的[浏览器程序交付身份检查](../../tools/browser/verified-runtime.test.mjs)。`port-adaptation` 遍历 `tools/ports/*.test.mjs` 与 `tools/testing/*.test.mjs`，包含 MP 打包归属、帧率统计与驱动覆盖校验。这些检查使用源码与合成输入；真实 DATA、房间及设备验收按各自输入另行执行。
 
