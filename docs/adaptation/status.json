@@ -2979,7 +2979,7 @@
       "game": "th17",
       "variant": "normal",
       "directory": "ports/th17",
-      "sourceDigest": "e581d5defbc06dfb3108a68d08d4b7954e2665a0b0fa48875aadf288decf329b",
+      "sourceDigest": "0276bbaa7ea5f4379c4ba8a876d46124fb4dbdc9ac5a28582250a3dda6dd5458",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 211,
@@ -3055,6 +3055,30 @@
             "web/sdl-runtime/shell.mjs"
           ],
           "complete": false
+        },
+        {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
         },
         {
           "id": "package-store",
