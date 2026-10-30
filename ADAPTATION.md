@@ -57,7 +57,7 @@
 | TOUCH-06 | [切换低速](../../docs/adaptation/input.md#touch-06) | 待核对 | multiplayer：按本项步骤执行，结果写入验证记录 |
 | TOUCH-07 | [双指低速](../../docs/adaptation/input.md#touch-07) | 待核对 | multiplayer：按本项步骤执行，结果写入验证记录 |
 | TOUCH-08 | [射击、Bomb 与暂停](../../docs/adaptation/input.md#touch-08) | 待核对 | multiplayer：按本项步骤执行，结果写入验证记录 |
-| TOUCH-09 | [暂时禁移与触点连续性](../../docs/adaptation/input.md#touch-09) | 待核对 | multiplayer：按本项步骤执行，结果写入验证记录 |
+| TOUCH-09 | [暂时禁移与触点连续性](../../docs/adaptation/input.md#touch-09) | 待核对 | multiplayer：[held-touch-continuity](../../docs/adaptation/status.json) |
 | TOUCH-10 | [无限速移动落率记录](../../docs/adaptation/input.md#touch-10) | 待核对 | multiplayer：按本项步骤执行，结果写入验证记录 |
 | TOUCH-11 | [双击 Bomb](../../docs/adaptation/input.md#touch-11) | 待核对 | multiplayer：按本项步骤执行，结果写入验证记录 |
 | TOUCH-12 | [菜单与对话手势](../../docs/adaptation/input.md#touch-12) | 待核对 | multiplayer：按本项步骤执行，结果写入验证记录 |
@@ -87,7 +87,7 @@
 | AUDIO-04 | [返回前台后恢复声音](../../docs/adaptation/presentation.md#audio-04) | 待核对 | multiplayer：按本项步骤执行，结果写入验证记录 |
 | AUDIO-05 | [音乐资源错误信息](../../docs/adaptation/presentation.md#audio-05) | 待核对 | multiplayer：按本项步骤执行，结果写入验证记录 |
 | AUDIO-06 | [高刷新与音频事件分开](../../docs/adaptation/presentation.md#audio-06) | 待核对 | multiplayer：按本项步骤执行，结果写入验证记录 |
-| AUDIO-07 | [音效即时输出](../../docs/adaptation/presentation.md#audio-07) | 待核对 | multiplayer：按本项步骤执行，结果写入验证记录 |
+| AUDIO-07 | [音效即时输出](../../docs/adaptation/presentation.md#audio-07) | 待核对 | multiplayer：[immediate-sfx-routing](../../docs/adaptation/status.json) |
 | MIDI-01 | [声明 MIDI 选项](../../docs/adaptation/presentation.md#midi-01) | 不适用 | multiplayer：本作使用 OGG 音乐 |
 | MIDI-02 | [可听到的 MIDI 输出](../../docs/adaptation/presentation.md#midi-02) | 不适用 | multiplayer：本作使用 OGG 音乐 |
 | MIDI-03 | [MIDI 生命周期](../../docs/adaptation/presentation.md#midi-03) | 不适用 | multiplayer：本作使用 OGG 音乐 |
@@ -185,3 +185,5 @@ WASI32 的多人规则兼容检查使用内存通道运行原生 NetplayRuntime�
 ### 神德练习延迟 | PRACTICE-08、PRACTICE-05
 
 菜单使用与普通版相同的四难度范围和默认值，同难度重开保留设置，Extra 返回普通难度时恢复对应默认值。菜单调整与录像解码分别处理，历史录像的 160 和缺省 -1 保留录制含义。`portable/check-th10-thprac.cpp` 覆盖难度切换、范围、零值和录像参数往返。
+
+TOUCH-09、AUDIO-07 的组件与接线结果见[全作核对记录](../../archive/shared-input-audio-20261030/README.md)。按作品、模式读取检查范围及实际 Runtime 结果。
