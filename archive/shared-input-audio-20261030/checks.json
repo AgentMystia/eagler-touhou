@@ -231,6 +231,16 @@
       "directory": "ports/th075-mp",
       "bytes": 3836578,
       "sha256": "8637f6944be159631870bc1452edb2ba48a8b405ded81eba5ec3803f766a56f4"
+    },
+    {
+      "directory": "ports/th09",
+      "variants": [
+        "normal",
+        "multiplayer"
+      ],
+      "bytes": 2863517,
+      "sha256": "a0561574a50ea81afaa60d8f1ef769ab7fe906c3b39ce4a6b5029dc1058ecd62",
+      "sharedProgram": true
     }
   ],
   "browser": {
@@ -728,5 +738,28 @@
     "webCompiler": "Emscripten 6.0.6-git",
     "browser": "Chromium"
   },
-  "physicalDevices": "未执行全作实体触屏与扬声器验收"
+  "physicalDevices": "未执行全作实体触屏与扬声器验收",
+  "targetedCompilation": [
+    {
+      "game": "th15",
+      "variant": "normal",
+      "source": "web/cpp/sdl/BrowserRuntime.cpp",
+      "status": "passed"
+    },
+    {
+      "game": "th15",
+      "variant": "multiplayer",
+      "source": "web/cpp/sdl/BrowserRuntime.cpp",
+      "status": "passed"
+    }
+  ],
+  "fullBuildAttempts": [
+    {
+      "game": "th15",
+      "variant": "normal",
+      "status": "process-terminated",
+      "exitCode": "0xC000012D",
+      "attempts": 2
+    }
+  ]
 }
