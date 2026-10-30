@@ -186,7 +186,11 @@ def _extract_th17_title(root: Path, thdat: str, thanm: str) -> bytes:
     archive = (root / "th17.dat").resolve()
     textures = ["title/title_bk00.png", "title/title_ch00.png", "title/title_logo.png"]
     with tempfile.TemporaryDirectory(prefix="eagler-th17-artwork-") as directory:
-        for arguments in ([thdat, "-x", "17", str(archive), "title.anm"],
+        # thtk's Windows archive reader needs an ASCII path; Python copies the
+        # user's original from Unicode directories without changing its bytes.
+        staged_archive = Path(directory) / "th17.dat"
+        shutil.copyfile(archive, staged_archive)
+        for arguments in ([thdat, "-x", "17", str(staged_archive), "title.anm"],
                           [thanm, "-x", "title.anm", *textures]):
             result = subprocess.run(arguments, cwd=directory, capture_output=True,
                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
