@@ -10,7 +10,7 @@
     "th08": {
       "normal": "ports/th08",
       "multiplayer": "ports/th08-mp",
-      "base": "d69656c0f3dadf4d1932c645bcaf98c2db6e6500",
+      "base": "e0789f75d0a96ec69cad60ed11d2ab4256a00cf7",
       "history": [
         {
           "kind": "manual",
@@ -27,6 +27,19 @@
           "normalHistory": "f363ffa54301b9437d2dd1bfcbc2e1f23cfe207b",
           "multiplayerHistory": "c552a75020cc3839645e71eaa7f34f101030a79b",
           "note": "完整合入普通版目录历史并验证，保留 MP 状态所有者。"
+        },
+        {
+          "kind": "manual",
+          "base": "d69656c0f3dadf4d1932c645bcaf98c2db6e6500",
+          "source": "e0789f75d0a96ec69cad60ed11d2ab4256a00cf7",
+          "targetHead": "e0789f75d0a96ec69cad60ed11d2ab4256a00cf7",
+          "paths": [
+            "ports/th08-mp/web/cpp/game/EclNative.cpp",
+            "ports/th08-mp/web/cpp/sdl/GameHost.cpp",
+            "ports/th08-mp/web/cpp/sdl/ThpracUi.cpp",
+            "ports/th08-mp/web/cpp/sdl/ThpracUi.hpp"
+          ],
+          "note": "普通版复活公告接入已同步到多人；既有 THPrac 触控修复保留。全队雷保护、Last Spell 死亡窗口与共享暂停清理为多人专属，普通版规则保持。原生伤害、生命、普通与挑战规则及 52 组 ECL 生命周期检查通过。"
         }
       ],
       "origin": {
