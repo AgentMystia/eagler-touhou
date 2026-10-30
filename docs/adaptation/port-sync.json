@@ -441,7 +441,7 @@
     "th12": {
       "normal": "ports/th12",
       "multiplayer": "ports/th12-mp",
-      "base": "9481ff5e802c2b16c2ca29f44054260e9061e888",
+      "base": "f07bf527b605af3829b7fa7908d3721533600f91",
       "origin": {
         "normalCommit": "5e5081a1d2a434b2f8d785ebbd6b965f1058d828",
         "multiplayerCommit": "02e3a62a7ff38ca5ec1f3ad2007c117534e9ba26",
@@ -865,6 +865,18 @@
             "ports/th12-mp/tests/touch-respawn.test.mjs"
           ],
           "note": "两版音效独立输出、暂停与销毁已对应迁入。普通版采用 MP 已有的手势作用域连续性实现；MP 使用自己的真实房间浏览器驱动。投影合并写回后 MP 源码树与审核快照一致。"
+        },
+        {
+          "kind": "manual",
+          "base": "9481ff5e802c2b16c2ca29f44054260e9061e888",
+          "source": "f07bf527b605af3829b7fa7908d3721533600f91",
+          "targetHead": "164679cff8cab9c2822096cc0125650c7e35f4ff",
+          "paths": [
+            "ports/th12-mp/portable/sdl/Scene.cpp",
+            "ports/th12-mp/portable/sdl/Scene.hpp",
+            "ports/th12-mp/tests/native/sdl-background-performance.cpp"
+          ],
+          "note": "基于最新主线，普通版背景图元旋转复用已进入多人版，完整源码树与 Windows、Web 和双人三人回滚浏览器验收版本一致；多人保留自身输入、观战和录像验证入口。"
         }
       ]
     }
