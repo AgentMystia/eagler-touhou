@@ -6,7 +6,7 @@
       "game": "th06",
       "variant": "multiplayer",
       "directory": "ports/th06",
-      "sourceDigest": "b57a70982e4b59287e354333af59b65756b7fdfb572f1e61627dfc6d36c67aa9",
+      "sourceDigest": "e8c59e3e2057ee46ae88aa11a75cffe4cdde4c1052ce45ad36f579b86abe1046",
       "sourceSelection": "cmake-declaration-union",
       "dependencies": [
         {
@@ -83,6 +83,30 @@
             "src/Controller.cpp"
           ],
           "complete": true
+        },
+        {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
         },
         {
           "id": "package-store",
@@ -163,7 +187,7 @@
       "game": "th06",
       "variant": "normal",
       "directory": "ports/th06",
-      "sourceDigest": "b5588b0f73990bb645c4b9c715792789cd03cde5875b469c29d5ade70001ff42",
+      "sourceDigest": "dd186d648c3d0a5caedc17cb3ead024753e86bcbfb0bef74c43854184227e311",
       "sourceSelection": "cmake-declaration-union",
       "dependencies": [
         {
@@ -240,6 +264,30 @@
             "src/Controller.cpp"
           ],
           "complete": true
+        },
+        {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
         },
         {
           "id": "package-store",
@@ -339,7 +387,7 @@
       "game": "th07",
       "variant": "multiplayer",
       "directory": "ports/th07",
-      "sourceDigest": "34dedab4982f8ea37cb7e9a4bc7f73d5660536a7c1f1aeae45cf977d61e86bbb",
+      "sourceDigest": "c603a9de87fe112778f6d5bf0c4d42dc10b365d869a33a2e4d8d4522c053fa07",
       "sourceSelection": "cmake-declaration-union",
       "dependencies": [
         {
@@ -416,6 +464,30 @@
             "src/Controller.cpp"
           ],
           "complete": true
+        },
+        {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
         },
         {
           "id": "package-store",
@@ -496,7 +568,7 @@
       "game": "th07",
       "variant": "normal",
       "directory": "ports/th07",
-      "sourceDigest": "f83fcb7d9ad32b7e50c95ff982f70788f560a45fa3e07db790d3b57b9897f345",
+      "sourceDigest": "cebbb91712a001946a24650316888d187bcd3db4218fdd33dbfce253b95883c3",
       "sourceSelection": "cmake-declaration-union",
       "dependencies": [
         {
@@ -573,6 +645,30 @@
             "src/Controller.cpp"
           ],
           "complete": true
+        },
+        {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
         },
         {
           "id": "package-store",
@@ -672,7 +768,7 @@
       "game": "th075",
       "variant": "multiplayer",
       "directory": "ports/th075-mp",
-      "sourceDigest": "7b8b2ce6535ceb8d958bd5223111d3c3af4714c937fbffc83e47d2de7bd4016d",
+      "sourceDigest": "5d8dee99d0959cb6fc2e740be8b1eb8a1fdc29f4203c69569bc7dae442532e0b",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 207,
@@ -740,6 +836,30 @@
           "complete": true
         },
         {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
           "id": "package-store",
           "level": "module",
           "checks": [
@@ -796,7 +916,7 @@
       "game": "th075",
       "variant": "normal",
       "directory": "ports/th075",
-      "sourceDigest": "03e3f3f2d269579748f0e1e7c0224358970146d111548d73003123649af9309d",
+      "sourceDigest": "1376ad952bc1759796504c292a9f3c0f898bf52e31defd0222ee4841c1b45382",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 200,
@@ -861,6 +981,30 @@
             "web/cpp/sdl/BrowserRuntime.cpp"
           ],
           "complete": true
+        },
+        {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
         },
         {
           "id": "package-store",
@@ -938,7 +1082,7 @@
       "game": "th08",
       "variant": "multiplayer",
       "directory": "ports/th08-mp",
-      "sourceDigest": "e606bde6330eccc3bb9e993a9b2cbc048c8689b31a35430e49f1377a135c6e96",
+      "sourceDigest": "5ab679aaf6a893b9361038e3793b647f4f615b97c5ca2dbe6078e33f96f19bbd",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 225,
@@ -1007,6 +1151,30 @@
           "complete": true
         },
         {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
           "id": "package-store",
           "level": "module",
           "checks": [
@@ -1063,7 +1231,7 @@
       "game": "th08",
       "variant": "normal",
       "directory": "ports/th08",
-      "sourceDigest": "8de99d2b63826d2597d2b234736786bbfc292a78f9b089aaea9e0d6f73c82b85",
+      "sourceDigest": "c4360939d4f410b32b9e03670fd58375b7ede25daad7b385d9238247196aa1e0",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 196,
@@ -1129,6 +1297,30 @@
             "web/cpp/sdl/GameHost.cpp"
           ],
           "complete": true
+        },
+        {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
         },
         {
           "id": "package-store",
@@ -1206,7 +1398,7 @@
       "game": "th09",
       "variant": "multiplayer",
       "directory": "ports/th09",
-      "sourceDigest": "8b97c973feedb7cda3adae0aa02d72b9a8bace696e14b21d29a72c9ab6a8ccec",
+      "sourceDigest": "d86e438269d9eef0544e7876d67960dac98fba00d456d62a522d16d47ceb4553",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 116,
@@ -1270,6 +1462,30 @@
             "web/cpp/sdl/Application.cpp"
           ],
           "complete": true
+        },
+        {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
         },
         {
           "id": "package-store",
@@ -1328,7 +1544,7 @@
       "game": "th09",
       "variant": "normal",
       "directory": "ports/th09",
-      "sourceDigest": "bc4051831699345ea446159eb1059d57a3ea057968cc60ecef80b0ded9ec6d65",
+      "sourceDigest": "1f7fe586d434595aa24b943054323aa79b1226787db12d3f9ed8ca92771bb7bc",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 116,
@@ -1392,6 +1608,30 @@
             "web/cpp/sdl/Application.cpp"
           ],
           "complete": true
+        },
+        {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
         },
         {
           "id": "package-store",
@@ -1469,7 +1709,7 @@
       "game": "th10",
       "variant": "multiplayer",
       "directory": "ports/th10-mp",
-      "sourceDigest": "cf76b743b381c1b5a92870172ded2684d19cc2c9b3a1fdc47b9c3e6cfb24463b",
+      "sourceDigest": "8d4ce6c7d0c0e9ae34ea375ee5891d30fc22fa852a100a822bf8f16e622d006b",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 277,
@@ -1537,6 +1777,30 @@
           "complete": true
         },
         {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
           "id": "package-store",
           "level": "module",
           "checks": [
@@ -1593,7 +1857,7 @@
       "game": "th10",
       "variant": "normal",
       "directory": "ports/th10",
-      "sourceDigest": "cec772ee518b1c848b91d529e0b9ab2db4b749476b7866e3311d780ce32b695c",
+      "sourceDigest": "f187044faa92a2f82b69cc9f738eb6c21727d5620171b46f0434521e738ed5d1",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 249,
@@ -1659,6 +1923,30 @@
             "web/cpp/sdl/GameHost.cpp"
           ],
           "complete": true
+        },
+        {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
         },
         {
           "id": "package-store",
@@ -1736,7 +2024,7 @@
       "game": "th11",
       "variant": "multiplayer",
       "directory": "ports/th11-mp",
-      "sourceDigest": "3161504abbf7a1882ee68a6a39d96f23f6b08a60a3a63516e9b5223ea5dbf5fe",
+      "sourceDigest": "dddfb40cb4a9e6c8790cce09b9024aedcdb44e66ef1b1a645e028cfce590cc50",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 139,
@@ -1804,6 +2092,30 @@
           "complete": true
         },
         {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
           "id": "package-store",
           "level": "module",
           "checks": [
@@ -1860,7 +2172,7 @@
       "game": "th11",
       "variant": "normal",
       "directory": "ports/th11",
-      "sourceDigest": "a782ea9595a5791eb80052c8ad415a38042da054920d11c7313beef56c3b03a3",
+      "sourceDigest": "b7f4b035ca97f1713a618bab9f8fcd854a382030a8d3365806f4a80670583712",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 115,
@@ -1926,6 +2238,30 @@
             "web/cpp/sdl/Application.cpp"
           ],
           "complete": true
+        },
+        {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
         },
         {
           "id": "package-store",
@@ -2003,7 +2339,7 @@
       "game": "th12",
       "variant": "multiplayer",
       "directory": "ports/th12-mp",
-      "sourceDigest": "99318a18d00c8a1d050039a8cde10e7d48a1bc3b7f43c2195938526f09fabf8d",
+      "sourceDigest": "d20f8297ffba5643999bff0cc689738d78d5d92fee45803eb80e03c165d90e5d",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 95,
@@ -2077,6 +2413,30 @@
           "complete": true
         },
         {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
           "id": "package-store",
           "level": "module",
           "checks": [
@@ -2133,7 +2493,7 @@
       "game": "th12",
       "variant": "normal",
       "directory": "ports/th12",
-      "sourceDigest": "01f0ea84b23c59fdad2b85b49be185fe9378d209a5f6dad7bb02fb47e504ba13",
+      "sourceDigest": "2d0bd1ce2567a0c0aad71479ca9df8463d55cb3bdc93b2a3804bc5aee2de9016",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 81,
@@ -2205,6 +2565,30 @@
             "tests/managed-adapter.test.mjs"
           ],
           "complete": true
+        },
+        {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
         },
         {
           "id": "package-store",
@@ -2282,7 +2666,7 @@
       "game": "th15",
       "variant": "multiplayer",
       "directory": "ports/th15-mp",
-      "sourceDigest": "81d4bb58f7e86c9b8b87d5d36ce3838035ddb702d08a9d6f0c73724e75c9ebca",
+      "sourceDigest": "d4999d4cd65d14e0af014134b3a1e92f14e5ea67b56ed343bb32a2f37360f9fd",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 271,
@@ -2349,6 +2733,30 @@
           "complete": true
         },
         {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
           "id": "package-store",
           "level": "module",
           "checks": [
@@ -2405,7 +2813,7 @@
       "game": "th15",
       "variant": "normal",
       "directory": "ports/th15",
-      "sourceDigest": "689d684b9f8cdcb28be5ed81d3fbf1ad72cb3097c30ca378abab606e7039fb2a",
+      "sourceDigest": "c44271738971fa3b625ebea17b117727e33178ad4d72a01836ee5226a3459452",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 253,
@@ -2470,6 +2878,30 @@
             "web/cpp/sdl/BrowserRuntime.cpp"
           ],
           "complete": true
+        },
+        {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
         },
         {
           "id": "package-store",
@@ -2547,7 +2979,7 @@
       "game": "th20",
       "variant": "normal",
       "directory": "ports/th20",
-      "sourceDigest": "9178e4e53540bd7eb06d616140ab8c96ef4654c8a02f40bad21e957c2428396f",
+      "sourceDigest": "b7c1f65683687b4a8297e3761557bc1f0a36a4a039088c60c7fc6bdd86b9bf1f",
       "sourceSelection": "build-entrypoint",
       "dependencies": [],
       "translationUnits": 478,
@@ -2612,6 +3044,30 @@
             "web/cpp/sdl/InputHost.cpp"
           ],
           "complete": true
+        },
+        {
+          "id": "held-touch-continuity",
+          "level": "module",
+          "complete": false,
+          "checks": [
+            "TOUCH-09"
+          ],
+          "files": [
+            "tools/ports/touch-continuity.test.mjs"
+          ],
+          "status": "passed"
+        },
+        {
+          "id": "immediate-sfx-routing",
+          "level": "source-contract",
+          "complete": false,
+          "checks": [
+            "AUDIO-07"
+          ],
+          "files": [
+            "tools/ports/sfx-routing.test.mjs"
+          ],
+          "status": "passed"
         },
         {
           "id": "package-store",
