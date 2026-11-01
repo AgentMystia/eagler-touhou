@@ -15,16 +15,30 @@ namespace th13 {
 void YoumuBomb::reset() {
     for (auto& s : slots_) s = Slot{};
     cursor_ = 0;
+    // 0x40c910 的复位函数（0x40cb3c 起）把 +0xd90 游标与 +0xd9c 倒计时清零，
+    // 并把 +0xd94 写回初值 0x19。
+    cooldown_ = 0;
+    slots_left_ = 25;
 }
 
 std::optional<YoumuBomb::Spawn> YoumuBomb::step(int age, GameRandom& rng) {
     if (age >= kActiveFrames) return std::nullopt;
+    // 0x40cb50: `cmp [edi+0xd9c],0 / jg 0x40cd45` —— 倒计时未归零则本帧不生成
+    // （仍不抽随机）。倒计时由上一次生成的尾部按 +0xd94 装入，逐帧先递减再判：
+    // battle-bomb-trace 里 9842 生成后 9843 读到 22，9865 归零当帧生成
+    // （9842→9865 间隔 23 = 装入值），故递减必须发生在判定之前。
+    if (cooldown_ > 0) --cooldown_;
+    if (cooldown_ > 0) return std::nullopt;
     const int c = cursor_++;
     const float jitter =
         static_cast<float>(static_cast<double>(rng.signed_unit()) * 48.0);
     const float y = static_cast<float>(static_cast<double>(kLanes[c % 11]) +
                                        static_cast<double>(jitter));
     const int script = (c & 1) ? 20 : 19;
+    // 生成尾（0x40cd03-0x40cd2a）：+0xd94 > 8 则减 2，随后以更新值为倒计时初值
+    // 装入 +0xd9c 的定时器（0x4016c0），下一帧起每帧递减。
+    if (slots_left_ > 8) slots_left_ -= 2;
+    cooldown_ = slots_left_;
     if (c < kSlots) {
         Slot& s = slots_[c];
         s.has_anm = true;

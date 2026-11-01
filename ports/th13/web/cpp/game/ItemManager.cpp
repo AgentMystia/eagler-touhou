@@ -143,14 +143,15 @@ void ItemManager::spawn_value_item(i32 kind, float x, float y, float z,
         const u32 quadrant = id & 3u;
         float angle = 0.0f;
         switch (quadrant) {
-        case 0: angle = random_->signed_unit() * kPi * 0.25f - 2.3561945f; break;
-        case 1: angle = random_->signed_unit() * kPi * 0.25f + 0.7853982f; break;
-        case 2: angle = random_->signed_unit() * kPi * 0.25f + 2.3561945f; break;
-        default: angle = random_->signed_unit() * kPi * 0.25f - 0.7853982f; break;
+        case 0: GameRandom::tag(9); angle = random_->signed_unit() * kPi * 0.25f - 2.3561945f; break;
+        case 1: GameRandom::tag(9); angle = random_->signed_unit() * kPi * 0.25f + 0.7853982f; break;
+        case 2: GameRandom::tag(9); angle = random_->signed_unit() * kPi * 0.25f + 2.3561945f; break;
+        default: GameRandom::tag(9); angle = random_->signed_unit() * kPi * 0.25f - 0.7853982f; break;
         }
         s.angle = wrap_angle(angle);
         // 0x438ec0：[0xb]（move_speed）= u*3.5 + base；[4]（speed 目标）= 0。
         s.speed = 0.0f;
+        GameRandom::tag(10);
         s.move_speed = random_->unit() * 3.5f + base_speed;
         s.state = 1;
         s.anm_frame_prev = -1;
@@ -744,6 +745,17 @@ void ItemManager::collect_spirit(Spirit& s, const ItemCollector& player) {
     default:
         break;
     }
+    // 0x438730 收集瞬间的 front.anm 拾取动画：普通/灵界两套脚本表
+    // （0x438e3c / 0x438e4c 两张 jump table 的 0x46f820 调用点实证）：
+    //   ordinary: kind0→96(0x60) kind1→102(0x66) kind2→99(0x63) kind3→无
+    //   trance  : kind0→97(0x61) kind1→103(0x67) kind2→100(0x64) kind3→无
+    // 创建为 flags=0 尾插、layer=-1、位置=神霊位；句柄原版即丢弃（ESI=0）。
+    static constexpr i32 kPickup[2][4] = {{96, 102, 99, -1}, {97, 103, 100, -1}};
+    const i32 pickup_kind = s.kind >= 0 && s.kind < 4 ? s.kind : -1;
+    const i32 pickup_script =
+        pickup_kind >= 0 ? kPickup[(s.flags & 1u) ? 1 : 0][pickup_kind] : -1;
+    if (pickup_script >= 0 && spirit_pickup_effect)
+        (void)spirit_pickup_effect(pickup_script, s.x, s.y, s.z);
     s.alive = false;
 }
 

@@ -22,6 +22,11 @@
 #include "LaserPresentation.hpp"
 
 namespace th13 {
+// 诊断用只读对话条目观察器（默认 nullptr，仅浏览器探针臂接）：RunScene::
+// open_dialog(entry) 每次调用登记条目号与当帧。不改变任何状态。
+using RunDialogObserver = void (*)(i32 entry);
+extern RunDialogObserver run_dialog_observer;
+
 
 struct RunSceneServices : HudDrawServices, HudFrameServices, StageBattleServices,
                           AnmDrawServices {
@@ -212,6 +217,7 @@ public:
     void request_game_over() { host.request_game_over(); }
     void open_dialog(i32 entry) override;
     bool dialog_active() const override { return dialog.active(); }
+    i32 dialog_entry() const { return dialog.state().entry; }
     bool dialog_wait_released() const override { return dialog.ecl_wait_released(); }
 
 private:

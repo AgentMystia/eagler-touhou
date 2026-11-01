@@ -1,3 +1,4 @@
+#include "AnmRenderer.hpp"
 #include "TitleScene.hpp"
 
 namespace th13 {
@@ -24,6 +25,8 @@ TitleScene::TitleScene(SessionState& p, TitleSelectionSettings& choice, AnmManag
     stage_text_draw.enabled = true;
     stage_text_draw.run = [](void* owner) {
         auto& scene = *static_cast<TitleScene*>(owner);
+        // [§8.9] LOGO 绘制侧层落码（Draw 优先级 2，先于 ANM 层任务）。
+        scene.main.apply_draw_layers();
         if (scene.player_data && scene.player_data_view &&
             scene.state.screen == TitleScreen::PlayerData &&
             !scene.player_data_view->draw(*scene.player_data, scene.host))
@@ -40,6 +43,7 @@ TitleScene::TitleScene(SessionState& p, TitleSelectionSettings& choice, AnmManag
 
 TitleScene::~TitleScene() {
     scheduler.remove(stage_text_draw);
+    clear_draw_layer_overrides();  // 防 VM 指针复用后偏移泄漏到对局绘制
     // PlayerData 宿主表按 0x453170 case3 收面释放；场景提前析构也要闭合。
     if (player_data && player_data->opened()) host.close_player_data();
     if (music_room_view) music_room_view->release();
@@ -71,8 +75,25 @@ bool TitleScene::fade_out_title_music() { return host.fade_out_title_music(); }
 bool TitleScene::sound(i32 id) { return host.sound(id); }
 
 bool TitleScene::begin_transition(u32& animation) {
-    // 开始游戏转场特效（effect bank script 0；th15 用 create(8,0)）。
-    animation = animations.create(8, 0, -1, 0);
+    // 00451450/00451cb0/004576c0 case3 age10 → 00417370(480.0,392.0)。
+    // 反汇编 0x46f820（capstone，/work/artifacts/decomp/jp/functions/0046f820.c
+    // 与 0x46f820 机器码）确认：0x417370 用 **EAX=game_main+0x19194 的独立
+    // effect 管理器** 调 create，栈参 [ebp+0xc]=模板号 0x11(17)、位置
+    // (480,392,0)、layer=-1、flags=0（0x46f3f0 尾插）。该 effect 管理器的
+    // 模板 17 自带 layer 26（模板头 +0x24=0x1a），脚本首段为
+    // ins_501(15)/ins_501(14)/ins_503(16) 三连（fore 链），与 title 管理器
+    // 的 effect.anm script17 不是同一张表——原版模板/脚本映射未解析，
+    // 不能声称「script1 是唯一 4-quad 脚本」（effect.anm script2 也 spawn
+    // 7-10 四个 quad，只是旋转 70/80°，与 oracle 的 110/100° 不符）。
+    // 移植侧取 effect.anm script1：其子体 3-6 的旋转/缩放与 oracle 逐帧
+    // 完全一致（110/-110/100/-100°，384/1536 边长），是当前唯一可复现
+    // 4-quad 的脚本；映射仍属近似（原版模板 17 未解析）。
+    // 坐标：原版 create 位置 (480,392) 经 effect 管理器绘制路径后，oracle
+    // 窗B f719-749 四 quad 中心恒等于移植侧 (480,392) 结果 -(160,152)
+    // （f749 稳定帧逐顶点实证）。effect 管理器的绘制原点变换未反汇编；
+    // 这里按 oracle 顶点把 VM 位置补偿到 (320,240) = 屏幕中心，属绘制侧
+    // 补偿而非原版坐标真值（蓝图登记待 effect 管理器解析后回填）。
+    animation = animations.create(8, 1, 26, 0, {320, 240, 0});
     return animation != 0;
 }
 

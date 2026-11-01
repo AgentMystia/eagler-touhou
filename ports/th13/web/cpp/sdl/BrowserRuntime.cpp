@@ -24,6 +24,9 @@
 namespace th13 {
 using AnmRandomObserver = void (*)(const AnmVm&, i32, i32, i32, u32, u32, u32, u32, bool);
 extern AnmRandomObserver anm_random_observer;
+// 定义在 AnmInterpreter.cpp：当前正在 tick 的 VM（抽取站点探针上下文）。
+extern const AnmVm* anm_tick_current_vm;
+extern void (*anm_tick_observer)(const AnmVm&, float);
 }
 
 EM_JS(void, th13_browser_frame, (int ok, double milliseconds, unsigned ticks), {
@@ -57,6 +60,12 @@ void observe_anm_random(const AnmVm& vm, i32 opcode, i32 variable, i32 argument,
         ",\"opcode\":" + std::to_string(opcode) +
         ",\"variable\":" + std::to_string(variable) +
         ",\"argument\":" + std::to_string(argument) +
+        ",\"consumed\":" + std::to_string(app->replay_consumed) +
+        ",\"stage_frame\":" + std::to_string(app->progress.stage_frame) +
+        ",\"sim_frame\":" + std::to_string(app->run ? app->run->battle.sim.frame : -1) +
+        ",\"vm_age\":" + std::to_string(vm.age.current) +
+        ",\"vm_timer\":" + std::to_string(vm.timer.current) +
+        ",\"vm\":" + std::to_string(reinterpret_cast<uintptr_t>(&vm)) +
         ",\"stream\":\"" + (game_stream ? "game" : "visual") + "\"" +
         ",\"before\":" + std::to_string(before) +
         ",\"seed_before\":" + std::to_string(seed_before) +
@@ -471,9 +480,41 @@ EMSCRIPTEN_KEEPALIVE unsigned th13_debug_replay(const char* name, unsigned stage
         last_error = app->failure;
         return 0;
     }
-    // Use the same loading caption path as a menu launch. Its first update
-    // creates ASCII script16, which consumes the shared visual RNG.
+    // Re-establish the native direct-boot visual-RNG lineage before the loader
+    // frames. The capture page always runs th13.html's 90-frame signature gate
+    // (mod._th13_draw_startup(90)) before this entry; that gate is the native
+    // boot signature scene and, since the caption tree now lives through it
+    // (draw_loading(true) creates ascii script17), its 23 prayer spawns consume
+    // 552 visual index units (agent-g segment attribution: native signature
+    // gate frames 1..89 = 552 units). The original debug/boot reference does
+    // not pass through that gate: oracle boot goes device-init -> font noise
+    // 256x step16 (0x45ac90) -> 2 next32 (boot f0 draws, index 260 / seed
+    // 30195, artifacts/round-s12/A5/native-trace-boot) -> loader frame
+    // (24 units) -> battle frame 0 (20 units) = index 304 / seed 33690. Replay
+    // that fixed prefix from the recorded boot seed so the debug bloodline is
+    // independent of how many title-gate ticks the page happened to run.
+    app->visual.reseed_restore(app->boot_seed);
+    for (int step = 0; step < 256; ++step) (void)app->visual.step16();
+    (void)app->visual.next32();
+    (void)app->visual.next32();
+    // Use the same loading caption path as a menu launch: 0x439ce0's task
+    // (create call site 0x439ded) creates ASCII script17.
     if (!app->draw_loading(false)) { last_error = app->failure; return 0; }
+    // [A1/A5] Original loader evidence (Unicorn boot probe, retail v1.00c):
+    // the prayer tree (script17 -> children 16/15/14) is advanced by the
+    // loader's own supervisor frames: create at f0, first ordinary
+    // main+secondary update at f1 (script16's 12 signed/unit variable reads =
+    // 24 visual index points, trace
+    // artifacts/round-s12/A5/native-trace-boot/battle-visual-rng-trace.jsonl
+    // caller 0x461f3c/0x461f5f/0x461f82 -> index 260..284, seed 40152), f2/f3
+    // add no draws, battle frame 0 at f4. Run the same three loader frames
+    // through ApplicationState::advance_loading_caption() instead of the old
+    // one-off 24-unit compensation: the caption's VM timers therefore end at
+    // f3 exactly like the original, and boot lineage (256 font noise + 2 sig
+    // + 24 prayer + 20 battle frame 0 = index 304, seed 33690) stays
+    // bit-identical.
+    for (unsigned frame = 0; frame < th13::sdl::ApplicationState::kDebugLoadingFrames; ++frame)
+        if (!app->advance_loading_caption()) { last_error = app->failure; return 0; }
     if (!app->begin_replay_run(bytes.data(), bytes.size(), stage_index)) {
         last_error = app->failure;
         return 0;
@@ -541,8 +582,21 @@ EMSCRIPTEN_KEEPALIVE const char* th13_debug_replay_progress() {
         ",\"host_frame\":" + std::to_string(app->frames) +
         ",\"loading\":" + (app->loading_waiting() ? "true" : "false") +
         ",\"transition\":" + (app->stage_transition_active ? "true" : "false") +
-        ",\"startup_age\":" + std::to_string(app->stage_startup_age) + "}";
+        ",\"startup_age\":" + std::to_string(app->stage_startup_age) +
+        // 结束后覆盖层：原版关终 0x42cd40 → 0x43e5a0 之后输入消费停止，
+        // 屏幕由 RunPause 覆盖层接管；这三个字段把该事实暴露给持续采样器，
+        // 不参与任何输入/帧推进决策。
+        ",\"overlay\":" + std::to_string(app->pause ? th13::i32(app->pause->state.screen) : 0) +
+        ",\"phase\":" + std::to_string(th13_phase()) +
+        ",\"scene_flags\":" + std::to_string(app->progress.scene_flags) +
+        ",\"environment_paused\":" + (app->environment.paused ? "true" : "false") +
+        ",\"stage_frame\":" + std::to_string(app->progress.stage_frame) + "}";
     return report.c_str();
+}
+
+// 诊断开关：仅打开 0x446870/0x419a90 的伤害贡献打印，不改变任何数值。
+EMSCRIPTEN_KEEPALIVE void th13_debug_damage_probe(unsigned enabled) {
+    th13::damage_probe_enabled = enabled != 0;
 }
 
 // 对局场景帧（RunScene::update 计数）：与 replay_frame 同步为帧泵对齐自检。
@@ -605,6 +659,32 @@ EMSCRIPTEN_KEEPALIVE const char* th13_debug_anm_state() {
         return "[" + std::to_string(bits(v.x)) + "," + std::to_string(bits(v.y)) + "," +
                std::to_string(bits(v.z)) + "]";
     };
+
+    // JSON string escaping for texture identity (read-only diagnostic path).
+    const auto json_string = [](const std::string& text) {
+        std::string escaped = "\"";
+        for (const unsigned char value : text) {
+            switch (value) {
+            case '"': escaped += "\\\""; break;
+            case '\\': escaped += "\\\\"; break;
+            case '\b': escaped += "\\b"; break;
+            case '\f': escaped += "\\f"; break;
+            case '\n': escaped += "\\n"; break;
+            case '\r': escaped += "\\r"; break;
+            case '\t': escaped += "\\t"; break;
+            default:
+                if (value < 0x20) {
+                    char code[7];
+                    std::snprintf(code, sizeof code, "\\u%04x", unsigned(value));
+                    escaped += code;
+                } else {
+                    escaped += char(value);
+                }
+            }
+        }
+        escaped += '"';
+        return escaped;
+    };
     bool first = true;
     auto& registry = app->animations.registry;
     for (th13::u32 bucket = 0; bucket < 33; ++bucket) {
@@ -613,6 +693,14 @@ EMSCRIPTEN_KEEPALIVE const char* th13_debug_anm_state() {
             if (!first) result += ',';
             first = false;
             const auto* parent = vm->creation_parent;
+            const auto* texture_sprite = vm->texture_sprite();
+            const auto* texture_source = vm->sprite_resource ? vm->sprite_resource : vm->resource;
+            const th13::i32 texture_index = texture_sprite ? th13::i32(texture_sprite->texture) : -1;
+            const std::string texture_name =
+                texture_source && texture_index >= 0 &&
+                th13::u32(texture_index) < texture_source->textures.size()
+                    ? texture_source->textures[th13::u32(texture_index)].name
+                    : std::string();
             result += "{\"bank\":" + std::to_string(app->animations.resource_id(vm->resource)) +
                 ",\"script\":" + std::to_string(vm->source_script) +
                 ",\"handle\":" + std::to_string(registry.handle(*vm)) +
@@ -632,10 +720,17 @@ EMSCRIPTEN_KEEPALIVE const char* th13_debug_anm_state() {
                 ",\"translation_bits\":" + vector3(vm->visual.translation) +
                 ",\"scale_bits\":[" + std::to_string(bits(vm->visual.scale.x)) + "," +
                     std::to_string(bits(vm->visual.scale.y)) + "]" +
-                ",\"rotation_bits\":" + vector3(vm->variables.rotation) + "}";
+                ",\"rotation_bits\":" + vector3(vm->variables.rotation) +
+                ",\"texture_index\":" + std::to_string(texture_index) +
+                ",\"texture_name\":" + json_string(texture_name) + "}";
         }
     }
-    result += "]}";
+    result += "]";
+    result += ",\"dialogue\":{\"entry\":" +
+              std::to_string(app->run ? app->run->dialog_entry() : -1) +
+              ",\"active\":" + (app->run && app->run->dialog_active() ? "true" : "false") +
+              ",\"ecl_released\":" + (app->run && app->run->dialog_wait_released() ? "true" : "false") +
+              "}}";
     return result.c_str();
 }
 
@@ -647,11 +742,311 @@ EMSCRIPTEN_KEEPALIVE void th13_debug_anm_random_observe(int first, int last) {
     th13::anm_random_observer = first <= last ? observe_anm_random : nullptr;
 }
 
+// 抽取站点探针：每次 GameRandom::next/step16 记一行（帧、before/after、
+// 发生时的 VM 上下文或 null）。与 anm_random_observer 互补：能看见解释器
+// 之外的消费者（Trail/特效几何/表现层直读）。
+namespace {
+std::string rng_site_rows;
+int rng_site_first = 0, rng_site_last = -1;
+void observe_rng_site(unsigned before, unsigned after) {
+    using namespace th13::sdl;
+    if (!app) return;
+    const int frame = app->progress.stage_frame - 1;
+    if (frame < rng_site_first || frame > rng_site_last) return;
+    const th13::AnmVm* vm = th13::anm_tick_current_vm;
+    rng_site_rows += "{\"frame\":" + std::to_string(frame) +
+        ",\"before\":" + std::to_string(before) +
+        ",\"after\":" + std::to_string(after) +
+        ",\"vm\":" + (vm && vm->resource
+            ? "{\"bank\":" + std::to_string(app->animations.resource_id(vm->resource)) +
+              ",\"script\":" + std::to_string(vm->source_script) +
+              ",\"handle\":" + std::to_string(app->animations.registry.handle(*vm)) +
+              ",\"pc\":" + std::to_string(vm->instruction_offset) +
+              // ptr/t：逐弹对拍身份（弹内嵌 VM 不入 registry，handle 恒 0）；
+              // t=timer.current 区分重绑首 tick（t0 重放 body）与常规 tick。
+              ",\"ptr\":" + std::to_string(reinterpret_cast<uintptr_t>(vm)) +
+              ",\"t\":" + std::to_string(vm->timer.current) + "}" : "null") + "}\n";
+}
+}
+
+EMSCRIPTEN_KEEPALIVE void th13_debug_rng_site_observe(int first, int last) {
+    rng_site_rows.clear();
+    rng_site_first = first;
+    rng_site_last = last;
+    th13::GameRandom::draw_observer = first <= last ? observe_rng_site : nullptr;
+}
+
+EMSCRIPTEN_KEEPALIVE const char* th13_debug_rng_site_take() {
+    static std::string result;
+    result.swap(rng_site_rows);
+    rng_site_rows.clear();
+    return result.c_str();
+}
+// option 根 spawn 观察器（只读）：spawn_child 成功挂树时记一行
+// (frame, 父 bank/script/handle, 子 script/handle)。窗口 = stage_frame-1。
+namespace {
+std::string opt_spawn_rows;
+int opt_spawn_first = 0, opt_spawn_last = -1;
+void observe_opt_spawn(const th13::AnmVm& parent, th13::i32 child_script,
+                       th13::u32 child_handle) {
+    using namespace th13::sdl;
+    if (!app) return;
+    const int frame = app->progress.stage_frame - 1;
+    if (frame < opt_spawn_first || frame > opt_spawn_last) return;
+    const th13::i32 bank = app->animations.resource_id(parent.resource);
+    opt_spawn_rows += "{\"frame\":" + std::to_string(frame) +
+        ",\"bank\":" + std::to_string(bank) +
+        ",\"parent_script\":" + std::to_string(parent.source_script) +
+        ",\"parent_handle\":" + std::to_string(app->animations.registry.handle(parent)) +
+        ",\"child_script\":" + std::to_string(child_script) +
+        ",\"child_handle\":" + std::to_string(child_handle) + "}\n";
+}
+}
+EMSCRIPTEN_KEEPALIVE void th13_debug_opt_spawn_observe(int first, int last) {
+    opt_spawn_rows.clear();
+    opt_spawn_first = first;
+    opt_spawn_last = last;
+    th13::anm_spawn_observer = first <= last ? observe_opt_spawn : nullptr;
+}
+EMSCRIPTEN_KEEPALIVE const char* th13_debug_opt_spawn_take() {
+    static std::string result;
+    result.swap(opt_spawn_rows);
+    opt_spawn_rows.clear();
+    return result.c_str();
+}
+// 对话条目观察器（只读）：RunScene::open_dialog(entry) 每次登记 (frame, entry)。
+namespace {
+std::string dialog_rows;
+int dialog_first = 0, dialog_last = -1;
+void observe_dialog(th13::i32 entry) {
+    using namespace th13::sdl;
+    if (!app) return;
+    const int frame = app->progress.stage_frame - 1;
+    if (frame < dialog_first || frame > dialog_last) return;
+    dialog_rows += "{\"frame\":" + std::to_string(frame) +
+        ",\"entry\":" + std::to_string(entry) + "}\n";
+}
+}
+EMSCRIPTEN_KEEPALIVE void th13_debug_dialog_observe(int first, int last) {
+    dialog_rows.clear();
+    dialog_first = first;
+    dialog_last = last;
+    th13::run_dialog_observer = first <= last ? observe_dialog : nullptr;
+}
+EMSCRIPTEN_KEEPALIVE const char* th13_debug_dialog_take() {
+    static std::string result;
+    result.swap(dialog_rows);
+    dialog_rows.clear();
+    return result.c_str();
+}
+
+// 逐 tick 观察器（[anm-tick] 行）：窗口内每次 AnmVm::tick 记 VM 身份与
+// timer/pc。默认只记弹族脚本（166/167/40），与原版 vm-watch 探针对拍。
+namespace {
+std::string anm_tick_rows;
+int anm_tick_first = 0, anm_tick_last = -1;
+void observe_anm_tick(const th13::AnmVm& vm, float rate) {
+    using namespace th13::sdl;
+    if (!app) return;
+    // 取消特效族（170/171/200/201）与灵梦 S1 粒子族（166/167/40）一并观察：
+    // 这些 VM 的 op120 随机 + op6 等待决定子体出生帧，是 round-16 残余
+    // 相位差（妖梦 10222 / 早苗 11277 / 魔理沙 5545）的直接判据。
+    const th13::i32 script = vm.source_script;
+    if (script != 166 && script != 167 && script != 40 &&
+        script != 170 && script != 171 && script != 200 && script != 201)
+        return;
+    const int frame = app->progress.stage_frame - 1;
+    if (frame < anm_tick_first || frame > anm_tick_last) return;
+    anm_tick_rows += "{\"frame\":" + std::to_string(frame) +
+        ",\"script\":" + std::to_string(vm.source_script) +
+        ",\"ptr\":" + std::to_string(reinterpret_cast<uintptr_t>(&vm)) +
+        ",\"timer\":" + std::to_string(vm.timer.current) +
+        ",\"pc\":" + std::to_string(vm.instruction_offset) +
+        ",\"rate\":" + std::to_string(rate) + "}\n";
+}
+}
+
+EMSCRIPTEN_KEEPALIVE void th13_debug_anm_tick_observe(int first, int last) {
+    anm_tick_rows.clear();
+    anm_tick_first = first;
+    anm_tick_last = last;
+    th13::anm_tick_observer = first <= last ? observe_anm_tick : nullptr;
+}
+
+EMSCRIPTEN_KEEPALIVE const char* th13_debug_anm_tick_take() {
+    static std::string result;
+    result.swap(anm_tick_rows);
+    anm_tick_rows.clear();
+    return result.c_str();
+}
+
 EMSCRIPTEN_KEEPALIVE const char* th13_debug_anm_random_take() {
     using namespace th13::sdl;
     static std::string result;
     result.swap(anm_random_observations);
     anm_random_observations.clear();
+    return result.c_str();
+}
+
+// 主链成员序只读诊断（默认关闭，仅浏览器探针臂显式开窗）：按
+// AnmRegistry groups[0]（= 原版 0x46f170 主链同构物）的遍历次序逐节点导出
+// 稳定身份字段，供与原生 0x46f170 链掘（节点序 + bank/script/timer）逐帧
+// 对拍。不改变链表、不 tick、不写任何状态；外部（外置 VM）不在链内，
+// 与原版一致（原版外部内嵌 VM 同样不入 0x46f170 链）。
+namespace {
+std::string anm_chain_row;
+int anm_chain_first = 0, anm_chain_last = -1;
+bool anm_chain_enabled = false;
+}
+EMSCRIPTEN_KEEPALIVE void th13_debug_anm_chain_observe(int first, int last) {
+    anm_chain_row.clear();
+    anm_chain_first = first;
+    anm_chain_last = last;
+    anm_chain_enabled = first <= last;
+}
+EMSCRIPTEN_KEEPALIVE const char* th13_debug_anm_chain_take() {
+    static std::string result;
+    result.swap(anm_chain_row);
+    anm_chain_row.clear();
+    return result.c_str();
+}
+EMSCRIPTEN_KEEPALIVE const char* th13_debug_anm_chain() {
+    using namespace th13::sdl;
+    static std::string result;
+    result.clear();
+    if (!app || !anm_chain_enabled) return result.c_str();
+    const int frame = app->progress.stage_frame - 1;
+    if (frame < anm_chain_first || frame > anm_chain_last) return result.c_str();
+    auto& registry = app->animations.registry;
+    const th13::u32 count = registry.ordered_count(false);
+    result = "{\"frame\":" + std::to_string(frame) +
+        ",\"count\":" + std::to_string(count) + ",\"nodes\":[";
+    bool first = true;
+    for (th13::u32 index = 0; index < count; ++index) {
+        const th13::u32 handle = registry.ordered_handle(false, index);
+        const th13::AnmVm* vm = registry.find(handle);
+        if (!vm) continue;
+        if (!first) result += ',';
+        first = false;
+        result += "{\"index\":" + std::to_string(index) +
+            ",\"handle\":" + std::to_string(handle) +
+            ",\"bank\":" + std::to_string(app->animations.resource_id(vm->resource)) +
+            ",\"script\":" + std::to_string(vm->source_script) +
+            ",\"layer\":" + std::to_string(vm->visual.layer) +
+            ",\"pc\":" + std::to_string(vm->instruction_offset) +
+            ",\"timer\":" + std::to_string(vm->timer.current) +
+            ",\"visible\":" + (vm->visible ? "true" : "false") +
+            ",\"flags\":" + std::to_string(vm->visual.flags) +
+            ",\"render_flags\":" + std::to_string(vm->visual.render_flags) + "}";
+    }
+    result += "]}\n";
+    anm_chain_row += result;
+    return result.c_str();
+}
+
+// 主链 walk 入口只读 dump（alternate=false 的 AnmRegistry::tick_chain 入口，
+// 即本帧子体追加之前）：与 th13_debug_anm_chain 同字段，附 entry:true。
+namespace {
+std::string chain_walk_rows;
+int chain_walk_first = 0, chain_walk_last = -1;
+std::string build_chain_walk_json() {
+    using namespace th13::sdl;
+    if (!app) return std::string();
+    const int frame = app->progress.stage_frame - 1;
+    auto& registry = app->animations.registry;
+    const th13::u32 count = registry.ordered_count(false);
+    std::string result = "{\"frame\":" + std::to_string(frame) +
+        ",\"entry\":true,\"count\":" + std::to_string(count) + ",\"nodes\":[";
+    bool first = true;
+    for (th13::u32 index = 0; index < count; ++index) {
+        const th13::u32 handle = registry.ordered_handle(false, index);
+        const th13::AnmVm* vm = registry.find(handle);
+        if (!vm) continue;
+        if (!first) result += ',';
+        first = false;
+        result += "{\"index\":" + std::to_string(index) +
+            ",\"handle\":" + std::to_string(handle) +
+            ",\"bank\":" + std::to_string(app->animations.resource_id(vm->resource)) +
+            ",\"script\":" + std::to_string(vm->source_script) +
+            ",\"layer\":" + std::to_string(vm->visual.layer) +
+            ",\"pc\":" + std::to_string(vm->instruction_offset) +
+            ",\"timer\":" + std::to_string(vm->timer.current) +
+            ",\"visible\":" + (vm->visible ? "true" : "false") +
+            ",\"flags\":" + std::to_string(vm->visual.flags) +
+            ",\"render_flags\":" + std::to_string(vm->visual.render_flags) + "}";
+    }
+    result += "]}\n";
+    return result;
+}
+void observe_chain_walk(const th13::AnmRegistry&, bool alternate) {
+    using namespace th13::sdl;
+    if (alternate || !app) return;
+    const int frame = app->progress.stage_frame - 1;
+    if (frame < chain_walk_first || frame > chain_walk_last) return;
+    chain_walk_rows += build_chain_walk_json();
+}
+}
+EMSCRIPTEN_KEEPALIVE void th13_debug_anm_chain_walk_observe(int first, int last) {
+    chain_walk_rows.clear();
+    chain_walk_first = first;
+    chain_walk_last = last;
+    th13::chain_entry_observer = first <= last ? observe_chain_walk : nullptr;
+}
+EMSCRIPTEN_KEEPALIVE const char* th13_debug_anm_chain_walk_take() {
+    static std::string result;
+    result.swap(chain_walk_rows);
+    chain_walk_rows.clear();
+    return result.c_str();
+}
+
+// 弹 etEx 队列只读诊断（默认关闭，仅探针臂开窗）：与原生 0x40f030 的
+// +0xbd0 游标及队列项逐字段对齐，用于定位 port 队列游标分歧。不改变
+// 任何运行状态；输出由 StageSim::debug_bullet_queue() 提供。
+namespace {
+int bullet_queue_first = 0, bullet_queue_last = -1;
+bool bullet_queue_enabled = false;
+}
+EMSCRIPTEN_KEEPALIVE void th13_debug_bullet_queue_observe(int first, int last) {
+    bullet_queue_first = first;
+    bullet_queue_last = last;
+    bullet_queue_enabled = first <= last;
+}
+EMSCRIPTEN_KEEPALIVE const char* th13_debug_bullet_queue() {
+    using namespace th13::sdl;
+    static std::string result;
+    result.clear();
+    if (!app || !app->run || !bullet_queue_enabled) return result.c_str();
+    const int frame = app->progress.stage_frame - 1;
+    if (frame < bullet_queue_first || frame > bullet_queue_last) return result.c_str();
+    result = app->run->battle.sim.debug_bullet_queue();
+    return result.c_str();
+}
+
+// ECL etSprite(602) 实参只读观测（默认关闭）：记录 (frame, enemy serial,
+// slot, sprite, subtype)，与原生 0x41d7ad handler / 0x40ecf3 出生点对齐。
+namespace {
+std::string ecl_sprite_rows;
+int ecl_sprite_first = 0, ecl_sprite_last = -1;
+void observe_ecl_sprite(th13::i32 frame, th13::u32 serial, th13::i32 slot,
+                        th13::i32 sprite, th13::i32 subtype) {
+    if (frame < ecl_sprite_first || frame > ecl_sprite_last) return;
+    ecl_sprite_rows += "{\"frame\":" + std::to_string(frame) +
+        ",\"serial\":" + std::to_string(serial) +
+        ",\"slot\":" + std::to_string(slot) +
+        ",\"sprite\":" + std::to_string(sprite) +
+        ",\"subtype\":" + std::to_string(subtype) + "}\n";
+}
+}
+EMSCRIPTEN_KEEPALIVE void th13_debug_ecl_sprite_observe(int first, int last) {
+    ecl_sprite_rows.clear();
+    ecl_sprite_first = first;
+    ecl_sprite_last = last;
+    th13::ecl_sprite_observer = first <= last ? observe_ecl_sprite : nullptr;
+}
+EMSCRIPTEN_KEEPALIVE const char* th13_debug_ecl_sprite_take() {
+    static std::string result;
+    result.swap(ecl_sprite_rows);
+    ecl_sprite_rows.clear();
     return result.c_str();
 }
 

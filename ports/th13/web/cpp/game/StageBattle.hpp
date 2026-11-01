@@ -24,6 +24,10 @@
 
 namespace th13 {
 
+// 诊断开关（不参与逻辑）：由 th13_debug_damage_probe() 打开，
+// 打印 0x446870/0x419a90 的每次注册项伤害贡献。
+extern bool damage_probe_enabled;
+
 struct StageBattleServices {
     virtual ~StageBattleServices() = default;
     virtual bool life_hud(i32 lives, i32 pieces) = 0;
@@ -170,6 +174,12 @@ struct StagePlayerState {
     bool focus = false, dead = false;
     Phase phase = Phase::Active;
     i32 phase_frame = 0, invulnerable = 0;
+    // 上一帧的 phase_frame（0x443240 蓝帧判据的 pre-increment 快照）：
+    // 原生 00443240.c:242-243 在 :283-300 存 prev/递增之前比较
+    // phase_frame != prev && phase_frame % 3 == 0；port 的 sync 在
+    // battle.step 之后读到的已是递增后的值（比原生早一帧），故表现层
+    // 用本快照还原原生相位。
+    i32 phase_frame_previous = 0;
     Timer phase_clock, fire_clock, startup_clock, charge_clock;
     Vec3 charge_origin{};
     std::vector<PlayerShot> shots;
@@ -220,6 +230,7 @@ public:
     using PlayerPhase = StagePlayerState::Phase;
     PlayerPhase& player_phase = player_state_.phase;
     i32& player_phase_frame = player_state_.phase_frame;
+    i32& player_phase_frame_previous = player_state_.phase_frame_previous;
     bool player_visible() const noexcept {
         return !player_dead && player_phase != PlayerPhase::Dying;
     }
@@ -363,7 +374,9 @@ public:
 private:
     bool player_prepared_ = false;
     void rebuild_options_for_power();
-    void move_player(u32 held);
+    // bomb_slow = 本帧开始前 Bomb 已在运行（0x40a860 写的 0xa2b4 乘数），
+    // 不含本帧按键刚启动的 Bomb：00443240 在 00442960 之后才复位 1.0。
+    void move_player(u32 held, bool bomb_slow);
     void update_options(bool reset = false);
     void update_firing(bool held);
     void step_bomb();

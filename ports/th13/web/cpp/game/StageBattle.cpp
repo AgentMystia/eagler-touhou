@@ -412,12 +412,16 @@ i32 StageBattle::allocate_damage_registration(PlayerShot& shot) {
 void StageBattle::retire_damage_registration(PlayerShot& shot) {
     const i32 slot = shot.registration_slot;
     if (slot >= 0 && slot < 256) {
+        // 00446531..00446542 writes state=0 and then clears the enable bit of
+        // the record addressed by shot+0x98, with no owner/generation check.
+        // 00446f20's hit path (0x4471b7) leaves that pointer stale while it
+        // frees the record, so a retiring shot can clear a slot that has since
+        // been reallocated to a newer shot. Observable at stage-5 frames
+        // 130-151 (slot 89 freed at 132, reallocated at 133, stolen at 141).
         auto& registration = damage_registrations[size_t(slot)];
-        if (registration.generation == shot.generation) {
-            registration.active = false;
-            registration.flags &= ~1u;
-            registration.damage = 0;
-        }
+        registration.active = false;
+        registration.flags &= ~1u;
+        registration.damage = 0;
     }
     shot.registration_slot = -1;
 }
@@ -439,6 +443,16 @@ void StageBattle::sync_damage_registrations() {
         if (!owner || !owner->alive || owner->state != 1) {
             registration.active = false;
             registration.flags &= ~1u;
+            // Once the owner stops being an active shot, the original hit path
+            // has cleared shot+0x98. Do not let a later animation retirement
+            // clear an unrelated area registration that reused this slot.
+            // 00446f20's anchored Marisa beam intentionally keeps its stale
+            // pointer so 00446542 can clear a reallocated record later.
+            const bool anchored_beam = owner && owner->type == 2 &&
+                                       owner->behavior == 2 && owner->anchor > 0;
+            if (owner && !anchored_beam &&
+                owner->registration_slot == i32(&registration - damage_registrations.data()))
+                owner->registration_slot = -1;
             continue;
         }
         if (owner->behavior == 2) {
@@ -459,7 +473,7 @@ void StageBattle::sync_damage_registrations() {
     }
 }
 
-void StageBattle::move_player(u32 held) {
+void StageBattle::move_player(u32 held, bool bomb_slow) {
     option_movement_tick_ = true;
     focus = (held & 0x08) != 0;
     const int dir = dir_index(held);
@@ -470,7 +484,7 @@ void StageBattle::move_player(u32 held) {
     // before the mover multiplier/time-rate stores and integer truncation.
     if (character_ == 1 && progress_ && trance_active(*progress_))
         speed = speed * 3 / 2;
-    if (character_ == 1 && bomb_timer > 0)
+    if (character_ == 1 && bomb_slow)
         speed = i32(float(speed) * 0.2f); // 0040a860 player+0xa2b4
     // 0x442960:223-236：定点累加 + 钳制（±0x5c00 / [0x1000,0xd800]）。
     const float rate = sim.time_rate(); //442d3b stores f32 velocity, then truncates.
@@ -483,7 +497,7 @@ void StageBattle::move_player(u32 held) {
         if (touch.mode == 1) {
             double limit = double(focus ? speed_orth_focus : speed_orth) * rate;
             if (character_ == 1 && progress_ && trance_active(*progress_)) limit *= 1.5;
-            if (character_ == 1 && bomb_timer > 0) limit *= 0.2;
+            if (character_ == 1 && bomb_slow) limit *= 0.2;
             limit = std::max(limit, 0.0);
             const double length = std::hypot(x, y);
             if (length > limit && length > 0) { x *= limit / length; y *= limit / length; }
@@ -968,6 +982,9 @@ void StageBattle::consume_player_shot_geometry() {
     }
 }
 
+bool damage_probe_enabled = false;
+bool rng_probe_on = false;
+
 float StageBattle::query_enemy_damage(StageEnemy& state, float width, float height) {
     // 446870 returns before bomb/shot queries when443240's phase clock
     // has not advanced an integer tick (including half-speed Boss deaths).
@@ -997,6 +1014,12 @@ float StageBattle::query_enemy_damage(StageEnemy& state, float width, float heig
             } else if (!shot_hits_enemy_box(registration.center_x, registration.center_y,
                                             registration.width, registration.height, ex, ey,
                                             width, height, registration.angle)) continue;
+            if (damage_probe_enabled && sim.frame >= 7970 && sim.frame <= 7980)
+                std::printf("DMG f=%d e=%u q=(%.1f,%.1f) reg=%u dmg=%.1f c=(%.1f,%.1f) box=(%.1f,%.1f)\n",
+                            sim.frame, state.serial, ex, ey, unsigned(&registration - damage_registrations.data()),
+                            double(registration.damage), double(registration.center_x),
+                            double(registration.center_y), double(registration.width),
+                            double(registration.height));
             damage += registration.damage;
             registration.accumulated_damage = wrapping_add(registration.accumulated_damage,
                                                            i32(registration.damage));
@@ -1070,8 +1093,15 @@ float StageBattle::query_enemy_damage(StageEnemy& state, float width, float heig
             // 00447230's return gate uses the shot age timer (+0x18/+0x1c),
             // masking the low two bits: only age % 4 == 0 contributes damage.
             if (shot->age_clock.current != shot->age_clock.previous &&
-                (shot->age_clock.current & 3) == 0)
+                (shot->age_clock.current & 3) == 0) {
+                if (damage_probe_enabled && sim.frame >= 7970 && sim.frame <= 7980)
+                    std::printf("DMGS f=%d e=%u reg=%u dmg=%.1f c=(%.1f,%.1f) box=(%.1f,%.1f)\n",
+                                sim.frame, state.serial, unsigned(&registration - damage_registrations.data()),
+                                double(registration.damage), double(registration.center_x),
+                                double(registration.center_y), double(registration.width),
+                                double(registration.height));
                 damage += registration.damage;
+            }
             if (registration.threshold < 9999999 &&
                 registration.accumulated_damage >= registration.threshold) {
                 registration.active = false;
@@ -1105,6 +1135,8 @@ float StageBattle::query_enemy_damage(StageEnemy& state, float width, float heig
             blast.travel_angle = shot->angle;
             shot->state = 2;
             shot->speed = 2.f;
+            // 004475b0 clears shot+0x98 explicitly after retiring the record,
+            // unlike the 00446f20 hit path modeled below.
             shot->registration_slot = -1;
             registration.active = false;
             registration.flags &= ~1u;
@@ -1115,6 +1147,14 @@ float StageBattle::query_enemy_damage(StageEnemy& state, float width, float heig
             }
             continue;
         }
+        if (damage_probe_enabled && sim.frame >= 7970 && sim.frame <= 7985)
+            std::printf("DMGH f=%d e=%u reg=%u gen=%u age=%d dmg=%.1f c=(%.1f,%.1f) box=(%.1f,%.1f) ebox=(%.1f,%.1f)\n",
+                        sim.frame, state.serial,
+                        unsigned(&registration - damage_registrations.data()),
+                        registration.generation, i32(shot->age),
+                        double(registration.damage), double(registration.center_x),
+                        double(registration.center_y), double(registration.width),
+                        double(registration.height), double(width), double(height));
         damage += registration.damage;
         if (shot->hit_behavior == 3) {
             // 4474b0 disables damage but keeps mode4 for the dying ANM.
@@ -1123,8 +1163,8 @@ float StageBattle::query_enemy_damage(StageEnemy& state, float width, float heig
         } else {
             shot->speed *= .125f;
         }
-        // 446bf0: generic hit disables the registration and leaves the shot in
-        // state2 until its ANM interrupt terminates.
+        // 00446c8d / 004474eb clear shot+0x98 after disabling the record.
+        // Only 00446f20's beam termination leaves the pointer stale.
         shot->state = 2;
         registration.active = false;
         registration.flags &= ~1u;
@@ -1148,6 +1188,9 @@ float StageBattle::query_enemy_damage(StageEnemy& state, float width, float heig
             shot.sine_motion.speed = shot.speed = 3.0f;
         } else shot.speed *= .125f;
     }
+    if (damage_probe_enabled && sim.frame >= 7970 && sim.frame <= 7980)
+        std::printf("DMGT f=%d e=%u q=(%.1f,%.1f) sum=%.1f\n", sim.frame, state.serial,
+                    ex, ey, double(damage));
     if (damage <= 0) return 0;
     // 00446870 尾：命中计分 = (min(sum,80)/10 + 10)/10（原值域，逐命中
     // 帧计分；G 状态流实证 f96 +1、f98 +1）。炸弹/出生/死亡演出除5同序。
@@ -1165,14 +1208,27 @@ void StageBattle::collide_shots(StageEnemy& state) {
     float damage = enemy->hurtbox[0] > 0
         ? query_enemy_damage(*enemy, enemy->hurtbox[0], enemy->hurtbox[1]) : 0;
     if (enemy->damage_function == 1) {
-        // 422cd0 queries a160x32 rectangle at the ship, writes (incoming+
-        // query) to boss+519c, and returns that same sum to419a90.
-        const float transferred = damage + query_enemy_damage(*enemy, 160, 32);
-        if (auto* boss = sim.boss()) boss->pending_damage = i32(transferred);
-        damage += transferred;
+        // 00419a90:108-110 calls the +0x40f0 callback and 00419be0 (add esi,eax)
+        // adds its EAX to the geometric damage. 00422cd0 returns
+        // incoming + 160x32 query (00422d40 add esi,eax / 00422d4b mov eax,esi),
+        // so the same-frame total is base + (base + extra). The same sum is also
+        // stored at 00422d45 to [enemy_mgr+0x5c]+0x519c, which is the boss
+        // object's inner +0x3fb0 (outer +0x519c - inner base 0x11ec).
+        const i32 returned =
+            i32(damage) + i32(query_enemy_damage(*enemy, 160, 32));
+        if (auto* boss = sim.boss()) boss->pending_damage = returned;
+        damage = float(i32(damage) + returned);
     }
+    // 00419a90:112-114 (00419be2..00419bee) adds the enemy's +0x3fb0 pending
+    // damage after the geometric query and the +0x40f0 callback, then clears
+    // it. 00422cd0 writes that field on the boss object at 00422d45. Stage-5
+    // frames 10405..10412 native watch: e235 flags=0x812a004c (bit 0x800 = 0),
+    // damage_function=0, one 15-damage registration callback returns 15, and
+    // the 30 applied at 10410 is 15 query + 15 pending written at 10409 by
+    // serial 237's 0x422cd0. Consume it exactly once, before the /5 phase
+    // divide and the accumulator-vs-life branch.
     if (enemy->pending_damage > 0) {
-        damage += enemy->pending_damage;
+        damage = float(i32(damage) + enemy->pending_damage);
         enemy->pending_damage = 0;
     }
     // 00419a90 zeros the queried damage while stage+198 holds a dialogue.
@@ -1332,13 +1388,16 @@ void StageBattle::step_bomb() {
                                     player_y + std::sin(bomb_angle_) * distances[part], 0},
                                    {512, heights[part], 0}, bomb_angle_, 0.0f, true, true, true);
         }
-        // 40ab90 -> 4300f0: same three rectangles also split live lasers.
+        // 0040ac12..0040ac26 passes ~spell_flags&1 through 004300f0 to
+        // laser splitting. The cancellation remains active during a spell;
+        // only its kind-9 item production is suppressed.
+        const bool laser_items = !sim.spell.state().active();
         for (int part = 0; part < 3; ++part) {
             static constexpr float distances[] = {208, 240, 304};
             static constexpr float heights[] = {32, 128, 256};
             sim.cancel_lasers_box({player_x + std::cos(bomb_angle_) * distances[part],
                                    player_y + std::sin(bomb_angle_) * distances[part], 0},
-                                  {512, heights[part], 0}, bomb_angle_, true);
+                                  {512, heights[part], 0}, bomb_angle_, laser_items);
         }
     } else if (character_ == 2) {
         // 0040c2c0：五芒星中心缓动向(0,160)，转速每帧减0.03度。
@@ -1363,10 +1422,11 @@ void StageBattle::step_bomb() {
             a=wrap_angle(float(a+1.2566371f));
         }
         // 40c600: five independent rectangle cancellations, in ray order.
-        // Each 4119c0 call also requires the bullet to be in the screen field.
+        // The same ~spell_flags&1 item gate is shared by all three characters.
+        const bool laser_items = !sim.spell.state().active();
         for (const auto& ray : bomb_rays) {
             sim.cancel_bullets_box(ray.center, {320, 32, 0}, ray.angle, 0.0f, true, true, true);
-            sim.cancel_lasers_box(ray.center, {320, 32, 0}, ray.angle, true);
+            sim.cancel_lasers_box(ray.center, {320, 32, 0}, ray.angle, laser_items);
         }
     } else {
         // 0040cb50（BombYoumuInf vtable@0x4aa610 slot1，r4/bomb 模块）：
@@ -1376,6 +1436,7 @@ void StageBattle::step_bomb() {
         // VM，槽状态保持——r4/bomb 测试 A1-A7 覆盖）。生成帧矩形高 0
         // （scale=0）→ 无消弹无伤害，次帧起生效。
         if (bomb_age < YoumuBomb::kActiveFrames) {
+            GameRandom::tag(15);
             if (auto spawn = youmu_bomb_.step(bomb_age, sim.random))
                 youmu_slash_spawns_.push_back(*spawn);
         }
@@ -1385,6 +1446,7 @@ void StageBattle::step_bomb() {
             error_ = "Youmu Bomb animation update failed";
             return;
         }
+        const bool laser_items = !sim.spell.state().active();
         for (int slot = 0; slot < YoumuBomb::kSlots; ++slot) {
             if (!youmu_bomb_.active(slot)) continue;
             const auto rect = youmu_bomb_.rect(slot);
@@ -1396,7 +1458,7 @@ void StageBattle::step_bomb() {
                                    rect.angle, 0.0f, true, true, true);
             if (!sim.error().empty()) return;
             sim.cancel_lasers_box({rect.cx, rect.cy, 0}, {rect.w, rect.h, 0},
-                                  rect.angle, true);
+                                  rect.angle, laser_items);
         }
     }
 }
@@ -1487,9 +1549,14 @@ void StageBattle::collide_player_bullet(StageBullet& bullet) {
             if (progress_->max_point > progress_->max_point_cap)
                 progress_->max_point = progress_->max_point_cap;
         }
-        // 0x445900 尾：0x46f820(...,100,bullet pos,...) 效果 +
-        // 0x460c50(...,0x2a) 声音。声音还缺 bullet.x 参数通道。
-        sim.anm_effects.push_back({1, 100, bullet.x, bullet.y, bullet.z});
+        // 0x445900 尾：0x46f820(...,100,bullet pos,...) 主链尾插效果 +
+        // 0x460c50(...,0x2a) 声音。创建必须在碰撞处理当时（battle.step 内），
+        // 与原生调用相位一致；不得走 ECL 307/308 的头插 flush 队列。
+        if (sim.graze_effect &&
+            !sim.graze_effect(Vec3{bullet.x, bullet.y, bullet.z})) {
+            error_ = sim.error();
+            return;
+        }
         host_->hud_sound(42);
     }
 }
@@ -1511,7 +1578,11 @@ i32 StageBattle::collide_laser(const StageLaser& laser) {
             if (progress_->graze < 99999999) ++progress_->graze;
             progress_->max_point = std::min(progress_->max_point_cap, progress_->max_point + 100);
         }
-        sim.anm_effects.push_back({1, 100, player_x, player_y, 0});
+        if (sim.graze_effect &&
+            !sim.graze_effect(Vec3{player_x, player_y, 0})) {
+            error_ = sim.error();
+            return contact;
+        }
         if (!host_->hud_sound(42)) error_ = "Laser graze sound failed";
     }
     return contact;
@@ -1562,7 +1633,11 @@ void StageBattle::collide_enemy_body(StageEnemy& enemy) {
             if (progress_->graze < 99999999) ++progress_->graze;
             progress_->max_point = std::min(progress_->max_point_cap, progress_->max_point + 100);
         }
-        sim.anm_effects.push_back({1, 100, player_x, player_y, 0});
+        if (sim.graze_effect &&
+            !sim.graze_effect(Vec3{player_x, player_y, 0})) {
+            error_ = sim.error();
+            return;
+        }
         if (!host_->hud_sound(42)) error_ = "Enemy body graze sound failed";
     }
 }
@@ -1627,6 +1702,11 @@ bool StageBattle::commit_death_normal() {
 
 bool StageBattle::update_player(const GameInput& input) {
     if (player_dead) return true;
+    // 00443240 case1：Bomb 分派(0040a540)先于移动(00442960)，但 0xa2b4 的
+    // 0.2 倍率由 Bomb 自己的逐帧更新(0040a860，param_1[7] < 0x12d)写入，
+    // 并在本函数末尾复位 1.0。故本帧移动看到的是「本帧开始前已在运行」
+    // 的 Bomb：按键当帧仍常速，减速自下一帧起，共 301 帧。
+    const bool bomb_slow = bomb_timer > 0;
     const float startup_rate = sim.time_rate();
     player_state_.startup_clock.tick(&startup_rate);
     if (player_phase_clock_.current != player_phase_frame)
@@ -1713,14 +1793,14 @@ bool StageBattle::update_player(const GameInput& input) {
             player_phase_frame = 0;
             player_phase_clock_.set(0);
             if (input.pressed & 0x02) on_bomb_key();
-            move_player(input.held);
+            move_player(input.held, bomb_slow);
         }
     } else {
         // 00443240 case4 ends after a successful deathbomb restores state1;
         // it does not fall through to case1's 00442960 movement this frame.
         const bool move_this_frame = player_phase == PlayerPhase::Active;
         if (input.pressed & 0x02) on_bomb_key();
-        if (move_this_frame && player_phase == PlayerPhase::Active) move_player(input.held);
+        if (move_this_frame && player_phase == PlayerPhase::Active) move_player(input.held, bomb_slow);
     }
     //443240 updates registrations and protection after phase-specific work,
     // including the frame on which the respawn registration is created.
@@ -1736,8 +1816,13 @@ bool StageBattle::update_player(const GameInput& input) {
                 polar_xy(registration.travel_angle, float(registration.travel_speed * rate), vx, vy);
                 registration.center_x = round001(float(registration.center_x + vx));
                 registration.center_y = round001(float(registration.center_y + vy));
-                registration.radius = float(registration.radius + registration.radius_growth);
             }
+            // 00443691-00443698：对每条 active 记录无条件执行
+            // fld [rec+0x18]; fadd [rec+0x14]; fstp [rec+0x14]，即
+            // radius += radius_growth，先于计时器推进与类型分支；并非只对
+            // 圆形区域生效。shot 记录复用旧槽时会继承未清零的 growth，
+            // 原生同样按该遗留值增长（stage6 frame3157 slot205 实证）。
+            registration.radius = float(registration.radius + registration.radius_growth);
             registration.clock.decrement(&rate);
             if (registration.clock.current < 1) {
                 registration.active = false;
@@ -1767,6 +1852,9 @@ bool StageBattle::update_player(const GameInput& input) {
     if(invulnerable>0)--invulnerable;
     if (player_phase_clock_.current != player_phase_frame)
         player_phase_clock_.set(player_phase_frame);
+    // 原生 00443240.c:242-243 的蓝帧判据在 phase_frame 递增之前取值；
+    // 表现层 sync 晚于本函数，用该 pre-increment 快照还原原生相位。
+    player_state_.phase_frame_previous = player_phase_frame;
     player_phase_clock_.tick(&rate);
     player_phase_frame = player_phase_clock_.current;
     return error_.empty();
@@ -1867,6 +1955,17 @@ bool StageBattle::end_trance() {
     if (protection) {
         // 405b80 ->444a10, gauge0 makes405a20 fail: subtract a life
         // and enter state2 immediately, without another Bomb window.
+        // 保护灵界耗尽先建 effect.anm script26：0x405bd8 test [gameinf+0x60],
+        // 0x200 / jne 跳过；0x405c29 0x46f820(ctx, 26, player+0x5b8, 0, -1, 0)
+        // （返回地址 0x405c2e），layer=-1、anmArg=0、尾插、即时 tick。
+        // script26 为 60 帧发射器（每帧 2×script27+script28，每个子体创建
+        // 固定 4 次 visual RNG），缺失时 S6 local 8652 起每帧少 12 次调用
+        // （artifacts/round-16/agent-s6/REPORT.txt）。
+        if ((progress_->scene_flags & 0x200u) == 0 && sim.player_effect &&
+            !sim.player_effect(26, {player_x, player_y, 0}, -1)) {
+            error_ = "Trance release effect failed";
+            return false;
+        }
         if (!commit_death_normal()) return false;
     }
     // 405b80 always finishes with405440(0x46), including normal exit.
@@ -2006,6 +2105,8 @@ bool StageBattle::step_transition(const GameInput& input) {
 
 bool StageBattle::step(const GameInput& input) {
     if (!error_.empty()) return false;
+    // RNG 分组诊断：随伤害探针同一开关，只在 9800–9860 帧窗口打印每类抽取次数。
+    rng_probe_on = damage_probe_enabled;
     // 0 帧是 start() 装载趟，此后每 step 一帧；这也是 Boss 非符锚点的
     // 生产时钟，不能只在事件落盘时推进。捕获只观察同一游戏帧。
     ++sim.frame;
@@ -2028,14 +2129,20 @@ bool StageBattle::step(const GameInput& input) {
     step_shots();
     step_bomb();
     sim.bomb_active = bomb_timer > 0;
-    for (auto& enemy : sim.enemies)
-        if (enemy->hit_anim_timer > 0) --enemy->hit_anim_timer;
     if (!sim.step_frame()) {
         error_ = sim.error();
         return false;
     }
     // 道具/神霊侧（0x42e380/0x438730）：装配玩家只读面后步进。
     update_item_side();
+    if (damage_probe_enabled && sim.frame >= 9800 && sim.frame <= 9860) {
+        std::printf("RNGP f=%d idx=%u", sim.frame, sim.random.index());
+        for (int i = 0; i < 20; ++i) {
+            std::printf(" t%d=%u", i, GameRandom::probe[i]);
+            GameRandom::probe[i] = 0;
+        }
+        std::printf("\n");
+    }
     // 临时探针（TH13_BOMB_PROBE=1）：Bomb 全窗逐帧对照（r4/combat 权威
     // 对拍）：age/timer/库存/无敌、8 珠态、敌 HP、存活弹数、game RNG 计数。
     if (std::getenv("TH13_BOMB_PROBE")) {

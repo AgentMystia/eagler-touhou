@@ -59,7 +59,9 @@ const sources = [
 ];
 
 const allHeaders = [
-  ...headerInputs(resolve(root, 'cpp'), resolve(workspace, 'portable/sdl')),
+  ...headerInputs(resolve(root, 'cpp'), resolve(workspace, 'portable/sdl'),
+                  resolve(workspace, 'portable/input'),
+                  resolve(workspace, '../../common/include/eagler/input')),
   resolve(workspace, '../../common/include/eagler/text/RuntimeFontRaster.hpp'),
 ];
 await printRuntimeInputs({workspace, root, sources: sources.map(p => resolve(root, p)), headers: allHeaders, flags});

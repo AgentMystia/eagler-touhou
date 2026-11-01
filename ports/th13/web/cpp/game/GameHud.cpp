@@ -4,6 +4,18 @@
 
 namespace th13 {
 
+namespace {
+// sig.anm = 常驻 ANM 管理器槽 1（Application kBanks 表；原版 0x439730 在
+// 全局帧 0 以槽 1 打开 sig.anm，0x4398e0 注册的开场任务 0x439ce0 随即创建
+// 其 script0，左半 512×480 + op500 子 script1 右半 128×480 拼满 640 宽）。
+constexpr i32 kOpeningSignatureBank = 1;
+// 相位对齐：原版创建趟 = 模板预跑态（色插值 1/10、timer1）再 tick 一次，
+// 落 2/10、timer2；端口 create() 从指令 0 重跑 t=-1 的 ins_408，落 1/10、
+// timer1（落后一步）。加速启动在全局帧 0 建、战斗帧 0 = 全局帧 4，中间
+// 全局帧 1..3 各 tick 一次。四步单 VM tick 同时补「创建差一步」与「1..3」。
+constexpr u32 kOpeningSignaturePhaseTicks = 4;
+}  // namespace
+
 bool GameHud::check(bool ok) {
     if (!ok && error.empty())
         error = animations.error.empty() ? "HUD animation unavailable" : animations.error;
@@ -26,6 +38,60 @@ bool GameHud::direct_interrupt(u32 handle, i32 label) {
     auto* vm = animations.registry.find(handle);
     if (!vm) return check(false);
     vm->pending_interrupt = label;
+    return true;
+}
+
+GameHud::~GameHud() { release_opening_signature(); }
+
+void GameHud::release_opening_signature() {
+    // 0x46f690/0x46fea0：标 render_flags|=0x20 后由下一趟链扫描回收；槽 1
+    // 是常驻 bank（release_run 不 unload/retire 它），不主动回收会一直画到标题。
+    if (opening_signature) animations.retire(opening_signature);
+    opening_signature = 0;
+    opening_signature_right = 0;
+}
+
+bool GameHud::begin_opening_signature() {
+    // 原版只有加速战斗入口保留开场签名条：0x439730/0x4398e0/0x439ce0 的开场
+    // 任务在全局帧 0 建 VM，而标题线程尾段 0x44c0d0 在开场计数 >= 0xB4(180)
+    // 时经 0x46e620 卸载槽 1——正常「开场→标题→进关」没有这两条。端口里等价
+    // 的加速入口是回放/调试直入（Application begin_replay_stage 置
+    // practice_mode=1；关卡练习在 run_mode_flags 置 bit4=0x10、符卡练习置
+    // bit5=0x20，二者都经过标题，不得创建）。
+    if (progress.practice_mode == 0 || (progress.run_mode_flags & 0x30u) != 0) return true;
+    // UI 夹具只装 front/ascii 合成 bank；生产路径 sig.anm 是常驻槽 1。
+    if (!animations.resource(kOpeningSignatureBank)) return true;
+    release_opening_signature();
+    // 0x439ce0：模板 0 拷贝 + 0x462450 初始 tick + 0x46f3f0 主链尾插（ordering 0），
+    // 无 layer 参数、无平移（layer 23/位置由 script0 的 ins_304/ins_400 写入）。
+    const u32 root = create(kOpeningSignatureBank, 0, 0);
+    if (!root) return false;
+    opening_signature = root;
+    auto* vm = animations.registry.find(root);
+    if (!vm) {
+        release_opening_signature();
+        return check(false);
+    }
+    // script0 的 ins_500 在创建 tick 内经 0x46f990 生成右半 script1。
+    auto* right = animations.registry.find_child_script(*vm, 1, 0);
+    if (!right) {
+        release_opening_signature();
+        error = "sig.anm script1 child VM missing";
+        return false;
+    }
+    // 原版 VM 层是 25（script1 ins_304 0x19）；捕获里的 26 是 0x43b900 在层 26
+    // 遍历期冲批的提交层。DrawCapture 记 VM 层，设 26 才复刻基线 op 层
+    //（与 Application::draw_loading 的既有 26 约定一致）。
+    right->visual.layer = 26;
+    opening_signature_right = animations.registry.handle(*right);
+    // 单 VM tick（tick_instance）只推进这两条 VM，不碰本帧之前已建好的战斗
+    // VM（自机/背景/特效在 RunScene::initialize 更早处创建）。
+    for (u32 i = 0; i < kOpeningSignaturePhaseTicks; i++) {
+        if (animations.tick_instance(*vm) < 0 || animations.tick_instance(*right) < 0) {
+            release_opening_signature();
+            return check(false);
+        }
+    }
     return true;
 }
 
@@ -74,6 +140,24 @@ bool GameHud::stage_logo(i32 scene_destination) {
     return create(stage_logo_bank, 0, 0) != 0;
 }
 
+bool GameHud::stage_logo_title(i32 scene_destination) {
+    // 0x425170:291-349 (block D): at stage entry the retail creates the stage
+    // logo VM from template index 1 of the stXXlogo.anm file object
+    // (00424FD0: mov eax,6 -> 0046DF40 slot 6; 0042586c mov edi,[edi+0x14c];
+    // 00425929 mov esi,[edi+0x10c]; add esi,0x5a4 -> rep movsd). That template
+    // is script 1, whose first tick sets layer 20/sprite 5 (00462450 0x130/0x12c)
+    // and op400 (512,464): the front/logo/stXXlogo.png quad drawn from frame 0.
+    // Gate 00425841/0042584e/0042585b: DAT_004dcc24 != 8,
+    // !(DAT_004be830 & 0x40), (DAT_004be830 & 0x30) != 0x20 (not spell practice).
+    if (scene_destination == 8 || (progress.run_mode_flags & 0x40u) ||
+        (progress.run_mode_flags & 0x30u) == 0x20u)
+        return true;
+    // The run scene injects the bank before initialize(); the UI test harness
+    // intentionally has no logo bank, so absence here is not an error.
+    if (stage_logo_bank < 0) return true;
+    return create(stage_logo_bank, 1, 0) != 0;
+}
+
 bool GameHud::stage_music_logo() {
     // MSG opcode19: 429a24 creates script2 in the same stage-logo bank.
     if (stage_logo_bank < 0) {
@@ -105,6 +189,9 @@ bool GameHud::finish_stage_clear() {
 
 bool GameHud::initialize(const HudEntryContext& context) {
     if (!error.empty()) return false;
+    // 开场签名条先于 0x425170 的 HUD VM 创建（原版全局帧 0 建，早于进关），
+    // 保证同层（26）链表序与原版一致。
+    if (!begin_opening_signature()) return false;
     if (!root && (root = widget(0)) == 0) return false;
     if (!life_icons[0]) {
         for (u32 i = 0; i < 8; i++) {
@@ -128,6 +215,12 @@ bool GameHud::initialize(const HudEntryContext& context) {
     }
     if (!life(player.extra_lives, player.life_pieces) || !bombs(player.bombs, player.bomb_pieces))
         return false;
+    // 0x425170:291-349 block D: stage-entry logo (stXXlogo.anm script 1).
+    // Native order 0x425829/0x42583c (life/bomb interrupts) precedes the
+    // 0x425841 gate; life/bombs only interrupt existing VMs, but keep the
+    // creation sequence identical to retail.
+    // Distinct from ECL554's 0x42adc0 (script 0 banner, fires ~730 ticks in).
+    if (!stage_logo_title(context.scene_destination)) return false;
     // 425170:509-512 creates front.anm script67 only for a fresh Stage 1
     // ordinary run with no continues. The script owns its children and the
     // full 198-tick presentation lifecycle; keep no HUD-local timer/handle.

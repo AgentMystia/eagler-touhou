@@ -57,6 +57,7 @@ class TitleDifficultyMenu {
     void finish_menu_hides();     // [解剖] 主菜单 Z+21 隐藏时间线（非选中隐/选中白化/白条闪）
     void advance_choreography();  // [解剖] 每帧：光标缓动/徽记下滚/粒子/白条与选中衰减
     void spawn_particles(i32 count);  // ascii18 克隆（脚本自算位置漂移，RNG 对拍）
+    void reorder_difficulty_draws();  // [窗B] L22 桶序：背景 → 粒子 → 90 → 83/84
     void retire_difficulty();     // 徽记101退场 + 背景右半层复位（root label1 已在 Esc 帧发）
     void choose_character() noexcept;
     void return_main();

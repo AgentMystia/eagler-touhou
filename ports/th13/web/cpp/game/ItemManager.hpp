@@ -135,6 +135,10 @@ public:
     // Production queries the actual ANM handle at 00438aca, before collection.
     // Standalone arithmetic tests have no animation host.
     std::function<bool(u32 slot, u32 serial)> spirit_animation_alive;
+    // 0x438730 收集瞬间的 front.anm 拾取动画（0x438b7a/0x438bdd/0x438c36 与
+    // 0x438d26/0x438d80/0x438da1 的 0x46f820 flags=0 尾插；脚本按
+    // (trance bit0, kind) 查表）。返回 false 表示表现层创建失败。
+    std::function<bool(i32 script, float x, float y, float z)> spirit_pickup_effect;
     // 42edc0/42e380 call 444df0 synchronously when collected power crosses a level.
     std::function<void()> option_power_changed;
     // 原版槽量：0x42e380 循环上界 0xa57+1 = 2648（道具）；0x438ec0 扫描

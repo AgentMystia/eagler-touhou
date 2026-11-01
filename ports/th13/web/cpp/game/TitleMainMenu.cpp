@@ -1,3 +1,4 @@
+#include "AnmRenderer.hpp"
 #include "TitleMainMenu.hpp"
 
 namespace th13 {
@@ -197,10 +198,8 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
             if (!interrupt(resources.background_root, 2, true)) return false;
             if (!create(resources.logo_root)) return false;
         } else {
-            if (!present(state.handles[resources.background_root])) {
-                if (!create(resources.background_root)) return false;
-                // 仅新建时落层值（boot 路径；返回路径重建后同样落码）。
-                }
+            if (!present(state.handles[resources.background_root]) &&
+                !create(resources.background_root)) return false;
             if (!present(state.handles[resources.logo_root]) &&
                 !create(resources.logo_root)) return false;
         }
@@ -212,6 +211,9 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
         // 菜单 intro：boot 180 帧后建菜单（oracle g361：root0 + title01 十灰条
         // 入 L26 批次、title_v 版本条 30f 延迟淡入 → g390 可见）；返回路径立即建。
         const bool returning = (state.flags & 2u) != 0;
+        // [蓝图 §8.3 / 窗A 实测] g350（age169）：select00 右半 script93 绘制层
+        // L23→L21（f348 最后 L23、f349 首 L21）。VM 层保持脚本 ins_304(21)，
+        // 偏移在 apply_draw_layers 的绘制侧覆盖里按 age 落码。
         // [wf360 白条定案] oracle 菜单白条 f360=淡入第 3 帧（0x33）→ spawn 于
         // f357=age177（w13 滞后 1 帧=rebind）；f357-359 无 op（低 alpha 帧不可
         // 见）→ 绘制侧压 0 复刻。可交互仍锚 age191（f372，oracle 实测）。
@@ -314,6 +316,42 @@ bool TitleMainMenu::update(u32 pressed, u32 repeated) {
     }
     }
     return true;
+}
+
+// [蓝图 §8.3/§8.9] 绘制侧层偏移（原版 supervisor 逐 VM 置层，机制未反汇编；
+// VM dump 层恒为脚本 ins_304 真值 22/21/21/21 与 LOGO 25）。本函数不改 VM
+// 层（title_background_layer_pokes_per_oracle 回归守护），只在 Draw 优先级 2
+// 写 op 层覆盖：
+//   背景 90/91/93：主菜单 90=L23、91=L22、93=L23（g350 age169 后 93→L21）；
+//     难度/角色屏 90=91=93=L22（难度龄 27 后 93 自 L21 搬 L22）。
+//   LOGO 97 翻转窗（age<=60）L26、98 爆闪全命 L26。
+// 桶序仍按脚本层（与 oracle 任务层相对序一致），故绘制顺序不变。
+void TitleMainMenu::apply_draw_layers() {
+    clear_draw_layer_overrides();
+    if (auto* bg = animations.registry.find(state.handles[resources.background_root])) {
+        // 难度屏自难度根建面帧起算（f489 转屏帧尚未建树 = 主菜单语义）。
+        const bool selecting =
+            state.handles[resources.difficulty_tree] != 0 ||
+            state.handles[resources.difficulty_tree_extra] != 0;
+        if (auto* left = animations.registry.find_child_script(*bg, 90, 0))
+            set_draw_layer_override(*left, selecting ? 22 : 23);
+        if (auto* right = animations.registry.find_child_script(*bg, 91, 0))
+            set_draw_layer_override(*right, 22);
+        if (auto* half = animations.registry.find_child_script(*bg, 93, 0)) {
+            // 主菜单 boot：g181 起 L23，g350（script93 VM age 170→171 帧）
+            // →L21（窗A f348 最后 L23、f349 首 L21，探针实证）；返回路径
+            // 重建树 age 从头计，沿用同序（oracle 无返回窗，§8.3 推定）。
+            const i32 layer = selecting ? (state.particle_clock >= 28 ? 22 : 21)
+                                        : (half->age.current <= 170 ? 23 : 21);
+            set_draw_layer_override(*half, layer);
+        }
+    }
+    if (auto* logo = animations.registry.find(state.handles[resources.logo_root])) {
+        if (auto* flip = animations.registry.find_child_script(*logo, 97, 0))
+            set_draw_layer_override(*flip, flip->age.current <= 60 ? 26 : 25);
+        if (auto* burst = animations.registry.find_child_script(*logo, 98, 0))
+            set_draw_layer_override(*burst, 26);
+    }
 }
 
 // g361 菜单展开：root0（spawn 3-22）+ 版本条 + 全项入场 + 禁用项黑化。

@@ -2,6 +2,7 @@
 #include "AnmOverlay.hpp"
 #include <algorithm>
 namespace th13 {
+ChainEntryObserver chain_entry_observer = nullptr;
 // 卸载资源时把绑定它的 VM 标待回收（0x46fea0 语义：render_flags |= 0x20）。
 void AnmRegistry::retire_resource(const AnmResource* resource)noexcept{if(!resource)return;for(auto& group:groups)for(auto* entry:group)if(entry->vm.resource==resource)entry->vm.visual.render_flags=entry->vm.visual.render_flags|32u;}
 bool AnmRegistry::references_resource(const AnmResource* resource)const noexcept{
@@ -83,6 +84,7 @@ bool AnmRegistry::retire_children(AnmVm& vm){auto* entry=node(vm);if(!entry||!en
 // 单条链一遍（0x46f170 主链 / 0x46f240 副链同构）：待回收(0x20)不 tick 直接
 // 回收；tick 非零回收；零则归桶。副链层 ∉{31,32} 钳到 31（0x46f240:31-33）。
 bool AnmRegistry::tick_chain(u32 alternate,GameRandom& random,float rate){
+    if(!alternate&&chain_entry_observer)chain_entry_observer(*this,false);
     auto next=groups[alternate].begin();while(next!=groups[alternate].end()){
         auto* entry=*next++;
         if(entry->vm.visual.render_flags&0x20){collect(*entry);continue;}
@@ -120,4 +122,5 @@ std::vector<AnmVm*> AnmRegistry::children(const AnmVm& vm)const{std::vector<AnmV
 AnmVm* AnmRegistry::find_child_script(AnmVm& vm,i32 script,i32 occurrence)const noexcept{auto* entry=node(vm);if(!entry||occurrence<0)return nullptr;for(auto* child:entry->children){if(child->vm.source_script==vm.local_script_index(script)||script==-1){if(occurrence==0)return &child->vm;occurrence--;}if(!child->children.empty())if(auto* found=find_child_script(child->vm,script,occurrence))return found;}return nullptr;}
 u32 AnmRegistry::slot(const AnmVm& vm)const noexcept{auto* entry=node(const_cast<AnmVm&>(vm));return entry?entry->slot:0x1fff;}
 u32 AnmRegistry::ordered_handle(bool alternate,u32 index)const noexcept{for(auto* entry:groups[alternate])if(index--==0)return entry->handle;return 0;}
+void AnmRegistry::append_draw(AnmVm& vm){i32 layer=vm.visual.layer;if(layer<0||layer>30)return;layers[u32(layer)].push_back(&vm);}
 }
