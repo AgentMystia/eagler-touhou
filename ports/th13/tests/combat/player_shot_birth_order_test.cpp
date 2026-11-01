@@ -1,5 +1,6 @@
 #include "../ecl/ecl_test_fixtures.hpp"
 #include "game/StageBattle.hpp"
+#include <algorithm>
 
 using namespace th13;
 
@@ -603,6 +604,171 @@ TEST(retail4475b0_allocates_before_retirement_and_obeys_slot_scan_order) {
         CHECK(!blast.active); CHECK_EQ(blast.clock.current, 0);
         CHECK_EQ(blast.center_x, 40.f); CHECK_EQ(blast.radius, 44.f);
     }
+}
+
+// H-HIT-RETIRE: 00446c8d/004474eb clear shot+0x98 after disabling the
+// record, so a later real .sht allocation may reuse it without the old
+// shot's retirement (00446542, no owner/generation check) clearing it.
+TEST(retail446c8d_generic_hit_clears_slot_before_reallocation) {
+    for (i32 hit_behavior : {0, 3}) {
+        for (i32 old_slot : {0, 255}) {
+            Fixture f; CHECK(f.init());
+            for (int i = 0; i < 19; ++i) CHECK(f.battle.step(f.idle));
+            PlayerShot shot;
+            shot.alive = true; shot.state = 1; shot.generation = 19;
+            shot.hit_behavior = hit_behavior;
+            shot.damage = 10; shot.speed = 8; shot.x = 0; shot.y = 200;
+            shot.angle = 0; shot.registration_slot = old_slot;
+            f.battle.shots.push_back(shot);
+            auto& old_reg = f.battle.damage_registrations[size_t(old_slot)];
+            old_reg = DamageRegistration{};
+            old_reg.active = true; old_reg.flags = 1; old_reg.generation = 19;
+            old_reg.center_x = 0; old_reg.center_y = 200;
+            old_reg.width = old_reg.height = 16; old_reg.angle = 0;
+            old_reg.damage = 10; old_reg.clock.set(9999976);
+            StageEnemy enemy;
+            enemy.life = 100; enemy.position[0] = 0; enemy.position[1] = 200;
+            enemy.hurtbox[0] = enemy.hurtbox[1] = 16;
+            f.battle.sim.enemy_hit(enemy);
+            CHECK_EQ(enemy.life, 90.f);
+            CHECK_EQ(f.battle.shots[0].state, 2);
+            CHECK_EQ(f.battle.shots[0].registration_slot, -1);
+            CHECK_EQ(f.battle.shots[0].damage, 10.f);
+            CHECK_EQ(f.battle.shots[0].speed, hit_behavior == 3 ? 3.f : 1.f);
+            CHECK(!old_reg.active); CHECK_EQ(old_reg.flags & 1u, 0u);
+            CHECK_EQ(old_reg.damage, 0.f);
+            // Boundary: every other record is held active so the next real
+            // allocation must land on the freed slot regardless of whether
+            // the pool cursor names the next or the last used record.
+            for (i32 i = 0; i < 256; ++i) {
+                if (i == old_slot) continue;
+                auto& area = f.battle.damage_registrations[size_t(i)];
+                area = DamageRegistration{};
+                area.active = true; area.flags = 1;
+                area.owner = DamageRegistration::Owner::Area;
+                area.center_x = area.center_y = -100000.f;
+                area.width = area.height = 1;
+            }
+            f.battle.damage_registration_cursor = (old_slot + 255) & 255;
+            ShtShotRecord record;
+            record.interval = 255; record.phase = 0; record.angle = 0;
+            record.speed = 0; record.damage = 10;
+            record.width = record.height = 16;
+            f.battle.sht_shots_loaded = true;
+            f.battle.sht_shots[0].push_back(record);
+            GameInput fire; fire.update(1);
+            CHECK(f.battle.step(fire));
+            CHECK_EQ(f.battle.shots.size(), size_t(2));
+            if (f.battle.shots.size() != size_t(2)) continue;
+            const u32 new_generation = f.battle.shots[1].generation;
+            CHECK_EQ(f.battle.shots[1].state, 1);
+            CHECK_EQ(f.battle.shots[1].registration_slot, old_slot);
+            auto& new_reg = f.battle.damage_registrations[size_t(old_slot)];
+            CHECK(new_reg.active); CHECK_EQ(new_reg.flags & 1u, 1u);
+            CHECK_EQ(new_reg.generation, new_generation);
+            CHECK(new_generation != 19u);
+            f.battle.sht_shots[0].clear();
+            f.battle.shots[0].animation_finished = true;
+            CHECK(f.battle.step(f.idle));
+            CHECK(new_reg.active);
+            CHECK_EQ(new_reg.flags & 1u, 1u);
+        }
+    }
+}
+
+// Stage6 21976: an owner that already left state1 must not keep a stale
+// shot+0x98. 004464d0's later animation retirement has no owner/generation
+// check, so sync must clear the owner pointer when it disables the record;
+// otherwise it can erase a respawn area that reused the slot (native slot15
+// lived 21968..21996 and supplied 17 further hit-score frames).
+TEST(inactive_owner_registration_sync_clears_stale_shot_pointer) {
+    Fixture f; CHECK(f.init()); CHECK(f.battle.step(f.idle));
+    PlayerShot shot;
+    shot.alive = true; shot.state = 2; shot.generation = 19;
+    shot.x = 0; shot.y = 200; shot.registration_slot = 0;
+    f.battle.shots.push_back(shot);
+    auto& old_reg = f.battle.damage_registrations[0];
+    old_reg = DamageRegistration{};
+    old_reg.active = true; old_reg.flags = 1; old_reg.generation = 19;
+    old_reg.owner = DamageRegistration::Owner::Shot;
+    old_reg.center_x = 0; old_reg.center_y = 200;
+    old_reg.width = old_reg.height = 16; old_reg.damage = 15;
+    old_reg.clock.set(30); old_reg.interval = 1; old_reg.threshold = 9999999;
+    CHECK(f.battle.step(f.idle));
+    CHECK(f.battle.shots[0].alive);
+    CHECK_EQ(f.battle.shots[0].registration_slot, -1);
+    CHECK(!old_reg.active);
+
+    old_reg = DamageRegistration{};
+    old_reg.active = true; old_reg.flags = 1;
+    old_reg.owner = DamageRegistration::Owner::Area;
+    old_reg.center_x = 0; old_reg.center_y = 200;
+    old_reg.radius = 56; old_reg.clock.set(30);
+    old_reg.interval = 1; old_reg.damage = 150;
+    old_reg.threshold = 9999999;
+
+    f.battle.shots[0].animation_finished = true;
+    CHECK(f.battle.step(f.idle));
+    CHECK(old_reg.active);
+    CHECK_EQ(old_reg.flags & 1u, 1u);
+}
+
+// H-BEAM-RETIRE: 004471b7 frees the beam record but intentionally leaves
+// shot+0x98 stale; 00446542 later clears the enable bit of a reallocated
+// record with no owner/generation guard.  Preserve that original exception.
+TEST(retail4471b7_beam_termination_keeps_stale_slot_for_retirement) {
+    Fixture f; CHECK(f.init());
+    f.battle.option_count = 0;
+    f.battle.options[0].active = true;
+    f.battle.options[0].x = 10.f; f.battle.options[0].y = 200.f;
+    PlayerShot beam;
+    beam.alive = true; beam.state = 1; beam.generation = 5;
+    beam.type = 2; beam.behavior = 2; beam.hit_behavior = 1;
+    beam.anchor = 1; beam.anchor_power = 0;
+    beam.angle = beam.target_angle = -1.5707964f; beam.speed = 0;
+    beam.width = 0; beam.height = 16; beam.damage = 15;
+    beam.registration_slot = 0;
+    f.battle.shots.push_back(beam);
+    auto& old_reg = f.battle.damage_registrations[0];
+    old_reg = DamageRegistration{};
+    old_reg.active = true; old_reg.flags = 1; old_reg.generation = 5;
+    old_reg.center_x = 10; old_reg.center_y = 200;
+    old_reg.width = 0; old_reg.height = 16; old_reg.angle = -1.5707964f;
+    old_reg.damage = 15; old_reg.clock.set(9999976);
+    for (int i = 0; i < 19; ++i) CHECK(f.battle.step(f.idle));
+    CHECK_EQ(f.battle.shots[0].state, 2);
+    CHECK_EQ(f.battle.shots[0].registration_slot, 0);
+    CHECK(!old_reg.active);
+    for (i32 i = 1; i < 256; ++i) {
+        auto& area = f.battle.damage_registrations[size_t(i)];
+        area = DamageRegistration{};
+        area.active = true; area.flags = 1;
+        area.owner = DamageRegistration::Owner::Area;
+        area.center_x = area.center_y = -100000.f;
+        area.width = area.height = 1;
+    }
+    f.battle.damage_registration_cursor = 255;
+    ShtShotRecord record;
+    record.interval = 255; record.phase = 0; record.angle = 0;
+    record.speed = 0; record.damage = 10;
+    record.width = record.height = 16;
+    f.battle.sht_shots_loaded = true;
+    f.battle.sht_shots[0].push_back(record);
+    GameInput fire; fire.update(1);
+    CHECK(f.battle.step(fire));
+    CHECK_EQ(f.battle.shots.size(), size_t(2));
+    if (f.battle.shots.size() != size_t(2)) return;
+    const u32 new_generation = f.battle.shots[1].generation;
+    CHECK_EQ(f.battle.shots[1].state, 1);
+    CHECK_EQ(f.battle.shots[1].registration_slot, 0);
+    auto& new_reg = f.battle.damage_registrations[0];
+    CHECK(new_reg.active); CHECK_EQ(new_reg.flags & 1u, 1u);
+    CHECK_EQ(new_reg.generation, new_generation);
+    f.battle.sht_shots[0].clear();
+    f.battle.shots[0].animation_finished = true;
+    CHECK(f.battle.step(f.idle));
+    CHECK(!new_reg.active);
+    CHECK_EQ(new_reg.flags & 1u, 0u);
 }
 
 int main() { return th13test::run_all("player shot birth order"); }

@@ -137,10 +137,17 @@ struct FadeFixture {
                th13::test::load_bank(manager, 5, empty) &&
                th13::test::load_bank(manager, 6, player_bank);
     }
-    // One presentation frame: sync, direct-draw pass 0, flush.
+    // One production frame: sync (Update 20) → main chain (Update 34,
+    // 0x46f170) → post-chain hook → draw schedule layers 11/13 (priorities
+    // 23/27). The shot/fade VM is a registered main-chain member now, so the
+    // direct pass-0 draw no longer submits it.
     bool frame() {
         graphics.fades.clear();
-        if (!presentation->sync(battle, 0) || !presentation->draw(0)) return false;
+        if (!presentation->sync(battle, 0)) return false;
+        if (!manager.update(false)) return false;
+        if (!presentation->draw(0)) return false;
+        if (!renderer.draw_layer(manager.registry.layer(11))) return false;
+        if (!renderer.draw_layer(manager.registry.layer(13))) return false;
         renderer.flush();
         return presentation->error().empty();
     }
@@ -277,6 +284,39 @@ TEST(out_of_bounds_death_releases_without_fade) {
     CHECK(!fixture.battle.shots[0].alive);
     CHECK(fixture.frame());
     CHECK(fixture.graphics.fades.empty());
+}
+
+// Production step_shots compacts dead shots at the end of every step, so the
+// dead+fade branch is only observable when a caller still holds a dead entry.
+// Exercise it directly: the corpse pool must keep the registered handle as a
+// main-chain member (not an owned VM copy) and move it through that handle.
+TEST(dead_shot_visible_to_sync_enters_the_registered_corpse_pool) {
+    FadeFixture fixture;
+    CHECK(fixture.init());
+    fixture.battle.shots.push_back(fixture.shot(5, 190, 200));
+    CHECK(fixture.frame());  // bind + flight tick
+    const u32 handle = fixture.manager.registry.ordered_handle(false, 0);
+    CHECK(handle != 0);
+    // 0x446bf0 hit semantics: VM+0x4a0=1, death pose at the current position.
+    fixture.battle.shots[0].alive = false;
+    CHECK(fixture.frame());
+    CHECK_EQ(fixture.graphics.fades.size(), size_t(1));
+    if (fixture.graphics.fades.empty()) return;
+    CHECK_EQ(fixture.graphics.fades[0].layer, 13);
+    CHECK_NEAR(fixture.graphics.fades[0].x, 190.0f, 0.001f);
+    CHECK(fixture.manager.registry.find(handle) != nullptr);
+    // Corpse drift writes through the registered handle: 24*0.125 = 3/frame.
+    CHECK(fixture.frame());
+    CHECK_EQ(fixture.graphics.fades.size(), size_t(1));
+    if (fixture.graphics.fades.empty()) return;
+    CHECK_NEAR(fixture.graphics.fades[0].x, 193.0f, 0.001f);
+    CHECK(fixture.manager.registry.find(handle) != nullptr);
+    // op1 at label-relative time 22 self-destructs the VM on the 20th frame
+    // after the hit; the main chain reclaims it and the corpse pool drops the
+    // now-invalid handle (0x4464d0's 0x46fb90 lookup failure).
+    for (i32 frame = 0; frame < 19; ++frame) CHECK(fixture.frame());
+    CHECK(fixture.graphics.fades.empty());
+    CHECK(fixture.manager.registry.find(handle) == nullptr);
 }
 
 }  // namespace

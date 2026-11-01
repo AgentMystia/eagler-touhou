@@ -491,6 +491,38 @@ TEST(bomb_normal_edge_still_consumes_one_stock) {
     CHECK(f.battle.bomb_timer > 0);
 }
 
+// 00443240 case1：Bomb 分派(0040a540)先于移动(00442960)，而 0xa2b4 的
+// 0.2 倍率由 Marisa Bomb 的逐帧更新(0040a860，param_1[7] < 0x12d)写入，
+// 并在 00443240 末尾复位 1.0f。因此按键当帧仍是常速，减速从下一帧起。
+TEST(marisa_bomb_slow_multiplier_starts_on_the_frame_after_the_press) {
+    Fixture f(nullptr, 2, 100, false, 99, 100, "pl02a.sht", 1);
+    CHECK(f.loaded);
+    if (!f.loaded) return;
+    for (int i = 0; i < 70; ++i) CHECK(f.step(0, 0));  // 00443240 case0 入场 60 帧
+    const i32 before_press = f.battle.pos_fx;
+    CHECK(f.step(0x80u, 0x02u));  // 同一帧按下 Bomb 并向右
+    const i32 press_frame = f.battle.pos_fx - before_press;
+    CHECK_EQ(press_frame, f.battle.speed_orth);
+    const i32 before_slow = f.battle.pos_fx;
+    CHECK(f.step(0x80u, 0));
+    const i32 slow_frame = f.battle.pos_fx - before_slow;
+    CHECK_EQ(slow_frame, i32(float(f.battle.speed_orth) * 0.2f));
+}
+
+// 反向对照：非 Marisa 不读 0xa2b4 的 0.2 倍率，Bomb 后下一帧仍常速。
+TEST(reimu_bomb_keeps_full_speed_on_the_frame_after_the_press) {
+    Fixture f(nullptr, 2, 100, false, 99, 100, "pl02a.sht", 0);
+    CHECK(f.loaded);
+    if (!f.loaded) return;
+    for (int i = 0; i < 70; ++i) CHECK(f.step(0, 0));
+    const i32 before_press = f.battle.pos_fx;
+    CHECK(f.step(0x80u, 0x02u));
+    CHECK_EQ(f.battle.pos_fx - before_press, f.battle.speed_orth);
+    const i32 before_next = f.battle.pos_fx;
+    CHECK(f.step(0x80u, 0));
+    CHECK_EQ(f.battle.pos_fx - before_next, f.battle.speed_orth);
+}
+
 TEST(bomb_zero_stock_rejected) {
     Fixture f(nullptr, 0);
     CHECK(f.loaded);

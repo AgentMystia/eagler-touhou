@@ -133,7 +133,11 @@ struct SwitchHarness {
     }
 
     static bool drawn(const AnmVm* vm) {
-        return vm && vm->visible && (vm->visual.color >> 24) != 0;
+        // 原版绘制门（FUN_0046a150 / FUN_00469b10）要求 vm+0x18 bit0 与 bit1
+        // 同时置位；00470030 只清 bit1，bit0/visible 保留。旧检测只看
+        // visible+alpha，会把「脚本可见但绘制使能已清」误判为在绘。
+        return vm && vm->visible && (vm->visual.flags & 3u) == 3u &&
+               (vm->visual.color >> 24) != 0;
     }
 
     PortraitFrame observe(i32 character) {
@@ -312,6 +316,8 @@ TEST(character_switch_keeps_uncleared_tags_hidden) {
             AnmVm* tag = h.clear_tag(c);
             CHECK(tag != nullptr);
             CHECK(!SwitchHarness::drawn(tag));
+            CHECK(tag->visible);                    // 0x470030 保留 bit0
+            CHECK_EQ(tag->visual.flags & 2u, 0u);   // 绘制使能已清
             CHECK_EQ(tag->pending_interrupt, 0);
         }
     }

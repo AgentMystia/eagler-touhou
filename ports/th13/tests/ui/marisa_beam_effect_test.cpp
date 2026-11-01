@@ -109,20 +109,27 @@ TEST(shot_birth_initializes_before_its_separate_manager_update) {
     const auto before = random.index();
     CHECK(presentation.initialize_player_shot(shot, 0));
     CHECK_EQ(random.index(), before);
-    CHECK_EQ(animations.registry.count(), 0u); // parent is manually scheduled
+    // 0x445c40: the birth path itself allocates, template-copies, primes one
+    // tick and tail-inserts (0x46f3f0), so the VM is registered immediately.
+    CHECK_EQ(animations.registry.count(), 1u);
     // Repeated observation of the already initialized shot must not tick it.
     CHECK(presentation.initialize_player_shot(shot, 0));
     CHECK_EQ(random.index(), before);
-    CHECK_EQ(animations.registry.count(), 0u);
+    CHECK_EQ(animations.registry.count(), 1u);
     CHECK(load_bank(animations, 4, synthetic_anm(1, trivial_scripts(1))));
     CHECK(load_bank(animations, 5, synthetic_anm(1, trivial_scripts(1))));
     StageBattle battle;
     battle.player_phase = StageBattle::PlayerPhase::Dying;
     battle.shots.push_back(shot);
+    // 0x4464d0 semantics: sync only writes the live pose; the chain tick that
+    // advances the script (and spawns the script-12 child) is the main-pool
+    // update, which runs after sync in the production frame order.
     CHECK(presentation.sync(battle, 0));
+    CHECK_EQ(random.index(), before);
+    CHECK(animations.update(false));
     CHECK_EQ(random.index(), before + 2);
-    CHECK_EQ(animations.registry.count(), 1u);
-    auto* child = animations.registry.find(animations.registry.ordered_handle(false, 0));
+    CHECK_EQ(animations.registry.count(), 2u);
+    auto* child = animations.registry.find(animations.registry.ordered_handle(false, 1));
     CHECK(child != nullptr);
     if (child) CHECK_EQ(child->source_script, 12);
 }
