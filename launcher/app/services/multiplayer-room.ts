@@ -33,6 +33,7 @@ import {
 } from '../../src/launcher/multiplayer-runtime-options.mts';
 import { recommendMultiplayerInputTiming } from '../../src/launcher/multiplayer-input-timing.mts';
 import {th09CharacterLoadout} from '../../src/launcher/th09-room-stats.mjs';
+import {th09RatingSettled} from './th09-ratings';
 import {
   parseMeasuredNetplayTiming,
   resolveAdonisPredictionReserve,
@@ -45,6 +46,7 @@ import type { DirectorySocket } from './lobby-directory';
 import { errorText } from './error-text';
 import {isAbortError} from './abort-signals';
 import type {RoomActionSound} from './room-action-audio';
+import type {RuntimeService} from './runtime';
 
 export type RoomSocket = DirectorySocket & {
   addEventListener(type: 'open', listener: () => void): void;
@@ -138,6 +140,7 @@ export interface MultiplayerRoomPorts {
   ): void | Promise<void>;
   isLaunched(): boolean;
   canReuseRuntime?(): boolean;
+  runtime?(): RuntimeService | null;
   routes: {
     restore(input: { product: MultiplayerProductId; code: string; fromDirectory: boolean }): void;
     enter(input: { product: MultiplayerProductId; code: string; created: boolean }): void;
@@ -209,6 +212,23 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
   let movementDecision: Promise<boolean> | null = null;
   let preparedRuntimeGeneration: string | undefined;
   let runtimeVersionsSupported = false;
+  let runReturnSupported = false;
+  let unsubscribeRoomReturn: (() => void) | null = null;
+  let returnedRun: {epoch: number; serial: number; clientId: string; player: number; returned: boolean; sentSocket: RoomSocket | null} | null = null;
+  function clearRoomReturn() {
+    unsubscribeRoomReturn?.();
+    unsubscribeRoomReturn = null;
+    returnedRun = null;
+  }
+  function reportRoomReturn() {
+    const run = returnedRun;
+    if (!run?.returned || !room || !current(run.epoch) || !runReturnSupported || !state.connected ||
+        !socket || socket.readyState !== 1 || run.sentSocket === socket ||
+        state.startSerial !== run.serial || room?.phase === 'lobby' ||
+        clientId !== run.clientId || room.seats?.[run.player]?.clientId !== run.clientId) return;
+    socket.send(JSON.stringify({type: 'run-returned', serial: run.serial}));
+    run.sentSocket = socket;
+  }
   let pendingLoadout: { socket: RoomSocket | null; seat: number; index: number } | null = null;
   let reportedSocket: RoomSocket | null = null,
     reportedResourceKey = '',
@@ -253,6 +273,7 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
         ...(product==='th05mp'?{initialSpares:room.initialSpares,initialBombs:room.initialBombs}:{}),
         visibility: room.visibility,
         disableCheatMovement: room.disableCheatMovement,
+        unrated: room.unrated,
         disableLocalChargePriority: room.disableLocalChargePriority,
         chapterThreshold: room.chapterThreshold,
         challengeMode: room.challengeMode,
@@ -520,6 +541,7 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
         intent,
         visibility: room.visibility,
         disableCheatMovement: room.disableCheatMovement,
+        unrated: room.unrated,
         disableLocalChargePriority: room.disableLocalChargePriority,
         chapterThreshold: room.chapterThreshold,
         ...(product==='th19mp'?{th19Rules:room.th19Rules}:{}),
@@ -550,6 +572,7 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
     state.controlModesSupported = false;
     state.globalRoomCodes = false;
     runtimeVersionsSupported = false;
+    runReturnSupported = false;
     ports.network.reset(reconnecting);
     registeredName = false;
     socket = next;
@@ -627,8 +650,9 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
         }
         return;
       }
-      if (['quick-chat','free-chat','chat-history','chat-retract','chat-status','chat-result'].includes(String(message.type))) {
+      if (['quick-chat','free-chat','chat-history','chat-retract','chat-status','chat-result','th09-rating'].includes(String(message.type))) {
         ports.quickChat?.receive(message);
+        if (message.type === 'th09-rating' && typeof window !== 'undefined') window.dispatchEvent(new Event(th09RatingSettled));
         return;
       }
       if (message.type === 'room-product' && ports.routes.switchProduct && room &&
@@ -659,6 +683,7 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
         if (record(message.roomDirectory)?.controlModes === true)
           state.controlModesSupported = true;
         if (record(message.roomDirectory)?.runtimeVersions === true) runtimeVersionsSupported = true;
+        if (record(message.roomDirectory)?.runReturn === true) runReturnSupported = true;
         intent = 'join';
         ports.routes.settleInvite();
         const probe = record(message.roomProbe);
@@ -666,6 +691,7 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
           void ports.network.receive({ type: 'room-probe-config', iceServers: probe.iceServers });
         state.startSerial = Math.max(state.startSerial, Number(record(message.room)?.startSerial) || 0);
         applySnapshot(message.room);
+        reportRoomReturn();
         // Reconnecting players may have missed the one-shot start message.
         // A spectator still needs explicit admission before loading its stream.
         if (room?.phase === 'starting' && state.seat != null) void launch(state.startSerial);
@@ -760,6 +786,7 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
     next.addEventListener('error', () => {});
   }
   function resetRoom() {
+    clearRoomReturn();
     state.connectionDetail = undefined;
     settingsReloadPending = false;
     ownerController.abort();
@@ -835,6 +862,7 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
       created: created || !!saved?.room.created,
       visibility: saved?.room.visibility ?? (invite.v === 'private' ? 'private' : 'public'),
       disableCheatMovement: saved?.room.disableCheatMovement ?? invite.c === true,
+      ...(product === 'th09mp' && (saved?.room.unrated ?? invite.u) ? {unrated: true} : {}),
       ...(product === 'th09mp' ? {disableLocalChargePriority:saved?.room.disableLocalChargePriority ?? false} : {}),
       chapterThreshold: saved?.room.chapterThreshold,
       ...(product==='th19mp'?{th19Rules:[...(saved?.room.th19Rules??TH19_VERSUS_RULES)]}:{}),
@@ -1066,7 +1094,7 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
     patch: Partial<
       Pick<
         MultiplayerRoomState,
-        | 'playerCount' | 'difficulty' | 'visibility' | 'disableCheatMovement' | 'challengeMode' | 'disableLocalChargePriority'
+        | 'playerCount' | 'difficulty' | 'visibility' | 'disableCheatMovement' | 'challengeMode' | 'disableLocalChargePriority' | 'unrated'
         | "chapterThreshold"
         | 'initialSpares' | 'initialBombs' | 'th19Rules'
       >
@@ -1080,10 +1108,12 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
       (patch.visibility !== undefined ||
         patch.disableCheatMovement !== undefined ||
         patch.disableLocalChargePriority !== undefined ||
+        patch.unrated !== undefined ||
         patch.challengeMode !== undefined)
     )
       return;
     if(patch.disableLocalChargePriority !== undefined && product !== 'th09mp')return;
+    if (patch.unrated !== undefined && (product !== 'th09mp' || room.unrated === undefined)) return;
     if(patch.th19Rules!==undefined&&(product!=='th19mp'||room.phase!=='lobby'||!validTh19VersusRules(patch.th19Rules)))return;
     if((patch.initialSpares!==undefined||patch.initialBombs!==undefined)&&(product!=='th05mp'||room.phase!=='lobby'||!validTh05InitialSpares(patch.initialSpares??room.initialSpares??TH05_INITIAL_STOCK.spares)||!validTh05InitialBombs(patch.initialBombs??room.initialBombs??TH05_INITIAL_STOCK.bombs)))return;
     if (
@@ -1129,6 +1159,7 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
       ...(product==='th05mp'?{initialSpares:patch.initialSpares??room.initialSpares??TH05_INITIAL_STOCK.spares,initialBombs:patch.initialBombs??room.initialBombs??TH05_INITIAL_STOCK.bombs}:{}),
       visibility: patch.visibility ?? room.visibility ?? 'public',
       disableCheatMovement: patch.disableCheatMovement ?? !!room.disableCheatMovement,
+      ...(patch.unrated !== undefined ? {unrated: patch.unrated} : {}),
       ...(product === 'th09mp' ? {disableLocalChargePriority:patch.disableLocalChargePriority ?? !!room.disableLocalChargePriority} : {}),
       challengeMode: patch.challengeMode ?? !!room.challengeMode,
       prankMode: false,
@@ -1300,6 +1331,10 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
         iceServers: ports.settings().iceServers,
         preferTurn: state.preferTurn,
         loadouts,
+        // Relay-decided runs may only fall back to the WebSocket gameplay
+        // relay when this deployment advertised the capability in its lobby
+        // snapshot; the transport rejects a relay route otherwise.
+        allowWebsocketFallback: room.gameplayRelayFallback === true,
       },
       config,
     );
@@ -1336,6 +1371,18 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
       if (state.seat != null && !(await ensureMovementAllowed())) return;
       if (!owned.isCurrent()) return;
       const options = runtimeOptions();
+      clearRoomReturn();
+      const runtime = ports.runtime?.(), runtimeEpoch = runtime?.getSnapshot().epoch;
+      if (runtime && runtimeEpoch != null && state.seat != null && !state.spectatorRequested) {
+        const run = {epoch, serial: state.startSerial, clientId, player: state.seat, returned: false, sentSocket: null as RoomSocket | null};
+        returnedRun = run;
+        unsubscribeRoomReturn = runtime.subscribeRoomReturns(returned => {
+          if (returnedRun !== run || !owned.isCurrent() || returned.epoch !== runtimeEpoch ||
+              returned.netplayUrl !== options.netplayUrl || returned.player !== run.player || returned.spectator) return;
+          run.returned = true;
+          reportRoomReturn();
+        });
+      }
       await ports.launch({ ...owned, runtimeOptions: options, snapshot });
       if (owned.isCurrent() && state.spectatorRequested)
         launchedSpectatorSerial =
@@ -1725,6 +1772,7 @@ export function createMultiplayerRoom(ports: MultiplayerRoomPorts) {
     },
     dispose() {
       if (disposed) return;
+      clearRoomReturn();
       // Document teardown must retain the room session for reload, like main's
       // pagehide disconnect. Explicit leave/reset owns session deletion.
       ownerController.abort();

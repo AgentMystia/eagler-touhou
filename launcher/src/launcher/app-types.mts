@@ -68,6 +68,7 @@ export interface LauncherState {
 }
 
 export interface MultiplayerRoomState {
+  unrated?: boolean;
   th19Rules?: number[];
   initialSpares?: number;
   initialBombs?: number;
@@ -89,6 +90,7 @@ export interface MultiplayerRoomState {
   predictionLimit?: number;
   settingsVersion?: number;
   phase?: 'lobby' | 'starting' | 'running';
+  gameplayRelayFallback?: boolean;
   created: boolean;
   connection?: MultiplayerConnectionState;
   seats?: NormalizedMultiplayerLobbySnapshot['seats'] | null;
