@@ -297,7 +297,11 @@ export function installPilot({ seat }) {
       retainedX = move & 64 ? -1 : move & 128 ? 1 : 0,
       retainedY = move & 16 ? -1 : move & 32 ? 1 : 0;
     let best = null;
-    const horizons = [1, 3, 6, 10, 15, 20];
+    // Every frame through 10 so a fast bullet cannot cross the hitbox between
+    // samples; later frames only steer away from what is coming.
+    const horizons = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 17, 20];
+    const weights = horizons.map(t => t <= 4 ? 1 : t <= 10 ? 0.6 : 0.3);
+    const sparse = [1, 3, 6, 10].map(t => horizons.indexOf(t));
     const predicted = bullets.map(b => horizons.map(t =>
       [b.x + b.vx * t, b.y + b.vy * t]));
     for (const speed of [2, 4.5])
@@ -313,7 +317,8 @@ export function installPilot({ seat }) {
           const fallbackPath = t => [Math.max(-184, Math.min(184, s.x + vx * t)),
             Math.max(32, Math.min(432, s.y + vy * t))];
           const path = prediction.points ? prediction.points.slice(0, horizons.length) : horizons.map(fallbackPath);
-          let nearestSquared = 200 * 200;
+          let nearestSquared = 200 * 200, imminentSquared = 200 * 200;
+          const pointNearest = horizons.map(() => 200 * 200);
           for (let k = 0; k < predicted.length; ++k)
             for (let point = 0; point < horizons.length; ++point) {
               const dx = predicted[k][point][0] - path[point][0],
@@ -322,18 +327,23 @@ export function installPilot({ seat }) {
                 clearance = b.circle ? Math.hypot(dx, dy) - b.rx :
                   Math.hypot(Math.max(0, Math.abs(dx) - b.rx),
                     Math.max(0, Math.abs(dy) - b.ry));
-              nearestSquared = Math.min(nearestSquared, Math.max(0, clearance) ** 2);
+              const squared = Math.max(0, clearance) ** 2;
+              if (squared < pointNearest[point]) pointNearest[point] = squared;
+              nearestSquared = Math.min(nearestSquared, squared);
+              if (horizons[point] <= 3) imminentSquared = Math.min(imminentSquared, Math.max(0, clearance) ** 2);
             }
           const [px, py] = prediction.points ? prediction.points[horizons.length] : fallbackPath(8);
-          let cost =
-            10000 / Math.max(1, nearestSquared) +
-            Math.hypot(px - targetX, (py - targetY) * 1.5) * 0.007;
+          let cost = Math.hypot(px - targetX, (py - targetY) * 1.5) * 0.007;
+          for (let point = 0; point < horizons.length; ++point)
+            cost += weights[point] * 3000 / Math.max(1, pointNearest[point]);
+          if (imminentSquared < 1) cost += 1000;
+
           let laserDanger = false;
           let bodyDanger = false;
           // Use the same live collision geometry/gates as StageBattle. Enemy
           // motion is observed, so a moving body cannot look like empty space.
           for (const enemy of bodies)
-            for (let point = 0; point < 4; ++point) {
+            for (const point of sparse) {
               const t = horizons[point], ex = enemy.x + enemy.dx * t,
                 ey = enemy.y + enemy.dy * t;
               let clearance;
@@ -356,7 +366,7 @@ export function installPilot({ seat }) {
           if (px < -168 || px > 168 || py > 420 || py < 80) cost += 0.3;
           cost += Math.max(0, Math.abs(px) - 145) * 0.035;
           if (s.invulnerable === 0 && !team.active)
-            for (let point = 0; point < 4; ++point) {
+            for (const point of sparse) {
               const [x, y] = path[point];
               if (m._th13_debug_mp_laser_contact(x, y, 5)) {
                 cost += 100;
@@ -370,7 +380,7 @@ export function installPilot({ seat }) {
             cost += Math.hypot(px - targetX, py - targetY) * 0.05;
           if (state.direction === (dx + 1) * 3 + dy + 1) cost -= 0.03;
           if (!best || cost < best.cost)
-            best = { cost, nearest: Math.sqrt(nearestSquared), laserDanger, bodyDanger, dx, dy, speed,
+            best = { cost, nearest: Math.sqrt(nearestSquared), imminent: Math.sqrt(imminentSquared), laserDanger, bodyDanger, dx, dy, speed,
               prediction: {mode:prediction.mode, reason:prediction.reason || null,
                 sha:prediction.sha || null, unknown:prediction.unknown || [],
                 focus:prediction.focus ?? null, dx, dy, shift:speed === 2,
@@ -387,6 +397,21 @@ export function installPilot({ seat }) {
     }
     let mask = 1 | dialogueMask | move;
     const deathbomb = s.phase === 4;
+    // When even the best of the 18 candidate paths has no clearance within
+    // three frames, spend trance or a bomb before the hit instead of relying
+    // on the 16-frame deathbomb window alone.
+    const cornered = !deathbomb && s.phase === 1 && s.invulnerable === 0 && !team.active &&
+      !hazards.dialogue && frame - bombAt > 24 &&
+      (best.imminent < 0.5 || (best.laserDanger && best.nearest < 4) || best.bodyDanger);
+    if (cornered) {
+      const press = team.slot >= 600 ? 2048 : s.bombs > 0 ? 2 : 0;
+      if (press && !(state.mask & press)) {
+        mask |= press;
+        bombAt = frame;
+        emit({ type: "defend", stage, frame, nearest: best.nearest, imminent: best.imminent,
+          laserDanger: best.laserDanger, bodyDanger: best.bodyDanger, deathbomb, mask });
+      }
+    }
     // Predicted paths select movement; spend finite defense resources only
     // after the real production hit opens the 16-frame deathbomb window.
     if (deathbomb) {
