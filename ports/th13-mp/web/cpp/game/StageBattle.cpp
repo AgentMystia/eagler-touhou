@@ -1036,8 +1036,8 @@ void StageBattle::step_shots() {
             shot.x = round001(float(shot.x + vx));
             shot.y = round001(float(shot.y + vy));
         }
-        // The center bounds belong only to the animation-free diagnostic path.
-        // 004464d0 clips real SHT shots by ANM geometry, with an age gate.
+        // script<0 没有 ANM 四角，出界只看中心盒。真实 SHT 弹先走
+        // consume_player_shot_geometry 的四角；四角缺失时同一中心盒兜底。
         if (shot.script < 0 &&
             (shot.y < -32.0f || shot.y > 480.0f || shot.x < -224.0f || shot.x > 224.0f))
             shot.alive = false;
@@ -1090,22 +1090,34 @@ void StageBattle::set_player_shot_geometry(i32 slot, i32 age, i32 script, u32 ge
 void StageBattle::consume_player_shot_geometry() {
     for (size_t slot = 0; slot < shots.size(); ++slot) {
         auto& shot = shots[slot];
-        if (!shot.alive || shot.type == 2 || slot >= shot_geometry_.size()) continue;
-        const auto& snapshot = shot_geometry_[slot];
-        if (!snapshot.valid || snapshot.slot != i32(slot) ||
-            snapshot.generation != shot.generation || snapshot.script != shot.script ||
-            snapshot.age != shot.age - 1 || snapshot.age <= 9) continue;
+        if (!shot.alive || shot.type == 2) continue;
         // 004464d0 culls at 00446531 before LAB_00446619 writes the current
         // node translation into its ANM VM. Therefore these are the
         // previous sync's screen-space corners; do not transform them through
         // the post-step battle position a second time.
-        bool outside = true;
-        for (const auto& vertex : snapshot.quad) {
-            const bool vertex_outside = vertex.x <= 128.0f || vertex.x >= 512.0f ||
-                                        vertex.y <= 16.0f || vertex.y >= 464.0f;
-            outside = outside && vertex_outside;
+        bool matched = false;
+        if (slot < shot_geometry_.size()) {
+            const auto& snapshot = shot_geometry_[slot];
+            if (snapshot.valid && snapshot.slot == i32(slot) &&
+                snapshot.generation == shot.generation && snapshot.script == shot.script &&
+                snapshot.age == shot.age - 1 && snapshot.age > 9) {
+                matched = true;
+                bool outside = true;
+                for (const auto& vertex : snapshot.quad) {
+                    const bool vertex_outside = vertex.x <= 128.0f || vertex.x >= 512.0f ||
+                                                vertex.y <= 16.0f || vertex.y >= 464.0f;
+                    outside = outside && vertex_outside;
+                }
+                if (outside) shot.alive = false;
+            }
         }
-        if (outside) shot.alive = false;
+        // 四角快照对不上时（换关后主链钩子丢失、席位快照没进窗口、回滚
+        // 重放没重跑表现层），出界死法整段失效，未命中弹留在向量里直到
+        // 内存中止。中心盒与 script<0 路径相同，龄门与四角相同（步进后
+        // age-1 > 9）。匹配到的四角仍优先：中心已出盒但有一角在场内的弹保留。
+        if (!matched && shot.alive && shot.age > 10 &&
+            (shot.y < -32.0f || shot.y > 480.0f || shot.x < -224.0f || shot.x > 224.0f))
+            shot.alive = false;
     }
 }
 
