@@ -2954,6 +2954,9 @@ bool StageBattle::step_transition(const GameInput& input) {
     if (seat_count >= 2) {
         seat_inputs[size_t(mp_local_seat)] = input;
         advance_mp_protection_and_ghosts();
+    if (protect_all_seats)
+        for (i32 seat = 0; seat < seat_count; ++seat)
+            seats[size_t(seat)].invulnerable = std::max(seats[size_t(seat)].invulnerable, 3);
         std::array<bool, 3> deathbomb_prepared{};
         if (!prepare_expired_deathbombs(deathbomb_prepared)) return false;
         const i32 saved_seat = active_seat;

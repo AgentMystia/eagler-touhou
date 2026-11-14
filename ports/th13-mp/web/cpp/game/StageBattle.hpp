@@ -493,6 +493,9 @@ public:
     // 0x42e380/0x438730 的帧内相位因此与原生一致：激光擦弹（0x431a1f →
     // 0x445900）的 max_point+100 先于 kind3 收集（S5 f2725 首差根因）。
     bool defer_item_side = false;
+    // Diagnostic sessions keep every seat's collision window open so scripted
+    // pilots can traverse whole boss cards. Applied inside the logical step.
+    bool protect_all_seats = false;
     void update_items_phase();    // 0x42e380 道具更新 + 道具事件
     void update_spirits_phase();  // 0x438730 神霊更新 + 神霊事件
     // M3：多席收集面（R-I7：每件/每只按最近合格席；单席 = 单元素）。

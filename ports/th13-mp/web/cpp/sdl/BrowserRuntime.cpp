@@ -1877,7 +1877,20 @@ EM_JS(bool, th13_mp_persist_replay, (const unsigned char* bytes, int size,
 #endif
 // 回放模式世界启动（定义在 th13_mp_start 之后；前向声明供其调用）。
 bool mp_start_playback();
+
+// Diagnostic start parameters for performance and soak sessions. All peers of
+// one session must apply the same values before th13_mp_start.
+struct MpBenchStart {
+    th13::i32 stage = 0;
+    th13::i32 spell_slot = -1;
+    bool protect_all_seats = false;
+} mp_bench_start;
 }  // namespace
+
+EMSCRIPTEN_KEEPALIVE void th13_debug_mp_bench_start(unsigned stage, int spell_slot,
+                                                    unsigned protect_all_seats) {
+    mp_bench_start = {th13::i32(stage), th13::i32(spell_slot), protect_all_seats != 0};
+}
 
 // 22 词线格式 → Session::Configure（与 th13_debug_mp_net_configure 同一
 // 下游；生产面直接收 u32 数组，不做 JSON 解析）。
@@ -1974,9 +1987,20 @@ EMSCRIPTEN_KEEPALIVE int th13_mp_start() {
     app->progress.run_mode_flags = 0;
     app->progress.practice_mode = 0;
     app->progress.selected_spell_id = -1;
-    const th13::i32 starting_stage = setup.difficulty == 4 ? 7 : 1;
+    const th13::i32 starting_stage = mp_bench_start.stage > 0 ? mp_bench_start.stage
+                                     : setup.difficulty == 4 ? 7 : 1;
     app->progress.character = th13::i32(setup.selections[0]);
     app->progress.difficulty = th13::i32(setup.difficulty);
+    if (mp_bench_start.spell_slot >= 0) {
+        const auto* card = app->spell_catalog.variant(starting_stage, mp_bench_start.spell_slot,
+                                                      th13::i32(setup.difficulty));
+        if (!card) {
+            last_error = "TH13 multiplayer bench spell card unavailable";
+            return 0;
+        }
+        app->progress.selected_spell_id = card->id;
+        app->progress.run_mode_flags = (app->progress.run_mode_flags & ~0x70u) | 0x20u;
+    }
     if (!app->start_game(starting_stage)) {
         last_error = app->failure;
         return 0;
@@ -1997,6 +2021,7 @@ EMSCRIPTEN_KEEPALIVE int th13_mp_start() {
         last_error = app->failure.empty() ? "TH13 multiplayer begin_run failed" : app->failure;
         return 0;
     }
+    if (app->run) app->run->battle.protect_all_seats = mp_bench_start.protect_all_seats;
     // P5 MP Replay 录制：frame0 前冻结会话身份；Commit 退役确认帧时追加。
     if (!mp_replay_archive) mp_replay_archive = std::make_unique<th13::multiplayer::ReplayArchive>();
     mp_replay_archive->Clear();
