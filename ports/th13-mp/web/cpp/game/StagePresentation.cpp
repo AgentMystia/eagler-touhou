@@ -544,7 +544,7 @@ bool StagePresentation::restore_presentation(const SnapshotData& source,
         auto& fade = shot_fades_[i];
         fade.handle = data.handle;
         fade.generation = data.generation;
-        fade.x = data.x; fade.y = data.y; fade.angle = fade.angle;
+        fade.x = data.x; fade.y = data.y; fade.angle = data.angle;
         fade.drift = data.drift; fade.sine_moving = data.sine_moving;
         fade.sine_motion = data.sine_motion;
         fade.age = data.age;
