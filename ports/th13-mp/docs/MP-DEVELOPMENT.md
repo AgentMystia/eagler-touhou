@@ -90,3 +90,19 @@ InputLanes/NetplayRuntime/SessionSetup）与 `ports/th12-mp/docs/ROLLBACK_CADENC
   进网线路前归一化）；`/savesth13mp` 存储根与 `th13mp_XX.rpy` 前缀。
 - 共用不 fork：RollbackCore/传输/旁观/relay 直接链接 `common/`；发现通用缺口先提
   精确设计 + 跨作品回归，不在作品目录内复制网络栈。
+
+## 落帧处理（慢放而非冻结）
+
+联机沿用原版“落帧时放慢游戏而非停住”的处理，全部只作用于墙钟节奏，不触碰输入、预测、
+回滚与世界状态：
+
+- **追帧**：显示或 CPU 卡顿后留存的帧信用，在回调预算内连续推进至多 4 个逻辑帧
+  （中间帧只做逻辑、不提交 GL，同原版追帧跳绘制）；预算按实测单帧成本估算，不足则让位，
+  超出的时间折算为慢放（`FrameCadence` 债务上限 0.1 s）。
+- **预测压力减速**（`SlowdownGovernor`）：持续预测深度（下一帧与全员确认前沿之距，窗口
+  12）超过 8 帧后，本地时钟按比例拉伸（深度 11 帧达 3 倍上限），把对端落后转成双方一致
+  的平滑慢放，回滚距离不再顶满窗口、预测窗尽的停等随之消失。普通延迟（深度 ≤ 8，
+  约 RTT 250 ms）永不触发。
+- 验证：`tests/multiplayer/pacing_sim_test.cpp` 用生产 `FrameSchedule` / `SlowdownGovernor`
+  在 60 Hz 回调模型下对比开关；`tests/multiplayer/browser/mp-spell-perf.mjs` 在真实
+  浏览器中以 `TH13_GOV=0/1` 对比同一张符卡。

@@ -410,6 +410,7 @@ multiplayer::FrameClock mp_clock;
 multiplayer::SlowdownGovernor mp_governor;
 bool mp_slowdown_enabled = true;
 double mp_step_cost_ms = 0;
+double mp_display_interval_ms = 0, mp_display_last_ms = -1;
 bool mp_work_queued = false;
 u32 mp_work_ticket = 0;
 unsigned mp_tasks_remaining = 0;
@@ -586,8 +587,12 @@ bool mp_tick(float fps, unsigned& simulated, unsigned& attempted, unsigned& roll
         return std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - tick_started).count();
     };
-    constexpr double kMpCallbackBudgetMs = 11.5;
-    constexpr double kMpCatchupBudgetMs = 8.5;
+    // The work budget keeps a 60 Hz display on time. When the display already
+    // runs slower (GPU-bound or throttled), a longer callback costs no cadence,
+    // so the budget grows with the observed interval, up to two vsyncs.
+    const double kMpCallbackBudgetMs = mp_slowdown_enabled
+        ? std::clamp(.5 * mp_display_interval_ms, 11.5, 33.) : 11.5;
+    const double kMpCatchupBudgetMs = kMpCallbackBudgetMs * (8.5 / 11.5);
     constexpr unsigned kMpMaxCatchupSteps = 4;
     struct LogicalDrawReset {
         GraphicsDevice& graphics;
@@ -796,6 +801,14 @@ bool drive_one_frame(double delta, unsigned source = 0) {
         && !multiplayer::session.Spectator() && !mp_playback_pending;
     unsigned ticks;
     if (live_mp) {
+        if (source == 1) {
+            if (mp_display_last_ms >= 0) {
+                const double gap = std::min(begin - mp_display_last_ms, 200.);
+                mp_display_interval_ms = mp_display_interval_ms > 0
+                    ? mp_display_interval_ms + (gap - mp_display_interval_ms) * .25 : gap;
+            }
+            mp_display_last_ms = begin;
+        }
         multiplayer::session.TraceTiming("callback", multiplayer::session.SimFrame(),
                                         mp_schedule.owed(), source);
         double scale = multiplayer::session.IntervalScale();
@@ -881,6 +894,8 @@ void reset_mp_accumulator() {
     mp_schedule.reset();
     mp_governor.reset();
     mp_step_cost_ms = 0;
+    mp_display_interval_ms = 0;
+    mp_display_last_ms = -1;
     mp_clock.reset();
     ++mp_work_ticket;
     mp_work_queued = false;

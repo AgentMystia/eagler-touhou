@@ -17,7 +17,7 @@ using th13::multiplayer::SlowdownGovernor;
 
 constexpr double kInterval = 1000. / 60.;
 constexpr unsigned kWindow = SlowdownGovernor::kWindow;
-constexpr double kCallbackBudget = 11.5, kCatchupBudget = 8.5;
+constexpr double kLegacyBudget = 11.5;
 
 struct Scenario {
     double cost_ms[2] = {2, 2};     // simulation + draw cost per frame
@@ -85,6 +85,9 @@ Metrics run(const Scenario& scenario, double seconds = 40) {
                 peer.schedule.advance(0);
             }
             peer.arrived_seen = arrived(index, now);
+            const double kCallbackBudget = scenario.handling
+                ? std::clamp(.5 * scenario.raf_ms[index], kLegacyBudget, 33.) : kLegacyBudget;
+            const double kCatchupBudget = kCallbackBudget * (8.5 / 11.5);
             double elapsed = 0;
             unsigned steps = 0;
             bool promised = false;
@@ -196,6 +199,19 @@ int main() {
     Scenario display_far; display_far.raf_ms[0] = 66.7; display_far.raf_ms[1] = 40;
     off = both("presents at 15 Hz / 25 Hz", display_far, &on);
     assert(on.speed[0] > .95 && on.speed[1] > .95);
+
+    Scenario crawl; crawl.raf_ms[0] = 700; crawl.raf_ms[1] = 400; crawl.cost_ms[0] = 4; crawl.cost_ms[1] = 4;
+    off = both("presents at 1.4 Hz / 2.5 Hz", crawl, &on);
+    Scenario crawl2 = crawl; crawl2.cost_ms[0] = 24;
+    off = both("1.4/2.5 Hz, peer0 24ms", crawl2, &on);
+    Scenario crawl3 = crawl; crawl3.raf_ms[1] = 700;
+    off = both("1.4/1.4 Hz", crawl3, &on);
+
+    // Display-bound with weighty frames: the longer callback fits inside the
+    // slow display interval, so more logic frames ride on each present.
+    Scenario weighty; weighty.raf_ms[0] = 100; weighty.cost_ms[0] = 6;
+    off = both("peer0 10 Hz, 6ms frames", weighty, &on);
+    assert(on.speed[0] > off.speed[0] * 1.5 && on.speed[1] > off.speed[1] * 1.5);
 
     // Heavy and far.
     Scenario heavy; heavy.cost_ms[0] = 16; heavy.cost_ms[1] = 10; heavy.latency_ms = 80;
