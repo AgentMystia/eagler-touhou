@@ -1027,10 +1027,10 @@ void StageBattle::consume_player_shot_geometry() {
                 if (outside) shot.alive = false;
             }
         }
-        // 四角快照对不上时（换关后主链钩子丢失、席位快照没进窗口、回滚
-        // 重放没重跑表现层），出界死法整段失效，未命中弹留在向量里直到
-        // 内存中止。中心盒与 script<0 路径相同，龄门与四角相同（步进后
-        // age-1 > 9）。匹配到的四角仍优先：中心已出盒但有一角在场内的弹保留。
+        // 四角快照是表现层钩子落的盘；没有匹配快照的弹（钩子未接、
+        // 席位槽位未对齐）仍按 script<0 的中心盒出界，龄门与四角一致
+        // （步进后 age-1 > 9），未命中弹不会永驻向量。匹配到的四角优先：
+        // 中心已出盒但有一角在场内的弹保留。
         if (!matched && shot.alive && shot.age > 10 &&
             (shot.y < -32.0f || shot.y > 480.0f || shot.x < -224.0f || shot.x > 224.0f))
             shot.alive = false;
