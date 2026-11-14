@@ -12,7 +12,7 @@
 // Environment: TH13_STAGE (default 3), TH13_SLOT (spell slot, -1 = whole stage),
 // TH13_PLAYERS (2), TH13_DIFF (3 = Lunatic), TH13_DURATION (seconds, 40),
 // TH13_WARMUP (seconds, 8), TH13_CPU (per-seat CDP CPU throttle, e.g. "4,1"),
-// TH13_DELAY (input delay frames, 0), TH13_PROFILE (seat to CPU-profile, -1 = off),
+// TH13_DELAY (input delay frames, 0), TH13_GOV (1 = frame-rate-drop handling, 0 = off), TH13_PROFILE (seat to CPU-profile, -1 = off),
 // TH13_CHROME_FLAGS (extra space-separated Chrome flags), PLAYWRIGHT_MODULE, CHROME_PATH.
 import {createRequire} from 'node:module';
 import {spawn} from 'node:child_process';
@@ -31,6 +31,7 @@ const diff = Number(env('TH13_DIFF', 3));
 const duration = Number(env('TH13_DURATION', 40));
 const warmup = Number(env('TH13_WARMUP', 8));
 const delay = Number(env('TH13_DELAY', 0));
+const governor = Number(env('TH13_GOV', 1));
 const cpu = env('TH13_CPU', '4,1').split(',').map(Number);
 const profileSeat = Number(env('TH13_PROFILE', -1));
 const chars = [0, 1, 3];
@@ -98,7 +99,7 @@ try {
     pages.push(page);
     sessions.push(session);
     const query = new URLSearchParams({seat, players, chars: chars.join(','), room, relay: relay.url,
-      stage, slot, diff, delay, protect: 1});
+      stage, slot, diff, delay, protect: 1, gov: governor});
     await page.goto(`${server.origin}/bench/mp-bench.html?${query}`);
   }
   const deadline = Date.now() + 240_000;
@@ -137,7 +138,7 @@ try {
     await new Promise(done => setTimeout(done, 5000));
     const states = await Promise.all(pages.map(netState));
     timeline.push(states.map(s => ({sim: s.net.sim_frame, confirmed: s.net.confirmed, stage: s.stageFrame,
-      restores: s.rollback.restores, stall: s.rollback.stall_frames, err: s.net.error})));
+      restores: s.rollback.restores, stall: s.rollback.stall_frames, stretch: s.net.stretch, err: s.net.error})));
     console.log(JSON.stringify(timeline.at(-1)));
     const failed = states.find(s => s.net.error);
     if (failed) throw new Error('session error: ' + failed.net.error);
@@ -163,7 +164,7 @@ try {
     await writeFile(join(out, `profile-seat${profileSeat}.cpuprofile`), JSON.stringify(profile));
     console.log(rows.slice(0, 30).join('\n'));
   }
-  const report = {config: {stage, slot, players, diff, duration, warmup, delay, cpu}, clients: []};
+  const report = {config: {stage, slot, players, diff, duration, warmup, delay, cpu, governor}, clients: []};
   for (let seat = 0; seat < players; ++seat) {
     const page = pages[seat];
     const end = await netState(page);

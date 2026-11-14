@@ -1,5 +1,9 @@
 #pragma once
 #include "../../../portable/sdl/FrameCadence.hpp"
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <eagler/netplay/PendingFrameSchedule.hpp>
 
 namespace th13::multiplayer {
@@ -24,6 +28,53 @@ public:
         return delta;
     }
 };
+// Frame-rate-drop handling for rollback play, the netplay counterpart of the
+// original loop's slowdown: when the remote seats cannot keep up, the local
+// clock stretches in proportion to the sustained prediction depth, so the game
+// slows smoothly and rollbacks stay short instead of the prediction window
+// filling and the game stalling. Wall-clock advice only; inputs, prediction,
+// rollback and world state never depend on it.
+class SlowdownGovernor {
+public:
+    static constexpr unsigned kWindow = 12;      // SessionSetup::MaxRollbackFrames
+    static constexpr unsigned kOnset = 8;        // sustained depth where stretching starts
+    static constexpr unsigned kFull = 11;        // sustained depth at the full stretch
+    static constexpr double kMaxStretch = 3.;    // clock speed floor 20 Hz
+    static constexpr double kAttack = .35, kRelease = .08;
+    static constexpr std::size_t kSpan = 6;      // callbacks in the sustained-depth envelope
+
+    void reset() { *this = SlowdownGovernor{}; }
+    double stretch() const { return stretch_; }
+    unsigned sustained_depth() const { return sustained_; }
+
+    // depth = RollbackCore::PrepareFrame's distance for the next frame: how far
+    // it lies beyond the newest input confirmed by every remote.
+    static unsigned depth_of(std::uint32_t next_frame, std::uint32_t confirmed) {
+        return confirmed == 0xFFFFFFFFu || next_frame <= confirmed ? 0 : next_frame - confirmed;
+    }
+
+    double update(unsigned depth) {
+        recent_[cursor_] = std::min(depth, kWindow);
+        cursor_ = (cursor_ + 1) % kSpan;
+        count_ = std::min(count_ + 1, kSpan);
+        unsigned lowest = recent_[0];
+        for (std::size_t i = 1; i < count_; ++i) lowest = std::min(lowest, recent_[i]);
+        sustained_ = count_ == kSpan ? lowest : 0;
+        const double pressure = sustained_ <= kOnset ? 0.
+            : std::min(1., double(sustained_ - kOnset) / double(kFull - kOnset));
+        const double target = 1. + pressure * (kMaxStretch - 1.);
+        stretch_ += (target - stretch_) * (target > stretch_ ? kAttack : kRelease);
+        if (stretch_ < 1.0005) stretch_ = 1.;
+        return stretch_;
+    }
+
+private:
+    std::array<unsigned, kSpan> recent_{};
+    std::size_t cursor_ = 0, count_ = 0;
+    unsigned sustained_ = 0;
+    double stretch_ = 1.;
+};
+
 // Only elapsed clock time earns new frames. Both display and packet callbacks
 // can spend due credit; replaying history never spends a fresh frame's credit.
 class FrameSchedule {

@@ -2,7 +2,8 @@
 <!-- Production multiplayer session driver for performance runs. It follows the
      production start sequence (th13_mp_configure -> connect -> start -> rAF loop)
      and replaces only the human with a scripted pilot. Query: seat, players,
-     chars, room, relay, stage, slot, diff, protect. -->
+     chars, room, relay, stage, slot, diff, protect, delay, gov (1 = frame-rate-drop
+     handling on, 0 = fixed two-step clock). -->
 <html lang="zh">
 <head>
 <meta charset="utf-8">
@@ -30,6 +31,7 @@ const slot = Number(params.get('slot') ?? '-1');
 const diff = Number(params.get('diff') ?? '3');
 const protect = Number(params.get('protect') ?? '1');
 const delay = Number(params.get('delay') ?? '0');
+const slowdown = Number(params.get('gov') ?? '1');
 const fetchBytes = async path => {
   const response = await fetch(path);
   if (!response.ok) throw new Error('missing asset: ' + path);
@@ -79,6 +81,7 @@ try {
   mod._th13_draw_startup(90);
   if (!mod._th13_initialize()) throw new Error(runtimeError());
   mod._th13_debug_mp_bench_start(stage, slot, protect);
+  mod._th13_debug_mp_slowdown(slowdown);
 
   const SEED = 47932;
   const words = [2, players, seat, diff, SEED, 0x9e37, 0x79b9, delay,

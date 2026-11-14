@@ -407,6 +407,9 @@ bool sample_and_tick(float fps = 60.f, unsigned* simulated = nullptr) {
 // Elapsed monotonic time owns fresh frames, shared by display and receive callbacks.
 multiplayer::FrameSchedule mp_schedule;
 multiplayer::FrameClock mp_clock;
+multiplayer::SlowdownGovernor mp_governor;
+bool mp_slowdown_enabled = true;
+double mp_step_cost_ms = 0;
 bool mp_work_queued = false;
 u32 mp_work_ticket = 0;
 unsigned mp_tasks_remaining = 0;
@@ -585,6 +588,7 @@ bool mp_tick(float fps, unsigned& simulated, unsigned& attempted, unsigned& roll
     };
     constexpr double kMpCallbackBudgetMs = 11.5;
     constexpr double kMpCatchupBudgetMs = 8.5;
+    constexpr unsigned kMpMaxCatchupSteps = 4;
     struct LogicalDrawReset {
         GraphicsDevice& graphics;
         ~LogicalDrawReset() { graphics.logical_drawing = false; }
@@ -687,10 +691,17 @@ bool mp_tick(float fps, unsigned& simulated, unsigned& attempted, unsigned& roll
     }
     // 2) Drain saved, due inputs independently of the replay/clock frontiers,
     // sharing the same callback time budget so rollback + forward work stays <= 16.67ms.
+    // Display or CPU stalls leave several frames of clock credit; spend as many
+    // as the callback budget affords (intermediate frames skip drawing, as the
+    // original loop's catch-up does) and let the governor slow the clock only
+    // beyond that.
+    const unsigned max_steps = mp_slowdown_enabled ? kMpMaxCatchupSteps : 2;
     unsigned steps = 0;
-    while (steps < 2 && !multiplayer::session.Correcting() && !app->exiting) {
+    bool promised = false;
+    while (steps < max_steps && !multiplayer::session.Correcting() && !app->exiting) {
         if (steps == 0 && simulated > 0 && elapsed_ms() >= kMpCallbackBudgetMs) break;
-        if (steps == 1 && elapsed_ms() >= kMpCatchupBudgetMs) break;
+        const double step_started_ms = elapsed_ms();
+        if (steps >= 1 && (!promised || (!mp_slowdown_enabled && elapsed_ms() >= kMpCatchupBudgetMs))) break;
         // After consuming the saved input, the next already-due input can
         // run in this same callback. This keeps the two-frame work budget
         // without sampling future inputs while historical work is pending.
@@ -703,9 +714,13 @@ bool mp_tick(float fps, unsigned& simulated, unsigned& attempted, unsigned& roll
             break;
         }
         const std::uint32_t before = multiplayer::session.SimFrame();
-        const bool can_run_second = steps == 0 &&
+        // A frame hands its image to a successor only when the successor is
+        // affordable: the measured step cost, not the clock, bounds a callback.
+        const bool can_run_second = steps + 1 < max_steps &&
             (before + 1 < multiplayer::session.CaptureFrame() || mp_schedule.owed() > 0) &&
-            elapsed_ms() < kMpCatchupBudgetMs;
+            step_started_ms < kMpCatchupBudgetMs &&
+            (!mp_slowdown_enabled || step_started_ms + 2. * mp_step_cost_ms <= kMpCallbackBudgetMs);
+        promised = can_run_second;
         trace_applied_touch();
         ++attempted;
         if (!app->update(multiplayer::session.MenuInput(), false)) return false;
@@ -718,6 +733,7 @@ bool mp_tick(float fps, unsigned& simulated, unsigned& attempted, unsigned& roll
         if (multiplayer::session.SimFrame() == before) { last_error = "MP frame did not commit"; return false; }  // 落账被拒
         ++steps;
         ++simulated;
+        mp_step_cost_ms += (elapsed_ms() - step_started_ms - mp_step_cost_ms) * .25;
         if (app->pending_load || app->pending_destination >= 0) break;
     }
     mp_schedule.cpu_yield();
@@ -782,8 +798,12 @@ bool drive_one_frame(double delta, unsigned source = 0) {
     if (live_mp) {
         multiplayer::session.TraceTiming("callback", multiplayer::session.SimFrame(),
                                         mp_schedule.owed(), source);
-        const double scale = multiplayer::session.IntervalScale();
-        mp_schedule.advance(delta / (std::isfinite(scale) && scale > 0 ? scale : 1.));
+        double scale = multiplayer::session.IntervalScale();
+        if (!(std::isfinite(scale) && scale > 0)) scale = 1.;
+        if (mp_slowdown_enabled)
+            scale = std::max(scale, mp_governor.update(multiplayer::SlowdownGovernor::depth_of(
+                multiplayer::session.SimFrame(), multiplayer::session.ConfirmedThrough())));
+        mp_schedule.advance(delta / scale);
         multiplayer::session.TraceTiming("clock-due", multiplayer::session.SimFrame(),
                                         mp_schedule.owed(), multiplayer::session.CaptureFrame());
         ticks = 1; // Also service corrections and confirmations without new clock credit.
@@ -859,6 +879,8 @@ int mp_run_frame(double delta_ms) {
 // Configure/Stop 清零时间同步累积（Session::Configure 成功路径调用）。
 void reset_mp_accumulator() {
     mp_schedule.reset();
+    mp_governor.reset();
+    mp_step_cost_ms = 0;
     mp_clock.reset();
     ++mp_work_ticket;
     mp_work_queued = false;
@@ -1399,12 +1421,12 @@ EMSCRIPTEN_KEEPALIVE const char* th13_debug_mp_net_state() {
                   "{\"active\":%d,\"sim_frame\":%u,\"confirmed\":%u,"
                   "\"local_seat\":%u,\"players\":%u,\"can_start\":%d,"
                   "\"connected\":%d,\"simulating\":%d,\"capture_frame\":%u,"
-                  "\"error\":\"%s\"}",
+                  "\"stretch\":%.3f,\"error\":\"%s\"}",
                   session.Active() ? 1 : 0, session.SimFrame(),
                   session.ConfirmedThrough(), unsigned(session.LocalSeat()),
                   session.PlayerCount(), session.CanStart() ? 1 : 0,
                   session.Connected() ? 1 : 0, session.Simulating() ? 1 : 0,
-                  session.CaptureFrame(), session.Error());
+                  session.CaptureFrame(), mp_governor.stretch(), session.Error());
     report = buffer;
     return report.c_str();
 }
@@ -1890,6 +1912,13 @@ struct MpBenchStart {
 EMSCRIPTEN_KEEPALIVE void th13_debug_mp_bench_start(unsigned stage, int spell_slot,
                                                     unsigned protect_all_seats) {
     mp_bench_start = {th13::i32(stage), th13::i32(spell_slot), protect_all_seats != 0};
+}
+
+// A/B switch for the frame-rate-drop handling (default on): off restores the
+// fixed two-step callback and an unstretched clock.
+EMSCRIPTEN_KEEPALIVE void th13_debug_mp_slowdown(unsigned enabled) {
+    th13::sdl::mp_slowdown_enabled = enabled != 0;
+    th13::sdl::mp_governor.reset();
 }
 
 // 22 词线格式 → Session::Configure（与 th13_debug_mp_net_configure 同一
