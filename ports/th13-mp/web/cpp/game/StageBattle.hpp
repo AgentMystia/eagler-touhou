@@ -469,6 +469,7 @@ public:
     static constexpr i32 kKillPower = 8;
     // 灵界（trance）：
     static constexpr i32 kTranceActivateFrame = 30;   // 0x4057f0：任务计时 ≥0x1e
+    static constexpr i32 kTranceExitInvulnerability = 70;  // 0x405b80:0x405d29 push 0x46 → 0x405440
     static constexpr float kTranceDrainPerFrame = 3.0f;  // 0x4aeca8=3.0【drain 点待 asm 复核】
 
     // sht_name：移速 + 弹型来源（回放对拍 = plXXa/b.sht；缺文件时失败）。

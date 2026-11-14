@@ -2570,12 +2570,20 @@ bool StageBattle::end_trance() {
         }
         if (!commit_death_normal()) return false;
     }
-    // 405b80 always finishes with405440(0x46), including normal exit.
-    invulnerable = seat_count >= 2 ? std::max(invulnerable, 70) : 70;
+    // 405b80 always finishes with 405440(0x46) for the player, including
+    // normal exit: player+0x14688 = 70 frames of collision protection.
     trance_task_frame_ = 0;
+    if (!mp_redirect) invulnerable = kTranceExitInvulnerability;
     if (mp_redirect) {
         // owner 席的死亡终态写回权威槽位，窗口恢复调用方席位。
         seats[size_t(death_seat)] = player_state_;    // 拷回权威
+        // R-T2：全员共同退出灵界，每个可操作席位各自获得退出保护；
+        // 不缩短已有更长的个人保护（Bomb、死亡演出、重生）。
+        for (i32 seat = 0; seat < seat_count; ++seat) {
+            auto& state = seats[size_t(seat)];
+            if (state.ghost || state.dead || state.final_death) continue;
+            state.invulnerable = std::max(state.invulnerable, kTranceExitInvulnerability);
+        }
         player_ = &seat_huds[size_t(saved_seat)];
         character_ = seat_characters[size_t(saved_seat)];
         active_seat = saved_seat;
