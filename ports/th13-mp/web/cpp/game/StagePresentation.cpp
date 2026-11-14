@@ -2219,12 +2219,8 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
             // （th13_udMy25 5521-5530 链 dump：原生子 5521 起收缩 t16 自灭，
             // port 子 5522 回绕 t=1）。脚本无 label 的普通弹净效果不变
             // （interrupt 扫描失败即清除 pending），旧回退路径保持直写。
-            // Label 1 is the impact spark (pl00 script14: alpha 192 → 0).
-            // Single-player draws that fade. Hiding the spent projectile, and
-            // every child reached through creation_parent, removed the spark
-            // when a shot hit a boss. Beams still use state 2 for shutdown
-            // and must keep playing; piercing shots stay in state 1.
-            vm->hide_hit_projectile = false;
+            // Label 1 is the impact spark (pl00 script14: alpha 192 → 0) and
+            // draws like single-player; the spent VM is never hidden.
             if (shot.state == 2 && insert_fade_key(fade_key(shot.generation))) {
                 // 446bf0, once per hit generation.
                 if (shot.script >= 0) {

@@ -265,9 +265,8 @@ void AnmRenderer::submit_colored(AnmVm& vm, Topology kind, u32 count, const Vert
 }
 
 int AnmRenderer::draw_vm(AnmVm& vm){
-    // Do not walk creation_parent here. That walk ran only for multiplayer
-    // shots (shot_effect_owner != 0). It hid the impact fade, and it loaded
-    // hide_hit_projectile through a parent that is not necessarily a live VM.
+    // creation_parent is not a liveness-checked pointer; draw decides from
+    // this VM alone, for shots and everything else alike.
     if(anm_draw_probe.enabled){
         ++anm_draw_probe.calls;
         const auto& v0=vm.visual;

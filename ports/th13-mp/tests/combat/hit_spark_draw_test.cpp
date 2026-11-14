@@ -1,10 +1,6 @@
-// 2P shot draw used to walk creation_parent and skip the VM when any
-// ancestor had hide_hit_projectile. That walk is the impact spark (the
-// label-1 fade) disappearing on a boss hit, and it loads a field through
-// a parent pointer before the VM is known to be visible. A parent that is
-// not a live VM faults on that load. After the walk is gone, the same VM
-// is drawn or culled like single-player, and a non-live parent is never
-// loaded.
+// 2P shot draw decides from the VM alone. It never walks creation_parent,
+// so the label-1 impact fade of a spent shot is submitted like
+// single-player, and a parent that is not a live VM is never loaded.
 #include "../harness/test_framework.hpp"
 
 #include "game/AnmRenderer.hpp"
@@ -52,21 +48,18 @@ TEST(shot_owner_past_the_opacity_table_is_not_indexed) {
     CHECK_EQ(renderer.draw(vm), -1);
 }
 
-TEST(hidden_hit_projectile_still_draws) {
+TEST(spent_shot_fade_draws_through_parent) {
     QuietGraphics graphics;
     AnmRenderer renderer(graphics);
     AnmVm parent;
     parent.shot_effect_owner = 1;
-    parent.hide_hit_projectile = true;
     AnmVm vm;
     vm.shot_effect_owner = 1;
-    vm.hide_hit_projectile = true;
     vm.creation_parent = &parent;
     vm.visual.flags = 3;
     vm.visual.color = 0xffc0c0c0u;
     // Pixel snap places the empty quad at -0.5, which the default viewport
-    // culls (0). The old parent walk returned -1 before that, so the spark
-    // never reached the draw. 0 means the fade is no longer rejected.
+    // culls (0); -1 would mean the VM was rejected before the draw.
     CHECK_EQ(renderer.draw(vm), 0);
 }
 
