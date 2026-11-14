@@ -225,8 +225,9 @@ export function installPilot({ seat }) {
         ),
       );
     const hitSize = [2, 3, 3, 3][s.character];
+    // Spawning bullets become live within a few frames; dodge them already.
     const bullets = hazards.bullets
-      .filter(b => b.alive && b.collision_ready && (b.flags & 2) &&
+      .filter(b => b.alive && (b.flags & 2) &&
         Math.abs(b.x - s.x) < 170 && b.y > s.y - 180 && b.y < s.y + 70)
       .map(b => {
         const scale = b.flags & 0x40 ? b.scale : 1,
@@ -302,8 +303,34 @@ export function installPilot({ seat }) {
     const horizons = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 17, 20];
     const weights = horizons.map(t => t <= 4 ? 1 : t <= 10 ? 0.6 : 0.3);
     const sparse = [1, 3, 6, 10].map(t => horizons.indexOf(t));
-    const predicted = bullets.map(b => horizons.map(t =>
-      [b.x + b.vx * t, b.y + b.vy * t]));
+    // Curving and accelerating patterns: carry each bullet's last observed
+    // turn and speed change forward. A reused slot (position does not follow
+    // from the previous velocity) starts over as a straight line.
+    const history = state.bulletHistory || new Map(), nextHistory = new Map();
+    const predicted = bullets.map(b => {
+      const speed = Math.hypot(b.vx, b.vy), angle = Math.atan2(b.vy, b.vx);
+      const prev = history.get(b.index);
+      let turn = 0, accel = 0;
+      if (prev && prev.frame === frame - 1 &&
+          Math.abs(prev.x + prev.vx - b.x) < 3 && Math.abs(prev.y + prev.vy - b.y) < 3) {
+        turn = Math.atan2(Math.sin(angle - prev.angle), Math.cos(angle - prev.angle));
+        accel = speed - prev.speed;
+        if (Math.abs(turn) > 0.2) turn = 0;
+        accel = Math.max(-1, Math.min(1, accel));
+      }
+      nextHistory.set(b.index, {frame, x: b.x, y: b.y, vx: b.vx, vy: b.vy, speed, angle});
+      const points = [];
+      let x = b.x, y = b.y, v = speed, a = angle, k = 0;
+      for (const t of horizons) {
+        for (; k < t; ++k) {
+          a += turn; v = Math.max(0, v + accel);
+          x += Math.cos(a) * v; y += Math.sin(a) * v;
+        }
+        points.push([x, y]);
+      }
+      return points;
+    });
+    state.bulletHistory = nextHistory;
     for (const speed of [2, 4.5])
       for (let dx = -1; dx <= 1; dx++)
         for (let dy = -1; dy <= 1; dy++) {
