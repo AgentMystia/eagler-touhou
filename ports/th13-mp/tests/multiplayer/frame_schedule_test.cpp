@@ -81,14 +81,21 @@ int main() {
     // A burst of depth that a single callback clears is not pressure.
     for (unsigned callback = 0; callback < 40; ++callback)
         assert(governor.update(callback % 3 == 0 ? SlowdownGovernor::kWindow : 2) == 1.);
-    // A full window sustained across callbacks slows the clock toward the cap.
+    // Sustained depth just short of the window slows the clock to the cap.
     double previous = 1.;
     for (unsigned callback = 0; callback < 200; ++callback) {
-        const double stretch = governor.update(SlowdownGovernor::kWindow);
+        const double stretch = governor.update(SlowdownGovernor::kFull);
         assert(stretch >= previous && stretch <= SlowdownGovernor::kMaxStretch);
         previous = stretch;
     }
     assert(previous > SlowdownGovernor::kMaxStretch - .01);
+    // Depth pinned on the window while already fully slowed is both peers
+    // display-bound. The stretch releases instead of holding the cap.
+    unsigned released = 0;
+    for (unsigned callback = 0; callback < 40; ++callback)
+        if (governor.update(SlowdownGovernor::kWindow) < SlowdownGovernor::kMaxStretch - .4)
+            ++released;
+    assert(released > 0);
     // Partial pressure converges to a proportional stretch, not the cap.
     governor.reset();
     const unsigned half = SlowdownGovernor::kOnset + 1;
@@ -107,7 +114,7 @@ int main() {
     assert(governor.stretch() == 1.);
     // A stretched clock earns proportionally fewer frames and never freezes.
     governor.reset();
-    for (unsigned callback = 0; callback < 300; ++callback) governor.update(SlowdownGovernor::kWindow);
+    for (unsigned callback = 0; callback < 300; ++callback) governor.update(SlowdownGovernor::kFull);
     FrameSchedule slowed;
     unsigned earned = 0;
     for (unsigned callback = 0; callback < 600; ++callback) {
@@ -115,4 +122,16 @@ int main() {
         for (unsigned i = 0; i < owed; ++i) { slowed.complete(); ++earned; }
     }
     assert(earned > 600 / SlowdownGovernor::kMaxStretch - 3 && earned < 600 / SlowdownGovernor::kMaxStretch + 3);
+    // A long display gap is credited in full, and frames the callback does not
+    // run remain available. Time beyond two seconds becomes slowdown.
+    FrameSchedule gap;
+    assert(gap.advance_gap(0.5) == 30);
+    gap.network_wait();
+    assert(gap.owed() == 0);
+    assert(gap.advance_gap(0) == 30); // The unrun frames are still owed.
+    for (unsigned i = 0; i < 30; ++i) gap.complete();
+    assert(gap.advance_gap(0) == 0);
+    assert(gap.advance_gap(3.) == 120); // Two seconds of credit, not the whole hitch.
+    gap.reset();
+    assert(gap.advance_gap(0) == 0);
 }

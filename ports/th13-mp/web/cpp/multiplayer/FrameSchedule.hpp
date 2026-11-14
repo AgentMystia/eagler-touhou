@@ -65,13 +65,24 @@ public:
         const double target = 1. + pressure * (kMaxStretch - 1.);
         stretch_ += (target - stretch_) * (target > stretch_ ? kAttack : kRelease);
         if (stretch_ < 1.0005) stretch_ = 1.;
+        // Depth parked on the prediction window while the clock is already at
+        // its slowest is symmetric pressure: both peers are display-bound, and
+        // slowing both does not close the gap. Release so the original catch-up
+        // can spend the display gap. A peer that is genuinely ahead sees its
+        // depth fall once it slows, and never takes this branch.
+        if (sustained_ >= kWindow && stretch_ >= kMaxStretch - .05) ++pinned_;
+        else pinned_ = 0;
+        if (pinned_ > kSpan) {
+            stretch_ = 1. + (stretch_ - 1.) * .5;
+            pinned_ = 0;
+        }
         return stretch_;
     }
 
 private:
     std::array<unsigned, kSpan> recent_{};
     std::size_t cursor_ = 0, count_ = 0;
-    unsigned sustained_ = 0;
+    unsigned sustained_ = 0, pinned_ = 0;
     double stretch_ = 1.;
 };
 
@@ -82,7 +93,7 @@ class FrameSchedule {
     Netplay::PendingFrameSchedule<Cadence> schedule_;
     unsigned offered_ = 0;
 public:
-    void reset() { schedule_.reset(); offered_ = 0; }
+    void reset() { schedule_.reset(); offered_ = 0; gap_cap_ = 0; }
     unsigned owed() const { return offered_; }
     bool retry_pending() const { return schedule_.retry_pending(); }
     bool has_work() const {
@@ -93,17 +104,39 @@ public:
         offered_ = schedule_.advance(elapsed, true);
         return offered_;
     }
+    // Credit the whole display gap, the way the original 1/60 catch-up loop does.
+    // A gap longer than kGapDebtCap becomes slowdown rather than a catch-up
+    // spiral; frames the prediction window cannot run yet stay credited.
+    static constexpr double kGapDebtCap = 2.;
+    unsigned advance_gap(double elapsed) {
+        gap_cap_ = kGapDebtCap;
+        cpu_yield();
+        const double seconds = std::clamp(elapsed, 0., kGapDebtCap);
+        schedule_.debt = std::min(kGapDebtCap, schedule_.debt + seconds);
+        if (schedule_.retry_pending()) schedule_.complete();
+        offered_ = unsigned(std::floor((schedule_.debt + 1.e-9) / Cadence::interval));
+        schedule_.debt = std::max(0., schedule_.debt - offered_ * Cadence::interval);
+        return offered_;
+    }
     void complete() { --offered_; schedule_.complete(); }
     void network_wait() {
         if (!offered_) return;
+        if (gap_cap_ > 0) {
+            schedule_.debt = std::min(gap_cap_, schedule_.debt + offered_ * Cadence::interval);
+            offered_ = 0;
+            return;
+        }
         schedule_.blocked(true);
         offered_ = 0;
     }
     void cpu_yield() {
         if (!offered_) return;
         schedule_.complete();
-        schedule_.debt = std::min(.1, schedule_.debt + offered_ * Cadence::interval);
+        const double cap = gap_cap_ > 0 ? gap_cap_ : .1;
+        schedule_.debt = std::min(cap, schedule_.debt + offered_ * Cadence::interval);
         offered_ = 0;
     }
+private:
+    double gap_cap_ = 0;
 };
 }

@@ -588,12 +588,15 @@ bool mp_tick(float fps, unsigned& simulated, unsigned& attempted, unsigned& roll
             std::chrono::steady_clock::now() - tick_started).count();
     };
     // The work budget keeps a 60 Hz display on time. When the display already
-    // runs slower (GPU-bound or throttled), a longer callback costs no cadence,
-    // so the budget grows with the observed interval, up to two vsyncs.
+    // runs slower, the original loop spends the gap on logic frames and skips
+    // drawing the ones in between, so the budget follows the observed interval.
+    // It never exceeds the gap: a frame that itself costs more than one tick
+    // slows the game instead of scheduling an ever-longer callback.
+    const double display_ms = mp_display_interval_ms > 0 ? mp_display_interval_ms : 16.7;
     const double kMpCallbackBudgetMs = mp_slowdown_enabled
-        ? std::clamp(.5 * mp_display_interval_ms, 11.5, 33.) : 11.5;
+        ? std::clamp(display_ms * .75, 11.5, 500.) : 11.5;
     const double kMpCatchupBudgetMs = kMpCallbackBudgetMs * (8.5 / 11.5);
-    constexpr unsigned kMpMaxCatchupSteps = 4;
+    constexpr unsigned kMpMaxCatchupSteps = 120;
     struct LogicalDrawReset {
         GraphicsDevice& graphics;
         ~LogicalDrawReset() { graphics.logical_drawing = false; }
@@ -803,7 +806,7 @@ bool drive_one_frame(double delta, unsigned source = 0) {
     if (live_mp) {
         if (source == 1) {
             if (mp_display_last_ms >= 0) {
-                const double gap = std::min(begin - mp_display_last_ms, 200.);
+                const double gap = std::min(begin - mp_display_last_ms, 1000.);
                 mp_display_interval_ms = mp_display_interval_ms > 0
                     ? mp_display_interval_ms + (gap - mp_display_interval_ms) * .25 : gap;
             }
@@ -816,7 +819,8 @@ bool drive_one_frame(double delta, unsigned source = 0) {
         if (mp_slowdown_enabled)
             scale = std::max(scale, mp_governor.update(multiplayer::SlowdownGovernor::depth_of(
                 multiplayer::session.SimFrame(), multiplayer::session.ConfirmedThrough())));
-        mp_schedule.advance(delta / scale);
+        if (mp_slowdown_enabled) mp_schedule.advance_gap(delta / scale);
+        else mp_schedule.advance(delta / scale);
         multiplayer::session.TraceTiming("clock-due", multiplayer::session.SimFrame(),
                                         mp_schedule.owed(), multiplayer::session.CaptureFrame());
         ticks = 1; // Also service corrections and confirmations without new clock credit.

@@ -137,8 +137,13 @@ try {
   while (Date.now() - started < duration * 1000) {
     await new Promise(done => setTimeout(done, 5000));
     const states = await Promise.all(pages.map(netState));
-    timeline.push(states.map(s => ({sim: s.net.sim_frame, confirmed: s.net.confirmed, stage: s.stageFrame,
-      restores: s.rollback.restores, stall: s.rollback.stall_frames, stretch: s.net.stretch, err: s.net.error})));
+    const cadence = await Promise.all(pages.map(page => page.evaluate(() => ({
+      raf: window.__bench.raf, rafGapMax: Math.round(window.__bench.rafGapMax),
+      timers: window.__bench.timeouts, timerGapMax: Math.round(window.__bench.timerGapMax || 0)}))));
+    timeline.push(states.map((s, index) => ({sim: s.net.sim_frame, confirmed: s.net.confirmed, stage: s.stageFrame,
+      restores: s.rollback.restores, stall: s.rollback.stall_frames, stretch: s.net.stretch,
+      raf: cadence[index].raf, rafGap: cadence[index].rafGapMax, timerGap: cadence[index].timerGapMax,
+      err: s.net.error})));
     console.log(JSON.stringify(timeline.at(-1)));
     const failed = states.find(s => s.net.error);
     if (failed) throw new Error('session error: ' + failed.net.error);

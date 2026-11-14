@@ -37,7 +37,7 @@ const fetchBytes = async path => {
   if (!response.ok) throw new Error('missing asset: ' + path);
   return new Uint8Array(await response.arrayBuffer());
 };
-window.__bench = {samples: [], failure: null, started: false, begin: 0};
+window.__bench = {samples: [], failure: null, started: false, begin: 0, raf: 0, timeouts: 0, rafGapMax: 0};
 try {
   const Module = await import('/artifacts/sdl3/th13-sdl.mjs');
   const mod = await Module.default({
@@ -135,6 +135,24 @@ try {
   };
   window.__bench.begin = performance.now();
   window.__bench.started = true;
+  let previousRaf = performance.now();
+  const watchRaf = now => {
+    window.__bench.raf += 1;
+    window.__bench.rafGapMax = Math.max(window.__bench.rafGapMax, now - previousRaf);
+    previousRaf = now;
+    requestAnimationFrame(watchRaf);
+  };
+  requestAnimationFrame(watchRaf);
+  // A 100 ms timer alongside rAF. If this stays on time while rAF gaps stretch,
+  // the main thread is free and the compositor is holding the frame.
+  let timerLast = performance.now();
+  window.__bench.timerGapMax = 0;
+  setInterval(() => {
+    const now = performance.now();
+    window.__bench.timeouts += 1;
+    window.__bench.timerGapMax = Math.max(window.__bench.timerGapMax, now - timerLast);
+    timerLast = now;
+  }, 100);
   mod._th13_loop_start();
   status('running seat ' + seat);
 } catch (error) {
