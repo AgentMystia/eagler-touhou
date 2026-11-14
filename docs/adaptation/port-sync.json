@@ -1716,7 +1716,7 @@
     "th13": {
       "normal": "ports/th13",
       "multiplayer": "ports/th13-mp",
-      "base": "a053611f6a46ecd229f8d1954e2f6e1ca5cfbee4",
+      "base": "8a59928db9c9a4d9d409d7e2df93c568406d8018",
       "history": [
         {
           "kind": "manual",
@@ -1871,6 +1871,16 @@
             "ports/th13-mp/web/cpp/sdl/SceneDisplay.hpp"
           ],
           "note": "abec186dc 至 a053611f6 的普通版修改均以 th13/th13-mp 成对提交落地：子弹优先级 23、回放台 ANM 随机、击中火花与复活槽位、四角缺失中心盒退休、换关析构摘下 bullet_update；多人版同提交同源码，无模式专属差异"
+        },
+        {
+          "kind": "manual",
+          "base": "a053611f6a46ecd229f8d1954e2f6e1ca5cfbee4",
+          "source": "8a59928db9c9a4d9d409d7e2df93c568406d8018",
+          "targetHead": "f0cfc4df78c77f1776b43ee2d65cf4fd9b3e44a6",
+          "paths": [
+            "ports/th13-mp/web/cpp/sdl/Application.cpp"
+          ],
+          "note": "fps_text_draw unlink mirrored in th13-mp Application teardown"
         }
       ]
     },
