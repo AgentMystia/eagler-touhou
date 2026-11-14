@@ -187,8 +187,9 @@ TEST(reimu_trance_shot_real_sht_to_boss_and_rollback) {
                 CHECK(vm);
                 if(!vm) continue;
                 CHECK_EQ(vm->pending_interrupt,1);
-                CHECK(vm->hide_hit_projectile);
-                CHECK_EQ(f.renderer.draw(*vm),-1);
+                CHECK(!vm->hide_hit_projectile);
+                // The label-1 fade is the boss-hit spark. Draw must submit it.
+                CHECK_EQ(f.renderer.draw(*vm),0);
             }
             CHECK(f.animations.update(false));
             // pl00.anm script14 label1 is op403(192), then op409(30,0,0).
@@ -200,10 +201,11 @@ TEST(reimu_trance_shot_real_sht_to_boss_and_rollback) {
             };
             std::array<u32,2> initial_alpha{};
             for(size_t i=0;i<handle.size();++i) {
-                const auto* vm=f.animations.registry.find(handle[i]); CHECK(vm);
+                auto* vm=f.animations.registry.find(handle[i]); CHECK(vm);
                 if(vm) {
                     CHECK_EQ(vm->pending_interrupt,0);
-                    CHECK(vm->hide_hit_projectile);
+                    CHECK(!vm->hide_hit_projectile);
+                    CHECK_EQ(f.renderer.draw(*vm),0);
                     initial_alpha[i]=vm->visual.color>>24;
                     CHECK_EQ(initial_alpha[i],expected_alpha(1));
                 }

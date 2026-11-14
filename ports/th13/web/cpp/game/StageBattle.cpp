@@ -2042,12 +2042,18 @@ bool StageBattle::update_player(const GameInput& input) {
     }
     if(respawn_damage.active) {
         // Expose the same live registration for existing diagnostics.
-        const auto& registration = damage_registrations[size_t(respawn_damage.registration_slot)];
-        respawn_damage.center = {registration.center_x, registration.center_y,
-                                 registration.center_z};
-        respawn_damage.radius = registration.radius;
-        respawn_damage.remaining = registration.clock;
-        respawn_damage.active = registration.active;
+        // slot -1 becomes a huge size_t and traps in Wasm.
+        const i32 slot = respawn_damage.registration_slot;
+        if (slot < 0 || slot >= i32(damage_registrations.size())) {
+            respawn_damage.active = false;
+        } else {
+            const auto& registration = damage_registrations[size_t(slot)];
+            respawn_damage.center = {registration.center_x, registration.center_y,
+                                     registration.center_z};
+            respawn_damage.radius = registration.radius;
+            respawn_damage.remaining = registration.clock;
+            respawn_damage.active = registration.active;
+        }
     }
     if(invulnerable>0)--invulnerable;
     if (player_phase_clock_.current != player_phase_frame)
