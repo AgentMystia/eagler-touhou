@@ -1716,7 +1716,7 @@
     "th13": {
       "normal": "ports/th13",
       "multiplayer": "ports/th13-mp",
-      "base": "8a59928db9c9a4d9d409d7e2df93c568406d8018",
+      "base": "31509984da4dee92d5bc0b2e4e95cfaddec8b0a1",
       "history": [
         {
           "kind": "manual",
@@ -1881,6 +1881,16 @@
             "ports/th13-mp/web/cpp/sdl/Application.cpp"
           ],
           "note": "fps_text_draw unlink mirrored in th13-mp Application teardown"
+        },
+        {
+          "kind": "manual",
+          "base": "8a59928db9c9a4d9d409d7e2df93c568406d8018",
+          "source": "31509984da4dee92d5bc0b2e4e95cfaddec8b0a1",
+          "targetHead": "31509984da4dee92d5bc0b2e4e95cfaddec8b0a1",
+          "paths": [
+            "ports/th13-mp/web/cpp/game/StageBattle.cpp"
+          ],
+          "note": "consume_player_shot_geometry 注释成对更新"
         }
       ]
     },
