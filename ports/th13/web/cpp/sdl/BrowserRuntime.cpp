@@ -149,6 +149,18 @@ double previous_frame = -1;
 double presentation_elapsed = 0;
 u32 presentation_count = 0;
 float presentation_fps = 60;
+// vsync：画布只在显示回调（rAF）提交，每个刷新周期恰一次呈现；没有新帧的
+// rAF 重复呈现上一帧，呈现率即刷新率。rAF 停摆（后台/嵌入式宿主）超过
+// kDisplayStaleMs 时，手动泵接管呈现。
+constexpr double kDisplayStaleMs = 250.;
+double last_display_callback_ms = -1;
+
+void reset_presentation_window() {
+    presentation_elapsed = 0;
+    presentation_count = 0;
+    presentation_fps = 60;
+    last_display_callback_ms = -1;
+}
 
 void add_controller(SDL_JoystickID id) {
     if (controller) return;
@@ -301,11 +313,18 @@ bool drive_one_frame(double delta, unsigned source) {
         return finish(true, true);
     }
     const auto ticks = cadence.advance(delta);
-    presentation_elapsed += std::max(0., delta);
-    if (presentation_elapsed >= 1.) {
-        presentation_fps = float(presentation_count / presentation_elapsed);
-        presentation_elapsed = 0;
-        presentation_count = 0;
+    const bool display_callback = source == 1;
+    if (display_callback) last_display_callback_ms = begin;
+    const bool presents = display_callback ||
+        (source == 3 && (last_display_callback_ms < 0 ||
+                         begin - last_display_callback_ms > kDisplayStaleMs));
+    if (presents) {
+        presentation_elapsed += std::max(0., delta);
+        if (presentation_elapsed >= 1.) {
+            presentation_fps = float(presentation_count / presentation_elapsed);
+            presentation_elapsed = 0;
+            presentation_count = 0;
+        }
     }
     bool ok = true;
     app->graphics.backend.defer = true;
@@ -313,9 +332,12 @@ bool drive_one_frame(double delta, unsigned source) {
         ok = sample_and_tick(presentation_fps, &simulated);
         if (app->exiting || app->pending_load) break;
     }
-    if (app->graphics.backend.commit()) {
+    // The readout counts fresh frames reaching the display: a repeated
+    // presentation keeps the refresh cadence but is not a new frame.
+    const bool fresh = app->graphics.backend.pending_presentation();
+    if (presents && app->graphics.backend.commit(display_callback)) {
         presentation_at = emscripten_get_now();
-        ++presentation_count;
+        if (fresh) ++presentation_count;
     }
     app->graphics.backend.defer = false;
     app->audio_device.pump();
@@ -406,6 +428,12 @@ EMSCRIPTEN_KEEPALIVE const char* th13_error() {
 EMSCRIPTEN_KEEPALIVE unsigned th13_phase() {
     using namespace th13::sdl;
     return !app ? 4 : app->exiting ? 4 : app->title ? 0 : app->pause && app->pause->active() ? 2 : 1;
+}
+
+// 只读呈现率埋点（诊断面）：右下角 fps 文本的数据源（每秒到达显示的新帧
+// 数），供 vsync 探针核对读数；不参与任何生产判定。
+EMSCRIPTEN_KEEPALIVE float th13_debug_presentation_fps() {
+    return th13::sdl::presentation_fps;
 }
 
 EMSCRIPTEN_KEEPALIVE unsigned th13_frame() { return th13::sdl::app ? th13::sdl::app->frames : 0; }
@@ -504,6 +532,7 @@ EMSCRIPTEN_KEEPALIVE void th13_loop_pause(unsigned enabled) {
     suspended = enabled != 0;
     previous_frame = -1;
     cadence.reset();
+    reset_presentation_window();
     if (app) app->audio_device.suspend(suspended);
 }
 
@@ -519,6 +548,7 @@ EMSCRIPTEN_KEEPALIVE void th13_loop_start() {
     suspended = false;
     previous_frame = -1;
     cadence.reset();
+    reset_presentation_window();
     clear_inputs();
     initialize_controller();
     app->audio_device.suspend(false);
