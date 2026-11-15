@@ -199,11 +199,18 @@ double previous_frame = -1;
 double presentation_window_start = -1;
 u32 presentation_count = 0;
 float presentation_fps = 60;
+// vsync：画布只在显示回调（rAF）提交，每个刷新周期恰一次呈现。异步工作回调
+// 完成的帧留在离屏面，由下一个 rAF 提交；没有新帧的 rAF 重复呈现上一帧，
+// 呈现率即刷新率。rAF 停摆（后台/嵌入式宿主）超过 kDisplayStaleMs 时，手动
+// 泵接管呈现。
+constexpr double kDisplayStaleMs = 250.;
+double last_display_callback_ms = -1;
 
 void reset_presentation_window() {
     presentation_window_start = -1;
     presentation_count = 0;
     presentation_fps = 60;
+    last_display_callback_ms = -1;
 }
 
 void sample_presentation_rate(double now_ms) {
@@ -404,7 +411,8 @@ bool sample_and_tick(float fps = 60.f, unsigned* simulated = nullptr) {
            app->commit(fps) && app->present();
 }
 
-// Elapsed monotonic time owns fresh frames, shared by display and receive callbacks.
+// Elapsed monotonic time owns fresh frames; display callbacks earn it, receive
+// callbacks only spend credit that is already due.
 multiplayer::FrameSchedule mp_schedule;
 multiplayer::FrameClock mp_clock;
 multiplayer::SlowdownGovernor mp_governor;
@@ -827,7 +835,12 @@ bool drive_one_frame(double delta, unsigned source = 0) {
     } else {
         ticks = cadence.advance(delta);
     }
-    sample_presentation_rate(begin);
+    const bool display_callback = source == 1;
+    if (display_callback) last_display_callback_ms = begin;
+    const bool presents = display_callback ||
+        (source == 3 && (last_display_callback_ms < 0 ||
+                         begin - last_display_callback_ms > kDisplayStaleMs));
+    if (presents) sample_presentation_rate(begin);
     bool ok = true;
     const bool mp_active = multiplayer::session.Active();
     app->graphics.backend.defer = true;
@@ -836,9 +849,12 @@ bool drive_one_frame(double delta, unsigned source = 0) {
                        : sample_and_tick(presentation_fps, &attempted);
         if (app->exiting || app->pending_load) break;
     }
-    if (app->graphics.backend.commit()) {
+    // The readout counts fresh frames reaching the display: a repeated
+    // presentation keeps the refresh cadence but is not a new frame.
+    const bool fresh = app->graphics.backend.pending_presentation();
+    if (presents && app->graphics.backend.commit(display_callback)) {
         presentation_at = emscripten_get_now();
-        ++presentation_count;
+        if (fresh) ++presentation_count;
         if (live_mp && multiplayer::session.SimFrame())
             multiplayer::session.TraceTiming("present", multiplayer::session.SimFrame() - 1);
     }
@@ -877,9 +893,12 @@ void queue_mp_work(bool received) {
             !multiplayer::session.Simulating() || multiplayer::session.Spectator() ||
             mp_playback_pending) return;
         if (mp_tasks_remaining) --mp_tasks_remaining;
-        // Both callbacks consume one monotonic clock. Packet count creates
-        // no credit, but time spent replaying history still makes input due.
-        drive_one_frame(mp_clock.elapsed(emscripten_get_now()), 2);
+        // Only display callbacks turn elapsed time into fresh frames: the time
+        // since the last rAF stays on the clock for the next one. This callback
+        // spends credit the display callback already earned (catch-up,
+        // corrections, confirmations), so steady-state forward frames and
+        // their input samples stay vsync-aligned.
+        drive_one_frame(0, 2);
     }, reinterpret_cast<void*>(uintptr_t(ticket)), 0);
 }
 }
@@ -1072,6 +1091,12 @@ EMSCRIPTEN_KEEPALIVE int th13_room_return() {
     return 1;
     }();
     return work.finish(result, result != 0);
+}
+
+// 只读呈现率埋点（诊断面）：右下角 fps 文本的数据源（每秒到达显示的新帧
+// 数），供 vsync 探针核对读数；不参与任何生产判定。
+EMSCRIPTEN_KEEPALIVE float th13_debug_presentation_fps() {
+    return th13::sdl::presentation_fps;
 }
 
 EMSCRIPTEN_KEEPALIVE unsigned th13_frame() { return th13::sdl::app ? th13::sdl::app->frames : 0; }
