@@ -1465,12 +1465,30 @@ EMSCRIPTEN_KEEPALIVE const char* th13_debug_mp_net_state() {
                   "{\"active\":%d,\"sim_frame\":%u,\"confirmed\":%u,"
                   "\"local_seat\":%u,\"players\":%u,\"can_start\":%d,"
                   "\"connected\":%d,\"simulating\":%d,\"capture_frame\":%u,"
-                  "\"stretch\":%.3f,\"error\":\"%s\"}",
+                  "\"stretch\":%.3f,\"run_released\":%d,\"error\":\"%s\"}",
                   session.Active() ? 1 : 0, session.SimFrame(),
                   session.ConfirmedThrough(), unsigned(session.LocalSeat()),
                   session.PlayerCount(), session.CanStart() ? 1 : 0,
                   session.Connected() ? 1 : 0, session.Simulating() ? 1 : 0,
-                  session.CaptureFrame(), mp_governor.stretch(), session.Error());
+                  session.CaptureFrame(), mp_governor.stretch(),
+                  session.RunReleased() ? 1 : 0, session.Error());
+    report = buffer;
+    return report.c_str();
+}
+
+// th13_debug_mp_terminal：终局交接观测（PumpTerminal 的退役/释放进度）。
+EMSCRIPTEN_KEEPALIVE const char* th13_debug_mp_terminal() {
+    static std::string report;
+    const auto t = th13::multiplayer::session.Runtime().Terminal();
+    char buffer[320];
+    std::snprintf(buffer, sizeof buffer,
+                  "{\"last_simulated\":%u,\"confirmed\":%u,\"acknowledged\":%u,"
+                  "\"channel_active\":%d,\"retiring\":%d,\"released\":%d,"
+                  "\"spectators_settled\":%d,\"started_ms\":%llu,\"release_ms\":%llu}",
+                  t.last_simulated, t.confirmed, t.acknowledged, t.channel_active ? 1 : 0,
+                  t.retiring ? 1 : 0, t.released ? 1 : 0, t.spectators_settled ? 1 : 0,
+                  static_cast<unsigned long long>(t.started_ms),
+                  static_cast<unsigned long long>(t.release_ms));
     report = buffer;
     return report.c_str();
 }
