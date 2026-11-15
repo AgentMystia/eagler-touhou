@@ -26,7 +26,7 @@ struct DrawStateCache {
  // selected for the last batch; target format participates in that decision.
  PipelineState pipeline{};Viewport viewport{};bool valid=false,has_viewport=false,rounded=false;
 } drawState;
-constexpr u32 instanceStride=68;
+constexpr u32 instanceStride=116;
 constexpr std::array<float,16> identity{1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
 float bits(u32 n){float f;std::memcpy(&f,&n,4);return f;}
 std::array<float,4> color(u32 n){return {float(n>>16&255)/255,float(n>>8&255)/255,float(n&255)/255,float(n>>24)/255};}
@@ -36,7 +36,7 @@ GLuint shader(GLenum type,const std::string& source){GLuint s=glCreateShader(typ
 bool equal(const State& a,const State& b,bool world=false){
  if(a.layout!=b.layout||a.stride!=b.stride||a.texture!=b.texture||a.target!=b.target||a.depth!=b.depth||std::memcmp(&a.viewport,&b.viewport,sizeof(Viewport)))return false;
  if(!a.pipeline.compatible(b.pipeline,world))return false;
- if(world){for(int i=1;i<4;i++)if(a.matrix[i]!=b.matrix[i])return false;}
+ if(world){for(int i=1;i<3;i++)if(a.matrix[i]!=b.matrix[i])return false;}
  else if(!a.layout.screen&&a.matrix!=b.matrix)return false;
  return true;
 }
@@ -169,7 +169,7 @@ void Renderer::draw(Topology primitive,u32 count,const void* data,u32 stride,con
  stats.calls++;state.stride=stride;
  if(index||primitive<Topology::Triangles||primitive>Topology::Fan){flush();issue(state,primitive,count,data,vertex_count(primitive,count)*stride,index,indexFormat,nullptr,0);return;}
  const bool instance=version==10&&state.layout==attributes(VertexLayout::WorldUv)&&stride==20&&primitive==Topology::Strip&&count==2;
- if(instance){if(batching&&(!instancing||!equal(batchState,state,true)||quad.size()!=80||std::memcmp(quad.data(),data,80)))flush();if(!batching){batchState=state;quad.assign(static_cast<const u8*>(data),static_cast<const u8*>(data)+80);batching=instancing=true;}const auto old=worlds.size();worlds.resize(old+instanceStride);std::memcpy(worlds.data()+old,state.matrix[0].data(),64);std::memcpy(worlds.data()+old+64,&state.pipeline.textureFactor,4);if(worlds.size()>=1024*instanceStride)flush();return;}
+ if(instance){if(batching&&(!instancing||!equal(batchState,state,true)||quad.size()!=80||std::memcmp(quad.data(),data,80)))flush();if(!batching){batchState=state;quad.assign(static_cast<const u8*>(data),static_cast<const u8*>(data)+80);batching=instancing=true;}const auto old=worlds.size();worlds.resize(old+instanceStride);std::memcpy(worlds.data()+old,state.matrix[0].data(),64);std::memcpy(worlds.data()+old+64,&state.pipeline.textureFactor,4);std::memcpy(worlds.data()+old+68,state.matrix[3].data(),48);if(worlds.size()>=1024*instanceStride)flush();return;}
  if(batching&&(instancing||!equal(batchState,state)))flush();if(!batching){batchState=state;batching=true;instancing=false;batchTopology=Topology::Triangles;}
  // Keep an isolated long strip/fan in its original topology. If a following
  // draw joins the batch, normalize it backwards before appending, preserving
@@ -249,7 +249,8 @@ glEnableVertexAttribArray(0);glVertexAttribPointer(0,transformed?4:3,GL_FLOAT,fa
 #else
  {
 #endif
- for(int i=0;i<4;i++){glEnableVertexAttribArray(4+i);glVertexAttribPointer(4+i,4,GL_FLOAT,false,instanceStride,reinterpret_cast<void*>(b+i*16));glVertexAttribDivisor(4+i,1);}glEnableVertexAttribArray(8);glVertexAttribPointer(8,4,GL_UNSIGNED_BYTE,true,instanceStride,reinterpret_cast<void*>(b+64));glVertexAttribDivisor(8,1);}
+ for(int i=0;i<4;i++){glEnableVertexAttribArray(4+i);glVertexAttribPointer(4+i,4,GL_FLOAT,false,instanceStride,reinterpret_cast<void*>(b+i*16));glVertexAttribDivisor(4+i,1);}glEnableVertexAttribArray(8);glVertexAttribPointer(8,4,GL_UNSIGNED_BYTE,true,instanceStride,reinterpret_cast<void*>(b+64));glVertexAttribDivisor(8,1);
+ for(int i=0;i<3;i++){glEnableVertexAttribArray(9+i);glVertexAttribPointer(9+i,4,GL_FLOAT,false,instanceStride,reinterpret_cast<void*>(b+68+i*16));glVertexAttribDivisor(9+i,1);}}
  glDrawArraysInstanced(mode,0,n,instanceSize/instanceStride);}
  else if(index){u32 b=upload(indices,GL_ELEMENT_ARRAY_BUFFER,index,n*(indexFormat==IndexType::UInt16?2:4),65536);glDrawElements(mode,n,indexFormat==IndexType::UInt16?GL_UNSIGNED_SHORT:GL_UNSIGNED_INT,reinterpret_cast<void*>(b));}
  else glDrawArrays(mode,0,n);g.rendered=true;
