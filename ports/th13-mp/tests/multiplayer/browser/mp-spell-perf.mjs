@@ -99,7 +99,7 @@ try {
     pages.push(page);
     sessions.push(session);
     const query = new URLSearchParams({seat, players, chars: chars.join(','), room, relay: relay.url,
-      stage, slot, diff, delay, protect: 1, gov: governor});
+      stage, slot, diff, delay, protect: 1, gov: governor, runtime: env('TH13_RUNTIME', '/artifacts/sdl3/th13-sdl.mjs')});
     await page.goto(`${server.origin}/bench/mp-bench.html?${query}`);
   }
   const deadline = Date.now() + 240_000;
