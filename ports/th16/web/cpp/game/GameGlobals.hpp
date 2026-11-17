@@ -24,6 +24,39 @@ struct GameGlobals {
     i32 game_frame = 0;          // DAT_004a579c：本局帧计数（0x42d7b0 每帧 +1，0x42dc50 清零）
     i32 stage_frame = 0;         // DAT_004a57a0：本关帧计数
 
+    // 机体资源（0x42cb60 装载段 / 0x440fb0 置）
+    i32 power = 0;               // DAT_004a57e4
+    i32 power_max = 0;           // DAT_004a57e8 = 每级火力 × 最大等级
+    i32 power_per_level = 0;     // DAT_004a57ec
+    i32 lives = 2;               // DAT_004a57f4
+    i32 life_fragments = 0;      // DAT_004a57f8
+    i32 bombs = 3;               // DAT_004a5800
+    i32 bomb_fragments = 0;      // DAT_004a5804
+    i32 season_gauge = 0;        // DAT_004a5808：子季节量表（0x4440e0 以阈值表决定子机数）
+    i32 season_gauge_max = 0;    // DAT_004a580c = season_threshold[7]
+    i32 season_step[8] = {};     // DAT_004a5810：0x43deb0 参数
+    i32 season_threshold[8] = {};// DAT_004a5838：0x43deb0 前缀和；DAT_004a583c.. = [1..6] 为子机数阈值
+
+    // 外部推力（DAT_004d9dc4 / +4 / DAT_004d9dcc）：0x442560 每帧抄进 Player，0x441cf0 叠加到移动
+    float push_x = 0, push_y = 0, push_z = 0;
+
+    // 0x43deb0：季节阶梯 i 置 value 并重算前缀和（偶数项与奇数项分别累加后再加当前项）
+    void set_season_step(int i, i32 value) {
+        season_step[i] = value;
+        i32 even = 0, odd = 0, last = 0, k = 0;
+        if (i + 1 > 1) {
+            for (; k < i; k += 2) { even += season_step[k]; odd += season_step[k + 1]; }
+        }
+        if (k < i + 1) last = season_step[k];
+        season_threshold[i] = odd + even + last;
+    }
+    // 0x4440e0 / 0x40dda0：DAT_004a583c..DAT_004a5850（threshold[1..6]）中 ≤ 量表的个数
+    i32 season_option_count() const {
+        i32 n = 0;
+        for (int i = 1; i <= 6; ++i) { if (season_gauge < season_threshold[i]) break; ++n; }
+        return n;
+    }
+
     // 0x449190：设置模式位；若原模式不是 2 则 +0x38（DAT_004a57c8）置 -1
     void set_mode(i32 mode) {
         if ((flags & kModeMask) != 0x20) replay_slot = -1;

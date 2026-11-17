@@ -272,6 +272,41 @@ u32 AnmManager::spawn(AnmFile& file, int script, int layer, AnmVm** out_vm) {
     return insert_world_back(*vm);
 }
 
+// 0x426160
+u32 AnmManager::spawn_front(AnmFile& file, int script, int layer, AnmVm** out_vm) {
+    ++spawn_count;
+    AnmVm* vm = allocate();
+    if (out_vm != nullptr) *out_vm = vm;
+    init_from_template(file, *vm, script);
+    const u32 hi = vm->flags_hi;
+    vm->flags_hi = hi | 0x400u;
+    if (layer >= 0) {
+        vm->layer = layer;
+        if (layer < 0x18) vm->flags_hi = (hi & 0xfff7ffffu) | 0x40400u;
+    }
+    vm->entity_offset = {};
+    vm->rotation.z = 0;
+    run(*vm);
+    vm->creation_flags = 2;
+    return insert_world_front(*vm);
+}
+
+// 0x46f220
+void AnmManager::kill_tree(AnmVm& vm) {
+    if ((vm.flags_hi & 0x4000000u) != 0) return;
+    vm.flags_hi = (vm.flags_hi & ~0x40u) | 0x20u;
+    for (AnmListNode* n = vm.children.next; n != nullptr; n = n->next) {
+        if (n->owner) kill_tree(*n->owner);
+    }
+}
+
+// 0x46f1c0
+void AnmManager::kill(u32 id) {
+    AnmVm* vm = find(id);
+    if (vm == nullptr) return;
+    kill_tree(*vm);
+}
+
 // 0x46ed60
 AnmVm* AnmManager::create_child(AnmFile& file, int script, AnmVm& parent, u32 list_flags, u32* out_id) {
     ++spawn_count;

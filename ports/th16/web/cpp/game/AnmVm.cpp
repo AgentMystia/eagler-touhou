@@ -254,6 +254,7 @@ struct Ins {
 }  // namespace
 
 Vec3 step_interp_vec3(Interp<Vec3>& it, float game_speed) { return step_interp(it, game_speed); }
+float step_interp_float(Interp<float>& it, float game_speed) { return step_interp(it, game_speed); }
 float interp_ease(int mode, float t, float end) noexcept { return ease(mode, t, end); }
 
 Vec3 anm_world_rotation(AnmVm& v) {
@@ -280,6 +281,18 @@ void Timer::untick(float game_speed) noexcept {
         current = i32(current_f);
     } else {
         current_f = current_f - 1.0f;
+        current = i32(current_f);
+    }
+}
+
+void Timer::rewind(i32 n, float game_speed) noexcept {
+    if (speed_slot != 0) speed_slot = 0;
+    previous = current;
+    if (game_speed <= 0.99f || 1.01f <= game_speed) {
+        current_f = game_speed * float(-n) + current_f;
+        current = i32(current_f);
+    } else {
+        current_f = current_f + float(-n);
         current = i32(current_f);
     }
 }

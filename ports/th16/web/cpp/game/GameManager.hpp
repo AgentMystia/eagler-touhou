@@ -12,6 +12,7 @@
 // 本阶段只接入 StageManager（关卡背景）；其它管理器按 roadmap 逐个接入。
 #pragma once
 #include "AnmVm.hpp"
+#include "Player.hpp"
 #include "Stage.hpp"
 #include "StageTable.hpp"
 #include "Types.hpp"
@@ -42,6 +43,9 @@ public:
     const StageEntry* entry = nullptr;  // DAT_004a6f18
     StageManager stage;          // DAT_004a6d9c
     bool stage_live = false;
+    Player player;               // DAT_004a6ef8（新游戏时 0x441c60 创建）
+    bool player_live = false;
+    PlayerWorld world;           // 敌人 / 对话 / 过关状态的外部输入（相应管理器接入前由宿主或 harness 喂）
 
     // 0x42dc50 首帧初始化（关卡背景部分）
     void first_frame(AnmManager& manager, GameGlobals& globals);

@@ -187,15 +187,20 @@ test('game start flow: Normal / Cirno / Autumn → scene 7 with stage 1, title d
   assert.equal(started.header.shot, 1);
   assert.equal(started.header.season, 2, 'Autumn');
   assert.equal(started.header.stage, 1);
-  assert.equal(started.header.update_chains, 2, 'title update chain removed; GameManager(0xf)+StageManager(0x11) registered (0x42d700/0x409db0)');
+  assert.equal(started.header.update_chains, 4, 'title update chain removed; GameManager(0xf)+StageManager(0x11)+Replay 记录(0x10)+Player(0x16) registered (0x42d700/0x409db0/0x447fd0/0x440fb0)');
   // 0x44ad20：title.anm / title_v.anm VM 全部清掉；ascii.anm 落叶发射器（+0x73c）只收到 interrupt 1，
   // 其脚本 case 1 在 10/14 帧后自删，所以切场后短暂只剩槽 2 的落叶（mode 8）
   assert.ok(started.quads.length > 0, 'leaf particles (ascii.anm mode 8) still falling right after the switch');
-  assert.ok(started.quads.every(l => / slot=2$/.test(l)), 'only ascii.anm quads remain: ' + started.quads.filter(l => !/ slot=2$/.test(l)).slice(0, 3).join(' | '));
-  assert.ok(started.quads.every(l => / zw=1 /.test(l)), 'mode 8 writes Z (0x43c530)');
+  // 加上新游戏在装载期（0x4440e0）就生成的子机 VM：pl02.anm（槽 9，琪露诺脚本 7）
+  const leaves = started.quads.filter(l => / slot=2$/.test(l));
+  const others = started.quads.filter(l => !/ slot=2$/.test(l));
+  assert.ok(leaves.length > 0, 'leaf particles still present');
+  assert.ok(others.length > 0 && others.every(l => /^\d+ 7 .* slot=9$/.test(l)), 'only ascii.anm leaves + player option (pl02.anm script 7) remain: ' + others.slice(0, 3).join(' | '));
+  assert.ok(leaves.every(l => / zw=1 /.test(l)), 'mode 8 writes Z (0x43c530)');
   assert.deepEqual(started.events.at(-1), ['scene', '7']);
   const settled = parse(run(['scene-boot', dat, String(season + 2 + 0x28 + 2 + 16), script]));
-  assert.equal(settled.header.quads, 0, 'emitter (interrupt 1 → ins_1 after 14 frames) and its leaves are gone');
+  assert.ok(settled.quads.every(l => / slot=9$/.test(l)), 'emitter (interrupt 1 → ins_1 after 14 frames) and its leaves are gone; only the player option remains');
+  assert.ok(settled.quads.length > 0, 'player option VM keeps drawing');
 });
 
 test('season panel (title script 145, mode 8): Y-flip through the UI camera, then settles on the mode-0 rectangle', needDat, () => {

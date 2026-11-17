@@ -9,6 +9,7 @@ void GameManager::first_frame(AnmManager& manager, GameGlobals& globals) {
     // 0x42dc50：清重试位；0x40add0 建面 VM、启用关卡链；帧计数清零；（其余管理器复位 / BGM 待接入）
     flags &= ~kRetry;
     if (stage_live) stage.start(manager);
+    if (player_live) player.reset(manager, globals);   // 0x441740
     globals.game_frame = 0;
     globals.stage_frame = 0;
 }

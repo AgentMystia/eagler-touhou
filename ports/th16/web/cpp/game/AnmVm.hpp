@@ -40,6 +40,8 @@ struct Timer {
     void tick(float game_speed) noexcept;
     // 0x40d490：回退一帧（stop 指令用，与随后的 tick 抵消）
     void untick(float game_speed) noexcept;
+    // 0x43ac80：回退 n 帧（Player 射击计时环绕）
+    void rewind(i32 n, float game_speed) noexcept;
 };
 static_assert(sizeof(Timer) == 0x14, "Timer 为 0x14 字节");
 
@@ -243,6 +245,8 @@ static_assert(sizeof(void*) != 4 || offsetof(AnmVm, sprite_source_slot) == 0x5fc
 Vec3 anm_world_rotation(AnmVm& vm);
 // 0x406e10：Vec3 插值推进（StageManager 相机 pos/facing/up 共用）
 Vec3 step_interp_vec3(Interp<Vec3>& it, float game_speed);
+// 0x4171c0：float 插值推进（Player 缩放 +0x2c798）
+float step_interp_float(Interp<float>& it, float game_speed);
 // 0x4033f0：缓动曲线（mode 0..）
 float interp_ease(int mode, float t, float end) noexcept;
 
