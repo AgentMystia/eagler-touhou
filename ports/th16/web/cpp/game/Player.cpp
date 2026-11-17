@@ -1,6 +1,7 @@
 #include "Player.hpp"
 
 #include "AnmManager.hpp"
+#include "AnmRenderer.hpp"
 #include "GameGlobals.hpp"
 #include "Input.hpp"
 
@@ -370,9 +371,9 @@ void Player::move(AnmManager& manager, const InputState& game_input, const Playe
 }
 
 void Player::update(AnmManager& manager, GameGlobals& globals, const InputState& game_input, const PlayerWorld& world,
-                    AnmFile* effect_anm, float game_speed) {
+                    AnmFile* effect_anm, const AnmRenderer& geometry, float game_speed) {
     // 0x442560
-    (void)globals;
+    game_speed_ = game_speed;
     switch (state) {
     case kEnter:
         // 入场：60 帧内从 y=480 升到 y=400；子机吸附
@@ -399,7 +400,17 @@ void Player::update(AnmManager& manager, GameGlobals& globals, const InputState&
         break;
     }
 
-    // +0xd114 伤害源 ×257：无活动项（射击/敌弹接入后补）
+    // 伤害源逐帧：运动推进、+0x04 累加、角度折回、+0x84 清零、寿命回退，< 1 失活
+    for (DamageSource& d : damage_sources) {
+        if ((d.flags & 1u) == 0) continue;
+        d.motion.update_velocity(game_speed);
+        d.motion.integrate(game_speed);
+        d.f04 += d.f08;
+        d.angle = wrap_angle(d.angle + d.angular_speed);
+        d.f84 = 0;
+        d.timer.untick(game_speed);
+        if (d.timer.current < 1) d.flags &= ~1u;
+    }
 
     if (invincible.current < 1) {
         vm.flags_lo &= ~0x60000u;
@@ -456,18 +467,20 @@ void Player::update(AnmManager& manager, GameGlobals& globals, const InputState&
     const bool may_shoot = !world.dialogue && world.enemy_count != 0 && !world.stage_clear && timer3.current > 0x13 &&
                            (flags & kFlagNoShot) == 0 && (flags & kFlagScaled) == 0;
     if (may_shoot) {
-        shoot(game_input, game_speed);
+        shoot(manager, globals, game_input, game_speed);
     } else {
         reset_shot_timers();
         shot_misc = 0;
         shot_misc_b = 0;
-        // DAT_004d9e2c 音效队列：登记 0x1e / 0x37 停止标记——Sound 接入时补
+        // DAT_004d9e2c 音效队列：登记 0x1e / 0x37 的停止标记（循环射击音）
+        sfx_stop_queue.push_back(0x1e);
+        sfx_stop_queue.push_back(0x37);
     }
-    // 0x4456d0：自机弹推进（池中无活动弹）
+    tick_bullets(manager, geometry, game_speed);
 }
 
-void Player::shoot(const InputState& game_input, float game_speed) {
-    // 0x4455d0：射击计时；发弹本体 0x440d50（计时器置 0）/ 0x445470（按 .sht 组出弹）随射击系统接入
+void Player::shoot(AnmManager& manager, GameGlobals& globals, const InputState& game_input, float game_speed) {
+    // 0x4455d0：主射击计时 0..0xd 环绕（0x43ac80 回退 0xe），第二计时 0..0x76 环绕（回退 0x77）
     if (state != kNormal) {
         shot_misc = 0;
         shot_misc_b = 0;
@@ -479,11 +492,11 @@ void Player::shoot(const InputState& game_input, float game_speed) {
         if (!shot_held) skip_main = true;
         else {
             if (shot_timer2.current < 0) shot_timer2.set(0);
-            shot_timer.set(0);  // 0x440d50(this, 0)
+            start_shot_timer(0);
         }
     }
     if (!skip_main) {
-        // if (shot_timer.current != shot_timer.previous) 0x445470(this, shot_timer.current, shot_timer2.current)
+        if (shot_timer.current != shot_timer.previous) fire_sets(manager, globals, shot_timer.current, shot_timer2.current);
         if (shot_timer.current < 0xe) shot_timer.tick(game_speed);
         else if (!shot_held) shot_timer.set(-1);
         else shot_timer.rewind(0xe, game_speed);
@@ -495,6 +508,228 @@ void Player::shoot(const InputState& game_input, float game_speed) {
         return;
     }
     shot_timer2.tick(game_speed);
+}
+
+void Player::start_shot_timer(i32 t) {
+    // 0x440d50
+    shot_timer.set(t);
+}
+
+const ShotEntry* Player::shot_entry(u32 shot_id) const {
+    const bool sub = (shot_id & 0xf0000u) != 0;
+    const ShotTable& table = sub ? sub_sht : sht;
+    const u32 set = sub ? ((shot_id >> 8) & 0xffu) : (shot_id >> 8);
+    const u32 entry = shot_id & 0xffu;
+    if (set >= table.sets.size() || entry >= table.sets[set].size()) return nullptr;
+    return &table.sets[set][entry];
+}
+
+void Player::fire_sets(AnmManager& manager, GameGlobals& globals, i32 frame, i32 frame2) {
+    // 0x445470：主表组 = 火力等级（低速时 + 1 + 最大等级 → 组 5..9）；子季节表组 = 量表阈值计数
+    i32 set = globals.power_per_level != 0 ? globals.power / globals.power_per_level : 0;
+    if (focus != 0) set = set + 1 + sht.max_level;
+    auto matches = [&](const ShotEntry& e) {
+        if (e.period2() == 0) return frame % i32(e.period()) == i32(e.phase());
+        return frame2 % i32(e.period2()) == i32(e.phase2());
+    };
+    if (u32(set) < sht.sets.size()) {
+        const std::vector<ShotEntry>& entries = sht.sets[size_t(set)];
+        for (u32 i = 0; i < entries.size(); ++i) {
+            if (matches(entries[i])) spawn_bullet(manager, globals, (u32(set) << 8) | i);
+        }
+    }
+    const u32 sub = u32(globals.season_option_count());
+    if (sub < sub_sht.sets.size()) {
+        const std::vector<ShotEntry>& entries = sub_sht.sets[sub];
+        for (u32 i = 0; i < entries.size(); ++i) {
+            if (matches(entries[i])) spawn_bullet(manager, globals, ((sub | 0x100u) << 8) | i);
+        }
+    }
+}
+
+i32 Player::alloc_damage_source(const Vec3& pos, float angle, i32 lifetime, i32 damage, float size_x, float size_y) {
+    // 0x444b20：从上次下标起环形找空位；满池时仍返回下一下标（不初始化）
+    i32 i = last_damage_index;
+    for (int tries = 0;; ++tries) {
+        i = i + 1 < kDamageSourceCount ? i + 1 : 0;
+        if ((damage_sources[i].flags & 1u) == 0) break;
+        if (tries >= 0xff) {
+            last_damage_index = i;
+            return i + 1;
+        }
+    }
+    DamageSource& d = damage_sources[i];
+    d.flags = (d.flags & ~6u) | 1u;
+    d.motion = MotionState{};
+    d.motion.pos = pos;
+    d.size_x = size_x;
+    d.size_y = size_y;
+    d.angle = wrap_angle(angle);
+    d.angular_speed = 0.0f;
+    d.timer.set(lifetime);
+    d.damage = damage;
+    d.f78 = 0;
+    d.f7c = 9999999;
+    d.f80 = 1;
+    d.kind = 0;
+    d.f84 = 0;
+    last_damage_index = i;
+    return i + 1;
+}
+
+void Player::release_bullet(PlayerBullet& b) {
+    b.active = 0;
+    if (b.damage_source != 0) damage_sources[b.damage_source - 1].flags &= ~1u;
+}
+
+bool Player::spawn_bullet(AnmManager& manager, GameGlobals& globals, u32 shot_id) {
+    // 0x445360：类型 2 弹按子机限一发（+0x165f8 表非 0 即跳过）；池内首个空位 → 0x444e10
+    const ShotEntry* e = shot_entry(shot_id);
+    if (e == nullptr) return false;
+    const bool sub = (shot_id & 0xf0000u) != 0;
+    int cooldown_slot = -1;
+    if (e->source() != 0) {
+        int k = int(e->source()) - 1;
+        if (k >= 100) k -= 100;
+        cooldown_slot = k + (sub ? 8 : 0);
+    }
+    if (e->kind() == 2 && cooldown_slot >= 0 && cooldown_slot < 16 && option_cooldown[cooldown_slot] != 0) return false;
+    PlayerBullet* b = nullptr;
+    for (int i = 0; i < kBulletCount; ++i) {
+        if (bullets[i].active == 0) { b = &bullets[i]; b->index = i; break; }
+    }
+    if (b == nullptr) return false;
+
+    // ---- 0x444e10 ----
+    b->active = 1;
+    b->shot_id = shot_id;
+    if ((b->timer.flags & 1u) == 0) b->timer.set(0);
+    b->timer.current = 0;
+    b->timer.current_f = 0.0f;
+    b->timer.previous = -1;
+    b->damage = e->damage();
+    b->hit_w = e->hit_w();
+    b->hit_h = e->hit_h();
+    b->flags = b->flags ^ ((u32(focus) * 2u ^ b->flags) & 2u);
+    b->motion = MotionState{};
+    const PlayerOption* opt = nullptr;
+    if (e->source() == 0) {
+        b->motion.pos = pos;
+    } else {
+        int k = int(e->source()) - 1;
+        opt = k < 100 ? &options[k] : &sub_options[k - 100];
+        b->motion.pos = {float(opt->x) * kFixedToFloat, float(opt->y) * kFixedToFloat, 0.0f};
+    }
+    if (e->kind() == 2 && cooldown_slot >= 0 && cooldown_slot < 16) {
+        option_cooldown[cooldown_slot] = globals.power_per_level != 0 ? globals.power / globals.power_per_level : 0;
+    }
+    b->motion.speed = e->speed();
+    float angle = e->angle();
+    if (angle < 1000.0f) {
+        if (angle < 995.0f || opt == nullptr) angle = wrap_angle(angle);
+        else angle = wrap_angle(opt->angle);
+        b->motion.angle = angle;
+    } else if (opt != nullptr) {
+        // 角度 ≥ 1000：子机朝向 + 随机 ±π/12，速度 + 随机 ±2（视觉 RNG DAT_004a6d88）
+        const float r1 = manager.visual_rng.signed_unit();
+        b->motion.angle = wrap_angle(r1 * 3.1415927f / 12.0f + opt->angle);
+        const float r2 = manager.visual_rng.signed_unit();
+        b->motion.speed = (r2 + r2) + e->speed();
+    } else {
+        b->motion.angle = wrap_angle(angle);
+    }
+    b->motion.update_velocity(game_speed_);
+    b->motion.pos.x = (e->offset_x() - b->motion.velocity.x) + b->motion.pos.x;
+    b->motion.pos.y = (e->offset_y() - b->motion.velocity.y) + b->motion.pos.y;
+
+    AnmFile* file = sub ? sub_anm : anm;
+    const int script = sub ? int(e->script()) : int(e->script()) + 5;
+    b->vm = manager.spawn(*file, script, -1);
+    AnmVm* vmp = manager.find(b->vm);
+    if (vmp == nullptr) b->vm = 0;
+    if (vmp != nullptr && (vmp->flags_hi & 0x80u) != 0) {
+        vmp->flags_lo |= 4u;
+        vmp->rotation.z = e->angle();
+    }
+    b->damage_source = alloc_damage_source(b->motion.pos, b->motion.angle, 9999999, b->damage, b->hit_w, b->hit_h);
+    DamageSource& d = damage_sources[b->damage_source - 1];
+    d.kind = 1;
+    d.f7c = 10000000;
+    d.owner = b->index;
+    b->flags |= 1u;
+    // 生成回调（DAT_004919c0）：1 清追踪目标；4 伤害源类型 2（Aya 主弹）；2 激光（Marisa）随激光系统接入
+    switch (e->create_callback()) {
+    case 1: b->target = 0; break;
+    case 4: d.kind = 2; break;
+    default: break;
+    }
+    if (e->sfx() >= 0) sfx_queue.push_back(e->sfx());
+    if (vmp != nullptr) vmp->entity_offset = b->motion.pos;
+    return true;
+}
+
+void Player::tick_bullets(AnmManager& manager, const AnmRenderer& geometry, float game_speed) {
+    // 0x4456d0
+    for (int i = 0; i < kBulletCount; ++i) {
+        PlayerBullet& b = bullets[i];
+        if (b.active == 0) continue;
+        const ShotEntry* e = shot_entry(b.shot_id);
+        if (e == nullptr) { release_bullet(b); continue; }
+        // 逐帧回调（DAT_004919a0）：1 追踪（0x445ee0：有敌人时转向最近敌人——Enemy 接入时补；无敌人时加速到 16）
+        //                           5 加速 0.5/帧（0x447480）；2 激光（0x446260）随激光系统接入
+        switch (e->tick_callback()) {
+        case 1:
+            if (b.active != 2) {
+                const float s = b.motion.speed + 0.1f;
+                b.motion.speed = s <= 16.0f ? s : 16.0f;
+            }
+            break;
+        case 5:
+            if (b.active == 1) b.motion.speed += 0.5f;
+            break;
+        default: break;
+        }
+        b.motion.update_velocity(game_speed);
+        b.motion.integrate(game_speed);
+        AnmVm* vmp = manager.find(b.vm);
+        if (vmp == nullptr) {
+            b.vm = 0;
+            release_bullet(b);
+            continue;
+        }
+        bool inside = e->kind() == 2;
+        if (!inside) {
+            float c[4][3] = {};
+            geometry.vm_corners(*vmp, c);
+            if (b.timer.current < 0xf) inside = true;
+            else {
+                // DAT_004d9d38/3c（恒 0）起 384×448 的开区间
+                for (int k = 0; k < 4 && !inside; ++k) {
+                    inside = 0.0f < c[k][0] && c[k][0] < 384.0f && 0.0f < c[k][1] && c[k][1] < 448.0f;
+                }
+            }
+        }
+        if (!inside) {
+            manager.kill(b.vm);
+            b.vm = 0;
+            release_bullet(b);
+            continue;
+        }
+        if (b.damage_source != 0 && (b.flags & 1u) != 0) {
+            DamageSource& d = damage_sources[b.damage_source - 1];
+            d.motion.pos = b.motion.pos;
+            d.angle = b.motion.angle;
+            d.size_x = b.hit_w;
+            d.size_y = b.hit_h;
+            d.damage = b.damage;
+        }
+        vmp->entity_offset = b.motion.pos;
+        if ((vmp->flags_hi & 0x80u) != 0) {
+            vmp->flags_lo |= 4u;
+            vmp->rotation.z = b.motion.angle;
+        }
+        b.timer.tick(game_speed);
+    }
 }
 
 void Player::prepare_draw() {

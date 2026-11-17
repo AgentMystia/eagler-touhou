@@ -39,6 +39,10 @@ public:
     u32 injected_input = 0;   // 外部注入 held 位（与宿主键盘 OR）
     u32 host_input = 0;       // 宿主键盘采样
     InputState game_input;    // DAT_004a52c8：Replay 记录链（优先级 0x10，0x447fd0）每帧抄 held 低 16 位并做边沿
+    // 逻辑侧屏幕几何（DAT_004d9d34 窗口缩放 / DAT_004d9d50,54 场地偏移 / DAT_004d9d48,4c）：自机弹出界判定 0x468c00 用；
+    // 原版由 Supervisor 绘制链 0x43b3d0 每帧写为 640/2、(480-448)/2，这里取同值常量
+    AnmRenderer geometry;
+    std::vector<i32> sfx_events;       // 本帧 0x45e1f0 音效登记（Player 等逻辑产生；Sound 接入前供 harness 对拍）
     bool run_draw_chains = true;  // harness 对拍 oracle（不跑 0x4015a0）时关掉
     OnResourceLoaded on_loaded;
 
