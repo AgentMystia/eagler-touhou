@@ -139,7 +139,8 @@ struct AnmVm {
     i32 update_callback = 0;          // 0x5c4 DAT_004919e8 表下标
     i32 draw_callback = 0;            // 0x5c8
     i32 delete_callback = 0;          // 0x5cc DAT_00491b58 表下标
-    u8 unknown_5d0[0xc] = {};         // 0x5d0
+    i32 interrupt_callback = 0;       // 0x5d0 DAT_00491b0c 表下标（0x46f0b0/0x46f130 置中断前调用）
+    u8 unknown_5d4[0x8] = {};         // 0x5d4
     i32 sprite_mapper = 0;            // 0x5dc DAT_00491b1c 表下标（ins_300 精灵映射钩子）
     Vec3 entity_offset;               // 0x5e0（ins_306 flag 0x8000 时每帧累加全局偏移）
     i32 unknown_5ec = 0;              // 0x5ec
