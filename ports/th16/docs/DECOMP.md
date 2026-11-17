@@ -33,10 +33,16 @@
 | 0x468490 / 0x46e750 | 按 VM / 按 layer 绘制；mode 0..3 为屏幕四边形 | `game/AnmRenderer.cpp` |
 | 0x465c40 / 0x4660b0 / 0x465280 | 轴对齐角点 / 旋转角点 / 像素对齐·UV·颜色提交 | `game/AnmRenderer.cpp` |
 | 0x406c40 / 0x406a70 | 世界位置（pos+offset+pos2）与窗口缩放 / root 链 | `game/AnmRenderer.cpp` |
-| 0x43adc0 / 0x43b300 / 0x43b290 | 启动幕：装载 `sig.anm`；绘制帧计数；装载完成后请求 Title=4 | `sdl/Application.cpp` / `game/Supervisor.hpp` |
+| 0x43adc0 / 0x43b300 / 0x43b290 | 启动幕：装载 `sig.anm`；绘制链 0x44 帧计数；装载完成后请求 Title=4 | `game/GameSession.cpp` / `game/Supervisor.hpp` |
+| 0x401730 / 0x401300 / 0x4013b0 / 0x401460 / 0x4015a0 / 0x4017a0 | Chain 条目 0x28 字节（prio/flags/cb/init/ctx）；更新链与绘制链按优先级插入、遍历返回码 | `game/Chain.cpp` |
+| 0x45a8a0 | 帧计时：逻辑时间按 1/60 追到墙钟，再跑更新链、按跳帧计数跑绘制链 | `game/FrameClock.hpp` |
+| 0x401d50 / 0x4018e0 / 0x405580 | 键盘位布局（Z=1 X=2 Shift=8 方向 0x10..0x80 Esc=0x100 Ctrl=0x200 Q=0x10000 S=0x20000 P=0x40000 Enter=0x80000）、手柄合并、边沿/连发 | `game/Input.hpp` |
+| 0x44af80 / 0x44b5f0 / 0x44a700 / 0x44a680 / 0x44a560 / 0x44a5e0 | 标题更新：主菜单 case 0/1/2/4（装饰、Timer 0x78/0x82/0x13、光标、确定 0x80001 / 取消 0x102、画面表） | `game/TitleMenu.hpp` |
+| 0x402e70 / 0x418720 / 0x440c00 / 0x402de0 | MenuCursor：移动（wrap + 跳禁用）、设置、禁用、压栈 | `game/MenuCursor.hpp` |
+| 0x46f510 / 0x46f0b0 / 0x46f130 | ANM 子树按脚本号查找；中断（含子 VM）；中断并立即 run | `game/AnmManager.cpp` |
 | 0x43ba40 / 0x43b3d0 / 0x43ce10 | Supervisor 注册 / 每帧泵 / 场景切换（+0x6f0/+0x6f4，DAT_004c17c4） | `game/Supervisor.hpp` |
 | 0x401d50 / 0x405580 | 输入采样与边沿 | `game/Input.hpp` |
-| 0x44aee0 / 0x44abc0 / 0x44ac70 / 0x44b5f0 | 标题创建；等启动幕 0xb4 帧后卸 sig、装 title*.anm、菜单脚本子集 | `sdl/Application.cpp` |
+| 0x44aee0 / 0x44abc0 / 0x44ac70 | 标题创建；线程等启动幕 0xb4 帧（或 DAT_004c1800&0x180）后卸 sig、装 title*.anm、注册更新链 6 / 绘制链 0x45 | `game/GameSession.cpp` |
 | 0x46f270 / 0x46d770 | 按槽杀 VM / 卸 bank | `game/AnmManager.cpp` |
 
 ANM VM 的还原证据：`tests/anm-vm.test.mjs` 以 `tools/oracle/anm-oracle.py`（Unicorn 直跑上述原版函数）为 oracle，对 54 个 ANM 文件 1887 个脚本各 60 帧的 VM 结构体（0x568 字节纯数据区）与 36 条 layer 绘制链逐字节一致；wasm32 构建与本机构建输出逐字节相同。绘制几何：`tests/anm-draw.test.mjs` 锁定 `sig.anm` 稳态四边形（512×480 + 128×480 @ layer 26，UV v=0.9375，淡入至白）。场景时序：`tests/supervisor.test.mjs`。
@@ -46,8 +52,7 @@ ANM VM 的还原证据：`tests/anm-vm.test.mjs` 以 `tools/oracle/anm-oracle.py
 | 原版地址 | 含义 |
 | --- | --- |
 | 0x43adc0（其余步骤） | 启动幕后续：`text.anm` → `../../bgm/thbgm.fmt` → `thbgm.dat` → score 对象（0x4497e0）；目前只完成 sig 上屏与向 Title 切换 |
-| 0x44af80 | 标题菜单完整状态机（子菜单 / demo 录像 / 音乐室…）；目前只接 0x44b5f0 入口脚本 |
-| 0x401460 / 0x4015a0 / 0x45a8a0 | 更新/绘制 Chain 遍历与 1/60 帧计时 |
+| 0x44fe20 / 0x44c570 / 0x451750 / 0x452330 / 0x4546f0 / 0x4545a0 / 0x4553d0 | 标题子画面（难度 / Option / Replay / Player Data / Music Room / Manual / Spell Practice）；0x44af80 开头的 demo 录像触发；0x44a850 通关判定 |
 | 0x46d020 | AnmManager::load_file(slot, name)（同步等待装载线程） |
 | 0x418af0 / 0x405700 | EffectManager（DAT_004a6db8）：ins_508 按效果种类表 DAT_004a2250 挂 update/draw 回调；种类 1 的 update 回调维护环形顶点缓冲并生成 `effect.anm` 0x99。`effect.anm` 155–196 依赖它，暂不在 ANM golden 内 |
 | 0x491b1c 表 | ins_300/301 的 sprite_mapper 回调（VM +0x5dc 非零时由玩家/敌机子系统重映射精灵号） |
@@ -55,7 +60,7 @@ ANM VM 的还原证据：`tests/anm-vm.test.mjs` 以 `tools/oracle/anm-oracle.py
 | 0x44ac70 | 标题场景初始化 |
 | 0x4497e0 / 0x4403c5 / 0x43b480 / 0x43aeae | score 文件 / replay 文件 / ver 文件 / thbgm.fmt |
 
-未定位：敌机/子弹/激光/道具管理器、玩家与机体、季节系统（Season gauge / Release）。Supervisor 场景切换与 Boot→Title 时序已还原骨架，完整 Chain/菜单状态机仍待接。全表见 `web/cpp/rebuild/AddressMap.hpp`。
+未定位：敌机/子弹/激光/道具管理器、玩家与机体、季节系统（Season gauge / Release）。Supervisor、Chain 表、帧计时、输入与标题主菜单已还原；标题子画面待接。全表见 `web/cpp/rebuild/AddressMap.hpp`。
 
 ## 与 th15 的关系
 
