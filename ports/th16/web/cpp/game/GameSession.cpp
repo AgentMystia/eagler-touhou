@@ -44,6 +44,16 @@ bool GameSession::begin_boot() {
     // 0x43adc0：sig.anm → 槽 1
     if (!load_anm("sig.anm", sig)) return false;
     if (animations.load(1, *sig) == nullptr) { failure = "sig.anm load failed"; return false; }
+    // 0x43adc0 余下同步装载：text.anm → 槽 0（DAT_004c17f8）；0x43ad20：front.anm → 槽 5；
+    // 0x418790（EffectManager）：effect.anm → 槽 8、bullet.anm → 槽 7
+    static constexpr struct { const char* name; int slot; } kBootBanks[] = {
+        {"text.anm", 0}, {"front.anm", 5}, {"effect.anm", 8}, {"bullet.anm", 7},
+    };
+    for (const auto& bank : kBootBanks) {
+        AnmResource* res = nullptr;
+        if (!load_anm(bank.name, res)) return false;
+        if (animations.load(bank.slot, *res) == nullptr) { failure = std::string(bank.name) + " load failed"; return false; }
+    }
 
     supervisor.boot_frames = 0;
     supervisor.current = SceneId::Boot;
