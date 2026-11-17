@@ -44,6 +44,8 @@ public:
     AnmRenderer geometry;
     std::vector<i32> sfx_events;       // 本帧 0x45e1f0 音效登记（Player 等逻辑产生；Sound 接入前供 harness 对拍）
     bool run_draw_chains = true;  // harness 对拍 oracle（不跑 0x4015a0）时关掉
+    // harness 提供 enemies 时间表时置 false，由桩保持 PlayerWorld.enemy_count（对齐旧桩语义）
+    bool sync_enemy_count = true;
     OnResourceLoaded on_loaded;
 
     bool open(const u8* archive_bytes, u32 size);
@@ -65,6 +67,7 @@ private:
     ChainEntry* replay_record_chain_ = nullptr;
     ChainEntry* player_update_chain_ = nullptr;
     ChainEntry* player_draw_chain_ = nullptr;
+    ChainEntry* enemy_update_chain_ = nullptr;
 
     bool load_anm(const char* name, AnmResource*& out);
     bool load_boot_banks();            // 0x43adc0 / 0x407cb0 / 0x43ad20 / 0x418790 的同步装载部分
