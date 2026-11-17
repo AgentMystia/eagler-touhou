@@ -1,0 +1,132 @@
+#include "GameSession.hpp"
+
+namespace th16 {
+
+bool GameSession::open(const u8* bytes, u32 size) {
+    if (!archive_.open(bytes, size)) { failure = archive_.error; return false; }
+    return true;
+}
+
+AnmResource* GameSession::resource(const char* name) {
+    for (size_t i = 0; i < resource_names_.size(); ++i)
+        if (resource_names_[i] == name) return &resources_[i];
+    return nullptr;
+}
+
+bool GameSession::load_anm(const char* name, AnmResource*& out) {
+    if (AnmResource* existing = resource(name)) { out = existing; return true; }
+    std::vector<u8> bytes;
+    if (!archive_.read(name, bytes)) { failure = archive_.error; return false; }
+    resources_.reserve(16);  // 地址稳定：AnmManager 持有 resource 指针
+    if (resources_.size() >= 16) { failure = "resource table full"; return false; }
+    resources_.emplace_back();
+    resource_names_.emplace_back(name);
+    AnmResource& res = resources_.back();
+    if (!res.parse(bytes.data(), u32(bytes.size()), name)) { failure = std::string(name) + ": " + res.error; return false; }
+    for (u32 i = 0; i < res.entries.size(); ++i) {
+        const auto& e = res.entries[i];
+        if (e.has_data || e.name.empty() || e.name[0] == '@') continue;
+        std::vector<u8> external;
+        if (!archive_.read(e.name.c_str(), external)) { failure = archive_.error; return false; }
+        if (!res.attach_external_texture(i, external.data(), u32(external.size()))) { failure = res.error; return false; }
+    }
+    if (on_loaded && !on_loaded(res)) { if (failure.empty()) failure = "texture upload failed"; return false; }
+    out = &res;
+    return true;
+}
+
+bool GameSession::begin_boot() {
+    AnmResource* ascii = nullptr;
+    AnmResource* sig = nullptr;
+    // 0x407cb0 AsciiManager：ascii.anm → 槽 2
+    if (!load_anm("ascii.anm", ascii)) return false;
+    animations.load(AnmManager::kAsciiSlot, *ascii);
+    // 0x43adc0：sig.anm → 槽 1
+    if (!load_anm("sig.anm", sig)) return false;
+    if (animations.load(1, *sig) == nullptr) { failure = "sig.anm load failed"; return false; }
+
+    supervisor.boot_frames = 0;
+    supervisor.current = SceneId::Boot;
+
+    // 0x43af60：启动幕绘制链（优先级 0x44）；0x43adc0 末尾启用
+    boot_draw_chain_ = chains.create([this]() -> ChainResult {
+        // 0x43b300：首帧 spawn script0（layer -1），之后 +0x638 递增
+        if (supervisor.boot_frames == 0) {
+            if (AnmFile* f = animations.file(1)) animations.spawn(*f, 0, -1);
+        }
+        ++supervisor.boot_frames;
+        return ChainResult::Continue;
+    }, 0x44, false);
+    chains.enable(boot_draw_chain_);
+
+    // 0x43b290：装载完成请求 Title
+    supervisor.boot_init_finished();
+    return true;
+}
+
+bool GameSession::enter_title_assets() {
+    AnmResource* title = nullptr;
+    AnmResource* title_v = nullptr;
+    // 0x44ac70：title.anm → 槽 0x10，title_v.anm → 槽 0x11
+    if (!load_anm("title.anm", title)) return false;
+    if (!load_anm("title_v.anm", title_v)) return false;
+    if (animations.load(0x10, *title) == nullptr) { failure = "title.anm load failed"; return false; }
+    if (animations.load(0x11, *title_v) == nullptr) { failure = "title_v.anm load failed"; return false; }
+    supervisor.title_assets_ready = true;
+    supervisor.title_menu_live = false;
+    return true;
+}
+
+bool GameSession::activate_title_menu() {
+    // 0x44ac21：卸 sig.anm（槽 1），摘启动幕绘制链
+    animations.kill_file(1);
+    animations.tick_world();
+    animations.unload(1);
+    if (boot_draw_chain_) { chains.remove(boot_draw_chain_); boot_draw_chain_ = nullptr; }
+
+    AnmFile* title_file = animations.file(0x10);
+    AnmFile* title_v_file = animations.file(0x11);
+    if (title_file == nullptr || title_v_file == nullptr) { failure = "title banks missing"; return false; }
+
+    // 0x44af80 case 0 → 0x44a560(1) → 0x44b5f0：菜单对象在首次更新链调用时自行生成装饰/logo
+    title_menu.activate(title_file, title_v_file);
+
+    // 0x44ac54：启用标题更新链（优先级 6 → 0x44af80）
+    title_update_chain_ = chains.create([this]() -> ChainResult {
+        title_menu.update(animations, supervisor.input);
+        return ChainResult::Continue;
+    }, 6, true);
+    chains.enable(title_update_chain_);
+
+    supervisor.title_menu_live = true;
+    return true;
+}
+
+void GameSession::sample_input() {
+    supervisor.input.held = host_input | injected_input;
+    supervisor.input.commit();
+}
+
+bool GameSession::logic_step() {
+    sample_input();
+
+    SceneId leave = SceneId::Invalid, enter = SceneId::Invalid;
+    if (supervisor.consume_switch(leave, enter)) {
+        if (enter == SceneId::Title && !enter_title_assets()) return false;
+    }
+
+    // 启动幕：绘制链推进 boot_frames；标题线程等待条件（0x44abea / 0x44ac00）
+    if (!supervisor.title_menu_live) {
+        chains.run_draw();
+        if (supervisor.title_assets_ready && supervisor.boot_hold_elapsed()) {
+            if (!activate_title_menu()) return false;
+        }
+    }
+
+    chains.run_update();
+    animations.game_speed = supervisor.game_speed;
+    animations.tick_world();
+    return failure.empty();
+}
+
+}  // namespace th16

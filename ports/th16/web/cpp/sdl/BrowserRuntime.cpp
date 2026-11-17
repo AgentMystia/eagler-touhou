@@ -38,14 +38,23 @@ EMSCRIPTEN_KEEPALIVE unsigned th16_phase() { return !app || !app->initialized ? 
 // DAT_004c17c4 口径：1 = Boot，4 = Title；未初始化返回 0
 EMSCRIPTEN_KEEPALIVE int th16_scene() {
     if (!app || !app->initialized) return 0;
-    return int(app->supervisor.current);
+    return int(app->supervisor().current);
 }
 EMSCRIPTEN_KEEPALIVE unsigned th16_boot_frames() {
-    return app ? app->supervisor.boot_frames : 0;
+    return app ? app->supervisor().boot_frames : 0;
 }
 EMSCRIPTEN_KEEPALIVE int th16_title_live() {
-    return app && app->supervisor.title_menu_live ? 1 : 0;
+    return app && app->supervisor().title_menu_live ? 1 : 0;
 }
+// 标题菜单观测：光标（+0x24）/ 子状态（+0x20）/ 已确定项 / 下一画面（0x44a560 目标）
+EMSCRIPTEN_KEEPALIVE int th16_menu_cursor() { return app ? app->title_menu().cursor.index : -1; }
+EMSCRIPTEN_KEEPALIVE int th16_menu_state() { return app ? int(app->title_menu().sub) : -1; }
+EMSCRIPTEN_KEEPALIVE int th16_menu_selected() { return app ? app->title_menu().selected : -1; }
+EMSCRIPTEN_KEEPALIVE int th16_menu_next_screen() { return app ? int(app->title_menu().next_screen) : -1; }
+// 测试注入：与键盘采样 OR 的 held 位（InputState 位布局：bit0 Z, bit1 X, bit4 ↑, bit5 ↓, bit8 Esc, bit19 Enter）
+EMSCRIPTEN_KEEPALIVE void th16_inject_input(unsigned bits) { if (app) app->session.injected_input = bits; }
+// 最近逻辑步数（FrameClock 追帧观测）
+EMSCRIPTEN_KEEPALIVE unsigned th16_last_subframes() { return app ? app->clock.subframes : 0; }
 
 EMSCRIPTEN_KEEPALIVE int th16_frame_tick() {
     if (!app || !app->initialized) return 0;
@@ -59,9 +68,9 @@ EMSCRIPTEN_KEEPALIVE void th16_loop_start() {
     if (running || !app || !app->initialized) return;
     running = true;
     emscripten_request_animation_frame_loop(
-        [](double, void* epoch) -> EM_BOOL {
+        [](double time_ms, void* epoch) -> EM_BOOL {
             if (!running || uintptr_t(epoch) != loop_epoch) return EM_FALSE;
-            if (!app->step()) { last_error = app->failure; running = false; return EM_FALSE; }
+            if (!app->step_at(time_ms / 1000.0)) { last_error = app->failure; running = false; return EM_FALSE; }
             return EM_TRUE;
         },
         reinterpret_cast<void*>(uintptr_t(++loop_epoch)));
