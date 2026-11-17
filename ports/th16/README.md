@@ -1,0 +1,42 @@
+# 東方天空璋 TH16
+
+Hidden Star in Four Seasons v1.00a 的网页移植：C++17 / SDL3 / GLES 3.0 / Emscripten。还原方式是**行为还原**——以 Ghidra 对 `th16.exe` 的反编译导出为唯一依据，目标是“稳定输入 → 原版输出 = 还原输出”（行为与画面）。
+
+- 开发入口：[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
+- 反编译分区与地址锚点：[docs/DECOMP.md](docs/DECOMP.md) · [web/cpp/rebuild/AddressMap.hpp](web/cpp/rebuild/AddressMap.hpp)
+- 资源与格式：[docs/ASSETS.md](docs/ASSETS.md)
+- 路线图与里程碑：[docs/plans/roadmap.md](docs/plans/roadmap.md)
+- 代理约束：[AGENTS.md](AGENTS.md)
+
+## 目录
+
+| 路径 | 内容 |
+| --- | --- |
+| `web/cpp/game/` | 游戏内核：RNG、THA1 档案、LZSS、ANM v8 解析、THTX 解码；每个函数头注明原版地址 |
+| `web/cpp/rebuild/AddressMap.hpp` | 原版地址 ↔ C++ 还原件登记表（已还原 / 已定位 / 未定位） |
+| `web/cpp/sdl/` | 设备层：`GraphicsDevice`（纹理句柄 → 共享 GLES 后端）、`Application`（场景驱动）、`BrowserRuntime`（Emscripten 导出） |
+| `web/cpp/platform/` | 浏览器导出（RNG oracle 直调） |
+| `portable/sdl/` | 与 th13/th15 共享的语义 GLES3 渲染后端（`Renderer.cpp`），不得分叉 |
+| `portable/build.mjs` / `build-harness.mjs` | 网页运行时（emcc）与 WASI 无头 harness 构建 |
+| `web/sdl-runtime/th16.html` | 页面壳：`assets/th16.dat` 整档进 MEMFS → `th16_initialize` → rAF 主循环 |
+| `web/scripts/cpp/analyze.mjs` + `decomp/ExportTh16.java` | Ghidra headless 全函数导出 |
+| `tests/` | `run.sh`：本机 harness + `node --test`（RNG golden、THA1/ANM 对 thtk 逐字节/逐像素对照） |
+| `tools/oracle/` | Unicorn RNG oracle、THTX 像素对照脚本 |
+
+## 运行
+
+```bash
+# 构建网页运行时（EMSDK 指向 emsdk 根）
+EMSDK=../../toolchains/emsdk node portable/build.mjs
+# 原版 th16.dat 放入页面壳资源目录（不入库）
+ln -s /path/to/th16.dat web/sdl-runtime/assets/th16.dat
+python3 web/sdl-runtime/serve.py 8446   # http://127.0.0.1:8446/sdl-runtime/th16.html
+```
+
+## 测试
+
+```bash
+bash tests/run.sh          # 本机 clang++ 构建 harness → node --test tests/*.test.mjs
+```
+
+原版文件（`th16.exe`、`th16.dat`、`thbgm.dat`）与反编译导出只放外层 ignored 的 `games/`、`artifacts/`，不入库。
