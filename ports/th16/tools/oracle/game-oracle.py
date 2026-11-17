@@ -11,7 +11,8 @@
 快照（每帧）：frame / game_frame / stage_frame / input [held, pressed] / power / season_gauge / enemy_count / dialogue /
     player{state, pos, pos_fixed, timers×3, dir, last_move, focus, focus_vm, speeds, velocity, option_lag, counter, speed_mult,
            ext_velocity, option_count, power_level, sub_count, flags, invincible, shot_timers, rects, radii, rects2, scale,
-           options×12, vm(0x568 字节)} / stage{frame, ins, flags}
+           options×12, shot_misc, cooldown×16, last_damage_index, bullets[活动自机弹], damage_sources[活动伤害源],
+           sfx[Player 代码段登记的音效], vm(0x568 字节)} / stage{frame, ins, flags}
     digest 里 VM id 只取有无（池分配顺序取决于未移植的管理器）；enemy_count / dialogue 不进 digest，供 harness 的 PlayerWorld 桩。
 
 执行链（原版代码；桩同 anm-oracle.py，另加）：
@@ -101,6 +102,8 @@ class GameOracle(Oracle):
         for addr in (0x477FB2, 0x47BCB2, 0x475150):                                     # CRT free（oracle 堆只增不减）
             self.replaced[addr] = (0, lambda o: None)
         self.replaced[0x45ED00] = (0x0C, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0))  # 声音线程请求（BGM 装载/播放）thiscall 3 args
+        self.replaced[0x45E1F0] = (4, self.on_sfx)                                       # 音效登记（DAT_004d9e2c 队列；RET 4）→ 只记录 (id, 调用方)
+        self.sfx_log = []
         self.replaced[0x4792A8] = (0, self.on_vsprintf)                                  # __stdio_common_vsprintf（CRT 需 FLS/线程数据）
         self.replaced[0x459240] = (0x20, lambda o: None)                                 # GDI 文字 → 纹理像素（无逻辑副作用）
         self.replaced[0x47BCEC] = (0, self.on_malloc)                                    # __malloc_base
@@ -548,7 +551,15 @@ class GameOracle(Oracle):
         rc = self.call(GAME_LOAD)
         if rc != 0:
             raise RuntimeError('0x42cb60 failed rc=%#x errors=%s' % (rc, self.errors[-6:]))
+        # Supervisor 绘制链 0x43b3d0 每帧写的场地屏幕偏移 DAT_004d9d50/54 = 640/2、(480-448)/2：
+        # 自机弹出界判定 0x4456d0 → 0x468c00 → 0x406c40 读它们；oracle 不跑绘制链，在此一次性写入
+        uc.mem_write(0x4D9D50, struct.pack('<ii', 320, 16))
         self.frame = 0
+
+    def on_sfx(self, o):
+        esp = self.uc.reg_read(UC_X86_REG_ESP)
+        ret, sfx = struct.unpack('<Ii', self.uc.mem_read(esp, 8))
+        self.sfx_log.append((sfx, ret))
 
     # ---- 帧 ----
     def set_input(self, held):
@@ -556,6 +567,7 @@ class GameOracle(Oracle):
         self.uc.mem_write(DAT_INPUT_HELD, struct.pack('<II', held, prev))
 
     def tick(self):
+        self.sfx_log = []
         # 更新链含 AnmManager 自身的世界 tick（优先级 9，0x46e740），无需另行调用 0x46e340
         self.call(CHAIN_RUN_UPDATE, ecx=self.chain_manager)
         # 绘制链（0x4015a0，读 DAT_004a6d94）：Player 0x443730 等在此把 pos 抄进 VM entity_offset；D3D 设备为空桩
@@ -595,6 +607,31 @@ class GameOracle(Oracle):
                 'offset': self.words(base + 0x64, 4), 'vm': [self.u32(base + 0xB0), self.u32(base + 0xB4)],
                 'index': self.i32(base + 0xD0), 'snap': self.i32(base + 0xD4),
             })
+        bullets = []
+        for i in range(256):
+            b = p + 0x1110 + i * 0xC0
+            if self.i32(b + 0x8C) == 0:
+                continue
+            bullets.append({
+                'index': i, 'flags': self.u32(b), 'vm': self.u32(b + 8), 'timer': self.timer(b + 0xC),
+                'pos': self.words(b + 0x48, 3), 'speed': self.u32(b + 0x60), 'angle': self.u32(b + 0x64),
+                'velocity': self.words(b + 0x7C, 3), 'mode': self.u32(b + 0x88), 'active': self.i32(b + 0x8C),
+                'target': self.i32(b + 0x90), 'damage': self.i32(b + 0x9C), 'size': self.words(b + 0xA0, 2),
+                'shot_id': self.u32(b + 0xAC), 'damage_source': self.i32(b + 0xB0),
+            })
+        sources = []
+        for i in range(256):
+            d = p + 0xD114 + i * 0x94
+            if (self.u32(d) & 1) == 0:
+                continue
+            sources.append({
+                'index': i + 1, 'flags': self.u32(d), 'f04': self.words(d + 4, 2), 'angle': self.u32(d + 0xC),
+                'angular_speed': self.u32(d + 0x10), 'size': self.words(d + 0x14, 2), 'pos': self.words(d + 0x1C, 3),
+                'motion': self.words(d + 0x28, 14), 'timer': self.timer(d + 0x60), 'damage': self.i32(d + 0x74),
+                'tail': self.words(d + 0x78, 7),
+            })
+        # Player 代码段（0x440000..0x449000）发出的音效：0x45e1f0 的调用方返回地址落在其中
+        sfx = [sid for sid, ret in self.sfx_log if 0x440000 <= ret < 0x449000]
         return {
             'state': self.i32(p + 0x165A8),
             'pos': self.words(p + 0x610, 3),
@@ -621,6 +658,12 @@ class GameOracle(Oracle):
             'rects2': self.words(p + 0x2C7DC, 18),
             'scale': [self.i32(p + 0x2C7C0), self.u32(p + 0x2C7C8)],
             'options': options,
+            'shot_misc': [self.i32(p + 0x2C790), self.uc.mem_read(p + 0x2C794, 1)[0]],
+            'cooldown': self.words(p + 0x165F8, 16),
+            'last_damage_index': self.i32(p + 0xD110),
+            'bullets': bullets,
+            'damage_sources': sources,
+            'sfx': sfx,
             'vm': bytes(self.uc.mem_read(p + 0x14, 0x568)).hex(),
         }
 
@@ -658,6 +701,20 @@ def player_words(pl):
     w += pl['rects'] + pl['radii'] + pl['rects2'] + pl['scale']
     for o in pl['options']:
         w += [o['active']] + o['target'] + o['pos'] + o['offset'] + [has(o['vm'][0]), has(o['vm'][1])] + [o['index'], o['snap']]
+    # 射击系统（自机弹 / 伤害源 / 类型 2 冷却 / 音效）；旧快照（无这些键）按空处理
+    w += pl.get('shot_misc', [0, 0]) + pl.get('cooldown', [0] * 16) + [pl.get('last_damage_index', 0)]
+    bullets = pl.get('bullets', [])
+    w += [len(bullets)]
+    for b in bullets:
+        w += [b['index'], b['flags'], has(b['vm'])] + b['timer'][:3] + b['pos'] + [b['speed'], b['angle']] + b['velocity']
+        w += [b['mode'], b['active'], b['target'], b['damage']] + b['size'] + [b['shot_id'], b['damage_source']]
+    sources = pl.get('damage_sources', [])
+    w += [len(sources)]
+    for d in sources:
+        w += [d['index'], d['flags']] + d['f04'] + [d['angle'], d['angular_speed']] + d['size'] + d['pos'] + d['motion']
+        w += d['timer'][:3] + [d['damage']] + d['tail']
+    sfx = pl.get('sfx', [])
+    w += [len(sfx)] + sfx
     return [x & 0xFFFFFFFF for x in w]
 
 
