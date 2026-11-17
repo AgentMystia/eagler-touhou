@@ -1,6 +1,7 @@
 #include "GraphicsDevice.hpp"
 
 #include <SDL3/SDL.h>
+#include <cstring>
 
 namespace th16::sdl {
 
@@ -44,10 +45,22 @@ bool GraphicsDevice::preload(const AnmResource& file) {
     for (u32 index = 0; index < file.entries.size(); ++index) {
         const auto& entry = file.entries[index];
         if (!entry.texture.present()) { handles.push_back(0); continue; }
+        // 原版 D3DXCreateTexture 按 entry 声明尺寸建纹理（0x46cb60），THTX 内容贴在左上；
+        // GetLevelDesc 回读的是声明尺寸，ANM UV 亦按此计算——这里把解码像素衬到声明尺寸以对齐采样。
+        const u32 dst_w = entry.width ? entry.width : entry.texture.width;
+        const u32 dst_h = entry.height ? entry.height : entry.texture.height;
+        const u32 src_w = entry.texture.width, src_h = entry.texture.height;
         Texture t;
-        t.width = entry.texture.width;
-        t.height = entry.texture.height;
-        t.pixels = entry.texture.bgra;
+        t.width = dst_w;
+        t.height = dst_h;
+        t.pixels.assign(size_t(dst_w) * dst_h * 4, 0);
+        const u32 copy_w = src_w < dst_w ? src_w : dst_w;
+        const u32 copy_h = src_h < dst_h ? src_h : dst_h;
+        for (u32 y = 0; y < copy_h; ++y) {
+            std::memcpy(t.pixels.data() + size_t(y) * dst_w * 4,
+                        entry.texture.bgra.data() + size_t(y) * src_w * 4,
+                        size_t(copy_w) * 4);
+        }
         t.identity = "anm:" + file.name + ":entry:" + std::to_string(index);
         const u32 id = next_handle++;
         textures.emplace(id, std::move(t));

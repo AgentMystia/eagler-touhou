@@ -65,13 +65,22 @@ constexpr AddressAnchor kAnchors[] = {
     {"anm-tick-ui", 0x46E490, "game/AnmManager.cpp AnmManager::tick_ui"},
     {"anm-find", 0x46EFA0, "game/AnmManager.cpp AnmManager::find"},
     {"ascii-manager-init", 0x407CB0, "game/AnmManager.hpp kAsciiSlot（ascii*.anm → 槽 2；ins_300 负下标回退精灵 0x102）"},
+    {"anm-draw-vm", 0x468490, "game/AnmRenderer.cpp AnmRenderer::emit（mode 0..3 屏幕四边形；更高模式待扩展）"},
+    {"anm-draw-layer", 0x46E750, "game/AnmRenderer.cpp AnmRenderer::emit_layer"},
+    {"anm-quad-axis", 0x465C40, "game/AnmRenderer.cpp AnmRenderer::axis_corners"},
+    {"anm-quad-rotated", 0x4660B0, "game/AnmRenderer.cpp AnmRenderer::rotated_corners"},
+    {"anm-quad-submit", 0x465280, "game/AnmRenderer.cpp AnmRenderer::emit（像素对齐 / UV 滚动 / 颜色）"},
+    {"anm-world-pos", 0x406C40, "game/AnmRenderer.cpp AnmRenderer::world_position"},
+    {"anm-world-adjust", 0x406A70, "game/AnmRenderer.cpp AnmRenderer::world_position（窗口缩放 / root 链）"},
+    {"boot-scene-init", 0x43ADC0, "sdl/Application.cpp Application::initialize（sig.anm → 槽 1）"},
+    {"boot-scene-update", 0x43B300, "sdl/Application.cpp Application::initialize（spawn script0, layer -1）"},
     // —— 已定位，待还原 ——
     {"ecl-dispatch", 0x41DCB0, nullptr},     // 19976 字节、81 个被调、switch 密集：ECL 指令主分发
     {"effect-attach", 0x418AF0, nullptr},    // ins_508：EffectManager（DAT_004a6db8）按效果种类表 DAT_004a2250 挂 update/draw 回调（effect.anm 155–196 依赖）
     {"effect-ring-update", 0x405700, nullptr}, // 效果种类 1 的 update 回调（DAT_004919e8[2]）：环形顶点缓冲 + 生成 effect.anm 0x99
     {"title-scene-init", 0x44AC70, nullptr}, // 装载 title.anm(bank 0x10) / title_v.anm(bank 0x11)
-    {"boot-scene-init", 0x43ADC0, "sdl/Application.cpp"},  // sig.anm → text.anm → thbgm.fmt → thbgm.dat → score；静态首帧已上屏，VM 执行待接入
     {"anm-load-file", 0x46D020, nullptr},    // AnmManager::load_file(slot, name)：从档案读 .anm 并进 bank（同步等待装载线程）
+    {"anm-draw-mode4+", 0x466390, nullptr},  // mode 4+（投影 / 世界 / 条带 / 网格）：0x466390 / 0x466820 / 0x4671b0 / …
     {"score-file", 0x4497E0, nullptr},       // scoreth16.dat 读写
     {"replay-file", 0x4403C5, nullptr},      // th16_%.2d.rpy
     {"ver-file", 0x43B480, nullptr},         // th16_%.4x%c.ver

@@ -11,8 +11,12 @@
 //                                                （与 tools/oracle/anm-oracle.py 直接执行原版得到的快照逐字节对照）
 //   harness anm-bench <th16.dat> <name.anm> <script> <frames> [layer]
 //                                              → "frames vms fnv1a64"：只推进不输出快照（性能口径）
+//   harness anm-draw <th16.dat> <name.anm> <script> <frames> [layer]
+//                                              → 每行一层绘制结果："frame layer script id blend x0 y0 x1 y1 x2 y2 x3 y3 u0 v0 u1 v1 u2 v2 u3 v3 color"
+//                                                （spawn 后 tick frames 次再 emit；对应上屏几何，texture 句柄以 entry_index+1 占位）
 #include "../../web/cpp/game/Archive.hpp"
 #include "../../web/cpp/game/AnmManager.hpp"
+#include "../../web/cpp/game/AnmRenderer.hpp"
 #include "../../web/cpp/game/AnmResource.hpp"
 #include "../../web/cpp/game/Rng.hpp"
 
@@ -195,6 +199,39 @@ int main(int argc, char** argv) {
             std::printf("]}");
         }
         std::printf("]}\n");
+        return 0;
+    }
+    if (command == "anm-draw" && argc >= 6) {
+        std::vector<u8> bytes;
+        if (!archive.read(argv[3], bytes)) return fail(archive.error.c_str());
+        AnmResource anm;
+        if (!anm.parse(bytes.data(), u32(bytes.size()), argv[3])) return fail(anm.error.c_str());
+        std::vector<u8> ascii_bytes;
+        AnmResource ascii;
+        if (!archive.read("ascii.anm", ascii_bytes) || !ascii.parse(ascii_bytes.data(), u32(ascii_bytes.size()), "ascii.anm"))
+            return fail("cannot load ascii.anm");
+        const int script = std::atoi(argv[4]);
+        const int frames = std::atoi(argv[5]);
+        const int layer = argc >= 7 ? std::atoi(argv[6]) : -1;
+        AnmManager manager;
+        manager.load(AnmManager::kAsciiSlot, ascii);
+        AnmFile* file = manager.load(0, anm);
+        if (file == nullptr || script < 0 || size_t(script) >= file->scripts.size()) return fail("script out of range");
+        manager.spawn(*file, script, layer);
+        AnmRenderer renderer;
+        renderer.window_scale = 1.0f;
+        renderer.lookup = [](int /*slot*/, int entry) -> u32 { return u32(entry) + 1; };
+        for (int f = 0; f <= frames; ++f) {
+            manager.tick_world();  // spawn 后每次 tick 建/刷新 layer 链（与 Application::step 同序）
+            std::vector<AnmQuad> quads;
+            if (!renderer.emit_all(manager, quads)) return fail(renderer.error.c_str());
+            for (const AnmQuad& q : quads) {
+                std::printf("%d %d %d %u %d %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %08x\n",
+                            f, q.layer, q.script, q.id, q.blend,
+                            q.x0, q.y0, q.x1, q.y1, q.x2, q.y2, q.x3, q.y3,
+                            q.u0, q.v0, q.u1, q.v1, q.u2, q.v2, q.u3, q.v3, q.color0);
+            }
+        }
         return 0;
     }
     if (command == "anm-bench" && argc >= 6) {
