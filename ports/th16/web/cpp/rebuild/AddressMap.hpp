@@ -90,17 +90,28 @@ constexpr AddressAnchor kAnchors[] = {
     {"title-scene-create", 0x44AEE0, "game/GameSession.cpp GameSession::enter_title_assets"},
     {"title-scene-thread", 0x44ABC0, "game/GameSession.cpp GameSession::activate_title_menu（等 0xb4 帧 / DAT_004c1800&0x180）"},
     {"title-scene-init", 0x44AC70, "game/GameSession.cpp enter_title_assets（title.anm / title_v.anm）+ 更新链 6 / 绘制链 0x45"},
-    {"title-update", 0x44AF80, "game/TitleMenu.hpp TitleMenu::update（case 0/1 主菜单入口；末尾 Timer+1）"},
-    {"title-main-menu", 0x44B5F0, "game/TitleMenu.hpp TitleMenu::update（case 0/1/2/4：装饰 / 光标 / 确定取消 / 画面跳转）"},
-    {"title-item-interrupt-run", 0x44A700, "game/TitleMenu.hpp TitleMenu::item_interrupt_now"},
-    {"title-item-interrupt", 0x44A680, "game/TitleMenu.hpp TitleMenu::item_interrupt"},
-    {"title-set-screen", 0x44A560, "game/TitleMenu.hpp TitleMenu::Screen / next_screen"},
-    {"title-set-sub", 0x44A5E0, "game/TitleMenu.hpp TitleMenu::set_sub"},
+    {"title-update", 0x44AF80, "game/TitleScene.cpp TitleScene::update（画面分发；末尾 Timer+1）"},
+    {"title-main-menu", 0x44B5F0, "game/TitleScene.cpp TitleScene::update_main_menu（case 0/1/2/4）"},
+    {"title-difficulty", 0x44FE20, "game/TitleScene.cpp TitleScene::update_difficulty"},
+    {"title-shot", 0x4502C0, "game/TitleScene.cpp TitleScene::update_shot"},
+    {"title-season", 0x450AF0, "game/TitleScene.cpp TitleScene::update_season（case 3 请求场景 7）"},
+    {"title-stage", 0x450EF0, "game/TitleScene.cpp TitleScene::update_stage（练习关卡）"},
+    {"title-item-interrupt-run", 0x44A700, "game/TitleScene.cpp TitleScene::item_interrupt_now"},
+    {"title-item-interrupt", 0x44A680, "game/TitleScene.cpp TitleScene::item_interrupt"},
+    {"title-child-id", 0x44A790, "game/TitleScene.cpp TitleScene::child_id"},
+    {"title-dismiss", 0x44A650, "game/TitleScene.cpp TitleScene::dismiss"},
+    {"title-set-screen", 0x44A560, "game/TitleScene.hpp TitleScene::set_screen"},
+    {"title-set-sub", 0x44A5E0, "game/TitleScene.hpp TitleScene::set_sub"},
+    {"game-set-mode", 0x449190, "game/GameGlobals.hpp GameGlobals::set_mode"},
+    {"anm-reveal", 0x46F340, "game/TitleScene.cpp TitleScene::reveal（0x46f3b0 递归）"},
+    {"title-leave", 0x44AF50, "game/GameSession.cpp GameSession::leave_title"},
     {"menu-cursor-move", 0x402E70, "game/MenuCursor.hpp MenuCursor::move"},
     {"menu-cursor-set", 0x418720, "game/MenuCursor.hpp MenuCursor::set"},
     {"menu-cursor-disable", 0x440C00, "game/MenuCursor.hpp MenuCursor::disable"},
     {"menu-cursor-push", 0x402DE0, "game/MenuCursor.hpp MenuCursor::push"},
-    {"timer-set", 0x406490, "game/TitleMenu.hpp（Timer=0x78 直接赋值）"},
+    {"menu-cursor-pop", 0x402E20, "game/MenuCursor.hpp MenuCursor::pop"},
+    {"menu-edge-or-repeat", 0x4186F0, "game/TitleScene.cpp（pressed | repeat 掩码判定）"},
+    {"timer-set", 0x406490, "game/TitleScene.cpp（Timer=0x78 直接赋值）"},
     {"anm-find-child", 0x46F510, "game/AnmManager.cpp AnmManager::find_child"},
     {"anm-interrupt", 0x46F0B0, "game/AnmManager.cpp AnmManager::interrupt"},
     {"anm-interrupt-run", 0x46F130, "game/AnmManager.cpp AnmManager::interrupt_now"},
@@ -113,14 +124,19 @@ constexpr AddressAnchor kAnchors[] = {
     {"anm-load-file", 0x46D020, nullptr},    // AnmManager::load_file(slot, name)：从档案读 .anm 并进 bank（同步等待装载线程）
     {"anm-draw-mode4+", 0x466390, nullptr},  // mode 4+（投影 / 世界 / 条带 / 网格）：0x466390 / 0x466820 / 0x4671b0 / …
     {"title-has-clear", 0x44A850, nullptr},  // 任一难度通关记录 → Extra 可选（当前恒 0：无存档）
+    {"title-difficulty-cleared", 0x44A8E0, nullptr}, // 某难度四项记录齐全（难度面板 0x9e+d 标记）
+    {"title-extra-unlocked", 0x44A800, nullptr}, // 机体是否解锁 Extra
     {"title-demo", 0x44AF80, nullptr},       // 0x44af80 开头：无输入 0x708 帧后播放 demo 录像（DAT_004a5bf0）
+    {"title-loading-text", 0x41A390, nullptr},  // ascii.anm 0x11（季节确定后 Timer==10）
+    {"effect-spawn-transition", 0x418BA0, nullptr}, // EffectManager 种类 0 过场（DAT_004c12a0，interrupt 7）
+    {"bgm-fade", 0x43C470, nullptr},         // 0x45ed00(…,5,…)：BGM 淡出
     {"title-option", 0x44C570, nullptr},     // 画面 3：Option
-    {"title-difficulty", 0x44FE20, nullptr}, // 画面 5：难度选择（0/1/2 项入口）
     {"title-replay", 0x451750, nullptr},     // 画面 0xb
     {"title-score", 0x452330, nullptr},      // 画面 0xa：Player Data
     {"title-music-room", 0x4546F0, nullptr}, // 画面 0xd
     {"title-manual", 0x4545A0, nullptr},     // 画面 0x10
     {"title-spell-practice", 0x4553D0, nullptr}, // 画面 0x11
+    {"title-draw", 0x44B530, nullptr},       // 标题绘制链 0x45
     {"score-file", 0x4497E0, nullptr},       // scoreth16.dat 读写
     {"replay-file", 0x4403C5, nullptr},      // th16_%.2d.rpy
     {"ver-file", 0x43B480, nullptr},         // th16_%.4x%c.ver

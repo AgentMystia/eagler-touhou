@@ -25,7 +25,7 @@ function parse(out) {
 }
 
 // 位：0x1 Z，0x2 X，0x10 ↑，0x20 ↓，0x100 Esc，0x80000 Enter
-const Z = '0x1', X = '0x2', UP = '0x10', DOWN = '0x20', ESC = '0x100', ENTER = '0x80000';
+const Z = '0x1', X = '0x2', UP = '0x10', DOWN = '0x20', LEFT = '0x40', RIGHT = '0x80', ESC = '0x100', ENTER = '0x80000';
 const MENU_LIVE = 180;       // 启动幕 +0x638 到 0xb4 的那一帧激活标题更新链
 const MAIN = MENU_LIVE + 11; // Timer 0x78→0x83（>0x82）进入 case 2
 
@@ -33,7 +33,8 @@ test('scene-boot: boot hold is exactly 0xb4 draw-chain frames, then title decor/
   const before = parse(run(['scene-boot', dat, String(MENU_LIVE)]));
   assert.equal(before.header.title_live, 1);
   assert.equal(before.header.boot_frames, 180);
-  assert.equal(before.header.menu_sub, 1, 'case 0 falls into case 1 (Intro) on the activation frame');
+  assert.equal(before.header.screen, 1, '0x44af80 case 0 → 0x44a560(1) main menu on the activation frame');
+  assert.equal(before.header.sub, 1, '0x44b5f0 case 0 falls into case 1 (Intro)');
   assert.equal(before.header.draw_chains, 0, 'boot draw chain removed once the title thread unloads sig.anm');
   assert.equal(before.header.update_chains, 1, 'title update chain (prio 6) registered');
   const notYet = parse(run(['scene-boot', dat, String(MENU_LIVE - 1)]));
@@ -49,17 +50,17 @@ test('scene-boot: input cannot skip the boot hold; DAT_004c1800&0x180 can', need
   const skipped = parse(run(['scene-boot', dat, '20', 'skip']));
   assert.equal(skipped.header.title_live, 1);
   assert.equal(skipped.header.boot_frames, 1);
-  assert.equal(skipped.header.menu_sub, 2);
+  assert.equal(skipped.header.sub, 2);
 });
 
 test('title menu: Main at Timer>0x82, input before that is ignored', needDat, () => {
   const early = parse(run(['scene-boot', dat, String(MAIN + 1), `${MAIN - 2}:${DOWN}`]));
-  assert.equal(early.header.menu_sub, 2);
+  assert.equal(early.header.sub, 2);
   assert.equal(early.header.cursor, 0, 'DOWN during Intro must not move the cursor');
   const atMain = parse(run(['scene-boot', dat, String(MAIN)]));
-  assert.equal(atMain.header.menu_sub, 2);
+  assert.equal(atMain.header.sub, 2);
   const beforeMain = parse(run(['scene-boot', dat, String(MAIN - 1)]));
-  assert.equal(beforeMain.header.menu_sub, 1);
+  assert.equal(beforeMain.header.sub, 1);
 });
 
 test('title menu: cursor wraps and skips disabled Extra (no clear data), SFX 10 per move', needDat, () => {
@@ -84,28 +85,30 @@ test('title menu: held DOWN auto-repeats after 0x19 frames every 8 frames (0x405
   assert.equal(out.header.cursor, 4);
 });
 
-test('title menu: confirm (Z|Enter) → sub 4, SFX 7, screen Difficulty(5) after 0x13 frames', needDat, () => {
+test('title menu: confirm Game Start → sub 4, SFX 7, Difficulty(5) after 0x13 frames with cursor = last difficulty', needDat, () => {
   const t = MAIN + 1;
   const z = parse(run(['scene-boot', dat, String(t + 19), `${t}:${Z}`]));
-  assert.equal(z.header.menu_sub, 4);
-  assert.equal(z.header.selected, 0);
-  assert.equal(z.header.next_screen, -1, 'Timer must exceed 0x13 first');
+  assert.equal(z.header.sub, 4);
+  assert.equal(z.header.screen, 1, 'Timer must exceed 0x13 first');
   assert.deepEqual(z.events, [['sfx', '7']]);
   const enter = parse(run(['scene-boot', dat, String(t + 21), `${t}:${ENTER}`]));
-  assert.equal(enter.header.next_screen, 5);
+  assert.equal(enter.header.screen, 5);
+  assert.equal(enter.header.cursor, 1, 'DAT_0049f274 initial = 1 (Normal)');
+  assert.equal(enter.header.difficulty, 1);
   assert.deepEqual(enter.events, [['sfx', '7'], ['screen', '5']]);
 });
 
-test('title menu: cancel (X|Esc) jumps to Quit with SFX 9; cancel on Quit confirms Quit(2)', needDat, () => {
+test('title menu: cancel (X|Esc) jumps to Quit with SFX 9; cancel on Quit confirms Quit → scene 2 request', needDat, () => {
   const t = MAIN + 1;
   const esc = parse(run(['scene-boot', dat, String(t + 3), `${t}:${ESC}`]));
   assert.equal(esc.header.cursor, 9);
-  assert.equal(esc.header.menu_sub, 2);
+  assert.equal(esc.header.sub, 2);
   assert.deepEqual(esc.events, [['sfx', '9']]);
-  const quit = parse(run(['scene-boot', dat, String(t + 25), `${t}:${ESC},${t + 2}:${X}`]));
-  assert.equal(quit.header.selected, 9);
-  assert.equal(quit.header.next_screen, 2);
-  assert.deepEqual(quit.events, [['sfx', '9'], ['sfx', '9'], ['screen', '2']]);
+  const quit = parse(run(['scene-boot', dat, String(t + 27), `${t}:${ESC},${t + 2}:${X}`]));
+  assert.equal(quit.header.scene, 2, 'Supervisor consumed DAT_004c17c4 = 2');
+  assert.equal(quit.header.quit, 1);
+  assert.equal(quit.header.title_live, 0, 'title object destroyed on scene switch');
+  assert.deepEqual(quit.events, [['sfx', '9'], ['sfx', '9'], ['screen', '2'], ['scene', '2']]);
 });
 
 test('title menu: per-item target screens (0x44b5f0 case 4)', needDat, () => {
@@ -115,9 +118,111 @@ test('title menu: per-item target screens (0x44b5f0 case 4)', needDat, () => {
     const downs = Array.from({length: Number(item) - 1}, (_, i) => `${t + i * 2}:${DOWN}`);
     const confirmAt = t + (Number(item) - 1) * 2 + 2;
     const out = parse(run(['scene-boot', dat, String(confirmAt + 21), [...downs, `${confirmAt}:${Z}`].join(',')]));
-    assert.equal(out.header.selected, Number(item), `item ${item}`);
-    assert.equal(out.header.next_screen, screen, `item ${item} → screen ${screen}`);
+    assert.equal(out.header.screen, screen, `item ${item} → screen ${screen}`);
+    if (item === '2') assert.equal(out.header.mode, 1, 'Practice sets mode bits 0x10');
+    if (item === '3') assert.equal(out.header.mode, 2, 'Spell Practice sets mode bits 0x20');
   }
+});
+
+// 画面切换节拍（确定帧 C → 下一画面可接受输入的帧）：
+//   主菜单 C+20 set_screen，C+21 case0，C+28 sub2 → C+29 可输入
+//   难度 / 机体 C+14 set_screen，C+15 case0，C+22 sub2 → C+23
+//   季节（练习）C+10 set_screen(8)，C+11 case0，C+22 sub2 → C+23
+//   取消 C → C+6 set_screen，C+7 case0（sub 1）
+const AFTER_MAIN = 29, AFTER_DIFF = 23, AFTER_SHOT = 23, AFTER_SEASON_PRACTICE = 23, AFTER_CANCEL = 7;
+const DIFF_READY = 7;
+test('difficulty screen: ←/→ and ↑/↓ move (no wrap), confirm → Shot(6) with difficulty saved', needDat, () => {
+  const t = MAIN + 1;
+  const enterDiff = t + 21;                       // 第一帧 screen=5（case 0）
+  const nav = enterDiff + DIFF_READY + 1;
+  const down = parse(run(['scene-boot', dat, String(nav + 2), `${t}:${Z},${nav}:${DOWN}`]));
+  assert.equal(down.header.cursor, 2, 'Normal → Hard');
+  const downThrice = parse(run(['scene-boot', dat, String(nav + 6), `${t}:${Z},${nav}:${DOWN},${nav + 2}:${DOWN},${nav + 4}:${DOWN}`]));
+  assert.equal(downThrice.header.cursor, 3, 'wrap=0: clamps at Lunatic');
+  const upTwice = parse(run(['scene-boot', dat, String(nav + 4), `${t}:${Z},${nav}:${LEFT},${nav + 2}:${UP}`]));
+  assert.equal(upTwice.header.cursor, 0, 'LEFT also moves −1; clamps at Easy');
+  const confirm = parse(run(['scene-boot', dat, String(nav + 2 + 15), `${t}:${Z},${nav}:${DOWN},${nav + 2}:${Z}`]));
+  assert.equal(confirm.header.screen, 6);
+  assert.equal(confirm.header.difficulty, 2);
+  assert.equal(confirm.header.cursor, 0, 'shot cursor = DAT_004a6f24 (last shot) = 0');
+  const sfx = confirm.events.filter(e => e[0] === 'sfx').map(e => e[1]);
+  assert.deepEqual(sfx, ['7', '10', '7']);
+  const notYet = parse(run(['scene-boot', dat, String(nav + 2 + 14), `${t}:${Z},${nav}:${DOWN},${nav + 2}:${Z}`]));
+  assert.equal(notYet.header.screen, 5, 'Timer must exceed 0xd');
+});
+
+test('difficulty screen: cancel → back to main menu with difficulty = cursor, main menu restarts at Intro', needDat, () => {
+  const t = MAIN + 1;
+  const nav = t + 21 + DIFF_READY + 1;
+  const back = parse(run(['scene-boot', dat, String(nav + 2 + AFTER_CANCEL), `${t}:${Z},${nav}:${DOWN},${nav + 2}:${X}`]));
+  assert.equal(back.header.screen, 1);
+  assert.equal(back.header.sub, 0, 'set_screen(1) on cancel+6');
+  const out = parse(run(['scene-boot', dat, String(nav + 2 + AFTER_CANCEL + 1), `${t}:${Z},${nav}:${DOWN},${nav + 2}:${X}`]));
+  assert.equal(out.header.screen, 1);
+  assert.equal(out.header.difficulty, 2);
+  assert.equal(out.header.sub, 1, 'main menu re-enters case 0 → Intro');
+  assert.equal(out.header.cursor, 0, 'cursor popped to Game Start');
+  assert.deepEqual(out.events.at(-1), ['screen', '1']);
+});
+
+test('game start flow: Normal / Cirno / Autumn → scene 7 with stage 1, title destroyed', needDat, () => {
+  const t = MAIN + 1;
+  const diff = t + AFTER_MAIN;
+  const shot = diff + AFTER_DIFF;
+  const season = shot + 2 + AFTER_SHOT;           // RIGHT 在 shot，确定在 shot+2
+  const script = [`${t}:${Z}`, `${diff}:${Z}`, `${shot}:${RIGHT}`, `${shot + 2}:${Z}`, `${season}:${RIGHT}`, `${season + 2}:${Z}`].join(',');
+  const atSeason = parse(run(['scene-boot', dat, String(season), script]));
+  assert.equal(atSeason.header.screen, 7);
+  assert.equal(atSeason.header.shot, 1, 'Cirno');
+  assert.equal(atSeason.header.cursor, 1, 'season cursor starts at MenuCursor::set(shot)');
+  const confirmed = parse(run(['scene-boot', dat, String(season + 2 + 12), script]));
+  assert.equal(confirmed.header.screen, 7);
+  assert.equal(confirmed.header.sub, 3);
+  assert.ok(confirmed.events.some(e => e[0] === 'transition'), 'Timer==10 spawns the transition effect');
+  assert.ok(confirmed.events.some(e => e[0] === 'bgm-fade'));
+  const started = parse(run(['scene-boot', dat, String(season + 2 + 0x28 + 2), script]));
+  assert.equal(started.header.scene, 7);
+  assert.equal(started.header.title_live, 0);
+  assert.equal(started.header.difficulty, 1);
+  assert.equal(started.header.shot, 1);
+  assert.equal(started.header.season, 2, 'Autumn');
+  assert.equal(started.header.stage, 1);
+  assert.equal(started.header.update_chains, 0, 'title update chain removed');
+  assert.equal(started.header.quads, 0, 'title.anm / title_v.anm VMs killed and banks unloaded');
+  assert.deepEqual(started.events.at(-1), ['scene', '7']);
+});
+
+test('shot screen: cancel returns to Difficulty with cursor popped', needDat, () => {
+  const t = MAIN + 1;
+  const diff = t + AFTER_MAIN;
+  const shot = diff + 2 + AFTER_DIFF;             // DOWN 在 diff，确定在 diff+2
+  const out = parse(run(['scene-boot', dat, String(shot + 2 + AFTER_CANCEL + 1), `${t}:${Z},${diff}:${DOWN},${diff + 2}:${Z},${shot}:${RIGHT},${shot + 2}:${X}`]));
+  assert.equal(out.header.screen, 5);
+  assert.equal(out.header.cursor, 2, 'difficulty cursor restored (Hard)');
+  assert.equal(out.header.shot, 1, 'DAT_004a57a4 keeps the shot that was highlighted');
+});
+
+test('practice: season confirm goes to Stage select (8); locked stages refuse with SFX 0x10', needDat, () => {
+  const t = MAIN + 1;
+  const diff = t + 2 + AFTER_MAIN;                // 主菜单 ↓ 到 Practice（2）再确定
+  const shot = diff + AFTER_DIFF;
+  const season = shot + AFTER_SHOT;
+  const stage = season + AFTER_SEASON_PRACTICE;
+  const script = [`${t}:${DOWN}`, `${t + 2}:${Z}`, `${diff}:${Z}`, `${shot}:${Z}`, `${season}:${Z}`, `${stage}:${Z}`].join(',');
+  const out = parse(run(['scene-boot', dat, String(stage + 2), script]));
+  assert.equal(out.header.mode, 1);
+  assert.equal(out.header.screen, 8);
+  assert.equal(out.header.cursor, 0, 'DAT_004a2974 = -1 clamps to 0');
+  assert.deepEqual(out.events.at(-1), ['sfx', '16'], 'no clear data → stage locked');
+});
+
+test('stub screens (Option/Replay/…): cancel returns to the main menu', needDat, () => {
+  const t = MAIN + 1;
+  const downs = Array.from({length: 6}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Option (7)
+  const confirmAt = t + 12 + 2;
+  const out = parse(run(['scene-boot', dat, String(confirmAt + 21 + 4), [...downs, `${confirmAt}:${Z}`, `${confirmAt + 22}:${X}`].join(',')]));
+  assert.equal(out.header.screen, 1);
+  assert.ok(out.events.some(e => e[0] === 'stub' && e[1] === '3'));
 });
 
 test('chain-demo: priority order, Remove, Restart, enable/disable', () => {

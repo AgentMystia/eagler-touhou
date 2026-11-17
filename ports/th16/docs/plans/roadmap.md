@@ -16,21 +16,23 @@
 | ANM 屏幕四边形绘制（0x468490 mode 0..3）+ 启动幕改由 VM 驱动：`sig.anm` script0/1 淡入上屏；纹理按 entry 声明尺寸衬垫；几何单测 + 浏览器截图 vs 纹理合成 MAD≈1.8 | `game/AnmRenderer.cpp`、`sdl/Application.cpp`、`tests/anm-draw.test.mjs` |
 | Supervisor 场景状态机 + 输入边沿：Boot→Title（0x43b290 请求；标题线程等 0xb4 帧，仅 DAT_004c1800&0x180 可放行）；`title.anm`/`title_v.anm` 装载 | `game/Supervisor.hpp`、`game/Input.hpp`、`tests/supervisor.test.mjs` |
 | Chain 表（0x401730/0x401300/0x4013b0/0x401460/0x4015a0/0x4017a0：优先级插入、init、启用位、Remove/Break/Restart 返回码）+ 帧计时 0x45a8a0（1/60，rAF 折算 0..4 步）+ 0x405580 边沿/连发（>0x19 帧后每 8 帧）| `game/Chain.cpp`、`game/FrameClock.hpp`、`game/Input.hpp`、`tests/supervisor.test.mjs` |
-| 标题主菜单 0x44af80/0x44b5f0 case 0/1/2/4：装饰 0x61/0x65 → Timer 0x78 → logo/title_v → 第 11 帧 Main；MenuCursor（wrap、禁用 Extra）；确定 0x80001 / 取消 0x102；子项 0x1d/0x1e/0x1f 中断（0x46f510 子树查找）；Timer>0x13 跳转画面表；逻辑层抽成 `GameSession`（浏览器与 harness 同一份时序）；CDP 截图光标移动/取消跳 Quit/确定 | `game/TitleMenu.hpp`、`game/MenuCursor.hpp`、`game/GameSession.cpp`、`game/AnmManager.cpp`、`tests/supervisor.test.mjs` |
+| 标题子画面 0x44fe20 难度 / 0x4502c0 机体 / 0x450af0 子季节 / 0x450ef0 练习关卡：面板脚本 0x7e/0x96/0x97/0x71、项中断（cursor+7/+0xd/+0x13/+0x19）、确定/取消节拍（Timer 0xd/0xe/5/10/0x27）、MenuCursor 压栈/出栈、GameGlobals（难度 1 / 机体 / 季节 / 关卡 / 模式位）；季节确定 → DAT_004c17c4=7 → Supervisor 切到 Game(7) 并析构标题（0x44af50：摘链、kill 槽 0x10/0x11）；Quit → 场景 2；CDP 截图 RANK/PLAYER/SUBWEAPON SELECT | `game/TitleScene.cpp`、`game/GameGlobals.hpp`、`game/MenuCursor.hpp`、`game/GameSession.cpp`、`tests/supervisor.test.mjs` |
+| 标题主菜单 0x44af80/0x44b5f0 case 0/1/2/4：装饰 0x61/0x65 → Timer 0x78 → logo/title_v → 第 11 帧 Main；MenuCursor（wrap、禁用 Extra）；确定 0x80001 / 取消 0x102；子项 0x1d/0x1e/0x1f 中断（0x46f510 子树查找）；Timer>0x13 跳转画面表；逻辑层抽成 `GameSession`（浏览器与 harness 同一份时序）；CDP 截图光标移动/取消跳 Quit/确定 | `game/TitleScene.cpp`、`game/MenuCursor.hpp`、`game/GameSession.cpp`、`game/AnmManager.cpp`、`tests/supervisor.test.mjs` |
 
 ## 顺序
 
-1. 标题子画面：难度选择 0x44fe20（→ 机体/子季节选择）、Option 0x44c570、Replay 0x451750、Player Data 0x452330、Music Room 0x4546f0、Manual 0x4545a0、Spell Practice 0x4553d0；demo 录像触发（无输入 0x708 帧）；标题绘制链 0x44b530。
-2. ANM 更高绘制模式（4+：投影/世界/条带/网格）与外部钩子：ins_508 EffectManager（0x418af0）、sprite_mapper（0x491b1c）、update/draw/delete 回调表（0x4919e8 / 0x491b58）；标题画面逐帧对照。
-3. ECL VM（0x41dcb0 族）：指令集、线程/子程序、变量、与 ANM 绑定。
-4. 敌机 / 子弹 / 激光 / 道具管理器；碰撞；分数/擦弹。
-5. 玩家与 4 机体 × 4 子季节（pl00–pl03 + .sht）；季节系统（Season gauge、Release）。
-6. Boss、符卡、符卡练习；STD 背景场景。
-7. 标题 / 菜单 / Option / Key Config / Music Room / Result / Player Data；MSG 对话；Ending / Staff。
-8. Replay 录制与回放（`th16_udXXXX.rpy`）、score / cfg 文件互通。
-9. 音频：thbgm.fmt 循环点、音效表。
-10. 全关卡 oracle 对拍：原版录像在移植版回放逐帧状态一致；关键帧像素对照。
-11. 性能：60fps、单帧 < 8ms、WASI 3600 帧 < 10s。
-12. 登记（workspace.json、runtime-builds.json、product-catalog、docs/migration、TOUHOU_PROGRESS、ports/README、WORKSPACE）、ADAPTATION.md 验收记录、PR。
+1. Game 场景（DAT_004c17c4=7）：GameManager 创建、stage 表 DAT_004a23a4、ECL/STD 装载入口；季节确定后过场（EffectManager 0x418ba0 + ascii 0x11）；sprite_mapper 0x491b1c（季节面板子季节项疑因精灵越界被跳过，需对拍）。
+2. 标题余项：Option 0x44c570、Replay 0x451750、Player Data 0x452330、Music Room 0x4546f0、Manual 0x4545a0、Spell Practice 0x4553d0；demo 录像触发（无输入 0x708 帧）；标题绘制链 0x44b530；存档（scoreth16.dat）驱动的 Extra/练习解锁。
+3. ANM 更高绘制模式（4+：投影/世界/条带/网格）与外部钩子：ins_508 EffectManager（0x418af0）、sprite_mapper（0x491b1c）、update/draw/delete 回调表（0x4919e8 / 0x491b58）；标题画面逐帧对照。
+4. ECL VM（0x41dcb0 族）：指令集、线程/子程序、变量、与 ANM 绑定。
+5. 敌机 / 子弹 / 激光 / 道具管理器；碰撞；分数/擦弹。
+6. 玩家与 4 机体 × 4 子季节（pl00–pl03 + .sht）；季节系统（Season gauge、Release）。
+7. Boss、符卡、符卡练习；STD 背景场景。
+8. 标题 / 菜单 / Option / Key Config / Music Room / Result / Player Data；MSG 对话；Ending / Staff。
+9. Replay 录制与回放（`th16_udXXXX.rpy`）、score / cfg 文件互通。
+10. 音频：thbgm.fmt 循环点、音效表。
+11. 全关卡 oracle 对拍：原版录像在移植版回放逐帧状态一致；关键帧像素对照。
+12. 性能：60fps、单帧 < 8ms、WASI 3600 帧 < 10s。
+13. 登记（workspace.json、runtime-builds.json、product-catalog、docs/migration、TOUHOU_PROGRESS、ports/README、WORKSPACE）、ADAPTATION.md 验收记录、PR。
 
 每一步：先 oracle，再实现，再 `node --test`；AddressMap.hpp 同步登记。

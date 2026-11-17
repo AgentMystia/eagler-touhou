@@ -20,7 +20,9 @@ namespace th16 {
 enum class SceneId : i32 {
     Invalid = -1,
     Boot = 1,     // 0x43ce10 case 0→1 后的当前态
+    Quit = 2,     // 0x44af80 case 2：DAT_004c17c4 = 2（或 3，DAT_004c1800 bit13）
     Title = 4,    // DAT_004c17c4 = 4（0x43b290）
+    Game = 7,     // 0x450af0 / 0x450ef0 case 3：DAT_004c17c4 = 7
 };
 
 class Supervisor {

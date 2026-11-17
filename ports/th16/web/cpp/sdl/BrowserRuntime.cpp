@@ -46,11 +46,15 @@ EMSCRIPTEN_KEEPALIVE unsigned th16_boot_frames() {
 EMSCRIPTEN_KEEPALIVE int th16_title_live() {
     return app && app->supervisor().title_menu_live ? 1 : 0;
 }
-// 标题菜单观测：光标（+0x24）/ 子状态（+0x20）/ 已确定项 / 下一画面（0x44a560 目标）
-EMSCRIPTEN_KEEPALIVE int th16_menu_cursor() { return app ? app->title_menu().cursor.index : -1; }
-EMSCRIPTEN_KEEPALIVE int th16_menu_state() { return app ? int(app->title_menu().sub) : -1; }
-EMSCRIPTEN_KEEPALIVE int th16_menu_selected() { return app ? app->title_menu().selected : -1; }
-EMSCRIPTEN_KEEPALIVE int th16_menu_next_screen() { return app ? int(app->title_menu().next_screen) : -1; }
+// 标题观测：画面（+0x18）/ 子状态（+0x20）/ 光标（+0x24）/ 全局难度·机体·季节·关卡 / 退出请求
+EMSCRIPTEN_KEEPALIVE int th16_title_screen() { return app ? app->title().screen : -1; }
+EMSCRIPTEN_KEEPALIVE int th16_title_sub() { return app ? app->title().sub : -1; }
+EMSCRIPTEN_KEEPALIVE int th16_title_cursor() { return app ? app->title().cursor.index : -1; }
+EMSCRIPTEN_KEEPALIVE int th16_difficulty() { return app ? app->session.globals.difficulty : -1; }
+EMSCRIPTEN_KEEPALIVE int th16_shot() { return app ? app->session.globals.shot : -1; }
+EMSCRIPTEN_KEEPALIVE int th16_season() { return app ? app->session.globals.season : -1; }
+EMSCRIPTEN_KEEPALIVE int th16_stage() { return app ? app->session.globals.stage : -1; }
+EMSCRIPTEN_KEEPALIVE int th16_quit_requested() { return app && app->session.quit_requested ? 1 : 0; }
 // 测试注入：与键盘采样 OR 的 held 位（InputState 位布局：bit0 Z, bit1 X, bit4 ↑, bit5 ↓, bit8 Esc, bit19 Enter）
 EMSCRIPTEN_KEEPALIVE void th16_inject_input(unsigned bits) { if (app) app->session.injected_input = bits; }
 // 最近逻辑步数（FrameClock 追帧观测）
