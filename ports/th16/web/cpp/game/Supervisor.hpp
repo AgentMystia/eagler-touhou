@@ -5,8 +5,8 @@
 //   0x43b3d0  每帧：音频泵 / 输入 0x401d50 / 装载步进 / 场景切换 0x43ce10
 //   0x43ce10  +0x6f0 当前 / +0x6f4 请求；全局请求 DAT_004c17c4
 //   0x43b1f0  创建启动幕对象；0x43adc0 装载；完成后启用更新链 → 0x43b290 请求 Title(4)
-//   0x44aee0  创建标题；0x44abc0 线程：装载 title*.anm，等启动幕 +0x638≥0xb4 或跳过输入，
-//            再卸 sig.anm、启用标题更新链
+//   0x44aee0  创建标题；0x44abc0 线程：装载 title*.anm，等启动幕 +0x638≥0xb4（或 DAT_004c1800 & 0x180
+//            配置位直接放行；输入不能跳过），再卸 sig.anm、启用标题更新链
 //
 // 本文件只还原状态与时序；具体装载/生成由 Application 回调完成。
 #pragma once
@@ -26,10 +26,12 @@ enum class SceneId : i32 {
 class Supervisor {
 public:
     static constexpr u32 kBootHoldFrames = 0xb4;  // 180：标题线程等待启动幕帧计数
+    static constexpr u32 kSkipBootFlags = 0x180;  // DAT_004c1800 & 0x180
 
     SceneId current = SceneId::Invalid;
     SceneId requested = SceneId::Invalid;
     float game_speed = 1.0f;   // DAT_004a5788（0x43b520 置 1.0）
+    u32 config_flags = 0;      // DAT_004c1800（命令行/配置位）
     InputState input;
     u32 boot_frames = 0;       // 启动幕对象 +0x638（0x43b300 每绘帧 +1）
     bool title_assets_ready = false;  // title.anm / title_v.anm 已进槽
@@ -42,7 +44,7 @@ public:
 
     // 标题线程等待条件（0x44abea / 0x44ac00）
     bool boot_hold_elapsed() const {
-        return boot_frames >= kBootHoldFrames || input.boot_skip();
+        return boot_frames >= kBootHoldFrames || (config_flags & kSkipBootFlags) != 0;
     }
 
     // 若 requested != current 则切换并返回 true（调用方执行 enter/leave）

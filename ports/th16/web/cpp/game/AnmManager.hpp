@@ -67,6 +67,12 @@ public:
     void tick_ui();
     // 0x46efa0：按 id 找 VM
     AnmVm* find(u32 id);
+    // 0x46f510：在 vm 的子树（+0x588 子表，递归）里找第 nth 个 template_script == script 的 VM；script == -1 匹配任意
+    static AnmVm* find_child(AnmVm& vm, i32 script, i32 nth);
+    // 0x46f0b0：给 id 对应 VM 及其直接子 VM 挂 pending_interrupt（不立即执行）
+    void interrupt(u32 id, i32 value);
+    // 0x46f130：同上，但随即对每个 VM 调一次 run（0x45f980）
+    void interrupt_now(u32 id, i32 value);
 
     // 0x45f980：单 VM 推进；返回非零表示应删除
     int run(AnmVm& vm);

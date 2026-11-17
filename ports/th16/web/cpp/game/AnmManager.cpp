@@ -333,6 +333,47 @@ AnmVm* AnmManager::find(u32 id) {
     return nullptr;
 }
 
+// 0x46f510
+AnmVm* AnmManager::find_child(AnmVm& vm, i32 script, i32 nth) {
+    for (AnmListNode* node = &vm.children; node != nullptr; node = node->next) {
+        AnmVm* child = node->owner;
+        if (child == nullptr || child == &vm) continue;
+        if (i32(child->template_script) == script || script == -1) {
+            if (nth == 0) return child;
+            --nth;
+        }
+        if (child->children.next != nullptr) {
+            if (AnmVm* deep = find_child(*child, script, nth)) return deep;
+        }
+        // 原版遗留分支：模板脚本 -2 且已到表尾时返回当前结点
+        if (vm.template_script == -2 && node->next == nullptr) return child;
+    }
+    return nullptr;
+}
+
+// 0x46f0b0（interrupt_callback 表 DAT_00491b0c 暂无登记项，原版此表全部为空函数指针槽）
+void AnmManager::interrupt(u32 id, i32 value) {
+    AnmVm* vm = find(id);
+    if (vm == nullptr) return;
+    vm->pending_interrupt = value;
+    for (AnmListNode* n = vm->children.next; n != nullptr; n = n->next) {
+        if (n->owner) n->owner->pending_interrupt = value;
+    }
+}
+
+// 0x46f130
+void AnmManager::interrupt_now(u32 id, i32 value) {
+    AnmVm* vm = find(id);
+    if (vm == nullptr) return;
+    vm->pending_interrupt = value;
+    run(*vm);
+    for (AnmListNode* n = vm->children.next; n != nullptr; n = n->next) {
+        if (n->owner == nullptr) continue;
+        n->owner->pending_interrupt = value;
+        run(*n->owner);
+    }
+}
+
 // 0x46e660：递归标记删除并头插到待删链
 void AnmManager::mark_deleted(AnmVm& vm, AnmListNode& list) {
     for (AnmListNode* n = vm.children.next; n != nullptr;) {
