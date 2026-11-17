@@ -159,10 +159,30 @@ constexpr AddressAnchor kAnchors[] = {
     {"game-input-edges", 0x418650, "game/Input.hpp InputState::commit（DAT_004a52c8 族）"},
     {"anm-unload-file", 0x46D770, "game/AnmManager.cpp AnmManager::unload"},
     {"game-manager-create", 0x42D700, "game/GameSession.cpp GameSession::enter_game（DAT_004a6dd4；更新链 0xf / 绘制链 2；装载线程 0x42d1f0→0x42cb60）"},
-    {"game-manager-load", 0x42CB60, "game/GameSession.cpp enter_game（仅 StageManager + 背景 ANM；Gui/Player/Bullet/Enemy/Item/Effect 待还原）"},
+    {"game-manager-load", 0x42CB60, "game/GameSession.cpp enter_game（Player + StageManager + EnemyManager/ECL；Gui/Bullet/Item/Effect 待还原）"},
     {"game-manager-update", 0x42D7B0, "game/GameManager.cpp GameManager::update（timer 0 → first_frame；DAT_004a579c/DAT_004a57a0++）"},
-    {"game-manager-first-frame", 0x42DC50, "game/GameManager.cpp GameManager::first_frame（0x40add0 启动关卡面 VM）"},
+    {"game-manager-first-frame", 0x42DC50, "game/GameManager.cpp GameManager::first_frame（0x40add0 启动关卡面 VM、0x441740 自机复位、0x41aa70 生成 main）"},
     {"game-manager-destroy", 0x42D200, "game/GameSession.cpp GameSession::leave_game"},
+    {"score-rng-init", 0x449720, "game/GameSession.cpp load_boot_banks（0x4497e0 ScoreFile 构造：DAT_004a6d88 做 0x1ee 次 next16）"},
+    {"replay-rng-reset", 0x449030, "game/GameSession.cpp enter_game（0x449e50 Replay 构造：重置 DAT_004a6d8c 调用计数）"},
+    {"ecl-load", 0x474530, "game/Ecl.cpp EclResource::open + EclProgram::attach（SCPT 头、ANIM/ECLI 包含、ECLH 子程序表排序）"},
+    {"ecl-find-sub", 0x474740, "game/Ecl.cpp EclProgram::find_index（二分查找合并子程序表）"},
+    {"ecl-step", 0x472030, "game/Ecl.cpp EclContext::step（通用 ECL 虚拟机操作码 0..0x5d、栈帧、表达式栈、插值槽）"},
+    {"ecl-call", 0x471DB0, "game/Ecl.cpp EclContext::call_into / return_from_call（调用帧参数类型转换与恢复）"},
+    {"ecl-spawn-async", 0x474430, "game/Enemy.cpp Enemy::spawn（op 15/16 异步子线程）"},
+    {"ecl-arg-int", 0x473E40, "game/Ecl.cpp EclContext::integer（字面量 / 局部帧 / 表达式栈 / 宿主全局变量）"},
+    {"ecl-arg-float", 0x473EF0, "game/Ecl.cpp EclContext::floating"},
+    {"enemy-manager-create", 0x41B340, "game/Enemy.cpp EnemyManager::create + GameSession.cpp enter_game（0x41ae70 装 ECL + 登记更新链 0x1a）"},
+    {"enemy-manager-update", 0x41B3D0, "game/Enemy.cpp EnemyManager::update（0x41b4f0 入口：遍历敌人链表、清 0x40000 重入位、同步 enemy_count）"},
+    {"enemy-spawn", 0x41AA70, "game/Enemy.cpp EnemyManager::spawn_enemy / Enemy::init（分配 id、flags、invuln=2、life_timer=0x3c，立即执行首帧 0x41d1e0）"},
+    {"enemy-update", 0x41D2E0, "game/Enemy.cpp Enemy::update（0x41d1e0：0x40000 隔帧门控 → 运动 0x41bb50 → ECL 0x473bc0 → invuln 倒数）"},
+    {"enemy-motion", 0x41BB50, "game/Enemy.cpp Enemy::update（角度/速度/位置插值 → motion1/2 → 0x41c1f0 合成与 0x20000 边界钳制 → 精灵半宽高场地进出判定）"},
+    {"enemy-motion-combine", 0x41C1F0, "game/Enemy.cpp Enemy::update（motion1+motion2 floor 1/100 + 0x20000 边界框钳制）"},
+    {"enemy-ecl-dispatch", 0x41DCB0, "game/Enemy.cpp Enemy::execute（敌方操作码 ≥300：生成 300..305、ANM 302/303/306、运动 400/401/404..407/412、属性 500..505/511..515/520/535/536/548、掉落 1000）"},
+    {"enemy-spawn-op", 0x423050, "game/Enemy.cpp Enemy::execute case 300..305（相对/绝对/镜像生成子敌人）"},
+    {"enemy-var-get", 0x423810, "game/Enemy.cpp Enemy::integer / Enemy::floating（-10000..-9902 变量读取）"},
+    {"enemy-var-int-dst", 0x423F80, "game/Enemy.cpp Enemy::integer_destination"},
+    {"enemy-var-float-dst", 0x424C10, "game/Enemy.cpp Enemy::float_destination"},
     {"stage-table", 0x4A22D0, "game/StageTable.hpp kStageTable（8 × 0xd4：std/ecl/bgm/msg/logo/曲号）"},
     {"stage-manager-create", 0x409DB0, "game/Stage.cpp StageManager::load（DAT_004a6d9c/a0；更新链 0x11 / 绘制链 3、6）"},
     {"stage-manager-ctor", 0x4097C0, "game/Stage.cpp StageManager::load（相机默认 pos (0,0,-600) facing (0,300,600) up (0,1,0)）"},
@@ -183,7 +203,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"stage-distortion", 0x40C4A0, nullptr}, // ins 17 畸变效果（+0x3314）
     {"stage-effect-fade", 0x43D140, nullptr}, // 绘制链 1：清后台缓冲、RT DAT_004c127c、场地矩形清色 DAT_004c1b0c
     {"rt-composite", 0x43D2F0, nullptr},     // 绘制链 0xf：RT 精灵 VM 0x4c128c 合成到后台缓冲（当前以视口裁剪 + x−96 代替）
-    {"ecl-dispatch", 0x41DCB0, nullptr},     // 19976 字节、81 个被调、switch 密集：ECL 指令主分发
+    {"enemy-collision", 0x41C330, nullptr},  // 敌人受击（0x445a30 伤害源结算）与体术碰撞（0x4439e0）
     {"effect-attach", 0x418AF0, nullptr},    // ins_508：EffectManager（DAT_004a6db8）按效果种类表 DAT_004a2250 挂 update/draw 回调（effect.anm 155–196 依赖）
     {"effect-ring-update", 0x405700, nullptr}, // 效果种类 1 的 update 回调（DAT_004919e8[2]）：环形顶点缓冲 + 生成 effect.anm 0x99
     {"anm-load-file", 0x46D020, nullptr},    // AnmManager::load_file(slot, name)：从档案读 .anm 并进 bank（同步等待装载线程）
@@ -207,7 +227,6 @@ constexpr AddressAnchor kAnchors[] = {
     {"ver-file", 0x43B480, nullptr},         // th16_%.4x%c.ver
     {"music-fmt", 0x43AEAE, nullptr},        // ../../bgm/thbgm.fmt
     // —— 未定位 ——
-    {"enemy-manager", 0, nullptr},
     {"bullet-manager", 0, nullptr},
     {"item-manager", 0, nullptr},
     {"player-laser-create", 0x446200, nullptr},  // 魔理沙激光（回调 2：0x446260 / 0x446870）
