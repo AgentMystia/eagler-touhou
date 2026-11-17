@@ -1,7 +1,7 @@
 // th16 菜单光标——原版 MenuCursor（Title +0x24 起，0xd8 字节）。
 //   +0x00 index  +0x08 count  +0x0c.. 历史栈（0x402de0 压栈：+0x0c 索引 / +0x4c count，+0x8c 深度）
 //   +0x90 禁用项表（最多 16）  +0xd0 wrap 标志  +0xd4 禁用项数
-// 0x402e70 移动（wrap/clamp + 跳过禁用项）；0x418720 直接设置并跳过禁用项；0x440c00 禁用一项。
+// 0x402e70 移动（wrap/clamp + 跳过禁用项）；0x418720 直接设置并跳过禁用项；0x440c00 禁用一项；0x402de0/0x402e20 压栈/出栈。
 #pragma once
 #include "Types.hpp"
 
@@ -74,6 +74,20 @@ struct MenuCursor {
         ++history_depth;
         disabled_count = 0;
         if (history_depth > 15) history_depth = 15;
+    }
+
+    // 0x402e20：出栈恢复 (index, count)，清禁用表；栈空则 index = 0
+    void pop() {
+        --history_depth;
+        if (history_depth < 0) {
+            history_depth = 0;
+            index = 0;
+            disabled_count = 0;
+            return;
+        }
+        index = history_index[history_depth];
+        count = history_count[history_depth];
+        disabled_count = 0;
     }
 };
 

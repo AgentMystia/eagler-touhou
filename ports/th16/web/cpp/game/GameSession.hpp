@@ -11,7 +11,8 @@
 #include "Chain.hpp"
 #include "Input.hpp"
 #include "Supervisor.hpp"
-#include "TitleMenu.hpp"
+#include "GameGlobals.hpp"
+#include "TitleScene.hpp"
 
 #include <functional>
 #include <string>
@@ -27,7 +28,10 @@ public:
     AnmManager animations;
     Supervisor supervisor;
     ChainManager chains;
-    TitleMenu title_menu;
+    GameGlobals globals;
+    TitleScene title;
+    bool quit_requested = false;   // 场景 2/3：原版退出进程；宿主据此停循环
+    std::vector<TitleScene::Event> title_events;  // 离开标题前的事件归档（harness 断言用）
     std::string failure;
     u32 injected_input = 0;   // 外部注入 held 位（与宿主键盘 OR）
     u32 host_input = 0;       // 宿主键盘采样
@@ -49,6 +53,7 @@ private:
     bool load_anm(const char* name, AnmResource*& out);
     bool enter_title_assets();
     bool activate_title_menu();
+    void leave_title();
     void sample_input();
 };
 

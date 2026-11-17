@@ -15,9 +15,9 @@
 //                                              → 每行一层绘制结果："frame layer script id blend x0 y0 x1 y1 x2 y2 x3 y3 u0 v0 u1 v1 u2 v2 u3 v3 color"
 //                                                （spawn 后 tick frames 次再 emit；对应上屏几何，texture 句柄以 entry_index+1 占位）
 //   harness scene-boot <th16.dat> <frames> [skip] [f:bits,...]
-//                                              → GameSession（与浏览器同一逻辑层）：Boot→Title→主菜单；frames 帧后报告
-//                                                scene/boot_frames/title_live/menu_sub/cursor/selected/next_screen/链数/quads，
-//                                                随后 "event sfx N" / "event screen N" 与各四边形。skip = DAT_004c1800&0x180；
+//                                              → GameSession（与浏览器同一逻辑层）：Boot→Title→主菜单→难度/机体/季节/关卡；frames 帧后报告
+//                                                scene/boot_frames/title_live/screen/sub/cursor/difficulty/shot/season/stage/mode/quit/链数/quads，
+//                                                随后 "event sfx|screen|scene|bgm-fade|transition|stub N" 与各四边形。skip = DAT_004c1800&0x180；
 //                                                f:bits 在第 f 帧注入 held 位（0x1 Z，0x2 X，0x10 ↑，0x20 ↓，0x100 Esc，0x80000 Enter）
 //   harness chain-demo                          → ChainManager 走法自检
 //   harness frame-clock <t0> <t1> ...           → 每个墙钟时刻应执行的逻辑步数
@@ -374,11 +374,14 @@ int main(int argc, char** argv) {
         std::vector<AnmQuad> quads;
         if (!renderer.emit_all(session.animations, quads)) return fail(renderer.error.c_str());
         const Supervisor& sup = session.supervisor;
-        const TitleMenu& menu = session.title_menu;
-        std::printf("scene=%d boot_frames=%u title_live=%d menu_sub=%d cursor=%d selected=%d next_screen=%d update_chains=%u draw_chains=%u quads=%zu\n",
-                    int(sup.current), sup.boot_frames, sup.title_menu_live ? 1 : 0, int(menu.sub), menu.cursor.index,
-                    menu.selected, int(menu.next_screen), session.chains.update_count(), session.chains.draw_count(), quads.size());
-        for (const TitleMenu::Event& e : menu.events) std::printf("event %s %d\n", e.kind, e.value);
+        const TitleScene& title = session.title;
+        const GameGlobals& g = session.globals;
+        std::printf("scene=%d boot_frames=%u title_live=%d screen=%d sub=%d cursor=%d difficulty=%d shot=%d season=%d stage=%d mode=%d quit=%d update_chains=%u draw_chains=%u quads=%zu\n",
+                    int(sup.current), sup.boot_frames, sup.title_menu_live ? 1 : 0, title.screen, title.sub, title.cursor.index,
+                    g.difficulty, g.shot, g.season, g.stage, g.mode(), session.quit_requested ? 1 : 0,
+                    session.chains.update_count(), session.chains.draw_count(), quads.size());
+        for (const TitleScene::Event& e : session.title_events) std::printf("event %s %d\n", e.kind, e.value);
+        for (const TitleScene::Event& e : title.events) std::printf("event %s %d\n", e.kind, e.value);
         for (const AnmQuad& q : quads) {
             std::printf("%d %d %u %.8g %.8g %.8g %.8g %08x\n",
                         q.layer, q.script, q.id, q.x0, q.y0, q.x1, q.y3, q.color0);

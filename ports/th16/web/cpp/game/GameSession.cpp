@@ -88,12 +88,17 @@ bool GameSession::activate_title_menu() {
     AnmFile* title_v_file = animations.file(0x11);
     if (title_file == nullptr || title_v_file == nullptr) { failure = "title banks missing"; return false; }
 
-    // 0x44af80 case 0 → 0x44a560(1) → 0x44b5f0：菜单对象在首次更新链调用时自行生成装饰/logo
-    title_menu.activate(title_file, title_v_file);
+    // 0x44af80 case 0 → 0x44a560(1) → 0x44b5f0：标题对象在首次更新链调用时自行生成装饰/logo
+    title.activate(title_file, title_v_file, animations.file(AnmManager::kAsciiSlot), globals);
+    globals.scene_request = -1;
 
     // 0x44ac54：启用标题更新链（优先级 6 → 0x44af80）
     title_update_chain_ = chains.create([this]() -> ChainResult {
-        title_menu.update(animations, supervisor.input);
+        title.update(animations, supervisor.input);
+        if (globals.scene_request >= 0) {
+            supervisor.request(SceneId(globals.scene_request));
+            globals.scene_request = -1;
+        }
         return ChainResult::Continue;
     }, 6, true);
     chains.enable(title_update_chain_);
@@ -107,12 +112,29 @@ void GameSession::sample_input() {
     supervisor.input.commit();
 }
 
+// 0x44af50 析构 / 0x43ce10 切换：摘标题更新链，标记 title*.anm VM 删除（0x46f270），释放槽
+void GameSession::leave_title() {
+    if (title_update_chain_) { chains.remove(title_update_chain_); title_update_chain_ = nullptr; }
+    title_events.insert(title_events.end(), title.events.begin(), title.events.end());
+    title = TitleScene{};
+    animations.kill_file(0x10);
+    animations.kill_file(0x11);
+    animations.tick_world();
+    animations.unload(0x10);
+    animations.unload(0x11);
+    supervisor.title_menu_live = false;
+    supervisor.title_assets_ready = false;
+}
+
 bool GameSession::logic_step() {
     sample_input();
 
     SceneId leave = SceneId::Invalid, enter = SceneId::Invalid;
     if (supervisor.consume_switch(leave, enter)) {
+        if (leave == SceneId::Title) leave_title();
         if (enter == SceneId::Title && !enter_title_assets()) return false;
+        if (enter == SceneId::Quit) quit_requested = true;
+        // SceneId::Game（7）：GameManager（0x43c??? 族）待还原；当前停在黑屏并由宿主/测试观测 supervisor.current
     }
 
     // 启动幕：绘制链推进 boot_frames；标题线程等待条件（0x44abea / 0x44ac00）

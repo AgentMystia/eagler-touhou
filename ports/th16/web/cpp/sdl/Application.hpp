@@ -22,7 +22,7 @@ public:
 
     // 便捷访问（BrowserRuntime 导出用）
     Supervisor& supervisor() { return session.supervisor; }
-    TitleMenu& title_menu() { return session.title_menu; }
+    TitleScene& title() { return session.title; }
 
     bool initialize(const char* archive_path);
     // 固定一个逻辑步 + 绘制（测试/步进用）。返回 false = 致命错误。
