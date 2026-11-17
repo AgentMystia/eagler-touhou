@@ -93,6 +93,8 @@ public:
     bool emit_all(AnmManager& manager, std::vector<AnmQuad>& out);
     // 0x409f90：关卡背景——以关卡相机（0x43c940）投影层 0..7 的层精灵与实例四边形
     bool emit_stage(AnmManager& manager, StageManager& stage, StagePass& out);
+    // 0x468c00：VM 四角的屏幕坐标（逻辑侧出界判定用；mode 0/2/3 轴对齐、mode 1 带旋转，其它模式不写并返回 false）
+    bool vm_corners(const AnmVm& vm, float out[4][3]) const;
 
 private:
     const AnmCamera* active_camera_ = &camera;   // DAT_004c17b8

@@ -213,6 +213,24 @@ void AnmRenderer::rotated_corners(const AnmVm& vm, float out[4][2]) const {
     }
 }
 
+bool AnmRenderer::vm_corners(const AnmVm& vm, float out[4][3]) const {
+    // 0x468c00 → 0x465c40 / 0x4660b0：四角偏移 + 0x406c40 位置；Z = entity_offset.z + pos.z + pos2.z
+    float corners[4][2];
+    switch (vm.render_mode()) {
+    case 0: case 2: case 3: axis_corners(vm, corners); break;
+    case 1: rotated_corners(vm, corners); break;
+    default: return false;
+    }
+    const Vec3 origin = world_position(vm);
+    const float z = vm.entity_offset.z + vm.pos.z + vm.pos2.z;
+    for (int i = 0; i < 4; ++i) {
+        out[i][0] = corners[i][0] + origin.x;
+        out[i][1] = corners[i][1] + origin.y;
+        out[i][2] = z;
+    }
+    return true;
+}
+
 bool AnmRenderer::emit(AnmManager& manager, AnmVm& vm, AnmQuad& out) {
     // 0x468490 入口条件：可见 + flag2 + 非删除中
     if ((vm.flags_lo & 1u) == 0 || (vm.flags_lo & 2u) == 0) return false;

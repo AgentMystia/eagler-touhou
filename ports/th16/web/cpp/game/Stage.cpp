@@ -3,24 +3,13 @@
 #include <cmath>
 #include <cstring>
 
+#include "Motion.hpp"   // wrap_angle / sin_f / cos_f（0x402d90 / 0x405510 / 0x4054f0）
+
 namespace th16 {
 
 namespace {
 
 constexpr float kPi = 3.1415927f;
-
-// 0x402d90：把角度折回 (-π, π]（最多 0x22 圈）
-float wrap_angle(float a) noexcept {
-    // 0x402d90：两段循环共用计数器，各至多 0x22 次
-    int n = 0;
-    while (a > kPi) { a -= 6.2831855f; if (++n > 0x21) break; }
-    while (a < -kPi) { a += 6.2831855f; if (++n > 0x21) break; }
-    return a;
-}
-
-// 0x405510 / 0x4054f0：CVTSS2SD → CRT sin/cos(double) → CVTSD2SS；必须经 double 再舍入，sinf/cosf 会偶发差 1 ulp
-float sin_f(float a) noexcept { return float(std::sin(double(a))); }
-float cos_f(float a) noexcept { return float(std::cos(double(a))); }
 
 StageFog fog_from_color(u32 color, float near_, float far_) {
     StageFog f;
