@@ -127,6 +127,25 @@ constexpr AddressAnchor kAnchors[] = {
     {"anm-interrupt", 0x46F0B0, "game/AnmManager.cpp AnmManager::interrupt"},
     {"anm-interrupt-run", 0x46F130, "game/AnmManager.cpp AnmManager::interrupt_now"},
     {"anm-kill-file", 0x46F270, "game/AnmManager.cpp AnmManager::kill_file"},
+    {"player-create", 0x441C60, "game/GameSession.cpp GameSession::create_player + game/Player.cpp Player::init"},
+    {"player-init", 0x440FB0, "game/Player.cpp Player::init（pl0N.anm 槽 9 / pl0Nsub.anm 槽 0x1e、.sht、更新链 0x16 / 绘制链 0x1d）"},
+    {"player-set-pos", 0x440E40, "game/Player.cpp Player::set_position"},
+    {"player-reset", 0x441740, "game/Player.cpp Player::reset（0x42dc50 首帧）"},
+    {"player-options-interrupt", 0x440DC0, "game/Player.cpp Player::interrupt_options"},
+    {"player-update", 0x442560, "game/Player.cpp Player::update（0x443720 更新链 0x16 入口）"},
+    {"player-move", 0x441CF0, "game/Player.cpp Player::move"},
+    {"player-options-tick", 0x442380, "game/Player.cpp Player::update_options"},
+    {"player-options-setup", 0x4440E0, "game/Player.cpp Player::setup_options"},
+    {"player-shoot", 0x4455D0, "game/Player.cpp Player::shoot（计时部分；0x440d50 / 0x445470 发弹待接）"},
+    {"player-draw", 0x443730, "game/Player.cpp Player::prepare_draw（0x468490 直绘待接）"},
+    {"sht-load", 0x443790, "game/ShotTable.cpp ShotTable::parse"},
+    {"season-step", 0x43DEB0, "game/GameGlobals.hpp GameGlobals::set_season_step"},
+    {"anm-spawn-front", 0x426160, "game/AnmManager.cpp AnmManager::spawn_front"},
+    {"anm-kill", 0x46F1C0, "game/AnmManager.cpp AnmManager::kill"},
+    {"anm-kill-tree", 0x46F220, "game/AnmManager.cpp AnmManager::kill_tree"},
+    {"timer-rewind", 0x43AC80, "game/AnmVm.cpp Timer::rewind"},
+    {"replay-record", 0x447FD0, "game/GameSession.cpp create_player 记录链 0x10（DAT_004a52c8 = held 低 16 位）"},
+    {"game-input-edges", 0x418650, "game/Input.hpp InputState::commit（DAT_004a52c8 族）"},
     {"anm-unload-file", 0x46D770, "game/AnmManager.cpp AnmManager::unload"},
     {"game-manager-create", 0x42D700, "game/GameSession.cpp GameSession::enter_game（DAT_004a6dd4；更新链 0xf / 绘制链 2；装载线程 0x42d1f0→0x42cb60）"},
     {"game-manager-load", 0x42CB60, "game/GameSession.cpp enter_game（仅 StageManager + 背景 ANM；Gui/Player/Bullet/Enemy/Item/Effect 待还原）"},
@@ -180,7 +199,9 @@ constexpr AddressAnchor kAnchors[] = {
     {"enemy-manager", 0, nullptr},
     {"bullet-manager", 0, nullptr},
     {"item-manager", 0, nullptr},
-    {"player", 0, nullptr},
+    {"player-bullets", 0x4456D0, nullptr},   // 自机弹池推进（0x1114 ×256）
+    {"player-fire", 0x445470, nullptr},      // 按 .sht 射击组出弹
+    {"player-death", 0x443CD0, nullptr},     // 被弹结算（状态 4 → 2）
     {"season-system", 0, nullptr},  // th16 特有：季节槽/季节解放
 };
 
