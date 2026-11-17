@@ -56,6 +56,8 @@ bool GameSession::load_boot_banks() {
         if (!load_anm(bank.name, res)) return false;
         if (animations.load(bank.slot, *res) == nullptr) { failure = std::string(bank.name) + " load failed"; return false; }
     }
+    // 0x43adc0 → 0x4497e0 → 0x449720（ScoreFile 构造）：对 DAT_004a6d88 做 0x1ee 次单步随机（0 -> 0x41b6）
+    for (int i = 0; i < 0x1ee; ++i) animations.visual_rng.next16();
     return true;
 }
 
@@ -232,6 +234,8 @@ bool GameSession::enter_game() {
     game.mode = 0;
     game.entry = &stage_entry(globals.stage);
     game_input = InputState{};
+    // 0x42cb60 → 0x449e50 → 0x449030（Replay 构造）：重置 DAT_004a6d8c 调用计数
+    animations.visual_rng.calls = 0;
 
     // 0x42cb60：新游戏（DAT_004c17d0，0x43ce10 case 7 置位）先建 Player，再建 Gui / Stage / …
     if (!create_player()) return false;
@@ -247,6 +251,40 @@ bool GameSession::enter_game() {
     if (game.stage.anm == nullptr) { failure = "stage anm load failed"; return false; }
     game.stage_live = true;
 
+    // 0x41b340 / 0x41ae70：装 ECL，登记敌人更新链优先级 0x1a（0x41b4f0→0x41b3d0）
+    {
+        auto read_ecl = [](void* user, const std::string& name, std::vector<u8>& data) -> bool {
+            return static_cast<Archive*>(user)->read(name.c_str(), data);
+        };
+        auto load_enemy_anm = [](void* user, u32 slot, const std::string& name) -> bool {
+            auto* self = static_cast<GameSession*>(user);
+            AnmResource* res = nullptr;
+            if (!self->load_anm(name.c_str(), res) || res == nullptr) return false;
+            return self->animations.load(int(slot), *res) != nullptr;
+        };
+        game.enemies.read_user = &archive_;
+        game.enemies.read_fn = read_ecl;
+        game.enemies.anm_user = this;
+        game.enemies.anm_fn = load_enemy_anm;
+        if (!game.enemies.create(game.entry->ecl_name, globals, game.player_live ? &game.player : nullptr,
+                                 animations.visual_rng, animations, u8(1u << (globals.difficulty & 31)))) {
+            failure = game.enemies.error;
+            return false;
+        }
+        game.enemies_live = true;
+        enemy_update_chain_ = chains.create([this]() -> ChainResult {
+            if (game.enemies_live) {
+                game.enemies.update(supervisor.game_speed);
+                if (sync_enemy_count) game.world.enemy_count = game.enemies.enemy_count;
+                if (!game.enemies.error.empty()) {
+                    failure = game.enemies.error;
+                    return ChainResult::BreakExit;
+                }
+            }
+            return ChainResult::Continue;
+        }, 0x1a, true);
+    }
+
     // 0x4097c0：关卡更新链（优先级 0x11）；0x42cb60：GameManager 更新链（优先级 0xf）
     stage_update_chain_ = chains.create([this]() -> ChainResult {
         game.stage.update(animations, supervisor.game_speed);
@@ -261,6 +299,7 @@ bool GameSession::enter_game() {
     game.timer.set(0);
     chains.enable(game_update_chain_);
     chains.enable(stage_update_chain_);
+    if (enemy_update_chain_) chains.enable(enemy_update_chain_);
     game_live = true;
     return true;
 }
@@ -269,6 +308,7 @@ void GameSession::leave_game() {
     // 0x42d200：摘链、释放管理器；关卡背景 ANM 槽回收
     if (game_update_chain_) { chains.remove(game_update_chain_); game_update_chain_ = nullptr; }
     if (stage_update_chain_) { chains.remove(stage_update_chain_); stage_update_chain_ = nullptr; }
+    if (enemy_update_chain_) { chains.remove(enemy_update_chain_); enemy_update_chain_ = nullptr; }
     if (replay_record_chain_) { chains.remove(replay_record_chain_); replay_record_chain_ = nullptr; }
     if (player_update_chain_) { chains.remove(player_update_chain_); player_update_chain_ = nullptr; }
     if (player_draw_chain_) { chains.remove(player_draw_chain_); player_draw_chain_ = nullptr; }

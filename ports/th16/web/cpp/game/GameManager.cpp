@@ -6,18 +6,24 @@
 namespace th16 {
 
 void GameManager::first_frame(AnmManager& manager, GameGlobals& globals) {
-    // 0x42dc50：清重试位；0x40add0 建面 VM、启用关卡链；帧计数清零；（其余管理器复位 / BGM 待接入）
+    // 0x42dc50：清重试位；0x40add0 建面 VM、启用关卡链；帧计数清零；0x41aa70 生成 "main"
     flags &= ~kRetry;
     if (stage_live) stage.start(manager);
     if (player_live) player.reset(manager, globals);   // 0x441740
     globals.game_frame = 0;
     globals.stage_frame = 0;
+    if (enemies_live) {
+        if (!enemies.spawn_main()) {
+            // 生成失败时置装载失败位；上层会在 failure 中看到 enemies.error
+            flags |= kLoadFailed;
+        }
+        // enemy_count 由敌人更新链同步；harness 桩可覆盖，避免此处抢写
+    }
 }
 
 bool GameManager::update(AnmManager& manager, GameGlobals& globals, float game_speed) {
     // 0x42d7b0
     if ((flags & kStageClear) != 0) {
-        // 过关流程（+0xb0 计数、0x45c900 结算对象、下一关请求）随 ECL 接入
         ++end_counter;
     }
     if (timer.current == 0) {

@@ -12,6 +12,7 @@
 // 本阶段只接入 StageManager（关卡背景）；其它管理器按 roadmap 逐个接入。
 #pragma once
 #include "AnmVm.hpp"
+#include "Enemy.hpp"
 #include "Player.hpp"
 #include "Stage.hpp"
 #include "StageTable.hpp"
@@ -45,9 +46,11 @@ public:
     bool stage_live = false;
     Player player;               // DAT_004a6ef8（新游戏时 0x441c60 创建）
     bool player_live = false;
-    PlayerWorld world;           // 敌人 / 对话 / 过关状态的外部输入（相应管理器接入前由宿主或 harness 喂）
+    EnemyManager enemies;        // DAT_004a6dc0
+    bool enemies_live = false;
+    PlayerWorld world;           // 敌人 / 对话 / 过关状态；enemy_count 由 EnemyManager 同步
 
-    // 0x42dc50 首帧初始化（关卡背景部分）
+    // 0x42dc50 首帧初始化（关卡背景 + 生成 "main"）
     void first_frame(AnmManager& manager, GameGlobals& globals);
     // 0x42d7b0：返回 false 表示链应中断（原版返回 3）
     bool update(AnmManager& manager, GameGlobals& globals, float game_speed);
