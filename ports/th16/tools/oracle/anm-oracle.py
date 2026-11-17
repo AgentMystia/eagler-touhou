@@ -160,7 +160,7 @@ class Oracle:
         }
         # 代码内跳过：构造尾部 IDirect3DDevice9::SetTexture(0, NULL)（DAT_004c10d8 设备在 oracle 中不存在）
         self.skips = {0x46B741: 0x46B751}
-        uc.hook_add(UC_HOOK_CODE, self.on_code)
+        self.code_hook = uc.hook_add(UC_HOOK_CODE, self.on_code)
 
     def on_unmapped(self, uc, access, address, size, value, user_data):
         eip = uc.reg_read(UC_X86_REG_EIP)
