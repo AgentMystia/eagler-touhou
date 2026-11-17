@@ -253,6 +253,9 @@ struct Ins {
 
 }  // namespace
 
+Vec3 step_interp_vec3(Interp<Vec3>& it, float game_speed) { return step_interp(it, game_speed); }
+float interp_ease(int mode, float t, float end) noexcept { return ease(mode, t, end); }
+
 Vec3 anm_world_rotation(AnmVm& v) {
     v.world_rotation = v.rotation;
     if (v.root != nullptr && (v.flags_hi & AnmVm::kHiDetached) == 0) {

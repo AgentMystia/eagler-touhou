@@ -31,6 +31,7 @@
 #include "../../web/cpp/game/GameSession.hpp"
 #include "../../web/cpp/game/Input.hpp"
 #include "../../web/cpp/game/Rng.hpp"
+#include "../../web/cpp/game/Std.hpp"
 #include "../../web/cpp/game/Supervisor.hpp"
 
 #include <cstdio>
@@ -160,6 +161,29 @@ int main(int argc, char** argv) {
         if (!f) return fail("cannot write output");
         std::fwrite(bytes.data(), 1, bytes.size(), f);
         std::fclose(f);
+        return 0;
+    }
+    if (command == "std" && argc >= 4) {
+        // STD 解析（0x40ac30）：头 / 对象 / 四边形 / 实例 / 脚本
+        std::vector<u8> bytes;
+        if (!archive.read(argv[3], bytes)) return fail(archive.error.c_str());
+        StdFile std_file;
+        if (!std_file.parse(bytes.data(), u32(bytes.size()))) return fail(std_file.error.c_str());
+        std::printf("anm=%s faces=%d objects=%zu instances=%zu script=%zu\n", std_file.anm_name.c_str(), std_file.face_vm_count,
+                    std_file.objects.size(), std_file.instances.size(), std_file.script.size());
+        for (const StdObject& o : std_file.objects) {
+            std::printf("object %u layer=%u pos=%.6g,%.6g,%.6g size=%.6g,%.6g,%.6g quads=%zu\n", o.id, o.layer,
+                        o.pos.x, o.pos.y, o.pos.z, o.size.x, o.size.y, o.size.z, o.quads.size());
+            for (const StdQuad& q : o.quads)
+                std::printf("  quad type=%d script=%d pos=%.6g,%.6g,%.6g wh=%.6g,%.6g\n", q.type, q.anm_script, q.pos.x, q.pos.y, q.pos.z, q.width, q.height);
+        }
+        for (const StdInstance& i : std_file.instances)
+            std::printf("instance %u flags=%u pos=%.6g,%.6g,%.6g\n", i.object, i.flags, i.pos.x, i.pos.y, i.pos.z);
+        for (const StdInstruction& ins : std_file.script) {
+            std::printf("ins @%u t=%d op=%d", ins.offset, ins.time, ins.opcode);
+            for (int n = 0; n < (ins.size - 8) / 4; ++n) std::printf(" %d/%.6g", ins.arg_i(n), ins.arg_f(n));
+            std::printf("\n");
+        }
         return 0;
     }
     if (command == "anm" && argc >= 4) {
@@ -386,6 +410,30 @@ int main(int argc, char** argv) {
             std::printf("%d %d %u %.8g %.8g %.8g %.8g %08x z=%.6g,%.6g,%.6g,%.6g rhw=%.6g zw=%d slot=%d\n",
                         q.layer, q.script, q.id, q.x0, q.y0, q.x1, q.y3, q.color0,
                         q.z[0], q.z[1], q.z[2], q.z[3], q.rhw[0], q.depth_write ? 1 : 0, q.file_slot);
+        }
+        if (session.game_live) {
+            // 场景 7：GameManager / StageManager 状态与关卡背景绘制（0x409f90）
+            StageManager& st = session.game.stage;
+            const StageCamera& c = st.camera;
+            StagePass pass;
+            if (!renderer.emit_stage(session.animations, st, pass)) return fail(renderer.error.c_str());
+            std::printf("game flags=%x frame=%d game_frame=%d stage_frame=%d std=%s anm=%s objects=%zu instances=%zu faces=%d\n",
+                        session.game.flags, session.game.timer.current, g.game_frame, g.stage_frame,
+                        session.game.entry ? session.game.entry->std_name : "-", st.std.anm_name.c_str(),
+                        st.std.objects.size(), st.std.instances.size(), st.std.face_vm_count);
+            std::printf("stage frame=%d ins=%d time=%d rocking=%d pos=%.6g,%.6g,%.6g facing=%.6g,%.6g,%.6g up=%.6g,%.6g,%.6g fov=%.8g fog=%08x,%.6g,%.6g bg=%08x\n",
+                        st.frame, st.ins_index, st.timer.current, st.rocking_mode,
+                        c.pos.x, c.pos.y, c.pos.z, c.facing.x, c.facing.y, c.facing.z, c.up.x, c.up.y, c.up.z, c.fov,
+                        c.fog.color, c.fog.near_, c.fog.far_, st.bg_color);
+            std::printf("stagepass active=%d clear=%08x quads=%zu drawn_instances=%d drawn_quads=%d\n",
+                        pass.active ? 1 : 0, pass.clear_color, pass.quads.size(), st.drawn_instances, st.drawn_quads);
+            for (const AnmQuad& q : pass.quads) {
+                std::printf("sq %d %d %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %08x z=%.6g,%.6g,%.6g,%.6g rhw=%.6g,%.6g,%.6g,%.6g fog=%d,%u,%u,%u,%u zt=%d zw=%d uv=%.6g,%.6g,%.6g,%.6g\n",
+                            q.layer, q.script, q.x0, q.y0, q.x1, q.y1, q.x2, q.y2, q.x3, q.y3, q.color0,
+                            q.z[0], q.z[1], q.z[2], q.z[3], q.rhw[0], q.rhw[1], q.rhw[2], q.rhw[3],
+                            q.fog ? 1 : 0, q.fog_factor[0], q.fog_factor[1], q.fog_factor[2], q.fog_factor[3],
+                            q.depth_test ? 1 : 0, q.depth_write ? 1 : 0, q.u0, q.v0, q.u3, q.v3);
+            }
         }
         return 0;
     }

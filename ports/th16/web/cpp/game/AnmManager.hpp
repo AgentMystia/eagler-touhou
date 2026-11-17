@@ -76,6 +76,8 @@ public:
 
     // 0x45f980：单 VM 推进；返回非零表示应删除
     int run(AnmVm& vm);
+    // 0x407b20：把脚本模板复制到调用方自备的 VM（StageManager 的面 VM / 层精灵不入池）
+    void init_from_template(AnmFile& file, AnmVm& vm, int script);
 
     AnmListNode* world_head() const { return world_head_; }
     AnmListNode* ui_head() const { return ui_head_; }
@@ -98,7 +100,6 @@ private:
     AnmVm* allocate();                       // 0x46f600
     void release(AnmVm& vm);                 // 0x46eab0
     void mark_deleted(AnmVm& vm, AnmListNode& list);  // 0x46e660
-    void init_from_template(AnmFile& file, AnmVm& vm, int script);  // 0x407b20
     u32 insert_world_back(AnmVm& vm);        // 0x46e7d0
     u32 insert_world_front(AnmVm& vm);       // 0x46e890
     u32 insert_ui_back(AnmVm& vm);           // 0x46e940

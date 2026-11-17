@@ -118,6 +118,41 @@ void Application::draw_frame() {
     graphics.backend.state.viewport = {0, 0, 640, 480, 0, 1};
     graphics.clear(0xff000000);
 
+    // 0x409f90（绘制链优先级 3）：关卡背景——原版画进场地 RT 再合成；此处直接画到屏幕场地矩形
+    if (session.game_live) {
+        StagePass pass;
+        if (!renderer.emit_stage(session.animations, session.game.stage, pass)) { failure = renderer.error; return; }
+        if (pass.active) {
+            graphics.clear_rect(pass.clear_color, pass.clear_rect);
+            graphics.backend.state.viewport = {u32(pass.clear_rect[0]), u32(pass.clear_rect[1]),
+                                               u32(pass.clear_rect[2] - pass.clear_rect[0]),
+                                               u32(pass.clear_rect[3] - pass.clear_rect[1]), 0, 1};
+            p.fogMode = FogMode::Linear;
+            p.fogColor = pass.fog_color;
+            p.fogNear = pass.fog_near;
+            p.fogFar = pass.fog_far;
+            for (const AnmQuad& q : pass.quads) {
+                apply_blend(p, q.blend);
+                p.minFilter = p.magFilter = q.nearest ? Filter::Nearest : Filter::Linear;
+                p.addressU = address_mode(q.address_u);
+                p.addressV = address_mode(q.address_v);
+                p.depthTest = q.depth_test;
+                p.depthWrite = q.depth_write;
+                p.fog = q.fog;
+                const GraphicsDevice::FogVertex quad[4] = {
+                    {q.x0, q.y0, q.z[0], q.rhw[0], q.color0, u32(q.fog_factor[0]) << 24, q.u0, q.v0},
+                    {q.x1, q.y1, q.z[1], q.rhw[1], q.color1, u32(q.fog_factor[1]) << 24, q.u1, q.v1},
+                    {q.x2, q.y2, q.z[2], q.rhw[2], q.color2, u32(q.fog_factor[2]) << 24, q.u2, q.v2},
+                    {q.x3, q.y3, q.z[3], q.rhw[3], q.color3, u32(q.fog_factor[3]) << 24, q.u3, q.v3},
+                };
+                graphics.screen_quad_fog(q.texture, quad);
+            }
+            graphics.backend.state.viewport = {0, 0, 640, 480, 0, 1};
+            p.fog = false;
+            p.depthTest = true;
+        }
+    }
+
     std::vector<AnmQuad> quads;
     if (!renderer.emit_all(session.animations, quads)) { failure = renderer.error; return; }
     for (const AnmQuad& q : quads) {

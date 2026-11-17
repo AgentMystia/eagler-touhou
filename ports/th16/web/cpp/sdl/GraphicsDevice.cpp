@@ -92,6 +92,18 @@ void GraphicsDevice::screen_quad(u32 texture, const Vertex quad[4]) {
     backend.draw(Topology::Strip, 2, quad, sizeof(Vertex));
 }
 
+void GraphicsDevice::screen_quad_fog(u32 texture, const FogVertex quad[4]) {
+    using namespace touhou::graphics;
+    auto& s = backend.state;
+    s.texture = texture;
+    s.layout = VertexAttributes{true, 16, 20, 24};
+    backend.draw(Topology::Strip, 2, quad, sizeof(FogVertex));
+}
+
+void GraphicsDevice::clear_rect(u32 color, const i32 rect[4], bool with_depth) {
+    backend.clear(with_depth ? 3 : 1, color, 1.0f, 0, rect, 1);
+}
+
 void GraphicsDevice::clear(u32 color, bool with_depth) {
     backend.clear(with_depth ? 3 : 1, color, 1.0f, 0);
 }

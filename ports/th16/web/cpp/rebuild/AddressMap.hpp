@@ -128,7 +128,31 @@ constexpr AddressAnchor kAnchors[] = {
     {"anm-interrupt-run", 0x46F130, "game/AnmManager.cpp AnmManager::interrupt_now"},
     {"anm-kill-file", 0x46F270, "game/AnmManager.cpp AnmManager::kill_file"},
     {"anm-unload-file", 0x46D770, "game/AnmManager.cpp AnmManager::unload"},
+    {"game-manager-create", 0x42D700, "game/GameSession.cpp GameSession::enter_game（DAT_004a6dd4；更新链 0xf / 绘制链 2；装载线程 0x42d1f0→0x42cb60）"},
+    {"game-manager-load", 0x42CB60, "game/GameSession.cpp enter_game（仅 StageManager + 背景 ANM；Gui/Player/Bullet/Enemy/Item/Effect 待还原）"},
+    {"game-manager-update", 0x42D7B0, "game/GameManager.cpp GameManager::update（timer 0 → first_frame；DAT_004a579c/DAT_004a57a0++）"},
+    {"game-manager-first-frame", 0x42DC50, "game/GameManager.cpp GameManager::first_frame（0x40add0 启动关卡面 VM）"},
+    {"game-manager-destroy", 0x42D200, "game/GameSession.cpp GameSession::leave_game"},
+    {"stage-table", 0x4A22D0, "game/StageTable.hpp kStageTable（8 × 0xd4：std/ecl/bgm/msg/logo/曲号）"},
+    {"stage-manager-create", 0x409DB0, "game/Stage.cpp StageManager::load（DAT_004a6d9c/a0；更新链 0x11 / 绘制链 3、6）"},
+    {"stage-manager-ctor", 0x4097C0, "game/Stage.cpp StageManager::load（相机默认 pos (0,0,-600) facing (0,300,600) up (0,1,0)）"},
+    {"std-load", 0x40AC30, "game/Std.cpp StdFile::parse + Stage.cpp load（背景 ANM → 槽 3 + (stage & 1)）"},
+    {"std-start", 0x40ADD0, "game/Stage.cpp StageManager::start（面 VM init_from_template + 首跑；vm_index 顺序分配）"},
+    {"stage-update", 0x409E50, "game/Stage.cpp StageManager::update（脚本 → 摇晃 → 面 VM → 层精灵 → 相机矩阵 0x43c940）"},
+    {"stage-script", 0x40B3B0, "game/Stage.cpp StageManager::run_script / apply_rocking（param_1 = this+0xc；跳转表 0x40bfbc，0xf/0x10 为空操作）"},
+    {"stage-faces-step", 0x40AED0, "game/Stage.cpp StageManager::step_faces（全部 ins_offset<0 时清对象 bit0）"},
+    {"stage-interrupt", 0x40B2F0, "game/Stage.cpp StageManager::interrupt（ins 19：arg+7 → 全部面/层 VM）"},
+    {"stage-draw", 0x409F90, "game/AnmRenderer.cpp AnmRenderer::emit_stage（绘制链 3：清场地矩形、相机 0x4c168c、逐层 0..7）"},
+    {"stage-draw-layer", 0x40AF70, "game/Stage.cpp StageManager::draw_layer（实例 × 四边形；entity_offset / 尺寸缩放；雾 mode 8/0x18；ZENABLE=!(lo&0x2000)）"},
+    {"stage-draw-layer-sprites", 0x40C280, "game/Stage.cpp StageManager::draw_layer（层精灵 8 个，无雾、Z 关）"},
+    {"camera-matrices", 0x43C940, "game/AnmRenderer.cpp AnmCamera::look_at（LookAtLH + PerspectiveFovLH zn=30 zf=8000）"},
+    {"fog-color-add", 0x40D370, "game/Stage.cpp fog_add（BGRA 浮点分量相加）"},
     // —— 已定位，待还原 ——
+    {"stage-draw-6", 0x40A410, nullptr},     // 绘制链 6：ANM 层 0x20/0x21 用 3D 相机
+    {"stage-frustum-cull", 0x40A7D0, nullptr}, // 对象包围盒视锥剔除（当前全部视为可见，只影响实例 bit0）
+    {"stage-distortion", 0x40C4A0, nullptr}, // ins 17 畸变效果（+0x3314）
+    {"stage-effect-fade", 0x43D140, nullptr}, // 绘制链 1：清后台缓冲、RT DAT_004c127c、场地矩形清色 DAT_004c1b0c
+    {"rt-composite", 0x43D2F0, nullptr},     // 绘制链 0xf：RT 精灵 VM 0x4c128c 合成到后台缓冲（当前以视口裁剪 + x−96 代替）
     {"ecl-dispatch", 0x41DCB0, nullptr},     // 19976 字节、81 个被调、switch 密集：ECL 指令主分发
     {"effect-attach", 0x418AF0, nullptr},    // ins_508：EffectManager（DAT_004a6db8）按效果种类表 DAT_004a2250 挂 update/draw 回调（effect.anm 155–196 依赖）
     {"effect-ring-update", 0x405700, nullptr}, // 效果种类 1 的 update 回调（DAT_004919e8[2]）：环形顶点缓冲 + 生成 effect.anm 0x99
