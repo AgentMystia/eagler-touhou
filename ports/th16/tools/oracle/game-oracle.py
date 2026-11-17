@@ -5,7 +5,14 @@
 
 用法：
     game-oracle.py <th16.exe> <dat 解包目录> <frames> <out.json> [--stage N] [--shot N] [--season N] [--difficulty N]
-                   [--input "f:held,f:held,..."] [--seed N] [--every N] [--debug]
+                   [--input "f:held,f:held,..."] [--seed N] [--every N] [--debug] [--draw]
+    game-oracle.py --digest <out.json>...        → 已有快照的 Player 规范字段 FNV-1a 64（harness game-digest 同口径）
+
+快照（每帧）：frame / game_frame / stage_frame / input [held, pressed] / power / season_gauge / enemy_count / dialogue /
+    player{state, pos, pos_fixed, timers×3, dir, last_move, focus, focus_vm, speeds, velocity, option_lag, counter, speed_mult,
+           ext_velocity, option_count, power_level, sub_count, flags, invincible, shot_timers, rects, radii, rects2, scale,
+           options×12, vm(0x568 字节)} / stage{frame, ins, flags}
+    digest 里 VM id 只取有无（池分配顺序取决于未移植的管理器）；enemy_count / dialogue 不进 digest，供 harness 的 PlayerWorld 桩。
 
 执行链（原版代码；桩同 anm-oracle.py，另加）：
     0x46d020  AnmManager::load_file(slot, name) → 按需同步装载（0x46cf80 / 0x46d1c0）
@@ -28,6 +35,7 @@ STUB2_SIZE = 0x4000
 PAUSE = 0x00730000
 
 GAME_CREATE, GAME_LOAD, CHAIN_RUN_UPDATE, SCORE_CTOR = 0x42D700, 0x42CB60, 0x401460, 0x4497E0
+CHAIN_RUN_DRAW = 0x4015A0
 VM_CTOR = 0x4093F0
 ASCII_CTOR, ASCII_INIT, FRONT_INIT, CAMERA_INIT = 0x407C10, 0x407CB0, 0x43AD20, 0x43CB10
 DAT_UI_CAMERA, DAT_OVERLAY, DAT_TEXT_BANK = 0x4C10D0, 0x4A6DC8, 0x4C17F8
@@ -75,6 +83,7 @@ class GameOracle(Oracle):
         self.dat_dir = dat_dir
         self.stage, self.shot, self.season, self.difficulty, self.seed = stage, shot, season, difficulty, seed
         self.debug = debug
+        self.run_draw = False   # --draw：也跑绘制链（需 D3DXVec3ProjectArray 等桩，待渲染/裁剪阶段接入）
         self.import_log = []
         self.uc.mem_map(STUB2, STUB2_SIZE)
         self.stub2_count = 0
@@ -281,6 +290,7 @@ class GameOracle(Oracle):
             'D3DXMatrixMultiply': (12, self.on_matrix_multiply),
             'D3DXVec3Transform': (12, self.on_vec3_transform),
             'D3DXVec3Project': (24, self.on_vec3_project),
+            'D3DXLoadSurfaceFromSurface': (36, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0)),  # 截屏（暂停/结束画面）
         }
         for imp in imports:
             name = imp['name']
@@ -548,6 +558,9 @@ class GameOracle(Oracle):
     def tick(self):
         # 更新链含 AnmManager 自身的世界 tick（优先级 9，0x46e740），无需另行调用 0x46e340
         self.call(CHAIN_RUN_UPDATE, ecx=self.chain_manager)
+        # 绘制链（0x4015a0，读 DAT_004a6d94）：Player 0x443730 等在此把 pos 抄进 VM entity_offset；D3D 设备为空桩
+        if self.run_draw:
+            self.call(CHAIN_RUN_DRAW)
         self.frame += 1
 
     def chain_list(self):
@@ -562,29 +575,107 @@ class GameOracle(Oracle):
     def i32(self, addr):
         return struct.unpack('<i', self.uc.mem_read(addr, 4))[0]
 
+    def words(self, addr, n):
+        return [self.u32(addr + 4 * i) for i in range(n)]
+
+    def timer(self, addr):
+        # Timer（0x14）：previous, current, current_f, speed_slot, flags
+        return self.words(addr, 5)
+
+    def player_snapshot(self):
+        """Player（DAT_004a6ef8，0x2c828 字节）规范字段；与 harness `game-run` 输出一一对应。"""
+        p = self.u32(DAT_PLAYER)
+        if not p:
+            return None
+        options = []
+        for base in [p + 0x660 + i * 0xE4 for i in range(4)] + [p + 0x9F0 + i * 0xE4 for i in range(8)]:
+            options.append({
+                'active': self.i32(base), 'target': [self.i32(base + 0x54), self.i32(base + 0x58)],
+                'pos': [self.i32(base + 0x5C), self.i32(base + 0x60)],
+                'offset': self.words(base + 0x64, 4), 'vm': [self.u32(base + 0xB0), self.u32(base + 0xB4)],
+                'index': self.i32(base + 0xD0), 'snap': self.i32(base + 0xD4),
+            })
+        return {
+            'state': self.i32(p + 0x165A8),
+            'pos': self.words(p + 0x610, 3),
+            'pos_fixed': [self.i32(p + 0x61C), self.i32(p + 0x620)],
+            'timers': [self.timer(p + 0x624), self.timer(p + 0x638), self.timer(p + 0x64C)],
+            'dir': self.i32(p + 0x2C780),
+            'last_move': [self.i32(p + 0x2C778), self.i32(p + 0x2C77C)],
+            'focus': self.i32(p + 0x165C8),
+            'focus_vm': self.u32(p + 0x165AC),
+            'speeds': self.words(p + 0x16650, 4),
+            'velocity': self.words(p + 0x16660, 8),       # 0x16660 速度 ×3、0x1666c 上次非零速度 ×3、0x16678 整数速度 ×2
+            'option_lag': self.i32(p + 0x16680),
+            'counter': self.i32(p + 0x16684),
+            'speed_mult': self.u32(p + 0x16688),
+            'ext_velocity': self.words(p + 0x1668C, 3),
+            'option_count': self.i32(p + 0x165F4),
+            'power_level': self.i32(p + 0x16698),
+            'sub_count': self.i32(p + 0x1669C),
+            'flags': self.u32(p + 0x1664C),
+            'invincible': self.timer(p + 0x16638),
+            'shot_timers': [self.timer(p + 0x165CC), self.timer(p + 0x165E0)],
+            'rects': self.words(p + 0x2C730, 6),
+            'radii': self.words(p + 0x2C748, 9),
+            'rects2': self.words(p + 0x2C7DC, 18),
+            'scale': [self.i32(p + 0x2C7C0), self.u32(p + 0x2C7C8)],
+            'options': options,
+            'vm': bytes(self.uc.mem_read(p + 0x14, 0x568)).hex(),
+        }
+
     def snapshot(self):
-        player = self.u32(DAT_PLAYER)
         sm = self.u32(DAT_STAGE_MANAGER)
         snap = {
             'frame': self.frame,
             'game_frame': self.i32(0x4A579C),
             'stage_frame': self.i32(0x4A57A0),
             'input': [self.u32(DAT_GAME_INPUT), self.u32(DAT_GAME_INPUT + 0xC)],
-            'rng': self.u32(0x4A52E8) if False else None,
+            'power': self.i32(0x4A57E4),
+            'season_gauge': self.i32(0x4A5808),
+            'player': self.player_snapshot(),
+            # 其它管理器尚未移植时 harness 的外部状态输入（PlayerWorld）：不进 digest
+            'enemy_count': self.i32(self.u32(0x4A6DC0) + 0x18C) if self.u32(0x4A6DC0) else 0,
+            'dialogue': self.i32(self.u32(0x4A6DCC) + 0x1C8) if self.u32(0x4A6DCC) else 0,
         }
-        if player:
-            snap['player'] = {
-                'pos': [self.u32(player + 0x610 + 4 * i) for i in range(3)],
-                'pos_fixed': [self.i32(player + 0x61C), self.i32(player + 0x620)],
-                'state': self.i32(player + 0x165A8),
-                'timer': self.i32(player + 0x628),
-                'focus': self.i32(player + 0x165C8),
-                'dir': self.i32(player + 0x2C780),
-                'vm': bytes(self.uc.mem_read(player + 0x14, 0x568)).hex(),
-            }
         if sm:
             snap['stage'] = {'frame': self.i32(sm + 0x66E0), 'ins': self.i32(sm + 0x20), 'flags': self.u32(sm + 0x66C4)}
         return snap
+
+
+def player_words(pl):
+    """规范 u32 字序列（harness `game-digest` 同口径）。
+    VM id 只取“有无”（池分配顺序取决于尚未移植的敌人/子弹/特效管理器）。"""
+    has = lambda v: 1 if v else 0
+    w = [pl['state']] + pl['pos'] + pl['pos_fixed']
+    for t in pl['timers']:
+        w += t[:3]
+    w += [pl['dir']] + pl['last_move'] + [pl['focus'], has(pl['focus_vm'])] + pl['speeds'] + pl['velocity']
+    w += [pl['option_lag'], pl['counter'], pl['speed_mult']] + pl['ext_velocity']
+    w += [pl['option_count'], pl['power_level'], pl['sub_count'], pl['flags']] + pl['invincible'][:3]
+    for t in pl['shot_timers']:
+        w += t[:3]
+    w += pl['rects'] + pl['radii'] + pl['rects2'] + pl['scale']
+    for o in pl['options']:
+        w += [o['active']] + o['target'] + o['pos'] + o['offset'] + [has(o['vm'][0]), has(o['vm'][1])] + [o['index'], o['snap']]
+    return [x & 0xFFFFFFFF for x in w]
+
+
+def frame_digest(frames, digest=0xCBF29CE484222325):
+    mask = (1 << 64) - 1
+    def feed(data):
+        nonlocal digest
+        for b in data:
+            digest = ((digest ^ b) * 0x100000001B3) & mask
+    for f in frames:
+        pl = f['player']
+        words = [f['frame'], f['game_frame'], f['stage_frame'], f['input'][0], f['input'][1], f['power'], f['season_gauge']]
+        if pl:
+            words += player_words(pl)
+        feed(b''.join(struct.pack('<I', w & 0xFFFFFFFF) for w in words))
+        if pl:
+            feed(bytes.fromhex(pl['vm']))
+    return digest
 
 
 def parse_input(spec):
@@ -597,6 +688,11 @@ def parse_input(spec):
 
 
 def main():
+    if len(sys.argv) >= 3 and sys.argv[1] == '--digest':
+        for path in sys.argv[2:]:
+            data = json.loads(pathlib.Path(path).read_text())
+            print('stage=%d shot=%d frames=%d digest=%016x' % (data['stage'], data['shot'], len(data['frames']), frame_digest(data['frames'])))
+        return 0
     ap = argparse.ArgumentParser()
     ap.add_argument('exe')
     ap.add_argument('dat_dir')
@@ -610,8 +706,10 @@ def main():
     ap.add_argument('--seed', type=int, default=0)
     ap.add_argument('--every', type=int, default=1)
     ap.add_argument('--debug', action='store_true')
+    ap.add_argument('--draw', action='store_true', help='每帧也跑绘制链 0x4015a0（实验）')
     a = ap.parse_args()
     o = GameOracle(pathlib.Path(a.exe), a.dat_dir, a.stage, a.shot, a.season, a.difficulty, a.seed, a.debug)
+    o.run_draw = a.draw
     o.boot()
     print('booted: chains=%s banks=%s device_calls=%s' % (
         [(p, hex(cb)) for p, cb, _ in o.chain_list()], o.loaded_banks, o.device_calls), file=sys.stderr)
@@ -628,7 +726,7 @@ def main():
     notes = [e for e in o.errors if not e.startswith('note')]
     pathlib.Path(a.out).write_text(json.dumps({'stage': a.stage, 'shot': a.shot, 'season': a.season, 'difficulty': a.difficulty,
                                                'input': a.input, 'frames': frames}, separators=(',', ':')))
-    print('game-oracle: %d frames → %s errors=%s' % (a.frames, a.out, notes[:3]))
+    print('game-oracle: %d frames → %s digest=%016x errors=%s' % (a.frames, a.out, frame_digest(frames), notes[:3]))
     return 0
 
 
