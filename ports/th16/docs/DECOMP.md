@@ -30,14 +30,18 @@
 | 0x46f600 / 0x46eab0 / 0x46e660 | 池 LIFO 分配 / 回收 / 递归标记删除 | `game/AnmManager.cpp` |
 | 0x46e7d0 / 0x46e890 / 0x46e940 / 0x46ea00 / 0x46e340 / 0x46e490 / 0x46efa0 | 世界/UI 链表插入、逐帧 tick（layer 绘制链 +0x1c6fc30）、按 id 查找 | `game/AnmManager.cpp` |
 | 0x407cb0 | AsciiManager：`ascii*.anm` 进槽 2；ins_300 负下标回退精灵 0x102 | `game/AnmManager.hpp kAsciiSlot` |
+| 0x468490 / 0x46e750 | 按 VM / 按 layer 绘制；mode 0..3 为屏幕四边形 | `game/AnmRenderer.cpp` |
+| 0x465c40 / 0x4660b0 / 0x465280 | 轴对齐角点 / 旋转角点 / 像素对齐·UV·颜色提交 | `game/AnmRenderer.cpp` |
+| 0x406c40 / 0x406a70 | 世界位置（pos+offset+pos2）与窗口缩放 / root 链 | `game/AnmRenderer.cpp` |
+| 0x43adc0 / 0x43b300 | 启动幕：装载 `sig.anm` 槽 1；spawn script0（layer -1） | `sdl/Application.cpp` |
 
-ANM VM 的还原证据：`tests/anm-vm.test.mjs` 以 `tools/oracle/anm-oracle.py`（Unicorn 直跑上述原版函数）为 oracle，对 54 个 ANM 文件 1887 个脚本各 60 帧的 VM 结构体（0x568 字节纯数据区）与 36 条 layer 绘制链逐字节一致；wasm32 构建与本机构建输出逐字节相同。
+ANM VM 的还原证据：`tests/anm-vm.test.mjs` 以 `tools/oracle/anm-oracle.py`（Unicorn 直跑上述原版函数）为 oracle，对 54 个 ANM 文件 1887 个脚本各 60 帧的 VM 结构体（0x568 字节纯数据区）与 36 条 layer 绘制链逐字节一致；wasm32 构建与本机构建输出逐字节相同。绘制几何：`tests/anm-draw.test.mjs` 锁定 `sig.anm` 稳态四边形（512×480 + 128×480 @ layer 26，UV v=0.9375，淡入至白）。
 
 ## 已定位、待还原
 
 | 原版地址 | 含义 |
 | --- | --- |
-| 0x43adc0 | 启动幕初始化：`sig.anm` → `text.anm` → `../../bgm/thbgm.fmt` → `thbgm.dat` → score 对象（0x4497e0） |
+| 0x43adc0（其余步骤） | 启动幕后续：`text.anm` → `../../bgm/thbgm.fmt` → `thbgm.dat` → score 对象（0x4497e0）；目前只完成 sig 上屏 |
 | 0x46d020 | AnmManager::load_file(slot, name)（同步等待装载线程） |
 | 0x418af0 / 0x405700 | EffectManager（DAT_004a6db8）：ins_508 按效果种类表 DAT_004a2250 挂 update/draw 回调；种类 1 的 update 回调维护环形顶点缓冲并生成 `effect.anm` 0x99。`effect.anm` 155–196 依赖它，暂不在 ANM golden 内 |
 | 0x491b1c 表 | ins_300/301 的 sprite_mapper 回调（VM +0x5dc 非零时由玩家/敌机子系统重映射精灵号） |

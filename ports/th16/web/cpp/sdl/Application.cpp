@@ -16,6 +16,24 @@ bool read_file(const char* path, std::vector<u8>& out) {
     std::fclose(f);
     return got == out.size();
 }
+
+void apply_blend(touhou::graphics::PipelineState& p, int blend) {
+    using namespace touhou::graphics;
+    p.blend = true;
+    p.blendEquation = BlendEquation::Add;
+    switch (blend) {
+    case 1: p.sourceBlend = BlendFactor::SourceAlpha; p.destinationBlend = BlendFactor::One; break;
+    case 2: p.sourceBlend = BlendFactor::SourceAlpha; p.destinationBlend = BlendFactor::One; p.blendEquation = BlendEquation::ReverseSubtract; break;
+    case 3: p.blend = false; p.sourceBlend = BlendFactor::One; p.destinationBlend = BlendFactor::Zero; break;
+    case 4: p.sourceBlend = BlendFactor::InverseDestinationColor; p.destinationBlend = BlendFactor::InverseSourceColor; break;
+    case 5: p.sourceBlend = BlendFactor::DestinationColor; p.destinationBlend = BlendFactor::Zero; break;
+    case 6: p.sourceBlend = BlendFactor::InverseSourceColor; p.destinationBlend = BlendFactor::InverseSourceAlpha; break;
+    case 7: p.sourceBlend = BlendFactor::DestinationAlpha; p.destinationBlend = BlendFactor::InverseDestinationAlpha; break;
+    case 8: p.sourceBlend = BlendFactor::SourceAlpha; p.destinationBlend = BlendFactor::One; p.blendEquation = BlendEquation::Minimum; break;
+    case 9: p.sourceBlend = BlendFactor::SourceAlpha; p.destinationBlend = BlendFactor::One; p.blendEquation = BlendEquation::Maximum; break;
+    default: p.sourceBlend = BlendFactor::SourceAlpha; p.destinationBlend = BlendFactor::InverseSourceAlpha; break;
+    }
+}
 }  // namespace
 
 bool Application::load_anm(const char* name, AnmResource& out) {
@@ -37,48 +55,63 @@ bool Application::initialize(const char* archive_path) {
     if (!read_file(archive_path, archive_bytes)) { failure = std::string("cannot read ") + archive_path; return false; }
     if (!archive.open(archive_bytes.data(), u32(archive_bytes.size()))) { failure = archive.error; return false; }
     if (!graphics.initialize()) { failure = graphics.error; return false; }
+
+    // 0x407cb0 AsciiManager：ascii.anm → 槽 2；ins_300 负下标回退依赖它
+    if (!load_anm("ascii.anm", ascii)) return false;
+    animations.load(AnmManager::kAsciiSlot, ascii);
+
+    // 0x43adc0：sig.anm → 槽 1；0x43b300：spawn script0，layer -1（保留脚本自身的 layer 26）
     if (!load_anm("sig.anm", sig)) return false;
+    AnmFile* file = animations.load(1, sig);
+    if (file == nullptr) { failure = "sig.anm load failed"; return false; }
+    animations.spawn(*file, 0, -1);
+
+    renderer.window_scale = 1.0f;
+    renderer.lookup = [this](int file_slot, int entry_index) -> u32 {
+        const AnmFile* f = animations.file(file_slot);
+        if (f == nullptr || f->resource == nullptr) return 0;
+        return graphics.texture(*f->resource, u32(entry_index));
+    };
     initialized = true;
     return true;
 }
 
-// sig.anm script0/script1 的稳态（time ≥ 10）：sprite0 @ (0,0)、sprite1 @ (1024,0)，
-// ins_431(1) = 1280x960 坐标系 → 逻辑 640x480 需 ×0.5；ins_408 淡入结束后为纯白。
-void Application::draw_boot_frame() {
+void Application::draw_frame() {
     using namespace touhou::graphics;
     auto& p = graphics.backend.pipeline();
     p = {};
-    p.depthTest = false; p.depthWrite = false; p.blend = true;
-    p.sourceBlend = BlendFactor::SourceAlpha; p.destinationBlend = BlendFactor::InverseSourceAlpha;
+    p.depthTest = false; p.depthWrite = false;
     p.color.operation = p.alpha.operation = ColorOperation::Multiply;
     p.color.first = p.alpha.first = {ArgumentSource::Texture};
     p.color.second = p.alpha.second = {ArgumentSource::Diffuse};
     p.addressU = p.addressV = Address::Clamp;
-    p.minFilter = p.magFilter = Filter::Linear;
     graphics.backend.state.viewport = {0, 0, 640, 480, 0, 1};
     graphics.clear(0xff000000);
-    const u32 white = 0xffffffff;
-    for (u32 index = 0; index < sig.entries.size(); ++index) {
-        const auto& entry = sig.entries[index];
-        const u32 handle = graphics.texture(sig, index);
-        if (!handle || entry.sprites.empty()) continue;
-        const auto& sprite = entry.sprites[0];
-        const float tw = float(entry.texture.width), th = float(entry.texture.height);
-        const float x0 = (float(entry.x) + sprite.x) * 0.5f, y0 = (float(entry.y) + sprite.y) * 0.5f;
-        const float x1 = x0 + sprite.w * 0.5f, y1 = y0 + sprite.h * 0.5f;
-        const float u0 = sprite.x / tw, v0 = sprite.y / th, u1 = (sprite.x + sprite.w) / tw, v1 = (sprite.y + sprite.h) / th;
-        const GraphicsDevice::Vertex quad[4] = {{x0, y0, 0, 1, white, u0, v0}, {x1, y0, 0, 1, white, u1, v0},
-                                                {x0, y1, 0, 1, white, u0, v1}, {x1, y1, 0, 1, white, u1, v1}};
-        graphics.screen_quad(handle, quad);
+
+    std::vector<AnmQuad> quads;
+    if (!renderer.emit_all(animations, quads)) { failure = renderer.error; return; }
+    for (const AnmQuad& q : quads) {
+        apply_blend(p, q.blend);
+        p.minFilter = p.magFilter = q.nearest ? Filter::Nearest : Filter::Linear;
+        const GraphicsDevice::Vertex quad[4] = {
+            {q.x0, q.y0, 0, 1, q.color0, q.u0, q.v0},
+            {q.x1, q.y1, 0, 1, q.color1, q.u1, q.v1},
+            {q.x2, q.y2, 0, 1, q.color2, q.u2, q.v2},
+            {q.x3, q.y3, 0, 1, q.color3, q.u3, q.v3},
+        };
+        graphics.screen_quad(q.texture, quad);
     }
     graphics.present();
 }
 
 bool Application::step() {
     if (!initialized) return false;
-    draw_boot_frame();
+    // 原版当帧：spawn（内含一次 0x45f980）→ tick_world（再建 layer 链并再跑一次）→ 按层绘制。
+    // 因此上屏态对应 oracle 的 frame≥1；color 淡入（ins_408）从第二拍起可见。
+    animations.tick_world();
+    draw_frame();
     ++frames;
-    return true;
+    return failure.empty();
 }
 
 }  // namespace th16::sdl
