@@ -95,10 +95,8 @@ bool AnmRenderer::emit(AnmManager& manager, AnmVm& vm, AnmQuad& out) {
     if ((vm.flags_hi & 0x60u) != 0) return false;
     if (vm.sprite_index < 0) return false;
     const AnmFile* file = manager.file(vm.file_slot);
-    if (file == nullptr || u32(vm.sprite_index) >= file->sprites.size()) {
-        error = "ANM sprite missing";
-        return false;
-    }
+    // 越界精灵：原版靠 sprite_mapper（0x491b1c）重映射；映射表未接前静默跳过，不视为致命错误。
+    if (file == nullptr || u32(vm.sprite_index) >= file->sprites.size()) return false;
     const AnmRuntimeSprite& sprite = file->sprites[u32(vm.sprite_index)];
     if (!lookup) { error = "ANM texture lookup not set"; return false; }
     const u32 texture = lookup(sprite.file_slot, sprite.entry_index);

@@ -72,21 +72,34 @@ constexpr AddressAnchor kAnchors[] = {
     {"anm-quad-submit", 0x465280, "game/AnmRenderer.cpp AnmRenderer::emit（像素对齐 / UV 滚动 / 颜色）"},
     {"anm-world-pos", 0x406C40, "game/AnmRenderer.cpp AnmRenderer::world_position"},
     {"anm-world-adjust", 0x406A70, "game/AnmRenderer.cpp AnmRenderer::world_position（窗口缩放 / root 链）"},
-    {"boot-scene-init", 0x43ADC0, "sdl/Application.cpp Application::initialize（sig.anm → 槽 1）"},
-    {"boot-scene-update", 0x43B300, "sdl/Application.cpp Application::initialize（spawn script0, layer -1）"},
+    {"boot-scene-init", 0x43ADC0, "sdl/Application.cpp Application::enter_boot（sig.anm → 槽 1）"},
+    {"boot-scene-draw", 0x43B300, "sdl/Application.cpp Application::step（boot_frames++ / spawn）"},
+    {"boot-scene-update", 0x43B290, "game/Supervisor.hpp Supervisor::boot_init_finished（请求 Title=4）"},
+    {"supervisor-register", 0x43BA40, "game/Supervisor.hpp（主更新 0x43b3d0 / 场景切换 0x43ce10）"},
+    {"supervisor-frame", 0x43B3D0, "sdl/Application.cpp Application::step"},
+    {"supervisor-switch", 0x43CE10, "game/Supervisor.hpp Supervisor::consume_switch"},
+    {"update-chain-walk", 0x401460, nullptr},  // DAT_004a6d94 更新链遍历（待接入完整 Chain 表）
+    {"draw-chain-walk", 0x4015A0, nullptr},    // 绘制链遍历
+    {"input-sample", 0x401D50, "game/Input.hpp InputState（键盘位收集）"},
+    {"input-edges", 0x405580, "game/Input.hpp InputState::commit"},
+    {"title-scene-create", 0x44AEE0, "sdl/Application.cpp Application::enter_title_assets"},
+    {"title-scene-thread", 0x44ABC0, "sdl/Application.cpp Application::activate_title_menu（等 0xb4 帧）"},
+    {"title-scene-init", 0x44AC70, "sdl/Application.cpp Application::enter_title_assets（title.anm / title_v.anm）"},
+    {"title-menu-anm", 0x44B5F0, "sdl/Application.cpp Application::activate_title_menu（脚本 0x61/0x65/0 子集）"},
+    {"anm-kill-file", 0x46F270, "game/AnmManager.cpp AnmManager::kill_file"},
+    {"anm-unload-file", 0x46D770, "game/AnmManager.cpp AnmManager::unload"},
     // —— 已定位，待还原 ——
     {"ecl-dispatch", 0x41DCB0, nullptr},     // 19976 字节、81 个被调、switch 密集：ECL 指令主分发
     {"effect-attach", 0x418AF0, nullptr},    // ins_508：EffectManager（DAT_004a6db8）按效果种类表 DAT_004a2250 挂 update/draw 回调（effect.anm 155–196 依赖）
     {"effect-ring-update", 0x405700, nullptr}, // 效果种类 1 的 update 回调（DAT_004919e8[2]）：环形顶点缓冲 + 生成 effect.anm 0x99
-    {"title-scene-init", 0x44AC70, nullptr}, // 装载 title.anm(bank 0x10) / title_v.anm(bank 0x11)
     {"anm-load-file", 0x46D020, nullptr},    // AnmManager::load_file(slot, name)：从档案读 .anm 并进 bank（同步等待装载线程）
     {"anm-draw-mode4+", 0x466390, nullptr},  // mode 4+（投影 / 世界 / 条带 / 网格）：0x466390 / 0x466820 / 0x4671b0 / …
+    {"title-menu-full", 0x44AF80, nullptr},  // 标题菜单完整状态机（子菜单 / demo / 音乐室…）
     {"score-file", 0x4497E0, nullptr},       // scoreth16.dat 读写
     {"replay-file", 0x4403C5, nullptr},      // th16_%.2d.rpy
     {"ver-file", 0x43B480, nullptr},         // th16_%.4x%c.ver
     {"music-fmt", 0x43AEAE, nullptr},        // ../../bgm/thbgm.fmt
     // —— 未定位 ——
-    {"supervisor", 0, nullptr},
     {"enemy-manager", 0, nullptr},
     {"bullet-manager", 0, nullptr},
     {"item-manager", 0, nullptr},

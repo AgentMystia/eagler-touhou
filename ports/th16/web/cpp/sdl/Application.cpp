@@ -2,6 +2,10 @@
 
 #include <cstdio>
 
+#if defined(__EMSCRIPTEN__) || defined(TH16_HAS_SDL)
+#include <SDL3/SDL.h>
+#endif
+
 namespace th16::sdl {
 
 namespace {
@@ -50,21 +54,82 @@ bool Application::load_anm(const char* name, AnmResource& out) {
     return graphics.preload(out);
 }
 
+bool Application::enter_boot() {
+    // 0x407cb0 AsciiManager：ascii.anm → 槽 2
+    if (!load_anm("ascii.anm", ascii)) return false;
+    animations.load(AnmManager::kAsciiSlot, ascii);
+
+    // 0x43adc0：sig.anm → 槽 1；0x43b300：spawn script0，layer -1
+    if (!load_anm("sig.anm", sig)) return false;
+    AnmFile* file = animations.load(1, sig);
+    if (file == nullptr) { failure = "sig.anm load failed"; return false; }
+    animations.spawn(*file, 0, -1);
+
+    supervisor.boot_frames = 0;
+    supervisor.current = SceneId::Boot;
+    // 装载完成即启用更新链 → 0x43b290 请求标题
+    supervisor.boot_init_finished();
+    return true;
+}
+
+bool Application::enter_title_assets() {
+    // 0x44ac70：title.anm → 槽 0x10，title_v.anm → 槽 0x11
+    if (!load_anm("title.anm", title)) return false;
+    if (!load_anm("title_v.anm", title_v)) return false;
+    if (animations.load(0x10, title) == nullptr) { failure = "title.anm load failed"; return false; }
+    if (animations.load(0x11, title_v) == nullptr) { failure = "title_v.anm load failed"; return false; }
+    supervisor.title_assets_ready = true;
+    supervisor.title_menu_live = false;
+    return true;
+}
+
+bool Application::activate_title_menu() {
+    // 0x44ac21：卸掉 sig.anm（槽 1）
+    animations.kill_file(1);
+    animations.tick_world();
+    animations.unload(1);
+
+    AnmFile* title_file = animations.file(0x10);
+    AnmFile* title_v_file = animations.file(0x11);
+    if (title_file == nullptr || title_v_file == nullptr) { failure = "title banks missing"; return false; }
+
+    // 0x44b5f0 case 0/1 入口子集：logo 相关脚本 0x61 / 0x65 / 0，以及 title_v script0
+    animations.spawn(*title_file, 0x61, -1);
+    animations.spawn(*title_file, 0x65, -1);
+    animations.spawn(*title_file, 0, -1);
+    animations.spawn(*title_v_file, 0, -1);
+
+    supervisor.title_menu_live = true;
+    return true;
+}
+
+void Application::sample_input() {
+    u32 held = 0;
+#if defined(__EMSCRIPTEN__) || defined(TH16_HAS_SDL)
+    int n = 0;
+    const bool* keys = SDL_GetKeyboardState(&n);
+    if (keys != nullptr) {
+        auto down = [&](SDL_Scancode s) { return s < n && keys[s]; };
+        if (down(SDL_SCANCODE_Z) || down(SDL_SCANCODE_RETURN) || down(SDL_SCANCODE_KP_ENTER)) held |= InputState::kShot;
+        if (down(SDL_SCANCODE_X)) held |= InputState::kBomb;
+        if (down(SDL_SCANCODE_LSHIFT) || down(SDL_SCANCODE_RSHIFT)) held |= InputState::kSlow;
+        if (down(SDL_SCANCODE_ESCAPE)) held |= InputState::kCancel;
+        if (down(SDL_SCANCODE_UP)) held |= InputState::kUp;
+        if (down(SDL_SCANCODE_DOWN)) held |= InputState::kDown;
+        if (down(SDL_SCANCODE_LEFT)) held |= InputState::kLeft;
+        if (down(SDL_SCANCODE_RIGHT)) held |= InputState::kRight;
+        if (down(SDL_SCANCODE_Q)) held |= InputState::kSkip;
+    }
+#endif
+    supervisor.input.held = held;
+    supervisor.input.commit();
+}
+
 bool Application::initialize(const char* archive_path) {
     if (initialized) return true;
     if (!read_file(archive_path, archive_bytes)) { failure = std::string("cannot read ") + archive_path; return false; }
     if (!archive.open(archive_bytes.data(), u32(archive_bytes.size()))) { failure = archive.error; return false; }
     if (!graphics.initialize()) { failure = graphics.error; return false; }
-
-    // 0x407cb0 AsciiManager：ascii.anm → 槽 2；ins_300 负下标回退依赖它
-    if (!load_anm("ascii.anm", ascii)) return false;
-    animations.load(AnmManager::kAsciiSlot, ascii);
-
-    // 0x43adc0：sig.anm → 槽 1；0x43b300：spawn script0，layer -1（保留脚本自身的 layer 26）
-    if (!load_anm("sig.anm", sig)) return false;
-    AnmFile* file = animations.load(1, sig);
-    if (file == nullptr) { failure = "sig.anm load failed"; return false; }
-    animations.spawn(*file, 0, -1);
 
     renderer.window_scale = 1.0f;
     renderer.lookup = [this](int file_slot, int entry_index) -> u32 {
@@ -72,6 +137,9 @@ bool Application::initialize(const char* archive_path) {
         if (f == nullptr || f->resource == nullptr) return 0;
         return graphics.texture(*f->resource, u32(entry_index));
     };
+    animations.game_speed = supervisor.game_speed;
+
+    if (!enter_boot()) return false;
     initialized = true;
     return true;
 }
@@ -106,8 +174,24 @@ void Application::draw_frame() {
 
 bool Application::step() {
     if (!initialized) return false;
-    // 原版当帧：spawn（内含一次 0x45f980）→ tick_world（再建 layer 链并再跑一次）→ 按层绘制。
-    // 因此上屏态对应 oracle 的 frame≥1；color 淡入（ins_408）从第二拍起可见。
+    sample_input();
+
+    SceneId leave = SceneId::Invalid, enter = SceneId::Invalid;
+    if (supervisor.consume_switch(leave, enter)) {
+        if (enter == SceneId::Title) {
+            if (!enter_title_assets()) return false;
+        }
+    }
+
+    // 启动幕绘制回调 0x43b300：帧计数 +1；标题未激活时仍跑启动幕 VM
+    if (!supervisor.title_menu_live) {
+        ++supervisor.boot_frames;
+        if (supervisor.title_assets_ready && supervisor.boot_hold_elapsed()) {
+            if (!activate_title_menu()) return false;
+        }
+    }
+
+    animations.game_speed = supervisor.game_speed;
     animations.tick_world();
     draw_frame();
     ++frames;
