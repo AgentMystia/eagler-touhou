@@ -72,20 +72,38 @@ constexpr AddressAnchor kAnchors[] = {
     {"anm-quad-submit", 0x465280, "game/AnmRenderer.cpp AnmRenderer::emit（像素对齐 / UV 滚动 / 颜色）"},
     {"anm-world-pos", 0x406C40, "game/AnmRenderer.cpp AnmRenderer::world_position"},
     {"anm-world-adjust", 0x406A70, "game/AnmRenderer.cpp AnmRenderer::world_position（窗口缩放 / root 链）"},
-    {"boot-scene-init", 0x43ADC0, "sdl/Application.cpp Application::enter_boot（sig.anm → 槽 1）"},
-    {"boot-scene-draw", 0x43B300, "sdl/Application.cpp Application::step（boot_frames++ / spawn）"},
+    {"boot-scene-init", 0x43ADC0, "game/GameSession.cpp GameSession::begin_boot（sig.anm → 槽 1，注册启动幕绘制链 0x44）"},
+    {"boot-scene-draw", 0x43B300, "game/GameSession.cpp begin_boot 内绘制链回调（spawn / boot_frames++）"},
     {"boot-scene-update", 0x43B290, "game/Supervisor.hpp Supervisor::boot_init_finished（请求 Title=4）"},
     {"supervisor-register", 0x43BA40, "game/Supervisor.hpp（主更新 0x43b3d0 / 场景切换 0x43ce10）"},
-    {"supervisor-frame", 0x43B3D0, "sdl/Application.cpp Application::step"},
+    {"supervisor-frame", 0x43B3D0, "game/GameSession.cpp GameSession::logic_step"},
     {"supervisor-switch", 0x43CE10, "game/Supervisor.hpp Supervisor::consume_switch"},
-    {"update-chain-walk", 0x401460, nullptr},  // DAT_004a6d94 更新链遍历（待接入完整 Chain 表）
-    {"draw-chain-walk", 0x4015A0, nullptr},    // 绘制链遍历
-    {"input-sample", 0x401D50, "game/Input.hpp InputState（键盘位收集）"},
+    {"chain-alloc", 0x401730, "game/Chain.cpp ChainManager::create"},
+    {"update-chain-insert", 0x401300, "game/Chain.cpp ChainManager::insert_sorted（含 init 回调）"},
+    {"draw-chain-insert", 0x4013B0, "game/Chain.cpp ChainManager::insert_sorted"},
+    {"update-chain-walk", 0x401460, "game/Chain.cpp ChainManager::run_update（0=Remove 3/4/5=Break 6=Restart）"},
+    {"draw-chain-walk", 0x4015A0, "game/Chain.cpp ChainManager::run_draw"},
+    {"chain-remove", 0x4017A0, "game/Chain.cpp ChainManager::remove"},
+    {"frame-clock", 0x45A8A0, "game/FrameClock.hpp FrameClock::begin_frame（1/60 累加；浏览器按 rAF 折算步数）"},
+    {"input-sample", 0x401D50, "game/Input.hpp InputState 位布局 + sdl/Application.cpp sample_input（键盘位收集）"},
     {"input-edges", 0x405580, "game/Input.hpp InputState::commit"},
-    {"title-scene-create", 0x44AEE0, "sdl/Application.cpp Application::enter_title_assets"},
-    {"title-scene-thread", 0x44ABC0, "sdl/Application.cpp Application::activate_title_menu（等 0xb4 帧）"},
-    {"title-scene-init", 0x44AC70, "sdl/Application.cpp Application::enter_title_assets（title.anm / title_v.anm）"},
-    {"title-menu-anm", 0x44B5F0, "sdl/Application.cpp Application::activate_title_menu（脚本 0x61/0x65/0 子集）"},
+    {"title-scene-create", 0x44AEE0, "game/GameSession.cpp GameSession::enter_title_assets"},
+    {"title-scene-thread", 0x44ABC0, "game/GameSession.cpp GameSession::activate_title_menu（等 0xb4 帧 / DAT_004c1800&0x180）"},
+    {"title-scene-init", 0x44AC70, "game/GameSession.cpp enter_title_assets（title.anm / title_v.anm）+ 更新链 6 / 绘制链 0x45"},
+    {"title-update", 0x44AF80, "game/TitleMenu.hpp TitleMenu::update（case 0/1 主菜单入口；末尾 Timer+1）"},
+    {"title-main-menu", 0x44B5F0, "game/TitleMenu.hpp TitleMenu::update（case 0/1/2/4：装饰 / 光标 / 确定取消 / 画面跳转）"},
+    {"title-item-interrupt-run", 0x44A700, "game/TitleMenu.hpp TitleMenu::item_interrupt_now"},
+    {"title-item-interrupt", 0x44A680, "game/TitleMenu.hpp TitleMenu::item_interrupt"},
+    {"title-set-screen", 0x44A560, "game/TitleMenu.hpp TitleMenu::Screen / next_screen"},
+    {"title-set-sub", 0x44A5E0, "game/TitleMenu.hpp TitleMenu::set_sub"},
+    {"menu-cursor-move", 0x402E70, "game/MenuCursor.hpp MenuCursor::move"},
+    {"menu-cursor-set", 0x418720, "game/MenuCursor.hpp MenuCursor::set"},
+    {"menu-cursor-disable", 0x440C00, "game/MenuCursor.hpp MenuCursor::disable"},
+    {"menu-cursor-push", 0x402DE0, "game/MenuCursor.hpp MenuCursor::push"},
+    {"timer-set", 0x406490, "game/TitleMenu.hpp（Timer=0x78 直接赋值）"},
+    {"anm-find-child", 0x46F510, "game/AnmManager.cpp AnmManager::find_child"},
+    {"anm-interrupt", 0x46F0B0, "game/AnmManager.cpp AnmManager::interrupt"},
+    {"anm-interrupt-run", 0x46F130, "game/AnmManager.cpp AnmManager::interrupt_now"},
     {"anm-kill-file", 0x46F270, "game/AnmManager.cpp AnmManager::kill_file"},
     {"anm-unload-file", 0x46D770, "game/AnmManager.cpp AnmManager::unload"},
     // —— 已定位，待还原 ——
@@ -94,7 +112,15 @@ constexpr AddressAnchor kAnchors[] = {
     {"effect-ring-update", 0x405700, nullptr}, // 效果种类 1 的 update 回调（DAT_004919e8[2]）：环形顶点缓冲 + 生成 effect.anm 0x99
     {"anm-load-file", 0x46D020, nullptr},    // AnmManager::load_file(slot, name)：从档案读 .anm 并进 bank（同步等待装载线程）
     {"anm-draw-mode4+", 0x466390, nullptr},  // mode 4+（投影 / 世界 / 条带 / 网格）：0x466390 / 0x466820 / 0x4671b0 / …
-    {"title-menu-full", 0x44AF80, nullptr},  // 标题菜单完整状态机（子菜单 / demo / 音乐室…）
+    {"title-has-clear", 0x44A850, nullptr},  // 任一难度通关记录 → Extra 可选（当前恒 0：无存档）
+    {"title-demo", 0x44AF80, nullptr},       // 0x44af80 开头：无输入 0x708 帧后播放 demo 录像（DAT_004a5bf0）
+    {"title-option", 0x44C570, nullptr},     // 画面 3：Option
+    {"title-difficulty", 0x44FE20, nullptr}, // 画面 5：难度选择（0/1/2 项入口）
+    {"title-replay", 0x451750, nullptr},     // 画面 0xb
+    {"title-score", 0x452330, nullptr},      // 画面 0xa：Player Data
+    {"title-music-room", 0x4546F0, nullptr}, // 画面 0xd
+    {"title-manual", 0x4545A0, nullptr},     // 画面 0x10
+    {"title-spell-practice", 0x4553D0, nullptr}, // 画面 0x11
     {"score-file", 0x4497E0, nullptr},       // scoreth16.dat 读写
     {"replay-file", 0x4403C5, nullptr},      // th16_%.2d.rpy
     {"ver-file", 0x43B480, nullptr},         // th16_%.4x%c.ver
