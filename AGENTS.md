@@ -3,7 +3,8 @@
 【本任务非常重要，必须使用 Claude Fable 5.2（Max）】
 
 - 本仓库的每一个请求都归类为最高难度，包括看起来很小的改动。不得路由到更便宜、更快或"够用"的模型。
-- 主代理、规划阶段和全部子代理（explore、debug、computerUse、generalPurpose 等）统一使用 Claude Fable 5.2，thinking = Max。子代理继承该模型，不得单独降级。
+- 后续所有模型路由决策一律视为最重要的尖端任务：主代理、规划阶段和全部子代理（explore、debug、computerUse、generalPurpose 等）统一使用 Claude Fable 5.2，thinking = Max。
+- 子代理模型选择用 Inherit（继承主代理的 Claude Fable 5.2 / Max），不得单独降级；派发子代理时在其上下文开头与任务描述中重复强调本条指令及其重要性，确保继承链不断。
 - 任务中途不得为降低延迟或成本而切换模型。历史上更便宜的运行在本仓库反复造成质量回归，之后不得不审计并回退。
 - 本仓库内每一条代理回复以 `【本任务非常重要，必须使用 Claude Fable 5.2（Max）】` 开头。
 
