@@ -14,13 +14,22 @@
 //   harness anm-draw <th16.dat> <name.anm> <script> <frames> [layer]
 //                                              → 每行一层绘制结果："frame layer script id blend x0 y0 x1 y1 x2 y2 x3 y3 u0 v0 u1 v1 u2 v2 u3 v3 color"
 //                                                （spawn 后 tick frames 次再 emit；对应上屏几何，texture 句柄以 entry_index+1 占位）
-//   harness scene-boot <th16.dat> <frames> [skip_at]
-//                                              → 模拟 Supervisor：Boot→Title 装载，frames 帧后报告 scene/boot_frames/title_live/quads
-//                                                skip_at≥0 时在该帧注入确定键以提前结束 0xb4 等待
+//   harness scene-boot <th16.dat> <frames> [skip] [f:bits,...]
+//                                              → GameSession（与浏览器同一逻辑层）：Boot→Title→主菜单；frames 帧后报告
+//                                                scene/boot_frames/title_live/menu_sub/cursor/selected/next_screen/链数/quads，
+//                                                随后 "event sfx N" / "event screen N" 与各四边形。skip = DAT_004c1800&0x180；
+//                                                f:bits 在第 f 帧注入 held 位（0x1 Z，0x2 X，0x10 ↑，0x20 ↓，0x100 Esc，0x80000 Enter）
+//   harness chain-demo                          → ChainManager 走法自检
+//   harness frame-clock <t0> <t1> ...           → 每个墙钟时刻应执行的逻辑步数
+//   harness input-edges <held0> <held1> ...     → 0x405580 边沿/连发/释放位
 #include "../../web/cpp/game/Archive.hpp"
 #include "../../web/cpp/game/AnmManager.hpp"
 #include "../../web/cpp/game/AnmRenderer.hpp"
 #include "../../web/cpp/game/AnmResource.hpp"
+#include "../../web/cpp/game/Chain.hpp"
+#include "../../web/cpp/game/FrameClock.hpp"
+#include "../../web/cpp/game/GameSession.hpp"
+#include "../../web/cpp/game/Input.hpp"
 #include "../../web/cpp/game/Rng.hpp"
 #include "../../web/cpp/game/Supervisor.hpp"
 
@@ -85,6 +94,51 @@ int main(int argc, char** argv) {
         Rng a{seed}, b{seed}, c{seed};
         for (int i = 0; i < steps; ++i)
             std::printf("%u %u %u\n", bits(a.unit()), bits(b.signed_unit()), bits(c.angle()));
+        return 0;
+    }
+    if (command == "chain-demo") {
+        // ChainManager 语义自检：优先级排序、启用位、Remove/Restart 返回码（0x401460 走法）
+        ChainManager chains;
+        std::string trace;
+        int restarts = 0;
+        ChainEntry* a = chains.create([&]() { trace += "A"; return ChainResult::Continue; }, 5, true);
+        ChainEntry* b = chains.create([&]() { trace += "B"; return ChainResult::Remove; }, 1, true);
+        ChainEntry* c = chains.create([&]() {
+            trace += "C";
+            return restarts++ == 0 ? ChainResult::Restart : ChainResult::Continue;
+        }, 3, true);
+        ChainEntry* d = chains.create([&]() { trace += "D"; return ChainResult::Continue; }, 7, true);
+        chains.enable(a); chains.enable(b); chains.enable(c);  // d 未启用
+        const i32 r1 = chains.run_update();
+        trace += "|";
+        const i32 r2 = chains.run_update();
+        chains.enable(d);
+        chains.disable(a);
+        trace += "|";
+        const i32 r3 = chains.run_update();
+        std::printf("%s r=%d,%d,%d count=%u\n", trace.c_str(), r1, r2, r3, chains.update_count());
+        return 0;
+    }
+    if (command == "frame-clock") {
+        // FrameClock：按给定墙钟序列（秒）输出每次应执行的逻辑步数
+        FrameClock clock;
+        std::string out;
+        for (int a = 2; a < argc; ++a) {
+            const u32 steps = clock.begin_frame(std::atof(argv[a]));
+            out += std::to_string(steps);
+            if (a + 1 < argc) out += ",";
+        }
+        std::printf("%s\n", out.c_str());
+        return 0;
+    }
+    if (command == "input-edges") {
+        // 0x405580：held 序列 → 每帧 "pressed repeat released"
+        InputState in;
+        for (int a = 2; a < argc; ++a) {
+            in.held = u32(std::strtoul(argv[a], nullptr, 0));
+            in.commit();
+            std::printf("%x %x %x\n", in.pressed, in.repeat, in.released);
+        }
         return 0;
     }
     std::vector<u8> dat;
@@ -284,68 +338,47 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (command == "scene-boot" && argc >= 4) {
-        // 无头复现 Application 启动幕→标题时序（不含 SDL 绘制）。
+        // 与 Application 共用 GameSession：Boot→Title→主菜单。
+        // 可选输入脚本："frame:bits,frame:bits,..."（bits 为 InputState 位，十六进制/十进制，持续 1 帧）；
+        // "skip" 置 DAT_004c1800 & 0x180 直接放行启动幕等待。
         const int frames = std::atoi(argv[3]);
-        const int skip_at = argc >= 5 ? std::atoi(argv[4]) : -1;
-        auto load_res = [&](const char* name, AnmResource& out) -> bool {
-            std::vector<u8> bytes;
-            if (!archive.read(name, bytes) || !out.parse(bytes.data(), u32(bytes.size()), name)) return false;
-            return true;
-        };
-        AnmResource ascii, sig, title, title_v;
-        if (!load_res("ascii.anm", ascii) || !load_res("sig.anm", sig) ||
-            !load_res("title.anm", title) || !load_res("title_v.anm", title_v))
-            return fail("cannot load boot/title anm");
-        AnmManager manager;
-        Supervisor supervisor;
-        manager.load(AnmManager::kAsciiSlot, ascii);
-        AnmFile* sig_file = manager.load(1, sig);
-        if (sig_file == nullptr) return fail("sig load");
-        manager.spawn(*sig_file, 0, -1);
-        supervisor.current = SceneId::Boot;
-        supervisor.boot_init_finished();
+        GameSession session;
+        if (!session.open(dat.data(), u32(dat.size()))) return fail(session.failure.c_str());
+        struct Key { int frame; u32 bits; };
+        std::vector<Key> script;
+        for (int a = 4; a < argc; ++a) {
+            if (std::strcmp(argv[a], "skip") == 0) { session.supervisor.config_flags |= Supervisor::kSkipBootFlags; continue; }
+            const char* p = argv[a];
+            while (*p) {
+                char* endp = nullptr;
+                const long frame = std::strtol(p, &endp, 10);
+                if (endp == p || *endp != ':') return fail("bad input script");
+                p = endp + 1;
+                const unsigned long b = std::strtoul(p, &endp, 0);
+                script.push_back({int(frame), u32(b)});
+                p = endp;
+                if (*p == ',') ++p;
+            }
+        }
+        if (!session.begin_boot()) return fail(session.failure.c_str());
 
         AnmRenderer renderer;
         renderer.window_scale = 1.0f;
         renderer.lookup = [](int /*slot*/, int entry) -> u32 { return u32(entry) + 1; };
 
         for (int f = 0; f < frames; ++f) {
-            if (skip_at >= 0 && f == skip_at) {
-                supervisor.input.held = InputState::kShot;
-                supervisor.input.commit();
-            } else {
-                supervisor.input.held = 0;
-                supervisor.input.commit();
-            }
-            SceneId leave = SceneId::Invalid, enter = SceneId::Invalid;
-            if (supervisor.consume_switch(leave, enter) && enter == SceneId::Title) {
-                if (manager.load(0x10, title) == nullptr || manager.load(0x11, title_v) == nullptr)
-                    return fail("title load");
-                supervisor.title_assets_ready = true;
-            }
-            if (!supervisor.title_menu_live) {
-                ++supervisor.boot_frames;
-                if (supervisor.title_assets_ready && supervisor.boot_hold_elapsed()) {
-                    manager.kill_file(1);
-                    manager.tick_world();
-                    manager.unload(1);
-                    AnmFile* tf = manager.file(0x10);
-                    AnmFile* tv = manager.file(0x11);
-                    if (tf == nullptr || tv == nullptr) return fail("title banks");
-                    manager.spawn(*tf, 0x61, -1);
-                    manager.spawn(*tf, 0x65, -1);
-                    manager.spawn(*tf, 0, -1);
-                    manager.spawn(*tv, 0, -1);
-                    supervisor.title_menu_live = true;
-                }
-            }
-            manager.tick_world();
+            session.injected_input = 0;
+            for (const Key& k : script) if (k.frame == f) session.injected_input |= k.bits;
+            if (!session.logic_step()) return fail(session.failure.c_str());
         }
         std::vector<AnmQuad> quads;
-        if (!renderer.emit_all(manager, quads)) return fail(renderer.error.c_str());
-        std::printf("scene=%d boot_frames=%u title_live=%d quads=%zu\n",
-                    int(supervisor.current), supervisor.boot_frames,
-                    supervisor.title_menu_live ? 1 : 0, quads.size());
+        if (!renderer.emit_all(session.animations, quads)) return fail(renderer.error.c_str());
+        const Supervisor& sup = session.supervisor;
+        const TitleMenu& menu = session.title_menu;
+        std::printf("scene=%d boot_frames=%u title_live=%d menu_sub=%d cursor=%d selected=%d next_screen=%d update_chains=%u draw_chains=%u quads=%zu\n",
+                    int(sup.current), sup.boot_frames, sup.title_menu_live ? 1 : 0, int(menu.sub), menu.cursor.index,
+                    menu.selected, int(menu.next_screen), session.chains.update_count(), session.chains.draw_count(), quads.size());
+        for (const TitleMenu::Event& e : menu.events) std::printf("event %s %d\n", e.kind, e.value);
         for (const AnmQuad& q : quads) {
             std::printf("%d %d %u %.8g %.8g %.8g %.8g %08x\n",
                         q.layer, q.script, q.id, q.x0, q.y0, q.x1, q.y3, q.color0);
