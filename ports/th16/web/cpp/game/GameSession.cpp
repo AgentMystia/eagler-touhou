@@ -209,7 +209,10 @@ bool GameSession::create_player() {
     }, 0x10, true);
     // 0x440fb0：自机更新链 0x16（0x443720 → 0x442560）与绘制链 0x1d（0x443730）
     player_update_chain_ = chains.create([this]() -> ChainResult {
-        game.player.update(animations, globals, game_input, game.world, animations.file(8), supervisor.game_speed);
+        game.player.update(animations, globals, game_input, game.world, animations.file(8), geometry, supervisor.game_speed);
+        sfx_events.insert(sfx_events.end(), game.player.sfx_queue.begin(), game.player.sfx_queue.end());
+        game.player.sfx_queue.clear();
+        game.player.sfx_stop_queue.clear();
         return ChainResult::Continue;
     }, 0x16, true);
     player_draw_chain_ = chains.create([this]() -> ChainResult {
@@ -289,6 +292,7 @@ void GameSession::leave_game() {
 
 bool GameSession::logic_step() {
     sample_input();
+    sfx_events.clear();
 
     SceneId leave = SceneId::Invalid, enter = SceneId::Invalid;
     if (supervisor.consume_switch(leave, enter)) {

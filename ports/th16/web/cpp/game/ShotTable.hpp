@@ -21,12 +21,41 @@
 
 namespace th16 {
 
+// 射击组条目（0x58）：0x445470 / 0x445360 / 0x444e10 的读法
+//   +0x00 i8  发射周期（主射击计时 % 周期）  +0x01 i8 发射相位      +0x02 i16 伤害
+//   +0x04 f32 x 偏移  +0x08 f32 y 偏移      +0x0c/+0x10 f32 判定宽高  +0x14 f32 角度（≥995 取子机角度；≥1000 加随机）
+//   +0x18 f32 速度    +0x20 i8 发射点（0 自机；1..8 子机；101.. 子季节子机） +0x21 i8 类型（2 = 每子机按火力等级限一发）
+//   +0x22 i16 ANM 脚本（主表 +5）           +0x24 i16 音效（<0 无）
+//   +0x26 i8  第二计时周期（非 0 时改用 shot_timer2）+0x27 i8 第二相位
+//   +0x28 生成回调  +0x2c 逐帧回调  +0x30 颜色  +0x34 命中回调（表下标；装载时换成函数指针）
 struct ShotEntry {
     static constexpr u32 kSize = 0x58;
-    u8 raw[kSize] = {};  // 射击系统（0x4456d0 / 0x445470）接入时再细分字段
+    u8 raw[kSize] = {};
 
     i32 i32_at(u32 off) const { return read_i32(raw + off); }
     float f32_at(u32 off) const { return read_f32(raw + off); }
+    i8 i8_at(u32 off) const { return i8(raw[off]); }
+    i16 i16_at(u32 off) const { return i16(read_u16(raw + off)); }
+
+    i8 period() const { return i8_at(0); }
+    i8 phase() const { return i8_at(1); }
+    i16 damage() const { return i16_at(2); }
+    float offset_x() const { return f32_at(4); }
+    float offset_y() const { return f32_at(8); }
+    float hit_w() const { return f32_at(0xc); }
+    float hit_h() const { return f32_at(0x10); }
+    float angle() const { return f32_at(0x14); }
+    float speed() const { return f32_at(0x18); }
+    i8 source() const { return i8_at(0x20); }
+    i8 kind() const { return i8_at(0x21); }
+    i16 script() const { return i16_at(0x22); }
+    i16 sfx() const { return i16_at(0x24); }
+    i8 period2() const { return i8_at(0x26); }
+    i8 phase2() const { return i8_at(0x27); }
+    i32 create_callback() const { return i32_at(0x28); }
+    i32 tick_callback() const { return i32_at(0x2c); }
+    i32 color_index() const { return i32_at(0x30); }
+    i32 hit_callback() const { return i32_at(0x34); }
 };
 
 struct ShotTable {

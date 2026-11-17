@@ -4,7 +4,7 @@
 // 原版布局（本文件字段注释给出偏移，harness `game-run` 按同一口径导出）：
 //   +0x004 更新链  +0x008 绘制链  +0x00c pl0N.anm（槽 9）  +0x010 pl0Nsub.anm（槽 0x1e）  +0x014 自机 VM（0x5fc，不入池）
 //   +0x610 实体 A（0x16090）：+0x610 pos f32×3  +0x61c/+0x620 定点 pos（×128）  +0x624/+0x638/+0x64c 三个 Timer
-//          +0x660 子机 ×4（0xe4）  +0x9f0 子季节子机 ×8  +0x1114 自机弹 ×256（0xc0）  +0xd110 上次伤害源下标
+//          +0x660 子机 ×4（0xe4）  +0x9f0 子季节子机 ×8  +0x1110 自机弹 ×256（0xc0）  +0xd110 上次伤害源下标
 //          +0xd114 伤害源 ×257（0x94）  +0x165a8 状态（0 入场 1 正常 2 复活等待 3 4 被弹）  +0x165ac 低速判定点 VM id
 //          +0x165b0 第二特效 VM id  +0x165b4 其 Timer  +0x165c8 低速标志  +0x165cc/+0x165e0 射击 Timer  +0x165f4 子机数
 //          +0x16638 无敌 Timer  +0x1664c 标志  +0x16650..+0x1665c 四档速度（int×128）  +0x16660 速度 f32×3
@@ -16,15 +16,62 @@
 //   +0x2c7dc 第二组判定矩形（收点 / 擦弹 / 收点整幅）
 #pragma once
 #include "AnmVm.hpp"
+#include "Motion.hpp"
 #include "ShotTable.hpp"
 #include "Types.hpp"
 
 namespace th16 {
 
 class AnmManager;
+class AnmRenderer;
 struct AnmFile;
 struct GameGlobals;
 struct InputState;
+struct Rng;
+
+// 自机弹（0xc0 字节；+0x1110 起 ×256）。0x444e10 生成 / 0x4456d0 逐帧推进 / 伤害源随之同步。
+struct PlayerBullet {
+    u32 flags = 0;          // +0x00 bit0：已登记伤害源（tick 每帧把 pos/角度/尺寸/伤害抄进伤害源）bit1：低速发射
+    i32 index = 0;          // +0x04 池下标（伤害源 +0x88 回指）
+    u32 vm = 0;             // +0x08 弹 VM id（pl0N.anm 脚本 .sht+0x22（主：+5），layer -1）
+    Timer timer;            // +0x0c
+    u8 pad20[0x28] = {};    // +0x20
+    MotionState motion;     // +0x48（pos +0x48 / speed +0x60 / angle +0x64 / velocity +0x7c / mode +0x88）
+    i32 active = 0;         // +0x8c（1 活动；2 = 激光等由回调改）
+    i32 target = 0;         // +0x90 追踪目标敌人 id（回调 1）
+    u32 pad94[2] = {};      // +0x94
+    i32 damage = 0;         // +0x9c（.sht +2）
+    float hit_w = 0;        // +0xa0（.sht +0xc）
+    float hit_h = 0;        // +0xa4（.sht +0x10）
+    u32 pada8 = 0;          // +0xa8
+    u32 shot_id = 0;        // +0xac  (set<<8 | entry)，子季节组另加 0x10000
+    i32 damage_source = 0;  // +0xb0  伤害源下标（1 起；0 = 无）
+    u32 padb4[3] = {};      // +0xb4
+};
+static_assert(sizeof(PlayerBullet) == 0xc0, "PlayerBullet 为 0xc0 字节");
+
+// 伤害源（0x94 字节；+0xd114 起 ×256，下标 1 起；敌人碰撞时读）。0x444b20 分配；
+// 0x442560 每帧：运动推进（自机弹的为 mode 0、速度 0）、+0x04 += +0x08、角度 += 角速度、寿命 Timer 回退，< 1 失活。
+struct DamageSource {
+    u32 flags = 0;          // +0x00 bit0 活动（分配时清 bit1/bit2）
+    float f04 = 0;          // +0x04（每帧 += f08）
+    float f08 = 0;          // +0x08
+    float angle = 0;        // +0x0c（每帧 += angular_speed 并折回）
+    float angular_speed = 0;// +0x10
+    float size_x = 0;       // +0x14（自机弹 hit_w）
+    float size_y = 0;       // +0x18（hit_h）
+    MotionState motion;     // +0x1c（pos +0x1c；分配时整体清零后写 pos）
+    Timer timer;            // +0x60（寿命 9999999，每帧 untick）
+    i32 damage = 0;         // +0x74
+    i32 f78 = 0;            // +0x78
+    i32 f7c = 0;            // +0x7c（9999999 → 自机弹改 10000000）
+    i32 f80 = 0;            // +0x80（1）
+    i32 f84 = 0;            // +0x84（每帧清 0）
+    i32 owner = 0;          // +0x88 自机弹池下标
+    i32 f8c = 0;            // +0x8c（分配不写）
+    i32 kind = 0;           // +0x90（1 普通；回调 4（Aya 主弹）置 2）
+};
+static_assert(sizeof(DamageSource) == 0x94, "DamageSource 为 0x94 字节");
 
 // 子机（0xe4 字节；+0x660 起 ×4，+0x9f0 起 ×8）
 struct PlayerOption {
@@ -37,6 +84,7 @@ struct PlayerOption {
     i32 offset_y = 0;      // +0x68
     i32 focus_offset_x = 0;// +0x6c 低速偏移
     i32 focus_offset_y = 0;// +0x70
+    float angle = 0;       // +0x4c 子机朝向（.sht 角度 ≥ 995 的弹取此值；th16 数据不使用，恒 0）
     u32 vm = 0;            // +0xb0 子机 VM id（世界链表尾，layer 0xe）
     u32 vm_front = 0;      // +0xb4 满火力附加 VM id（0x426160 世界链表头，layer -1）
     i32 index = 0;         // +0xd0
@@ -115,7 +163,13 @@ public:
     Vec3 item_rect_min, item_rect_max;    // +0x2c7dc / +0x2c7e8
     Vec3 graze_rect_min, graze_rect_max;  // +0x2c7f4 / +0x2c800
     Vec3 item_rect2_min, item_rect2_max;  // +0x2c80c / +0x2c818
-    bool bullets_active = false;  // +0x1114 自机弹池（射击系统接入前恒无活动弹）
+    static constexpr int kBulletCount = 256;
+    static constexpr int kDamageSourceCount = 256;
+    PlayerBullet bullets[kBulletCount];                // +0x1110（0x4456d0 按 4 个一组扫描空位）
+    DamageSource damage_sources[kDamageSourceCount];   // +0xd114（下标 i 对应原版 1 起的 i+1）
+    i32 option_cooldown[16] = {};                      // +0x165f8：.sht 类型 2 弹按子机 [opt-1 (+8 子季节)] 记录发射时火力等级
+    std::vector<i32> sfx_queue;                        // 0x45e1f0 音效登记（宿主每帧取走）
+    std::vector<i32> sfx_stop_queue;                   // 不射击时对 0x1e / 0x37 的停止标记（DAT_004d9e5c = -1）
 
     // 0x441c60 + 0x440fb0：资源已由调用方装入；返回 false 表示 .sht 缺失
     bool init(AnmManager& manager, GameGlobals& globals, AnmFile* player_anm, AnmFile* sub_player_anm,
@@ -124,15 +178,16 @@ public:
     void reset(AnmManager& manager, GameGlobals& globals);
     // 0x4440e0：按火力等级 / 季节量表重建子机 VM
     void setup_options(AnmManager& manager, GameGlobals& globals);
-    // 0x442560：更新链 0x16
+    // 0x442560：更新链 0x16。geometry：0x468c00 出界判定用的屏幕几何（DAT_004d9d34/50/54）
     void update(AnmManager& manager, GameGlobals& globals, const InputState& game_input, const PlayerWorld& world,
-                AnmFile* effect_anm, float game_speed);
+                AnmFile* effect_anm, const AnmRenderer& geometry, float game_speed);
     // 0x443730：绘制链 0x1d 的逻辑部分（pos → VM entity_offset，flags 0x40000）
     void prepare_draw();
 
     std::string error;
 
 private:
+    float game_speed_ = 1.0f;                        // DAT_004a5788（update 入口抄入，供 0x444e10 用）
     void set_position(float x, float y);            // 0x440e40
     void recompute_rects_init();                     // 0x440fb0 尾部的判定框
     void move(AnmManager& manager, const InputState& game_input, const PlayerWorld& world, AnmFile* effect_anm,
@@ -142,7 +197,14 @@ private:
     void kill_vm(AnmManager& manager, u32& id);          // 0x46f1c0 并清 id
     void interrupt_options(AnmManager& manager);         // 0x440dc0
     void reset_shot_timers();
-    void shoot(const InputState& game_input, float game_speed);  // 0x4455d0
+    void shoot(AnmManager& manager, GameGlobals& globals, const InputState& game_input, float game_speed);  // 0x4455d0
+    void start_shot_timer(i32 t);                                         // 0x440d50
+    void fire_sets(AnmManager& manager, GameGlobals& globals, i32 frame, i32 frame2);  // 0x445470
+    bool spawn_bullet(AnmManager& manager, GameGlobals& globals, u32 shot_id);          // 0x445360 → 0x444e10
+    i32 alloc_damage_source(const Vec3& pos, float angle, i32 lifetime, i32 damage, float size_x, float size_y);  // 0x444b20
+    void tick_bullets(AnmManager& manager, const AnmRenderer& geometry, float game_speed);  // 0x4456d0
+    void release_bullet(PlayerBullet& b);                                 // 池项失活 + 伤害源 bit0 清零
+    const ShotEntry* shot_entry(u32 shot_id) const;                       // (set<<8|entry)(+0x10000 子季节) → .sht 项
     u32 spawn_option_vm(AnmManager& manager, AnmFile& file, int script);  // 0x4440e0 内联生成（世界链表尾，layer 0xe）
 };
 
