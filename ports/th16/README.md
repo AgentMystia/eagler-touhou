@@ -12,7 +12,7 @@ Hidden Star in Four Seasons v1.00a 的网页移植：C++17 / SDL3 / GLES 3.0 / E
 
 | 路径 | 内容 |
 | --- | --- |
-| `web/cpp/game/` | 游戏内核：RNG、THA1 档案、LZSS、ANM v8 解析、THTX 解码；每个函数头注明原版地址 |
+| `web/cpp/game/` | 游戏内核：RNG、THA1 档案、LZSS、ANM v8 解析、THTX 解码、ANM VM（`AnmVm.cpp`）与管理器（`AnmManager.cpp`）；每个函数头注明原版地址 |
 | `web/cpp/rebuild/AddressMap.hpp` | 原版地址 ↔ C++ 还原件登记表（已还原 / 已定位 / 未定位） |
 | `web/cpp/sdl/` | 设备层：`GraphicsDevice`（纹理句柄 → 共享 GLES 后端）、`Application`（场景驱动）、`BrowserRuntime`（Emscripten 导出） |
 | `web/cpp/platform/` | 浏览器导出（RNG oracle 直调） |
@@ -20,8 +20,8 @@ Hidden Star in Four Seasons v1.00a 的网页移植：C++17 / SDL3 / GLES 3.0 / E
 | `portable/build.mjs` / `build-harness.mjs` | 网页运行时（emcc）与 WASI 无头 harness 构建 |
 | `web/sdl-runtime/th16.html` | 页面壳：`assets/th16.dat` 整档进 MEMFS → `th16_initialize` → rAF 主循环 |
 | `web/scripts/cpp/analyze.mjs` + `decomp/ExportTh16.java` | Ghidra headless 全函数导出 |
-| `tests/` | `run.sh`：本机 harness + `node --test`（RNG golden、THA1/ANM 对 thtk 逐字节/逐像素对照） |
-| `tools/oracle/` | Unicorn RNG oracle、THTX 像素对照脚本 |
+| `tests/` | `run.sh`：本机 harness + `node --test`（RNG golden、THA1/ANM 对 thtk 逐字节/逐像素对照、ANM VM 1887 脚本对 Unicorn 直跑原版逐字节对照） |
+| `tools/oracle/` | Unicorn RNG oracle、ANM VM oracle（`anm-oracle.py` → `anm-golden.mjs`）、THTX 像素对照脚本 |
 
 ## 运行
 
