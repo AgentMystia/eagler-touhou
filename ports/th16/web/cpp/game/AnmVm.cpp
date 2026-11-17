@@ -491,7 +491,7 @@ struct AnmInterpreter {
         vm.pending_interrupt = 0;
         if (read_u16(p) != 5) {
             if (fallback == nullptr) {
-                vm.flags_lo |= AnmVm::kStopped;
+                // 0x4629fa：找不到标签时只回退计时；kStopped 已在 0x45fb21 清掉且不再置位（0x4629f0 被跳过）
                 vm.time.untick(m.game_speed);
                 return false;
             }

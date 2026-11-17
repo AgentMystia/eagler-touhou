@@ -57,6 +57,8 @@
 | 0x40b3b0 | 关卡脚本（param_1 = this+0xc，跳转表 0x40bfbc 0..0x14，0xf/0x10 空）：0 stop、1 jmp、2 pos、3 posTime(t,mode,目标)、4 facing、5 facingTime、6 up、7 fov、8 fog、9 fogTime、10/11 bezier、12 摇晃模式（1,2,3,4,7,8,9：周期 0x200/0xc00/0x800/0xc00/0x800/0x400/0x200）、13 bgColor DAT_004c1b0c、14 层精灵、17 畸变、18 upTime、19 interrupt、20 半径² | `game/Stage.cpp` |
 | 0x409f90 / 0x40af70 / 0x40c280 / 0x43c940 / 0x40d370 | 背景绘制：场地矩形清色、相机 0x4c168c（视口 (116,4,408,472)、LookAtLH(eye=pos+offset, at=eye+facing_norm) + PerspectiveFovLH(fov, w/h, 30, 8000)）、逐层 0..7：层精灵（无雾、Z 关）→ 实例 × 四边形（entity_offset = quad.pos + inst.pos，scale = wh / 精灵尺寸，雾 mode 8/0x18，ZENABLE=!(lo&0x2000)）；雾色 BGRA 浮点相加；顶点线性雾 f=(far−z_eye)/(far−near)，z_eye=1/rhw | `game/AnmRenderer.cpp` emit_stage、`game/Stage.cpp` draw_layer、`sdl/GraphicsDevice.cpp` screen_quad_fog |
 
+StageManager 的还原证据：`tests/stage.test.mjs` 以 `tools/oracle/stage-oracle.py`（Unicorn 直跑 0x409db0 / 0x40add0 / 0x409e50，text.anm 在槽 0、背景 ANM 在槽 3+(stage&1)，桩 0x46d020 与 d3dx9 的 D3DXVec3Normalize）为 oracle，对 7 关各 6000 帧的相机（pos/facing/up/facing_norm/offset/fov）、脚本计时与偏移、摇晃、雾、层精灵号、半径²、全部面 VM 与 8 个层精灵 VM 的 0x568 字节逐帧一致（golden 摘要 `tests/golden/stage.json`，harness `stage-digest`）；wasm32 构建摘要相同。
+
 ANM VM 的还原证据：`tests/anm-vm.test.mjs` 以 `tools/oracle/anm-oracle.py`（Unicorn 直跑上述原版函数）为 oracle，对 54 个 ANM 文件 1887 个脚本各 60 帧的 VM 结构体（0x568 字节纯数据区）与 36 条 layer 绘制链逐字节一致；wasm32 构建与本机构建输出逐字节相同。绘制几何：`tests/anm-draw.test.mjs` 锁定 `sig.anm` 稳态四边形（512×480 + 128×480 @ layer 26，UV v=0.9375，淡入至白）。场景时序：`tests/supervisor.test.mjs`。
 
 ## 已定位、待还原

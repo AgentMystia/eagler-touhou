@@ -2,7 +2,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {existsSync} from 'node:fs';
+import {existsSync, readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 
 const here = resolve(import.meta.dirname);
@@ -60,6 +60,48 @@ test('std: every stage STD parses; all quads are type 0; st01 = 1 object × 8 gr
   assert.match(st01, /^ins @0 t=0 op=6 \d+\/0\.06 \d+\/1 0\/0$/m, 'up = (0.06, 1, 0)');
   assert.match(st01, /^ins @1052 t=5620 op=1 1004\/\S+ 4920\/\S+$/m, 'tail jmp back to @1004 / t=4920');
 });
+
+// Unicorn oracle（tools/oracle/stage-oracle.py）：7 关 × 6000 帧 StageManager 状态（相机 / 脚本 / 雾 / 面 VM / 层精灵 VM 原始字节）摘要
+const stageGolden = JSON.parse(readFileSync(resolve(here, 'golden/stage.json'), 'utf8'));
+for (const g of stageGolden.stages) {
+  test(`stage ${g.stage}: ${g.faces} face VMs × ${stageGolden.frames} frames match th16.exe StageManager byte-for-byte (0x409e50/0x40b3b0/0x40aed0)`, needDat, () => {
+    const out = run(['stage-digest', dat, String(g.stage), String(stageGolden.frames)]).trim();
+    const got = kv('x ' + out);
+    assert.equal(Number(got.faces), g.faces);
+    if (got.digest !== g.digest) {
+      // 本机若有 artifacts/th16/oracle/stage/stNN-600.json 完整快照，给出首个差异
+      const oraclePath = resolve(monorepo, 'artifacts/th16/oracle/stage', `st0${g.stage}-600.json`);
+      let hint = '';
+      if (existsSync(oraclePath)) {
+        const gold = JSON.parse(readFileSync(oraclePath, 'utf8'));
+        const ours = JSON.parse(run(['stage-run', dat, String(g.stage), String(gold.frames.length)]));
+        hint = firstStageDifference(ours.frames, gold.frames);
+      }
+      assert.fail(`digest ${got.digest} !== ${g.digest}${hint ? ': ' + hint : ''}`);
+    }
+  });
+}
+
+function firstStageDifference(ours, gold) {
+  for (let i = 0; i < Math.min(ours.length, gold.length); ++i) {
+    const a = ours[i], b = gold[i];
+    for (const k of ['timer', 'ins', 'rocking', 'stage_frame', 'flags', 'bg', 'fog', 'layer_ids', 'radius_sq']) {
+      if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) return `frame ${a.frame} ${k}: ours=${JSON.stringify(a[k])} gold=${JSON.stringify(b[k])}`;
+    }
+    for (const k of Object.keys(b.cam)) {
+      if (JSON.stringify(a.cam[k]) !== JSON.stringify(b.cam[k])) return `frame ${a.frame} cam.${k}: ours=${JSON.stringify(a.cam[k])} gold=${JSON.stringify(b.cam[k])}`;
+    }
+    for (const [name, list] of [['face', 'faces'], ['layer', 'layers']]) {
+      for (let v = 0; v < b[list].length; ++v) {
+        if (a[list][v] === b[list][v]) continue;
+        for (let off = 0; off < b[list][v].length; off += 8) {
+          if (a[list][v].slice(off, off + 8) !== b[list][v].slice(off, off + 8)) return `frame ${a.frame} ${name} ${v} @0x${(off / 2).toString(16)}: ours=${a[list][v].slice(off, off + 8)} gold=${b[list][v].slice(off, off + 8)}`;
+        }
+      }
+    }
+  }
+  return 'no difference in the first 600 frames (diverges later)';
+}
 
 test('game entry: GameManager first frame loads st01.std + st01wl.anm into slot 4 and starts the stage script', needDat, () => {
   const r = parse(run(['scene-boot', dat, String(GAME_FRAME_1), script]));

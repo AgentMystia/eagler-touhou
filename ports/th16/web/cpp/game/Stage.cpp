@@ -11,12 +11,16 @@ constexpr float kPi = 3.1415927f;
 
 // 0x402d90：把角度折回 (-π, π]（最多 0x22 圈）
 float wrap_angle(float a) noexcept {
+    // 0x402d90：两段循环共用计数器，各至多 0x22 次
     int n = 0;
     while (a > kPi) { a -= 6.2831855f; if (++n > 0x21) break; }
-    n = 0;
     while (a < -kPi) { a += 6.2831855f; if (++n > 0x21) break; }
     return a;
 }
+
+// 0x405510 / 0x4054f0：CVTSS2SD → CRT sin/cos(double) → CVTSD2SS；必须经 double 再舍入，sinf/cosf 会偶发差 1 ulp
+float sin_f(float a) noexcept { return float(std::sin(double(a))); }
+float cos_f(float a) noexcept { return float(std::cos(double(a))); }
 
 StageFog fog_from_color(u32 color, float near_, float far_) {
     StageFog f;
@@ -49,6 +53,11 @@ StageFog fog_scale(const StageFog& a, float k) {
     return r;
 }
 
+// 原版 0x5fc 结构体 memset 0 的纯数据区（链表结点等宿主指针保持默认）
+void zero_vm(AnmVm& vm) {
+    std::memset(static_cast<void*>(&vm), 0, 0x568);
+}
+
 }  // namespace
 
 bool StageManager::load(const u8* bytes, u32 size, i32 stage) {
@@ -60,7 +69,7 @@ bool StageManager::load(const u8* bytes, u32 size, i32 stage) {
     camera.pos = {0, 0, -600.0f};
     camera.facing = {0, 300.0f, 600.0f};
     camera.up = {0, 1.0f, 0};
-    distortion_radius_sq = 2.4e6f;  // +0x331c = 0x4b12a310
+    distortion_radius_sq = 9610000.0f;  // +0x331c = 0x4b12a310（3100²）
     flags = 1;
     timer.reset();
     ins_index = 0;
@@ -72,8 +81,12 @@ bool StageManager::load(const u8* bytes, u32 size, i32 stage) {
     fog_interp = {};
     frame = 0;
     drawn_instances = culled_instances = drawn_quads = 0;
+    // 0x409670 先按 0x4093f0 构造 8 个层精灵 VM（sprite/ins_offset = -1），随后 _memset(this, 0, 0x66f0) 又把它们
+    // 整体清零；0x40ac30 的面 VM 表也是 malloc + memset 0。于是未被 ins 14 指派的层精灵 VM 处于全零状态：
+    // file_slot 0（text.anm）、script 0、ins_offset 0——0x409e50 每帧照样 0x45f980 推进它们，这是原版可观测行为。
     face_vms.assign(size_t(std.face_vm_count), AnmVm{});
-    for (auto& vm : layer_vms) vm = AnmVm{};
+    for (AnmVm& vm : face_vms) zero_vm(vm);
+    for (AnmVm& vm : layer_vms) { vm = AnmVm{}; zero_vm(vm); }
     for (auto& id : layer_ids) id = 0;
     return true;
 }
@@ -312,10 +325,10 @@ void StageManager::apply_rocking(float game_speed) {
     switch (rocking_mode) {
     case 1: {
         const float a = wrap_angle((tp + tp) * 0.001953125f);
-        const float s = std::sin(a);
+        const float s = sin_f(a);
         const float px = s * -20.0f;
         camera.pos_offset.x = px;
-        const float s2 = std::sin(wrap_angle(a * 2.0f)) * -10.0f;
+        const float s2 = sin_f(wrap_angle(a * 2.0f)) * -10.0f;
         camera.pos_offset.z = s2;
         camera.up.x = s * -0.01f;
         camera.facing_offset.x = px * -0.5f;
@@ -325,18 +338,18 @@ void StageManager::apply_rocking(float game_speed) {
     }
     case 2: {
         const float a = wrap_angle((tp + tp) / 3072.0f);
-        camera.up.x = -std::sin(a);
-        camera.up.z = std::cos(a);
+        camera.up.x = -sin_f(a);
+        camera.up.z = cos_f(a);
         finish(0xc00);
         break;
     }
     case 3: {
         const float a = wrap_angle((tp + tp) * 0.00048828125f);
-        const float s = std::sin(a);
+        const float s = sin_f(a);
         const float v = s * 50.0f;
         camera.pos_offset.x = v;
         camera.pos_offset.y = v;
-        camera.pos_offset.z = std::sin(wrap_angle(a * 2.0f)) * -100.0f;
+        camera.pos_offset.z = sin_f(wrap_angle(a * 2.0f)) * -100.0f;
         camera.facing_offset.x = -v;
         camera.facing_offset.y = -v;
         camera.up.x = s * -0.05f;
@@ -345,23 +358,23 @@ void StageManager::apply_rocking(float game_speed) {
     }
     case 4: {
         const float a = wrap_angle((tp + tp) / 3072.0f);
-        camera.up.x = -std::sin(a);
-        camera.up.z = -std::cos(a);
+        camera.up.x = -sin_f(a);
+        camera.up.z = -cos_f(a);
         finish(0xc00);
         break;
     }
     case 7: {
         const float a = (tp + tp) * 0.00048828125f - kPi;
-        const float s = std::sin(a);
+        const float s = sin_f(a);
         camera.pos_offset.x = s * 70.0f;
-        camera.pos_offset.z = std::sin(wrap_angle(a + a)) * 200.0f;
+        camera.pos_offset.z = sin_f(wrap_angle(a + a)) * 200.0f;
         camera.up.x = s * -0.1f;
         finish(0x800);
         break;
     }
     case 8: {
         const float a = (tp + tp) * 0.0009765625f - kPi;
-        const float s = std::sin(a);
+        const float s = sin_f(a);
         camera.pos_offset.x = s * -50.0f;
         camera.up.x = s * -0.1f;
         finish(0x400);
@@ -369,7 +382,7 @@ void StageManager::apply_rocking(float game_speed) {
     }
     case 9: {
         const float a = (tp + tp) * 0.001953125f - kPi;
-        const float s = std::sin(a);
+        const float s = sin_f(a);
         camera.up.x = s * -0.01f;
         camera.pos_offset.x = s * -15.0f;
         finish(0x200);
