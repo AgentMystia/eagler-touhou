@@ -38,7 +38,12 @@ public:
     struct Vertex { float x, y, z, w; u32 color; float u, v; };
     // 屏幕空间（640x480 逻辑像素）带色纹理四边形：Strip 2 三角形。
     void screen_quad(u32 texture, const Vertex quad[4]);
+    // 带镜面色（specular.a = 顶点雾因子，D3D XYZRHW 语义）的屏幕四边形
+    struct FogVertex { float x, y, z, w; u32 color; u32 specular; float u, v; };
+    void screen_quad_fog(u32 texture, const FogVertex quad[4]);
     void clear(u32 color, bool depth = true);
+    // 矩形清屏（D3D Clear 带 rect；x0,y0,x1,y1 屏幕像素）
+    void clear_rect(u32 color, const i32 rect[4], bool depth = true);
     void present();
     void flush() { backend.flush(); }
 };

@@ -1,5 +1,7 @@
 #include "GameSession.hpp"
 
+#include <vector>
+
 namespace th16 {
 
 bool GameSession::open(const u8* bytes, u32 size) {
@@ -138,6 +140,56 @@ void GameSession::leave_title() {
     supervisor.title_assets_ready = false;
 }
 
+bool GameSession::enter_game() {
+    // 0x42d700：flags |= 4、模式参数；0x42cb60 装载线程（此处同步）
+    game = GameManager{};
+    game.flags = GameManager::kLoading;
+    game.mode = 0;
+    game.entry = &stage_entry(globals.stage);
+
+    // 0x409db0 / 0x4097c0 / 0x40ac30：STD → 背景 ANM 进槽 3 + (stage & 1)
+    std::vector<u8> std_bytes;
+    if (!archive_.read(game.entry->std_name, std_bytes)) { failure = archive_.error; return false; }
+    if (!game.stage.load(std_bytes.data(), u32(std_bytes.size()), globals.stage)) { failure = game.stage.error; return false; }
+    AnmResource* stage_anm = nullptr;
+    if (!load_anm(game.stage.std.anm_name.c_str(), stage_anm)) return false;
+    const int slot = 3 + (globals.stage & 1);
+    game.stage.anm = animations.load(slot, *stage_anm);
+    if (game.stage.anm == nullptr) { failure = "stage anm load failed"; return false; }
+    game.stage_live = true;
+
+    // 0x4097c0：关卡更新链（优先级 0x11）；0x42cb60：GameManager 更新链（优先级 0xf）
+    stage_update_chain_ = chains.create([this]() -> ChainResult {
+        game.stage.update(animations, supervisor.game_speed);
+        return ChainResult::Continue;
+    }, 0x11, true);
+    game_update_chain_ = chains.create([this]() -> ChainResult {
+        return game.update(animations, globals, supervisor.game_speed) ? ChainResult::Continue : ChainResult::BreakExit;
+    }, 0xf, true);
+    // 0x42cb60 末：+0x90 = 0x3c、清 flags&4、0x418420 启用链
+    game.transition_length = 0x3c;
+    game.flags &= ~GameManager::kLoading;
+    game.timer.set(0);
+    chains.enable(game_update_chain_);
+    chains.enable(stage_update_chain_);
+    game_live = true;
+    return true;
+}
+
+void GameSession::leave_game() {
+    // 0x42d200：摘链、释放管理器；关卡背景 ANM 槽回收
+    if (game_update_chain_) { chains.remove(game_update_chain_); game_update_chain_ = nullptr; }
+    if (stage_update_chain_) { chains.remove(stage_update_chain_); stage_update_chain_ = nullptr; }
+    if (game.stage_live) {
+        const int slot = 3 + (game.stage.stage_number & 1);
+        animations.kill_file(slot);
+        animations.tick_world();
+        animations.unload(slot);
+    }
+    game = GameManager{};
+    game_live = false;
+}
+
 bool GameSession::logic_step() {
     sample_input();
 
@@ -145,8 +197,9 @@ bool GameSession::logic_step() {
     if (supervisor.consume_switch(leave, enter)) {
         if (leave == SceneId::Title) leave_title();
         if (enter == SceneId::Title && !enter_title_assets()) return false;
+        if (leave == SceneId::Game) leave_game();
         if (enter == SceneId::Quit) quit_requested = true;
-        // SceneId::Game（7）：GameManager（0x43c??? 族）待还原；当前停在黑屏并由宿主/测试观测 supervisor.current
+        if (enter == SceneId::Game && !enter_game()) return false;
     }
 
     // 启动幕：绘制链推进 boot_frames；标题线程等待条件（0x44abea / 0x44ac00）

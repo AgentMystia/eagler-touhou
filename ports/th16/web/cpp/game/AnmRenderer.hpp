@@ -11,6 +11,7 @@
 // 窗口缩放 DAT_004d9d34（0x45b280）默认 1.0；ins_313 的 scale mode 2/4 对其再 ×0.5。
 #pragma once
 #include "AnmManager.hpp"
+#include "Stage.hpp"
 #include "Types.hpp"
 
 #include <cmath>
@@ -36,7 +37,20 @@ struct AnmQuad {
     u32 id = 0;
     bool nearest = false;
     bool depth_write = false;     // D3DRS_ZWRITEENABLE：0x467410 默认开（flags_lo 0x2000 关），屏幕模式关
+    bool depth_test = true;       // D3DRS_ZENABLE：关卡层精灵（0x40c280）与 flags_lo 0x2000 的面关
+    bool fog = false;             // D3DRS_FOGENABLE：关卡 mode 8 / 0x18 面开（0x40af70）
+    u8 fog_factor[4] = {255, 255, 255, 255};  // 顶点雾因子（D3DRS_FOGVERTEXMODE LINEAR：(far - z_eye)/(far - near)）
     u8 address_u = 1, address_v = 1;  // D3DTADDRESS：1 WRAP 2 MIRROR 3 CLAMP（0x464f10）
+};
+
+// 关卡背景一帧的绘制结果（0x409f90 优先级 3）：场地矩形清屏 + 逐层四边形
+struct StagePass {
+    bool active = false;
+    u32 clear_color = 0;                      // 雾色；结束淡出时为 0
+    i32 clear_rect[4] = {32, 16, 416, 464};   // 屏幕场地（RT 视口 (116,4,408,472) 左移 96 后与场地相交）
+    u32 fog_color = 0;
+    float fog_near = 0, fog_far = 1;
+    std::vector<AnmQuad> quads;
 };
 
 // 0x43c780 建立的相机：视口中心正对 z=0 平面，距离 (h/2)/tan(fov/2)，up=(0,-1,0)，
@@ -47,6 +61,8 @@ struct AnmCamera {
     float view[16] = {};           // +0x60
     float projection[16] = {};     // +0xa0
     void setup();                  // 0x43c780
+    // 0x43c940：D3DXMatrixLookAtLH(eye, at, up) + PerspectiveFovLH(fov, w/h, zn, zf)（关卡相机 zn=30 zf=8000）
+    void look_at(const Vec3& eye, const Vec3& at, const Vec3& up, float zn, float zf);
     // 世界坐标 → D3D 屏幕坐标（像素）、视口深度、rhw
     void project(const float world[3], float& sx, float& sy, float& sz, float& rhw) const;
 };
@@ -59,10 +75,10 @@ public:
     float window_scale = 1.0f;   // DAT_004d9d34
     float draw_offset_x = 0;     // AnmManager +0xd0
     float draw_offset_y = 0;     // AnmManager +0xd4
-    float field_offset_x = 0;    // DAT_004d9d50（layer group 0x40000）
-    float field_offset_y = 0;    // DAT_004d9d54
-    float screen_offset_x = 0;   // DAT_004d9d48（layer group 其它非零）
-    float screen_offset_y = 0;   // DAT_004d9d4c
+    float field_offset_x = 320;  // DAT_004d9d50（layer group 0x40000）= 640/2（0x43b3d0 每帧写）
+    float field_offset_y = 16;   // DAT_004d9d54 = (480-448)/2
+    float screen_offset_x = 320; // DAT_004d9d48（layer group 其它非零）= 640/2（0x43cb10）
+    float screen_offset_y = 16;  // DAT_004d9d4c = 16 × 窗口缩放
     AnmCamera camera;            // 当前 DAT_004c17b8 相机（标题/HUD 为 0x4c1560 UI 相机）
     TextureLookup lookup;
     std::string error;
@@ -75,8 +91,11 @@ public:
     bool emit_layer(AnmManager& manager, int layer, std::vector<AnmQuad>& out);
     // 遍历 0..35 全部非空层（启动幕 / 调试用）
     bool emit_all(AnmManager& manager, std::vector<AnmQuad>& out);
+    // 0x409f90：关卡背景——以关卡相机（0x43c940）投影层 0..7 的层精灵与实例四边形
+    bool emit_stage(AnmManager& manager, StageManager& stage, StagePass& out);
 
 private:
+    const AnmCamera* active_camera_ = &camera;   // DAT_004c17b8
     // 0x406a70：按 scale mode 缩放、沿父链累加（父旋转 flag 0x800000）或加 layer group 偏移
     Vec3 transform_position(const AnmVm& vm, Vec3 p) const;
     // 0x406c40 + 0x406a70：把 VM 位置变换到屏幕空间

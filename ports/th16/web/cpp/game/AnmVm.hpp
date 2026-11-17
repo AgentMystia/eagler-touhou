@@ -241,5 +241,9 @@ static_assert(sizeof(void*) != 4 || offsetof(AnmVm, sprite_source_slot) == 0x5fc
 
 // 0x464dd0：沿父链累加旋转写入 world_rotation 并归一化自身 rotation；返回 world_rotation
 Vec3 anm_world_rotation(AnmVm& vm);
+// 0x406e10：Vec3 插值推进（StageManager 相机 pos/facing/up 共用）
+Vec3 step_interp_vec3(Interp<Vec3>& it, float game_speed);
+// 0x4033f0：缓动曲线（mode 0..）
+float interp_ease(int mode, float t, float end) noexcept;
 
 }  // namespace th16

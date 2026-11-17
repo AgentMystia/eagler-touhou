@@ -50,6 +50,12 @@
 | 0x401d50 / 0x405580 | 输入采样与边沿 | `game/Input.hpp` |
 | 0x44aee0 / 0x44abc0 / 0x44ac70 | 标题创建；线程等启动幕 0xb4 帧（或 DAT_004c1800&0x180）后卸 sig、装 title*.anm、注册更新链 6 / 绘制链 0x45 | `game/GameSession.cpp` |
 | 0x46f270 / 0x46d770 | 按槽杀 VM / 卸 bank | `game/AnmManager.cpp` |
+| 0x42d700 / 0x42cb60 / 0x42d7b0 / 0x42dc50 / 0x42d200 | GameManager（0xb4，DAT_004a6dd4）：创建（flags|=4、更新链 0xf / 绘制链 2、装载线程）、装载（目前仅 StageManager + 背景 ANM）、每帧（timer 0 → 首帧 0x42dc50；DAT_004a579c/57a0++）、析构 | `game/GameManager.cpp`、`game/GameSession.cpp` |
+| 0x4a22d0 | 关卡表 8 × 0xd4：std / ecl / bgm×2 / msg×4 / logo anm / 曲号 | `game/StageTable.hpp` |
+| 0x40ac30 | STD：头 {i16 对象数, i16 面 VM 数, u32 实例偏移, u32 脚本偏移} + anm_name[0x80] + 对象偏移表；对象 {id, layer, flags, pos, size} + 四边形 {type, size, anm_script, vm_index(运行时), pos, w, h}；实例 {object, flags, pos}…0xffff；脚本 {time, op, size, args}；背景 ANM → 槽 3 + (stage & 1) | `game/Std.cpp`、`game/Stage.cpp` |
+| 0x4097c0 / 0x409db0 / 0x40add0 / 0x409e50 / 0x40aed0 / 0x40b2f0 | StageManager（0x66f0，DAT_004a6d9c/a0）：相机默认 (0,0,-600)/(0,300,600)/(0,1,0)、更新链 0x11 / 绘制链 3、6；首帧面 VM init_from_template + run、vm_index 顺序分配；每帧 脚本 → 摇晃 → 面 VM → 层精灵 → 相机矩阵；面 VM 全停则清对象 bit0；interrupt（arg+7） | `game/Stage.cpp` |
+| 0x40b3b0 | 关卡脚本（param_1 = this+0xc，跳转表 0x40bfbc 0..0x14，0xf/0x10 空）：0 stop、1 jmp、2 pos、3 posTime(t,mode,目标)、4 facing、5 facingTime、6 up、7 fov、8 fog、9 fogTime、10/11 bezier、12 摇晃模式（1,2,3,4,7,8,9：周期 0x200/0xc00/0x800/0xc00/0x800/0x400/0x200）、13 bgColor DAT_004c1b0c、14 层精灵、17 畸变、18 upTime、19 interrupt、20 半径² | `game/Stage.cpp` |
+| 0x409f90 / 0x40af70 / 0x40c280 / 0x43c940 / 0x40d370 | 背景绘制：场地矩形清色、相机 0x4c168c（视口 (116,4,408,472)、LookAtLH(eye=pos+offset, at=eye+facing_norm) + PerspectiveFovLH(fov, w/h, 30, 8000)）、逐层 0..7：层精灵（无雾、Z 关）→ 实例 × 四边形（entity_offset = quad.pos + inst.pos，scale = wh / 精灵尺寸，雾 mode 8/0x18，ZENABLE=!(lo&0x2000)）；雾色 BGRA 浮点相加；顶点线性雾 f=(far−z_eye)/(far−near)，z_eye=1/rhw | `game/AnmRenderer.cpp` emit_stage、`game/Stage.cpp` draw_layer、`sdl/GraphicsDevice.cpp` screen_quad_fog |
 
 ANM VM 的还原证据：`tests/anm-vm.test.mjs` 以 `tools/oracle/anm-oracle.py`（Unicorn 直跑上述原版函数）为 oracle，对 54 个 ANM 文件 1887 个脚本各 60 帧的 VM 结构体（0x568 字节纯数据区）与 36 条 layer 绘制链逐字节一致；wasm32 构建与本机构建输出逐字节相同。绘制几何：`tests/anm-draw.test.mjs` 锁定 `sig.anm` 稳态四边形（512×480 + 128×480 @ layer 26，UV v=0.9375，淡入至白）。场景时序：`tests/supervisor.test.mjs`。
 
@@ -58,6 +64,8 @@ ANM VM 的还原证据：`tests/anm-vm.test.mjs` 以 `tools/oracle/anm-oracle.py
 | 原版地址 | 含义 |
 | --- | --- |
 | 0x43adc0（其余步骤） | 启动幕后续：`text.anm` → `../../bgm/thbgm.fmt` → `thbgm.dat` → score 对象（0x4497e0）；目前只完成 sig 上屏与向 Title 切换 |
+| 0x43d140 / 0x43d2f0 / 0x43d820 / 0x43d6f0 | 渲染目标合成链（绘制链 1 / 0xf / 0x38 / 0x2b）：场地先画进 RT DAT_004c127c（中心 (320,240)），再由 front.anm RT 精灵 VM 0x4c128c/0x4c1298 贴回后台缓冲（场地中心 (224,240)）；移植版暂以 GL 视口裁剪到 (32,16,384,448) + x−96 等效，后端尚无 RT |
+| 0x40a410 / 0x40a7d0 / 0x40c4a0 | 绘制链 6（ANM 层 0x20/0x21 用 3D 相机）、对象包围盒视锥剔除、畸变效果（ins 17） |
 | 0x44c570 / 0x451750 / 0x452330 / 0x4546f0 / 0x4545a0 / 0x4553d0 | 标题余项（Option / Replay / Player Data / Music Room / Manual / Spell Practice）；0x44af80 开头的 demo 录像触发；0x44a850 / 0x44a8e0 / 0x44a800 存档判定；0x41a390 + 0x418ba0 过场；0x43c470 BGM 淡出 |
 | 0x46d020 | AnmManager::load_file(slot, name)（同步等待装载线程） |
 | 0x418af0 / 0x405700 | EffectManager（DAT_004a6db8）：ins_508 按效果种类表 DAT_004a2250 挂 update/draw 回调；种类 1 的 update 回调维护环形顶点缓冲并生成 `effect.anm` 0x99。`effect.anm` 155–196 依赖它，暂不在 ANM golden 内 |

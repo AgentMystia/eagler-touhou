@@ -12,6 +12,7 @@
 #include "Input.hpp"
 #include "Supervisor.hpp"
 #include "GameGlobals.hpp"
+#include "GameManager.hpp"
 #include "TitleScene.hpp"
 
 #include <functional>
@@ -30,6 +31,8 @@ public:
     ChainManager chains;
     GameGlobals globals;
     TitleScene title;
+    GameManager game;              // 场景 7：DAT_004a6dd4
+    bool game_live = false;
     bool quit_requested = false;   // 场景 2/3：原版退出进程；宿主据此停循环
     std::vector<TitleScene::Event> title_events;  // 离开标题前的事件归档（harness 断言用）
     std::string failure;
@@ -49,11 +52,15 @@ private:
     std::vector<std::string> resource_names_;
     ChainEntry* boot_draw_chain_ = nullptr;
     ChainEntry* title_update_chain_ = nullptr;
+    ChainEntry* game_update_chain_ = nullptr;
+    ChainEntry* stage_update_chain_ = nullptr;
 
     bool load_anm(const char* name, AnmResource*& out);
     bool enter_title_assets();
     bool activate_title_menu();
     void leave_title();
+    bool enter_game();     // 0x43ce10 case 7 → 0x42d700 + 0x42cb60（同步装载）
+    void leave_game();     // 0x42d200
     void sample_input();
 };
 

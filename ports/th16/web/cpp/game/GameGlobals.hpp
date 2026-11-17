@@ -21,11 +21,13 @@ struct GameGlobals {
     i32 title_origin = 0;        // DAT_004a6f1c：进入标题的来源（0 首次 1 正常 2 Replay 结束 4 练习返回 5 符卡练习返回）
     i32 stage_table = 0;         // DAT_004a6f18：0 = &DAT_004a23a4 普通关卡表，1 = &DAT_004a289c Extra 表（按季节表时另记）
     i32 scene_request = -1;      // DAT_004c17c4：Supervisor 场景请求（7 = Game）
+    i32 game_frame = 0;          // DAT_004a579c：本局帧计数（0x42d7b0 每帧 +1，0x42dc50 清零）
+    i32 stage_frame = 0;         // DAT_004a57a0：本关帧计数
 
     // 0x449190：设置模式位；若原模式不是 2 则 +0x38（DAT_004a57c8）置 -1
     void set_mode(i32 mode) {
         if ((flags & kModeMask) != 0x20) replay_slot = -1;
-        flags = ((u32(mode) << 4) ^ flags) & kModeMask ^ flags;
+        flags = (((u32(mode) << 4) ^ flags) & kModeMask) ^ flags;
     }
     i32 mode() const { return i32((flags & kModeMask) >> 4); }
 };

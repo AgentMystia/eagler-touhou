@@ -102,6 +102,34 @@ void AnmCamera::setup() {
     projection[14] = -zn * zf / (zf - zn);
 }
 
+void AnmCamera::look_at(const Vec3& eye, const Vec3& at, const Vec3& up, float zn, float zf) {
+    // D3DXMatrixLookAtLH：zaxis = normalize(at - eye)，xaxis = normalize(cross(up, zaxis))，yaxis = cross(zaxis, xaxis)
+    auto normalize = [](float v[3]) {
+        const float len = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        if (len > 0.0f) { v[0] /= len; v[1] /= len; v[2] /= len; }
+    };
+    float z[3] = {at.x - eye.x, at.y - eye.y, at.z - eye.z};
+    normalize(z);
+    float x[3] = {up.y * z[2] - up.z * z[1], up.z * z[0] - up.x * z[2], up.x * z[1] - up.y * z[0]};
+    normalize(x);
+    const float y[3] = {z[1] * x[2] - z[2] * x[1], z[2] * x[0] - z[0] * x[2], z[0] * x[1] - z[1] * x[0]};
+    mat_identity(view);
+    view[0] = x[0]; view[1] = y[0]; view[2] = z[0];
+    view[4] = x[1]; view[5] = y[1]; view[6] = z[1];
+    view[8] = x[2]; view[9] = y[2]; view[10] = z[2];
+    view[12] = -(x[0] * eye.x + x[1] * eye.y + x[2] * eye.z);
+    view[13] = -(y[0] * eye.x + y[1] * eye.y + y[2] * eye.z);
+    view[14] = -(z[0] * eye.x + z[1] * eye.y + z[2] * eye.z);
+    const float y_scale = 1.0f / std::tan(fov * 0.5f);
+    const float aspect = float(viewport_w) / float(viewport_h);
+    for (float& k : projection) k = 0.0f;
+    projection[0] = y_scale / aspect;
+    projection[5] = y_scale;
+    projection[10] = zf / (zf - zn);
+    projection[11] = 1.0f;
+    projection[14] = -zn * zf / (zf - zn);
+}
+
 void AnmCamera::project(const float world[3], float& sx, float& sy, float& sz, float& rhw) const {
     float eye[4], clip[4];
     vec_transform(world, view, eye);
@@ -333,7 +361,7 @@ bool AnmRenderer::emit_projected(AnmManager&, AnmVm& vm, const AnmRuntimeSprite&
     for (int i = 0; i < 4; ++i) {
         float w[4];
         vec_transform(local[i], world, w);
-        camera.project(w, *xs[i], *ys[i], out.z[i], out.rhw[i]);
+        active_camera_->project(w, *xs[i], *ys[i], out.z[i], out.rhw[i]);
     }
 
     // 纹理矩阵 D3DTS_TEXTURE0：u' = u × uv_scale.x × sprite_matrix[0] + (u0 + scroll.x)，v 同理
@@ -358,6 +386,66 @@ bool AnmRenderer::emit_projected(AnmManager&, AnmVm& vm, const AnmRuntimeSprite&
     out.address_u = address_mode(vm.flags_hi & 3u);
     out.address_v = address_mode(vm.flags_lo >> 30);
     return true;
+}
+
+bool AnmRenderer::emit_stage(AnmManager& manager, StageManager& stage, StagePass& out) {
+    out.active = false;
+    out.quads.clear();
+    if ((stage.flags & 8) != 0) return true;
+    const bool ending = (stage.flags & 4) != 0;
+    if (ending && stage.end_timer.current >= 0x3c) return true;
+
+    // 0x409f90 → 0x43c940：eye = pos + pos_offset，at = eye + facing_norm；right = normalize(cross(up, facing_norm))
+    StageCamera& sc = stage.camera;
+    AnmCamera cam;
+    cam.fov = sc.fov;
+    cam.viewport_x = sc.viewport_x; cam.viewport_y = sc.viewport_y;
+    cam.viewport_w = sc.viewport_w; cam.viewport_h = sc.viewport_h;
+    cam.look_at(stage.eye(), stage.at(), sc.up, StageManager::kNearZ, StageManager::kFarZ);
+    {
+        const Vec3& u = sc.up; const Vec3& f = sc.facing_norm;
+        float r[3] = {u.y * f.z - u.z * f.y, u.z * f.x - u.x * f.z, u.x * f.y - u.y * f.x};
+        const float len = std::sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]);
+        if (len > 0.0f) { r[0] /= len; r[1] /= len; r[2] /= len; }
+        sc.right = {r[0], r[1], r[2]};
+    }
+    out.active = true;
+    out.fog_color = sc.fog.color;
+    out.fog_near = sc.fog.near_;
+    out.fog_far = sc.fog.far_;
+    out.clear_color = (ending && stage.end_timer.current <= 0x21) ? 0u : sc.fog.color;
+    if ((stage.flags & 1) == 0) return true;
+
+    const AnmCamera* saved = active_camera_;
+    active_camera_ = &cam;
+    bool ok = true;
+    for (int layer = 0; layer < 8 && ok; ++layer) {
+        stage.draw_layer(layer, [&](AnmVm& vm, bool is_sprite) {
+            if (!ok) return;
+            AnmQuad quad;
+            if (!emit(manager, vm, quad)) { if (!error.empty()) ok = false; return; }
+            const int mode = vm.render_mode();
+            quad.depth_test = !is_sprite && (vm.flags_lo & AnmVm::kZWriteDisable) == 0;
+            if (is_sprite) quad.depth_write = false;
+            quad.fog = !is_sprite && (mode == 8 || mode == 0x18);
+            if (quad.fog) {
+                for (int v = 0; v < 4; ++v) {
+                    // D3DRS_FOGVERTEXMODE = LINEAR：z_eye = w_clip = 1/rhw
+                    const float z = quad.rhw[v] != 0.0f ? 1.0f / quad.rhw[v] : 0.0f;
+                    float f = (sc.fog.far_ - z) / (sc.fog.far_ - sc.fog.near_);
+                    if (f < 0.0f) f = 0.0f;
+                    if (f > 1.0f) f = 1.0f;
+                    quad.fog_factor[v] = u8(f * 255.0f + 0.5f);
+                }
+            }
+            quad.x0 += StageManager::kFieldShiftX; quad.x1 += StageManager::kFieldShiftX;
+            quad.x2 += StageManager::kFieldShiftX; quad.x3 += StageManager::kFieldShiftX;
+            quad.layer = layer;
+            out.quads.push_back(quad);
+        });
+    }
+    active_camera_ = saved;
+    return ok;
 }
 
 bool AnmRenderer::emit_layer(AnmManager& manager, int layer, std::vector<AnmQuad>& out) {
