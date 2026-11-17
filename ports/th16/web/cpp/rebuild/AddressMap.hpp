@@ -136,7 +136,18 @@ constexpr AddressAnchor kAnchors[] = {
     {"player-move", 0x441CF0, "game/Player.cpp Player::move"},
     {"player-options-tick", 0x442380, "game/Player.cpp Player::update_options"},
     {"player-options-setup", 0x4440E0, "game/Player.cpp Player::setup_options"},
-    {"player-shoot", 0x4455D0, "game/Player.cpp Player::shoot（计时部分；0x440d50 / 0x445470 发弹待接）"},
+    {"player-shoot", 0x4455D0, "game/Player.cpp Player::shoot（射击门限与两计时；0x440d50 start_shot_timer）"},
+    {"player-fire", 0x445470, "game/Player.cpp Player::fire_sets（.sht 组 = 火力/每级 (+1+最大等级 低速)，period/phase 命中出弹；子机组 = 季节子机数）"},
+    {"player-fire-slot", 0x445360, "game/Player.cpp Player::fire_sets（类型 2 冷却表 +0x165f8[k+sub*8]、首个空弹位）"},
+    {"player-bullet-create", 0x444E10, "game/Player.cpp Player::spawn_bullet（角度环绕 <995 / ≥995 子机角 / ≥1000 随机 ±π/12；VM 脚本 (+5 子机)；伤害源 + 生成回调）"},
+    {"player-bullet-create-cb", 0x445ED0, "game/Player.cpp Player::spawn_bullet（回调 1：target=0；回调 4 0x447450：伤害源类型 2）"},
+    {"player-bullet-tick-cb", 0x445EE0, "game/Player.cpp Player::tick_bullets（回调 1 追踪：无敌时 speed=min(speed+0.1,16)；回调 5 0x447480：active==1 时 speed+=0.5）"},
+    {"player-bullets", 0x4456D0, "game/Player.cpp Player::tick_bullets（回调→运动→VM；in-bounds = 类型 2 || 计时<0xf || 四角任一严格在 (0,0)-(384,448) 内；否则 kill VM 并回收）"},
+    {"damage-source-alloc", 0x444B20, "game/Player.cpp Player::alloc_damage_source（从上次下标后首个空位，1 起编号；类型 1、f7c=10000000、计时 9999999）"},
+    {"motion-velocity", 0x402FF0, "game/Motion.cpp MotionState::update_velocity（模式 0 极坐标 / 2 半径角度；3/4 敌弹时补）"},
+    {"motion-integrate", 0x403110, "game/Motion.cpp MotionState::integrate（坐标 floor 到 1/100）"},
+    {"vm-corners", 0x468C00, "game/AnmRenderer.cpp AnmRenderer::vm_corners（模式 0/2/3 轴对齐 / 1 旋转 + world_position）"},
+    {"sfx-play", 0x45E1F0, "game/Player.cpp sfx_queue → GameSession::sfx_events（Sound 管理器待接；RET 4）"},
     {"player-draw", 0x443730, "game/Player.cpp Player::prepare_draw（0x468490 直绘待接）"},
     {"sht-load", 0x443790, "game/ShotTable.cpp ShotTable::parse"},
     {"season-step", 0x43DEB0, "game/GameGlobals.hpp GameGlobals::set_season_step"},
@@ -199,8 +210,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"enemy-manager", 0, nullptr},
     {"bullet-manager", 0, nullptr},
     {"item-manager", 0, nullptr},
-    {"player-bullets", 0x4456D0, nullptr},   // 自机弹池推进（0x1114 ×256）
-    {"player-fire", 0x445470, nullptr},      // 按 .sht 射击组出弹
+    {"player-laser-create", 0x446200, nullptr},  // 魔理沙激光（回调 2：0x446260 / 0x446870）
     {"player-death", 0x443CD0, nullptr},     // 被弹结算（状态 4 → 2）
     {"season-system", 0, nullptr},  // th16 特有：季节槽/季节解放
 };
