@@ -187,7 +187,7 @@ test('game start flow: Normal / Cirno / Autumn → scene 7 with stage 1, title d
   assert.equal(started.header.shot, 1);
   assert.equal(started.header.season, 2, 'Autumn');
   assert.equal(started.header.stage, 1);
-  assert.equal(started.header.update_chains, 4, 'title update chain removed; GameManager(0xf)+StageManager(0x11)+Replay 记录(0x10)+Player(0x16) registered (0x42d700/0x409db0/0x447fd0/0x440fb0)');
+  assert.equal(started.header.update_chains, 5, 'title update chain removed; GameManager(0xf)+StageManager(0x11)+Replay 记录(0x10)+Player(0x16)+Enemy(0x1a) registered (0x42d700/0x409db0/0x447fd0/0x440fb0/0x41b340)');
   // 0x44ad20：title.anm / title_v.anm VM 全部清掉；ascii.anm 落叶发射器（+0x73c）只收到 interrupt 1，
   // 其脚本 case 1 在 10/14 帧后自删，所以切场后短暂只剩槽 2 的落叶（mode 8）
   assert.ok(started.quads.length > 0, 'leaf particles (ascii.anm mode 8) still falling right after the switch');
