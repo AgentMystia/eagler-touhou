@@ -38,10 +38,14 @@ public:
     std::string failure;
     u32 injected_input = 0;   // 外部注入 held 位（与宿主键盘 OR）
     u32 host_input = 0;       // 宿主键盘采样
+    InputState game_input;    // DAT_004a52c8：Replay 记录链（优先级 0x10，0x447fd0）每帧抄 held 低 16 位并做边沿
+    bool run_draw_chains = true;  // harness 对拍 oracle（不跑 0x4015a0）时关掉
     OnResourceLoaded on_loaded;
 
     bool open(const u8* archive_bytes, u32 size);
     bool begin_boot();                 // 0x43adc0：ascii + sig，注册启动幕绘制链，请求 Title
+    // 跳过启动幕/标题直接进入场景 7（harness）：装启动 bank 后按 globals（stage/shot/season/difficulty）装载关卡
+    bool start_game_direct();
     bool logic_step();                 // 一个逻辑帧（输入 → 切换 → 链 → ANM tick）
     const Archive& archive() const { return archive_; }
     AnmResource* resource(const char* name);
@@ -54,8 +58,13 @@ private:
     ChainEntry* title_update_chain_ = nullptr;
     ChainEntry* game_update_chain_ = nullptr;
     ChainEntry* stage_update_chain_ = nullptr;
+    ChainEntry* replay_record_chain_ = nullptr;
+    ChainEntry* player_update_chain_ = nullptr;
+    ChainEntry* player_draw_chain_ = nullptr;
 
     bool load_anm(const char* name, AnmResource*& out);
+    bool load_boot_banks();            // 0x43adc0 / 0x407cb0 / 0x43ad20 / 0x418790 的同步装载部分
+    bool create_player();              // 0x42cb60 新游戏段：0x441c60 + 火力/量表初值 + 0x4440e0
     bool enter_title_assets();
     bool activate_title_menu();
     void leave_title();

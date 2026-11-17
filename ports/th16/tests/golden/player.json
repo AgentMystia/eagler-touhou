@@ -1,0 +1,215 @@
+{
+ "note": "tools/oracle/game-oracle.py（Unicorn 直跑 th16.exe 全游戏，无绘制链）Player 规范字段 FNV-1a 64；harness game-digest 同口径。帧数截止在首次被弹/首次拾取道具前（Bullet/Item 管理器未接入）。",
+ "cases": [
+  {
+   "name": "still-reimu-spring",
+   "stage": 1,
+   "shot": 0,
+   "season": 0,
+   "frames": 230,
+   "input": "0:0",
+   "enemies": "0:1,12:2",
+   "digest": "a33224efa46a85f0",
+   "last": {
+    "state": 1,
+    "pos_fixed": [
+     0,
+     51200
+    ],
+    "dir": 0,
+    "focus": 0,
+    "option_count": 1,
+    "options": [
+     [
+      2,
+      0,
+      47104
+     ],
+     [
+      0,
+      0,
+      -51200
+     ],
+     [
+      0,
+      0,
+      -51200
+     ],
+     [
+      0,
+      0,
+      -51200
+     ]
+    ]
+   }
+  },
+  {
+   "name": "move-reimu-spring",
+   "stage": 1,
+   "shot": 0,
+   "season": 0,
+   "frames": 230,
+   "input": "0:0,60:0x40,120:0x88,200:0x10,260:0xa0",
+   "enemies": "0:1,12:2",
+   "digest": "87bf041236a119bd",
+   "last": {
+    "state": 1,
+    "pos_fixed": [
+     -3072,
+     33920
+    ],
+    "dir": 1,
+    "focus": 0,
+    "option_count": 1,
+    "options": [
+     [
+      2,
+      -3075,
+      31171
+     ],
+     [
+      0,
+      0,
+      -51200
+     ],
+     [
+      0,
+      0,
+      -51200
+     ],
+     [
+      0,
+      0,
+      -51200
+     ]
+    ]
+   }
+  },
+  {
+   "name": "focus-cirno-summer",
+   "stage": 1,
+   "shot": 1,
+   "season": 1,
+   "frames": 250,
+   "input": "0:0x50,30:0x88,90:0xa8,150:0x60,210:0x18,240:0",
+   "enemies": "0:1,12:2",
+   "digest": "49eeb0a023f169f2",
+   "last": {
+    "state": 1,
+    "pos_fixed": [
+     -6360,
+     47616
+    ],
+    "dir": 0,
+    "focus": 0,
+    "option_count": 1,
+    "options": [
+     [
+      2,
+      -6357,
+      43567
+     ],
+     [
+      0,
+      0,
+      -51200
+     ],
+     [
+      0,
+      0,
+      -51200
+     ],
+     [
+      0,
+      0,
+      -51200
+     ]
+    ]
+   }
+  },
+  {
+   "name": "diag-marisa-winter",
+   "stage": 1,
+   "shot": 3,
+   "season": 3,
+   "frames": 250,
+   "input": "0:0x90,40:0x28,100:0x8,160:0xa0,220:0x40",
+   "enemies": "0:1,12:2",
+   "digest": "24a4e72a85e6e61b",
+   "last": {
+    "state": 1,
+    "pos_fixed": [
+     4352,
+     55296
+    ],
+    "dir": 3,
+    "focus": 0,
+    "option_count": 1,
+    "options": [
+     [
+      2,
+      5846,
+      51200
+     ],
+     [
+      0,
+      0,
+      -51200
+     ],
+     [
+      0,
+      0,
+      -51200
+     ],
+     [
+      0,
+      0,
+      -51200
+     ]
+    ]
+   }
+  },
+  {
+   "name": "fullpower-aya-autumn-st2",
+   "stage": 2,
+   "shot": 2,
+   "season": 2,
+   "frames": 220,
+   "input": "0:0,30:0x40,90:0x88,150:0x10,210:0xa0",
+   "enemies": "0:1,1:2,12:3",
+   "digest": "3ea4bc3443070e85",
+   "last": {
+    "state": 1,
+    "pos_fixed": [
+     -3222,
+     13930
+    ],
+    "dir": 8,
+    "focus": 0,
+    "option_count": 4,
+    "options": [
+     [
+      2,
+      -3967,
+      7728
+     ],
+     [
+      2,
+      -4735,
+      7728
+     ],
+     [
+      2,
+      -3199,
+      8240
+     ],
+     [
+      2,
+      -5503,
+      8240
+     ]
+    ]
+   }
+  }
+ ]
+}

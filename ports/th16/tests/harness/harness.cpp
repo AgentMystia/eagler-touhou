@@ -25,6 +25,10 @@
 //   harness std <th16.dat> <stNN.std>          → STD 头 / 对象 / 四边形 / 实例 / 脚本（0x40ac30）
 //   harness stage-run <th16.dat> <stage> <frames>    → StageManager 单独驱动（0x409db0→0x40add0→每帧 0x409e50），逐帧 JSON
 //   harness stage-digest <th16.dat> <stage> <frames> → 同一状态流的 FNV-1a 64（tests/golden/stage.json，tools/oracle/stage-oracle.py 同口径）
+//   harness game-run <th16.dat> <stage> <shot> <season> <frames> <input "f:held,..."> [enemies "f:n,..."] [dialogue "f:v,..."]
+//                                              → 直接进入场景 7（GameSession::start_game_direct），逐帧 JSON：Player 规范字段 + 自机 VM 0x568 字节
+//                                                （与 tools/oracle/game-oracle.py 快照同结构；enemies/dialogue 为未移植管理器的 PlayerWorld 桩输入）
+//   harness game-digest <...同上...>              → 同一状态流的 FNV-1a 64（tests/golden/player.json，game-oracle.py --digest 同口径）
 #include "../../web/cpp/game/Archive.hpp"
 #include "../../web/cpp/game/AnmManager.hpp"
 #include "../../web/cpp/game/AnmRenderer.hpp"
@@ -444,6 +448,155 @@ int main(int argc, char** argv) {
         std::fwrite(t.bgra.data(), 1, t.bgra.size(), f);
         std::fclose(f);
         std::printf("%u %u %u %u %u\n", t.format, t.width, t.height, anm.entries[index].x, anm.entries[index].y);
+        return 0;
+    }
+    if ((command == "game-run" || command == "game-digest") && argc >= 8) {
+        // 直接进入场景 7（跳过启动幕/标题），每帧注入 held 位并按 tools/oracle/game-oracle.py 的规范字段导出 Player 状态。
+        // 参数：<th16.dat> <stage> <shot> <season> <frames> <input "f:held,..."> [enemies "f:count,..."] [dialogue "f:v,..."]
+        // 输入脚本语义与 game-oracle --input 相同：第 f 帧（0 起）起 held 持续到下一事件。
+        // enemies/dialogue 为其它管理器未移植时的 PlayerWorld 外部输入（oracle 快照 enemy_count / dialogue 字段）。
+        const bool digest_only = command == "game-digest";
+        const int stage = std::atoi(argv[3]);
+        const int shot = std::atoi(argv[4]);
+        const int season = std::atoi(argv[5]);
+        const int frames = std::atoi(argv[6]);
+        struct Event { int frame; i32 value; };
+        auto parse_schedule = [&](const char* p, std::vector<Event>& out) -> bool {
+            while (*p) {
+                char* endp = nullptr;
+                const long frame = std::strtol(p, &endp, 10);
+                if (endp == p || *endp != ':') return false;
+                p = endp + 1;
+                const long v = std::strtol(p, &endp, 0);
+                out.push_back({int(frame), i32(v)});
+                p = endp;
+                if (*p == ',') ++p;
+            }
+            return true;
+        };
+        std::vector<Event> input_script, enemy_script, dialogue_script;
+        if (!parse_schedule(argv[7], input_script)) return fail("bad input script");
+        if (argc >= 9 && !parse_schedule(argv[8], enemy_script)) return fail("bad enemies script");
+        if (argc >= 10 && !parse_schedule(argv[9], dialogue_script)) return fail("bad dialogue script");
+
+        GameSession session;
+        if (!session.open(dat.data(), u32(dat.size()))) return fail(session.failure.c_str());
+        session.run_draw_chains = false;   // oracle 不跑 0x4015a0
+        session.globals.stage = stage;
+        session.globals.stage_copy = stage;
+        session.globals.shot = shot;
+        session.globals.season = season;
+        if (!session.start_game_direct()) return fail(session.failure.c_str());
+
+        constexpr size_t kSnapshotBytes = 0x568;
+        u64 digest = 0xcbf29ce484222325ull;
+        auto feed = [&](const u8* p, size_t n) { for (size_t i = 0; i < n; ++i) { digest ^= p[i]; digest *= 0x100000001b3ull; } };
+        auto feed_u32 = [&](u32 v) { u8 b[4] = {u8(v), u8(v >> 8), u8(v >> 16), u8(v >> 24)}; feed(b, 4); };
+        auto timer3 = [&](const Timer& t, std::vector<u32>& w) { w.push_back(u32(t.previous)); w.push_back(u32(t.current)); w.push_back(bits(t.current_f)); };
+        auto vec3 = [&](const Vec3& v, std::vector<u32>& w) { w.push_back(bits(v.x)); w.push_back(bits(v.y)); w.push_back(bits(v.z)); };
+        auto has = [](u32 id) -> u32 { return id != 0 ? 1u : 0u; };
+        auto print_words = [&](const char* key, const std::vector<u32>& w, size_t from, size_t count) {
+            std::printf("\"%s\":[", key);
+            for (size_t i = 0; i < count; ++i) std::printf("%s%u", i ? "," : "", w[from + i]);
+            std::printf("]");
+        };
+
+        if (!digest_only) std::printf("{\"stage\":%d,\"shot\":%d,\"season\":%d,\"frames\":[", stage, shot, season);
+        i32 held = 0;
+        for (int f = 0; f < frames; ++f) {
+            for (const Event& e : input_script) if (e.frame == f) held = e.value;
+            for (const Event& e : enemy_script) if (e.frame == f) session.game.world.enemy_count = e.value;
+            for (const Event& e : dialogue_script) if (e.frame == f) session.game.world.dialogue = e.value != 0;
+            session.injected_input = u32(held);
+            if (!session.logic_step()) return fail(session.failure.c_str());
+
+            const Player& pl = session.game.player;
+            const GameGlobals& g = session.globals;
+            std::vector<u32> w;
+            w.push_back(u32(f + 1));
+            w.push_back(u32(g.game_frame));
+            w.push_back(u32(g.stage_frame));
+            w.push_back(session.game_input.held);
+            w.push_back(session.game_input.pressed);
+            w.push_back(u32(g.power));
+            w.push_back(u32(g.season_gauge));
+            const size_t player_begin = w.size();
+            w.push_back(u32(pl.state));
+            vec3(pl.pos, w);
+            w.push_back(u32(pl.fixed_x)); w.push_back(u32(pl.fixed_y));
+            timer3(pl.state_timer, w); timer3(pl.timer2, w); timer3(pl.timer3, w);
+            w.push_back(u32(pl.direction));
+            w.push_back(u32(pl.last_move_x)); w.push_back(u32(pl.last_move_y));
+            w.push_back(u32(pl.focus)); w.push_back(has(pl.focus_vm));
+            w.push_back(u32(pl.speed)); w.push_back(u32(pl.speed_focus)); w.push_back(u32(pl.speed_diag)); w.push_back(u32(pl.speed_diag_focus));
+            vec3(pl.velocity, w); vec3(pl.last_velocity, w);
+            w.push_back(u32(pl.velocity_ix)); w.push_back(u32(pl.velocity_iy));
+            w.push_back(u32(pl.option_lag)); w.push_back(u32(pl.gather_counter)); w.push_back(bits(pl.speed_mult));
+            vec3(pl.push, w);
+            w.push_back(u32(pl.option_count)); w.push_back(u32(pl.power_level)); w.push_back(u32(pl.sub_count)); w.push_back(pl.flags);
+            timer3(pl.invincible, w);
+            timer3(pl.shot_timer, w); timer3(pl.shot_timer2, w);
+            vec3(pl.rect_min, w); vec3(pl.rect_max, w);
+            vec3(pl.hit_radius, w); vec3(pl.item_radius, w); vec3(pl.graze_radius, w);
+            vec3(pl.item_rect_min, w); vec3(pl.item_rect_max, w);
+            vec3(pl.graze_rect_min, w); vec3(pl.graze_rect_max, w);
+            vec3(pl.item_rect2_min, w); vec3(pl.item_rect2_max, w);
+            w.push_back(u32(pl.scale_active)); w.push_back(bits(pl.scale));
+            const size_t options_begin = w.size();
+            auto push_option = [&](const PlayerOption& o) {
+                w.push_back(u32(o.active));
+                w.push_back(u32(o.target_x)); w.push_back(u32(o.target_y));
+                w.push_back(u32(o.x)); w.push_back(u32(o.y));
+                w.push_back(u32(o.offset_x)); w.push_back(u32(o.offset_y)); w.push_back(u32(o.focus_offset_x)); w.push_back(u32(o.focus_offset_y));
+                w.push_back(has(o.vm)); w.push_back(has(o.vm_front));
+                w.push_back(u32(o.index)); w.push_back(u32(o.snap));
+            };
+            for (const PlayerOption& o : pl.options) push_option(o);
+            for (const PlayerOption& o : pl.sub_options) push_option(o);
+            for (u32 v : w) feed_u32(v);
+            feed(reinterpret_cast<const u8*>(&pl.vm), kSnapshotBytes);
+            if (digest_only) continue;
+
+            std::printf("%s{\"frame\":%d,\"game_frame\":%d,\"stage_frame\":%d,\"input\":[%u,%u],\"power\":%d,\"season_gauge\":%d,"
+                        "\"enemy_count\":%d,\"dialogue\":%d,\"player\":{",
+                        f == 0 ? "" : ",", f + 1, g.game_frame, g.stage_frame, session.game_input.held, session.game_input.pressed,
+                        g.power, g.season_gauge, session.game.world.enemy_count, session.game.world.dialogue ? 1 : 0);
+            size_t at = player_begin;
+            std::printf("\"state\":%d,", i32(w[at])); at += 1;
+            print_words("pos", w, at, 3); at += 3; std::printf(",");
+            std::printf("\"pos_fixed\":[%d,%d],", i32(w[at]), i32(w[at + 1])); at += 2;
+            std::printf("\"timers\":[");
+            for (int t = 0; t < 3; ++t) { std::printf("%s[%d,%d,%u]", t ? "," : "", i32(w[at]), i32(w[at + 1]), w[at + 2]); at += 3; }
+            std::printf("],");
+            std::printf("\"dir\":%d,\"last_move\":[%d,%d],\"focus\":%d,\"focus_vm\":%u,", i32(w[at]), i32(w[at + 1]), i32(w[at + 2]), i32(w[at + 3]), w[at + 4]); at += 5;
+            print_words("speeds", w, at, 4); at += 4; std::printf(",");
+            print_words("velocity", w, at, 8); at += 8; std::printf(",");
+            std::printf("\"option_lag\":%d,\"counter\":%d,\"speed_mult\":%u,", i32(w[at]), i32(w[at + 1]), w[at + 2]); at += 3;
+            print_words("ext_velocity", w, at, 3); at += 3; std::printf(",");
+            std::printf("\"option_count\":%d,\"power_level\":%d,\"sub_count\":%d,\"flags\":%u,", i32(w[at]), i32(w[at + 1]), i32(w[at + 2]), w[at + 3]); at += 4;
+            print_words("invincible", w, at, 3); at += 3; std::printf(",");
+            std::printf("\"shot_timers\":[");
+            for (int t = 0; t < 2; ++t) { std::printf("%s[%d,%d,%u]", t ? "," : "", i32(w[at]), i32(w[at + 1]), w[at + 2]); at += 3; }
+            std::printf("],");
+            print_words("rects", w, at, 6); at += 6; std::printf(",");
+            print_words("radii", w, at, 9); at += 9; std::printf(",");
+            print_words("rects2", w, at, 18); at += 18; std::printf(",");
+            std::printf("\"scale\":[%d,%u],", i32(w[at]), w[at + 1]); at += 2;
+            if (at != options_begin) return fail("snapshot layout mismatch");
+            std::printf("\"options\":[");
+            for (int i = 0; i < Player::kOptionCount + Player::kSubOptionCount; ++i) {
+                const u32* o = &w[options_begin + size_t(i) * 13];
+                std::printf("%s{\"active\":%d,\"target\":[%d,%d],\"pos\":[%d,%d],\"offset\":[%d,%d,%d,%d],\"vm\":[%u,%u],\"index\":%d,\"snap\":%d}",
+                            i ? "," : "", i32(o[0]), i32(o[1]), i32(o[2]), i32(o[3]), i32(o[4]), i32(o[5]), i32(o[6]), i32(o[7]), i32(o[8]),
+                            o[9], o[10], i32(o[11]), i32(o[12]));
+            }
+            std::printf("],\"vm\":\"");
+            const u8* raw = reinterpret_cast<const u8*>(&pl.vm);
+            for (size_t i = 0; i < kSnapshotBytes; ++i) std::printf("%02x", raw[i]);
+            std::printf("\"}}");
+        }
+        if (digest_only) std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx\n", stage, shot, season, frames, (unsigned long long)digest);
+        else std::printf("]}\n");
         return 0;
     }
     if (command == "scene-boot" && argc >= 4) {

@@ -37,7 +37,7 @@ bool GameSession::load_anm(const char* name, AnmResource*& out) {
     return true;
 }
 
-bool GameSession::begin_boot() {
+bool GameSession::load_boot_banks() {
     AnmResource* ascii = nullptr;
     AnmResource* sig = nullptr;
     // 0x407cb0 AsciiManager：ascii.anm → 槽 2
@@ -56,6 +56,11 @@ bool GameSession::begin_boot() {
         if (!load_anm(bank.name, res)) return false;
         if (animations.load(bank.slot, *res) == nullptr) { failure = std::string(bank.name) + " load failed"; return false; }
     }
+    return true;
+}
+
+bool GameSession::begin_boot() {
+    if (!load_boot_banks()) return false;
 
     supervisor.boot_frames = 0;
     supervisor.current = SceneId::Boot;
@@ -140,12 +145,93 @@ void GameSession::leave_title() {
     supervisor.title_assets_ready = false;
 }
 
+bool GameSession::start_game_direct() {
+    if (!load_boot_banks()) return false;
+    supervisor.current = SceneId::Game;
+    supervisor.requested = SceneId::Game;
+    return enter_game();
+}
+
+bool GameSession::create_player() {
+    // 0x42cb60 新游戏段（DAT_004c17d0 != 0）
+    // 残机：模式 0 → 2；符卡练习 → 0（炸弹亦 0）；练习 → DAT_004a5bf8 ? 其值-1 : 9
+    const i32 mode = globals.mode();
+    if (mode == 2) { globals.lives = 0; globals.bombs = 0; }
+    else if (mode == 0) globals.lives = 2;
+    else globals.lives = 9;
+
+    // 0x440fb0：pl0N.anm → 槽 9（DAT_00492ccc[shot+aux]）、pl0Nsub.anm → 槽 0x1e（DAT_00492cdc[season]）、.sht 两份
+    static constexpr const char* kPlayerAnm[4] = {"pl00.anm", "pl02.anm", "pl03.anm", "pl01.anm"};
+    static constexpr const char* kPlayerSubAnm[5] = {"pl00sub.anm", "pl02sub.anm", "pl03sub.anm", "pl01sub.anm", "pl04sub.anm"};
+    static constexpr const char* kPlayerSht[4] = {"pl00.sht", "pl02.sht", "pl03.sht", "pl01.sht"};
+    static constexpr const char* kPlayerSubSht[5] = {"pl00sub.sht", "pl02sub.sht", "pl03sub.sht", "pl01sub.sht", "pl04sub.sht"};
+    const int shot = globals.shot + globals.shot_aux;
+    if (shot < 0 || shot > 3 || globals.season < 0 || globals.season > 4) { failure = "player shot/season out of range"; return false; }
+    AnmResource* pl_res = nullptr;
+    AnmResource* sub_res = nullptr;
+    if (!load_anm(kPlayerAnm[shot], pl_res)) return false;
+    if (!load_anm(kPlayerSubAnm[globals.season], sub_res)) return false;
+    AnmFile* pl_file = animations.load(9, *pl_res);
+    AnmFile* sub_file = animations.load(0x1e, *sub_res);
+    if (pl_file == nullptr || sub_file == nullptr) { failure = "player anm load failed"; return false; }
+    std::vector<u8> sht_bytes, sub_sht_bytes;
+    if (!archive_.read(kPlayerSht[shot], sht_bytes)) { failure = archive_.error; return false; }
+    if (!archive_.read(kPlayerSubSht[globals.season], sub_sht_bytes)) { failure = archive_.error; return false; }
+    if (!game.player.init(animations, globals, pl_file, sub_file, sht_bytes.data(), u32(sht_bytes.size()),
+                          sub_sht_bytes.data(), u32(sub_sht_bytes.size()))) { failure = game.player.error; return false; }
+    game.player_live = true;
+
+    // 火力 / 季节量表初值
+    const i32 per = globals.power_per_level, max = globals.power_max;
+    auto clamp_full = [&]() {
+        globals.power = per * 4;
+        if (globals.power <= max) { if (globals.power < per) globals.power = per; }
+        else globals.power = max;
+    };
+    if (mode == 2) {
+        clamp_full();
+        globals.season_gauge = globals.season_gauge_max < 0x186 ? globals.season_gauge_max : 0x186;
+    } else if (globals.stage < 2) {
+        globals.power = per > max ? max : per;
+        globals.season_gauge = globals.season_gauge_max < 0 ? globals.season_gauge_max : 0;
+    } else {
+        clamp_full();
+        globals.season_gauge = globals.season_gauge_max < 0 ? globals.season_gauge_max : 0;
+    }
+    game.player.setup_options(animations, globals);   // 0x4440e0
+    globals.flags &= ~0x4u;
+
+    // 0x447fd0 Replay 记录链（优先级 0x10）：DAT_004a52c8 = held 低 16 位 → 0x418650 边沿
+    replay_record_chain_ = chains.create([this]() -> ChainResult {
+        game_input.held = supervisor.input.held & 0xffffu;
+        game_input.commit();
+        return ChainResult::Continue;
+    }, 0x10, true);
+    // 0x440fb0：自机更新链 0x16（0x443720 → 0x442560）与绘制链 0x1d（0x443730）
+    player_update_chain_ = chains.create([this]() -> ChainResult {
+        game.player.update(animations, globals, game_input, game.world, animations.file(8), supervisor.game_speed);
+        return ChainResult::Continue;
+    }, 0x16, true);
+    player_draw_chain_ = chains.create([this]() -> ChainResult {
+        game.player.prepare_draw();
+        return ChainResult::Continue;
+    }, 0x1d, false);
+    chains.enable(replay_record_chain_);
+    chains.enable(player_update_chain_);
+    chains.enable(player_draw_chain_);
+    return true;
+}
+
 bool GameSession::enter_game() {
     // 0x42d700：flags |= 4、模式参数；0x42cb60 装载线程（此处同步）
     game = GameManager{};
     game.flags = GameManager::kLoading;
     game.mode = 0;
     game.entry = &stage_entry(globals.stage);
+    game_input = InputState{};
+
+    // 0x42cb60：新游戏（DAT_004c17d0，0x43ce10 case 7 置位）先建 Player，再建 Gui / Stage / …
+    if (!create_player()) return false;
 
     // 0x409db0 / 0x4097c0 / 0x40ac30：STD → 背景 ANM 进槽 3 + (stage & 1)
     std::vector<u8> std_bytes;
@@ -180,11 +266,22 @@ void GameSession::leave_game() {
     // 0x42d200：摘链、释放管理器；关卡背景 ANM 槽回收
     if (game_update_chain_) { chains.remove(game_update_chain_); game_update_chain_ = nullptr; }
     if (stage_update_chain_) { chains.remove(stage_update_chain_); stage_update_chain_ = nullptr; }
+    if (replay_record_chain_) { chains.remove(replay_record_chain_); replay_record_chain_ = nullptr; }
+    if (player_update_chain_) { chains.remove(player_update_chain_); player_update_chain_ = nullptr; }
+    if (player_draw_chain_) { chains.remove(player_draw_chain_); player_draw_chain_ = nullptr; }
     if (game.stage_live) {
         const int slot = 3 + (game.stage.stage_number & 1);
         animations.kill_file(slot);
         animations.tick_world();
         animations.unload(slot);
+    }
+    if (game.player_live) {
+        // 0x441a50 析构：pl0N.anm / pl0Nsub.anm 的 VM 全部标删（0x46f270）并释放槽 9 / 0x1e
+        animations.kill_file(9);
+        animations.kill_file(0x1e);
+        animations.tick_world();
+        animations.unload(9);
+        animations.unload(0x1e);
     }
     game = GameManager{};
     game_live = false;
@@ -204,7 +301,7 @@ bool GameSession::logic_step() {
 
     // 启动幕：绘制链推进 boot_frames；标题线程等待条件（0x44abea / 0x44ac00）
     if (!supervisor.title_menu_live) {
-        chains.run_draw();
+        if (run_draw_chains) chains.run_draw();
         if (supervisor.title_assets_ready && supervisor.boot_hold_elapsed()) {
             if (!activate_title_menu()) return false;
         }
