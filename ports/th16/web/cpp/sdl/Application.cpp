@@ -38,6 +38,16 @@ void apply_blend(touhou::graphics::PipelineState& p, int blend) {
     default: p.sourceBlend = BlendFactor::SourceAlpha; p.destinationBlend = BlendFactor::InverseSourceAlpha; break;
     }
 }
+
+// D3DTADDRESS → 共享后端
+touhou::graphics::Address address_mode(u8 d3d) {
+    using touhou::graphics::Address;
+    switch (d3d) {
+    case 2: return Address::Mirror;
+    case 3: return Address::Clamp;
+    default: return Address::Repeat;
+    }
+}
 }  // namespace
 
 // 0x401d50 键盘位（含 Enter/Esc/Ctrl 等菜单键）
@@ -99,11 +109,12 @@ void Application::draw_frame() {
     using namespace touhou::graphics;
     auto& p = graphics.backend.pipeline();
     p = {};
-    p.depthTest = false; p.depthWrite = false;
+    // 0x45ba80 缺省状态：ZENABLE=1 ZFUNC=ALWAYS、ALPHATEST ref=1 GREATEREQUAL、纹理 × 颜色调制
+    p.depthTest = true; p.depthWrite = false; p.depthCompare = Compare::Always;
+    p.alphaTest = true; p.alphaReference = 1; p.alphaCompare = Compare::GreaterEqual;
     p.color.operation = p.alpha.operation = ColorOperation::Multiply;
     p.color.first = p.alpha.first = {ArgumentSource::Texture};
     p.color.second = p.alpha.second = {ArgumentSource::Diffuse};
-    p.addressU = p.addressV = Address::Clamp;
     graphics.backend.state.viewport = {0, 0, 640, 480, 0, 1};
     graphics.clear(0xff000000);
 
@@ -112,11 +123,15 @@ void Application::draw_frame() {
     for (const AnmQuad& q : quads) {
         apply_blend(p, q.blend);
         p.minFilter = p.magFilter = q.nearest ? Filter::Nearest : Filter::Linear;
+        p.addressU = address_mode(q.address_u);
+        p.addressV = address_mode(q.address_v);
+        // 0x45ba80：ZENABLE 开、ZFUNC=D3DCMP_ALWAYS；Z 写由各模式决定（0x43c530/0x43c570）
+        p.depthWrite = q.depth_write;
         const GraphicsDevice::Vertex quad[4] = {
-            {q.x0, q.y0, 0, 1, q.color0, q.u0, q.v0},
-            {q.x1, q.y1, 0, 1, q.color1, q.u1, q.v1},
-            {q.x2, q.y2, 0, 1, q.color2, q.u2, q.v2},
-            {q.x3, q.y3, 0, 1, q.color3, q.u3, q.v3},
+            {q.x0, q.y0, q.z[0], q.rhw[0], q.color0, q.u0, q.v0},
+            {q.x1, q.y1, q.z[1], q.rhw[1], q.color1, q.u1, q.v1},
+            {q.x2, q.y2, q.z[2], q.rhw[2], q.color2, q.u2, q.v2},
+            {q.x3, q.y3, q.z[3], q.rhw[3], q.color3, q.u3, q.v3},
         };
         graphics.screen_quad(q.texture, quad);
     }

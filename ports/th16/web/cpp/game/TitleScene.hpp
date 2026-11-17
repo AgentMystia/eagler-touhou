@@ -7,7 +7,7 @@
 //   +0x2ac Timer（0x44af80 末尾每帧 +1；0x44a560/0x44a5e0 清零）
 //   +0x2c0 VM id 表，按脚本号索引（+0x2c0 + script*4）：0 logo，0x61/0x65 装饰，0x68 难度底，0x69 机体底，
 //          0x6a 季节底，0x71 关卡底，0x7e/0x7f 难度面板，0x96/0x98 机体面板，0x97/0x99 季节面板，
-//          0x9f = ascii.anm 0x13（难度说明文字），0x14c = title_v script0
+//          0x11f（+0x73c）= ascii.anm 0x13（落叶粒子发射器，0x44fe20 难度画面生成、0x44ad20 析构时 interrupt 1），0x14c = title_v script0
 //
 // 画面（+0x18）：1 主菜单 0x44b5f0；5 难度 0x44fe20；6 机体 0x4502c0；7 子季节 0x450af0；8 关卡 0x450ef0；
 //   2 = 标题结束（0x44af80 case 2 置场景请求）；3 Option / 0xa Player Data / 0xb Replay / 0xd Music Room /
@@ -32,8 +32,8 @@ public:
     static constexpr i32 kVmTable = 0x150;
     static constexpr i32 kLogo = 0;
     static constexpr i32 kTitleV = 0x14c;
-    static constexpr i32 kAsciiText = 0x9f;
-    static constexpr i32 kAsciiTextScript = 0x13;
+    static constexpr i32 kLeafEmitter = 0x11f;        // +0x73c
+    static constexpr i32 kLeafEmitterScript = 0x13;   // ascii.anm：每帧 ins_502 生成脚本 0x12 落叶（mode 8）
     static constexpr i32 kSceneGame = 7;
 
     struct Event { const char* kind; i32 value; };

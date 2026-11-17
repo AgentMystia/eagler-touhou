@@ -259,7 +259,7 @@ void TitleScene::update_difficulty(AnmManager& anm, const InputState& input) {
     const i32 panel = (extra ? 1 : 0) + 0x7e;
     switch (sub) {
     case 0: {
-        if (vm[kAsciiText] == 0 && ascii_file) spawn_into(anm, kAsciiText, *ascii_file, kAsciiTextScript);
+        if (vm[kLeafEmitter] == 0 && ascii_file) spawn_into(anm, kLeafEmitter, *ascii_file, kLeafEmitterScript);
         cursor.wrap = false;
         cursor.count = extra ? 1 : 4;
         anm.interrupt(vm[panel], 1);
@@ -341,7 +341,7 @@ void TitleScene::update_difficulty(AnmManager& anm, const InputState& input) {
             }
             g.difficulty = g.last_difficulty;
             set_screen(kMainMenu);
-            dismiss(anm, kAsciiText);
+            dismiss(anm, kLeafEmitter);
             set_screen(kMainMenu);
             cursor.pop();
             events.push_back({"screen", screen});

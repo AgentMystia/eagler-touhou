@@ -145,6 +145,11 @@ struct AnmVm {
     Vec3 entity_offset;               // 0x5e0（ins_306 flag 0x8000 时每帧累加全局偏移）
     i32 unknown_5ec = 0;              // 0x5ec
     Vec3 world_rotation;              // 0x5f0（0x464dd0 结果）
+    // —— 以下为移植附加字段（原版结构到此为 0x5fc）——
+    // ins_300(-1) 时原版用 ascii.anm 的 0x102 号精灵填 UV（0x45edb0），但绘制（0x465280/0x467410）仍按
+    // file_slot 的精灵表取纹理号——下标 0x102 对 title.anm 等已越界，读到的是堆上邻接数据。
+    // 这里记录 UV 真正来源的文件槽，按作者意图取该文件的纹理，避免复现未定义读取。
+    i32 sprite_source_slot = -1;
 
     // 原版 flags_lo（0x530）位
     enum : u32 {
@@ -232,6 +237,9 @@ static_assert(sizeof(void*) != 4 || offsetof(AnmVm, update_callback) == 0x5c4, "
 static_assert(sizeof(void*) != 4 || offsetof(AnmVm, sprite_mapper) == 0x5dc, "layout");
 static_assert(sizeof(void*) != 4 || offsetof(AnmVm, entity_offset) == 0x5e0, "layout");
 static_assert(sizeof(void*) != 4 || offsetof(AnmVm, world_rotation) == 0x5f0, "layout");
-static_assert(sizeof(void*) != 4 || sizeof(AnmVm) == 0x5fc, "AnmVm 为 0x5fc 字节（wasm32 指针 4 字节）");
+static_assert(sizeof(void*) != 4 || offsetof(AnmVm, sprite_source_slot) == 0x5fc, "原版 0x5fc 字节之后才是移植附加字段（wasm32 指针 4 字节）");
+
+// 0x464dd0：沿父链累加旋转写入 world_rotation 并归一化自身 rotation；返回 world_rotation
+Vec3 anm_world_rotation(AnmVm& vm);
 
 }  // namespace th16

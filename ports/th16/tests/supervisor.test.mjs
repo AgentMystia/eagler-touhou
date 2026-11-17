@@ -188,8 +188,49 @@ test('game start flow: Normal / Cirno / Autumn → scene 7 with stage 1, title d
   assert.equal(started.header.season, 2, 'Autumn');
   assert.equal(started.header.stage, 1);
   assert.equal(started.header.update_chains, 0, 'title update chain removed');
-  assert.equal(started.header.quads, 0, 'title.anm / title_v.anm VMs killed and banks unloaded');
+  // 0x44ad20：title.anm / title_v.anm VM 全部清掉；ascii.anm 落叶发射器（+0x73c）只收到 interrupt 1，
+  // 其脚本 case 1 在 10/14 帧后自删，所以切场后短暂只剩槽 2 的落叶（mode 8）
+  assert.ok(started.quads.length > 0, 'leaf particles (ascii.anm mode 8) still falling right after the switch');
+  assert.ok(started.quads.every(l => / slot=2$/.test(l)), 'only ascii.anm quads remain: ' + started.quads.filter(l => !/ slot=2$/.test(l)).slice(0, 3).join(' | '));
+  assert.ok(started.quads.every(l => / zw=1 /.test(l)), 'mode 8 writes Z (0x43c530)');
   assert.deepEqual(started.events.at(-1), ['scene', '7']);
+  const settled = parse(run(['scene-boot', dat, String(season + 2 + 0x28 + 2 + 16), script]));
+  assert.equal(settled.header.quads, 0, 'emitter (interrupt 1 → ins_1 after 14 frames) and its leaves are gone');
+});
+
+test('season panel (title script 145, mode 8): Y-flip through the UI camera, then settles on the mode-0 rectangle', needDat, () => {
+  const t = MAIN + 1;
+  const diff = t + AFTER_MAIN;
+  const shot = diff + AFTER_DIFF;
+  const season = shot + 2 + AFTER_SHOT;
+  const script = [`${t}:${Z}`, `${diff}:${Z}`, `${shot}:${RIGHT}`, `${shot + 2}:${Z}`].join(',');
+  const panel = frame => {
+    const out = parse(run(['scene-boot', dat, String(frame), script]));
+    const line = out.quads.find(l => /^26 145 /.test(l));
+    assert.ok(line, `script 145 drawn at frame ${frame}`);
+    const [, , , x0, y0, x1, y3] = line.split(' ').map(Number);
+    const z = line.match(/z=([^ ]+)/)[1].split(',').map(Number);
+    const rhw = Number(line.match(/rhw=([^ ]+)/)[1]);
+    const zw = Number(line.match(/zw=(\d)/)[1]);
+    return {x0, y0, x1, y3, z, rhw, zw};
+  };
+  // ins_401 y=π 起、20 帧转到 0：首帧几乎侧对相机（左右边翻转、宽度坍缩）
+  const edge = panel(season);
+  assert.ok(edge.x1 < edge.x0 && Math.abs(edge.x0 - edge.x1) < 20, `edge-on: ${JSON.stringify(edge)}`);
+  assert.equal(edge.zw, 1, 'mode 8 writes Z');
+  // 中途：透视使左右 rhw/z 不同（0x43c780 相机 eye z = 240/tan(15°)）
+  const mid = panel(season + 5);
+  assert.ok(mid.x0 < mid.x1 && Math.abs(mid.z[0] - mid.z[1]) > 1e-4, `perspective mid-flip: ${JSON.stringify(mid)}`);
+  // 转到 0 后与 mode 0 未对齐前的矩形一致：pos(640,660)×0.5 ± 精灵 619×205（weapon01b）×0.5 /2
+  const flat = panel(season + 10);
+  assert.ok(Math.abs(flat.x0 - 165.25) < 1e-3 && Math.abs(flat.x1 - 474.75) < 1e-3, `flat x: ${flat.x0}..${flat.x1}`);
+  assert.ok(Math.abs(flat.y0 - 278.75) < 1e-3 && Math.abs(flat.y3 - 381.25) < 1e-3, `flat y: ${flat.y0}..${flat.y3}`);
+  const d = 240 / Math.tan(Math.PI / 12);
+  assert.ok(Math.abs(flat.rhw - 1 / d) < 1e-7, `rhw = 1/${d}`);
+  assert.ok(Math.abs(flat.z[0] - (10000 / 9999) * (1 - 1 / d)) < 1e-5, 'viewport depth of the z=0 plane');
+  // 脚本随后 ins_302 0 回到屏幕模式：像素对齐 ROUND−0.5
+  const settled = panel(season + 20);
+  assert.equal(settled.x0, 164.5); assert.equal(settled.x1, 474.5); assert.equal(settled.rhw, 1); assert.equal(settled.zw, 0);
 });
 
 test('shot screen: cancel returns to Difficulty with cursor popped', needDat, () => {

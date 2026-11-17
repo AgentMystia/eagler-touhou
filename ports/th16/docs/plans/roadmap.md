@@ -17,13 +17,14 @@
 | Supervisor 场景状态机 + 输入边沿：Boot→Title（0x43b290 请求；标题线程等 0xb4 帧，仅 DAT_004c1800&0x180 可放行）；`title.anm`/`title_v.anm` 装载 | `game/Supervisor.hpp`、`game/Input.hpp`、`tests/supervisor.test.mjs` |
 | Chain 表（0x401730/0x401300/0x4013b0/0x401460/0x4015a0/0x4017a0：优先级插入、init、启用位、Remove/Break/Restart 返回码）+ 帧计时 0x45a8a0（1/60，rAF 折算 0..4 步）+ 0x405580 边沿/连发（>0x19 帧后每 8 帧）| `game/Chain.cpp`、`game/FrameClock.hpp`、`game/Input.hpp`、`tests/supervisor.test.mjs` |
 | 标题子画面 0x44fe20 难度 / 0x4502c0 机体 / 0x450af0 子季节 / 0x450ef0 练习关卡：面板脚本 0x7e/0x96/0x97/0x71、项中断（cursor+7/+0xd/+0x13/+0x19）、确定/取消节拍（Timer 0xd/0xe/5/10/0x27）、MenuCursor 压栈/出栈、GameGlobals（难度 1 / 机体 / 季节 / 关卡 / 模式位）；季节确定 → DAT_004c17c4=7 → Supervisor 切到 Game(7) 并析构标题（0x44af50：摘链、kill 槽 0x10/0x11）；Quit → 场景 2；CDP 截图 RANK/PLAYER/SUBWEAPON SELECT | `game/TitleScene.cpp`、`game/GameGlobals.hpp`、`game/MenuCursor.hpp`、`game/GameSession.cpp`、`tests/supervisor.test.mjs` |
+| ANM mode 8（0x467410）：世界矩阵（0x3d0 精灵尺寸/256 × scale × 欧拉顺序 ins_437 × 0x406a70 平移）经 UI 相机（0x43cb10/0x43c780：fov π/6、eye z=(h/2)/tan(fov/2)、up=(0,-1,0)、PerspectiveFovLH 1..10000）投影，±128 单位四边形 × 9 锚点（0x46b900）、纹理矩阵 0x450、TFACTOR 颜色、Z 写（0x43c530）；缺省设备状态 0x45ba80（ZFUNC ALWAYS、alpha test ref 1、寻址 WRAP）；ins_300(-1) 的 ascii 0x102 精灵来源槽；落叶发射器为标题 VM 表 +0x73c（0x11f），析构 0x44ad20 对其 interrupt 1；季节面板翻转 / 子季节项 CDP 截图可见；WASI 与本机一致 | `game/AnmRenderer.cpp`、`game/AnmVm.hpp`、`game/TitleScene.hpp`、`game/GameSession.cpp`、`sdl/Application.cpp`、`tests/supervisor.test.mjs` |
 | 标题主菜单 0x44af80/0x44b5f0 case 0/1/2/4：装饰 0x61/0x65 → Timer 0x78 → logo/title_v → 第 11 帧 Main；MenuCursor（wrap、禁用 Extra）；确定 0x80001 / 取消 0x102；子项 0x1d/0x1e/0x1f 中断（0x46f510 子树查找）；Timer>0x13 跳转画面表；逻辑层抽成 `GameSession`（浏览器与 harness 同一份时序）；CDP 截图光标移动/取消跳 Quit/确定 | `game/TitleScene.cpp`、`game/MenuCursor.hpp`、`game/GameSession.cpp`、`game/AnmManager.cpp`、`tests/supervisor.test.mjs` |
 
 ## 顺序
 
-1. Game 场景（DAT_004c17c4=7）：GameManager 创建、stage 表 DAT_004a23a4、ECL/STD 装载入口；季节确定后过场（EffectManager 0x418ba0 + ascii 0x11）；sprite_mapper 0x491b1c（季节面板子季节项疑因精灵越界被跳过，需对拍）。
+1. Game 场景（DAT_004c17c4=7）：GameManager 创建、stage 表 DAT_004a23a4、ECL/STD 装载入口；季节确定后过场（EffectManager 0x418ba0 + ascii 0x11）；启动时与原版同序装载 text.anm（槽 0）/ front.anm（槽 5）/ effect.anm（槽 8）/ bullet.anm（槽 7）。
 2. 标题余项：Option 0x44c570、Replay 0x451750、Player Data 0x452330、Music Room 0x4546f0、Manual 0x4545a0、Spell Practice 0x4553d0；demo 录像触发（无输入 0x708 帧）；标题绘制链 0x44b530；存档（scoreth16.dat）驱动的 Extra/练习解锁。
-3. ANM 更高绘制模式（4+：投影/世界/条带/网格）与外部钩子：ins_508 EffectManager（0x418af0）、sprite_mapper（0x491b1c）、update/draw/delete 回调表（0x4919e8 / 0x491b58）；标题画面逐帧对照。
+3. ANM 其余绘制模式（4..7 / 9+ / 0x10.. 矩形线段：投影/条带/网格/特效）、mode 0 的渐变色位（0x60000）、全局色乘 0x1c7fd88 与外部钩子：ins_508 EffectManager（0x418af0）、sprite_mapper（0x491b1c）、update/draw/delete 回调表（0x4919e8 / 0x491b58）；标题画面逐帧对照。
 4. ECL VM（0x41dcb0 族）：指令集、线程/子程序、变量、与 ANM 绑定。
 5. 敌机 / 子弹 / 激光 / 道具管理器；碰撞；分数/擦弹。
 6. 玩家与 4 机体 × 4 子季节（pl00–pl03 + .sht）；季节系统（Season gauge、Release）。
