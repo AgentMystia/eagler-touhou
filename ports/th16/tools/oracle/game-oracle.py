@@ -29,7 +29,7 @@ anm_oracle = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(anm_oracle)
 Oracle = anm_oracle.Oracle
 from unicorn import UC_HOOK_CODE
-from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_ESP, UC_X86_REG_EIP
+from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_ESI, UC_X86_REG_EDI, UC_X86_REG_ESP, UC_X86_REG_EIP
 
 STUB2 = 0x00720000
 STUB2_SIZE = 0x4000
@@ -78,12 +78,15 @@ def f32(v):
 
 
 class GameOracle(Oracle):
-    def __init__(self, exe, dat_dir, stage=1, shot=0, season=0, difficulty=1, seed=0, debug=False):
+    def __init__(self, exe, dat_dir, stage=1, shot=0, season=0, difficulty=1, seed=0, debug=False, replay_slot=-1):
         dat_dir = pathlib.Path(dat_dir)
         super().__init__(exe, 'text.anm', (dat_dir / 'text.anm').read_bytes())
         self.dat_dir = dat_dir
         self.stage, self.shot, self.season, self.difficulty, self.seed = stage, shot, season, difficulty, seed
+        self.replay_slot = replay_slot
         self.debug = debug
+        self.enemy_snap = False  # --enemies：每帧敌人快照（不进 digest，Enemy 移植阶段的对照）
+        self.ecl_trace = None
         self.run_draw = False   # --draw：也跑绘制链（需 D3DXVec3ProjectArray 等桩，待渲染/裁剪阶段接入）
         self.import_log = []
         self.uc.mem_map(STUB2, STUB2_SIZE)
@@ -262,6 +265,36 @@ class GameOracle(Oracle):
             uc.hook_add(UC_HOOK_CODE, self.on_code, begin=base, end=base + size - 1)
 
     # ---- 桩区 2 ----
+    def splice_hook(self, addr, displaced, fn):
+        """函数中段观察钩子：addr 处原指令（displaced 字节，须为完整指令且不含相对跳转）搬到桩区，
+        前面挂 Python 钩子，后面 JMP 回 addr+len(displaced)。钩子只读寄存器，不改控制流。"""
+        uc = self.uc
+        raw = bytes(uc.mem_read(addr, len(displaced)))
+        if raw != displaced:
+            raise RuntimeError('splice %#x: bytes %s != expected %s' % (addr, raw.hex(), displaced.hex()))
+        stub = STUB2 + self.stub2_count * 16
+        self.stub2_count += 1
+        back = addr + len(displaced)
+        code = displaced + b'\xe9' + struct.pack('<i', back - (stub + len(displaced) + 5))
+        assert len(code) <= 16
+        uc.mem_write(stub, code)
+        self.hooks[stub] = fn
+        uc.mem_write(addr, b'\xe9' + struct.pack('<i', stub - (addr + 5)))
+
+    def enable_ecl_trace(self):
+        """0x4720af（0x472030 通用 ECL 解释器取操作码处：ESI = 指令，EDI = 上下文）记录每条执行的指令。"""
+        self.ecl_trace = []
+        def on_ins(o):
+            uc = self.uc
+            ins = uc.reg_read(UC_X86_REG_ESI)
+            ctx = uc.reg_read(UC_X86_REG_EDI)
+            owner = self.u32(ctx + 0x1018)
+            t, op, size, mask, rank, argc = struct.unpack('<iHHHBB', uc.mem_read(ins, 12))
+            self.ecl_trace.append((self.frame, self.u32(owner + 0x5740), self.i32(ctx + 4), self.i32(ctx + 8),
+                                   struct.unpack('<f', uc.mem_read(ctx, 4))[0], t, op))
+        # MOVSX EAX, word ptr [ESI+4]; CMP EAX,0x5d
+        self.splice_hook(0x4720AF, bytes.fromhex('0fbf460483f85d'), on_ins)
+
     def make_stub2(self, ret_bytes, fn):
         addr = STUB2 + self.stub2_count * 16
         self.stub2_count += 1
@@ -540,6 +573,7 @@ class GameOracle(Oracle):
         uc.mem_write(DAT_SHOT_AUX, struct.pack('<I', 0))
         uc.mem_write(DAT_SEASON, struct.pack('<I', self.season))
         uc.mem_write(DAT_DIFFICULTY, struct.pack('<I', self.difficulty))
+        uc.mem_write(0x4A57C8, struct.pack('<i', self.replay_slot))  # DAT_004a57c8：-1 普通/练习（MainFront），≥0 符卡（MainBossSpell）
         uc.mem_write(DAT_STAGE_TABLE, struct.pack('<I', STAGE_TABLE_BASE + self.stage * STAGE_TABLE_STRIDE))
         uc.mem_write(DAT_GAME_FLAGS, struct.pack('<I', 0))
         # 0x43ce10 case 7（标题 → 游戏）：Supervisor(0x4c10d0)+0x700 = 1（新开局：0x42cb60 据此创建 Player）
@@ -593,6 +627,32 @@ class GameOracle(Oracle):
     def timer(self, addr):
         # Timer（0x14）：previous, current, current_f, speed_slot, flags
         return self.words(addr, 5)
+
+    def enemy_snapshot(self):
+        """EnemyManager（DAT_004a6dc0，0x190 字节）：+0x180 敌人链表（节点 {Enemy*, next}）。
+        Enemy：+0x10 主 ECL 上下文 {time f32, sub, pc}，+0x120c EnemyInf（+0x44 位置、+0x88/+0xcc 两运动体、+0x4060 标志），
+        +0x5740 id。sub 名取自 ECL 资源（Enemy+0x11f8 → +0x8c 子程序表 {name*, code*}）。"""
+        m = self.u32(0x4A6DC0)
+        if not m:
+            return None
+        out = {'count': self.i32(m + 0x18C), 'enemies': []}
+        node = self.u32(m + 0x180)
+        while node:
+            e = self.u32(node)
+            inf = e + 0x120C
+            ctx = e + 0x10
+            sub = self.i32(ctx + 4)
+            res = self.u32(e + 0x11F8)
+            name = self.cstr(self.u32(self.u32(res + 0x8C) + sub * 8)) if res and sub >= 0 else None
+            out['enemies'].append({
+                'id': self.u32(e + 0x5740), 'flags': self.u32(inf + 0x4060),
+                'pos': list(struct.unpack('<3f', self.uc.mem_read(inf + 0x44, 12))),
+                'motion1': self.words(inf + 0x88, 17), 'motion2': self.words(inf + 0xCC, 17),
+                'ctx': [struct.unpack('<f', self.uc.mem_read(ctx, 4))[0], sub, self.i32(ctx + 8), name],
+                'hp': self.words(inf + 0x3F74, 4),
+            })
+            node = self.u32(node + 4)
+        return out
 
     def player_snapshot(self):
         """Player（DAT_004a6ef8，0x2c828 字节）规范字段；与 harness `game-run` 输出一一对应。"""
@@ -681,6 +741,8 @@ class GameOracle(Oracle):
             'enemy_count': self.i32(self.u32(0x4A6DC0) + 0x18C) if self.u32(0x4A6DC0) else 0,
             'dialogue': self.i32(self.u32(0x4A6DCC) + 0x1C8) if self.u32(0x4A6DCC) else 0,
         }
+        if self.enemy_snap:
+            snap['enemies'] = self.enemy_snapshot()
         if sm:
             snap['stage'] = {'frame': self.i32(sm + 0x66E0), 'ins': self.i32(sm + 0x20), 'flags': self.u32(sm + 0x66C4)}
         return snap
@@ -735,6 +797,26 @@ def frame_digest(frames, digest=0xCBF29CE484222325):
     return digest
 
 
+def enemy_digest(frames, digest=0xCBF29CE484222325):
+    mask = (1 << 64) - 1
+    def feed(data):
+        nonlocal digest
+        for b in data:
+            digest = ((digest ^ b) * 0x100000001B3) & mask
+    for f in frames:
+        en = f.get('enemies') or {'count': 0, 'enemies': []}
+        lst = en.get('enemies') or []
+        words = [f['frame'], en['count'], len(lst)]
+        feed(b''.join(struct.pack('<I', w & 0xFFFFFFFF) for w in words))
+        for e in lst:
+            t_bits = struct.unpack('<I', struct.pack('<f', float(e['ctx'][0])))[0]
+            ew = [e['id'], e['flags']] + e['motion1'] + e['motion2'] + [t_bits, e['ctx'][1], e['ctx'][2], e['hp'][0], e['hp'][1]]
+            feed(b''.join(struct.pack('<I', w & 0xFFFFFFFF) for w in ew))
+            if e['ctx'][3]:
+                feed(e['ctx'][3].encode('utf-8'))
+    return digest
+
+
 def parse_input(spec):
     events = {}
     if spec:
@@ -764,9 +846,15 @@ def main():
     ap.add_argument('--every', type=int, default=1)
     ap.add_argument('--debug', action='store_true')
     ap.add_argument('--draw', action='store_true', help='每帧也跑绘制链 0x4015a0（实验）')
+    ap.add_argument('--enemies', action='store_true', help='每帧附敌人快照（EnemyManager 链表）')
+    ap.add_argument('--replay-slot', type=int, default=-1, help='DAT_004a57c8（默认 -1 走 MainFront；0 走 MainBossSpell）')
+    ap.add_argument('--trace-ecl', default='', help='把每条执行的 ECL 指令 (frame, enemy, sub, pc, time, ins_time, op) 写到此文件')
     a = ap.parse_args()
-    o = GameOracle(pathlib.Path(a.exe), a.dat_dir, a.stage, a.shot, a.season, a.difficulty, a.seed, a.debug)
+    o = GameOracle(pathlib.Path(a.exe), a.dat_dir, a.stage, a.shot, a.season, a.difficulty, a.seed, a.debug, a.replay_slot)
     o.run_draw = a.draw
+    o.enemy_snap = a.enemies
+    if a.trace_ecl:
+        o.enable_ecl_trace()
     o.boot()
     print('booted: chains=%s banks=%s device_calls=%s' % (
         [(p, hex(cb)) for p, cb, _ in o.chain_list()], o.loaded_banks, o.device_calls), file=sys.stderr)
@@ -783,7 +871,10 @@ def main():
     notes = [e for e in o.errors if not e.startswith('note')]
     pathlib.Path(a.out).write_text(json.dumps({'stage': a.stage, 'shot': a.shot, 'season': a.season, 'difficulty': a.difficulty,
                                                'input': a.input, 'frames': frames}, separators=(',', ':')))
-    print('game-oracle: %d frames → %s digest=%016x errors=%s' % (a.frames, a.out, frame_digest(frames), notes[:3]))
+    if a.trace_ecl:
+        pathlib.Path(a.trace_ecl).write_text(json.dumps(o.ecl_trace, separators=(',', ':')))
+    print('game-oracle: %d frames → %s digest=%016x enemies=%016x errors=%s' % (
+        a.frames, a.out, frame_digest(frames), enemy_digest(frames) if a.enemies else 0, notes[:3]))
     return 0
 
 

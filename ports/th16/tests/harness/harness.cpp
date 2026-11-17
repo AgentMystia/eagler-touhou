@@ -487,12 +487,18 @@ int main(int argc, char** argv) {
         session.globals.stage_copy = stage;
         session.globals.shot = shot;
         session.globals.season = season;
+        session.globals.set_mode(0);       // 0x449190：普通模式默认 replay_slot = -1
+        if (argc >= 11 && argv[10][0] != '\0') session.globals.difficulty = std::atoi(argv[10]);
+        if (argc >= 12 && argv[11][0] != '\0') session.globals.replay_slot = std::atoi(argv[11]);
         if (!session.start_game_direct()) return fail(session.failure.c_str());
 
         constexpr size_t kSnapshotBytes = 0x568;
         u64 digest = 0xcbf29ce484222325ull;
+        u64 enm_digest = 0xcbf29ce484222325ull;
         auto feed = [&](const u8* p, size_t n) { for (size_t i = 0; i < n; ++i) { digest ^= p[i]; digest *= 0x100000001b3ull; } };
         auto feed_u32 = [&](u32 v) { u8 b[4] = {u8(v), u8(v >> 8), u8(v >> 16), u8(v >> 24)}; feed(b, 4); };
+        auto feed_enm = [&](const u8* p, size_t n) { for (size_t i = 0; i < n; ++i) { enm_digest ^= p[i]; enm_digest *= 0x100000001b3ull; } };
+        auto feed_enm_u32 = [&](u32 v) { u8 b[4] = {u8(v), u8(v >> 8), u8(v >> 16), u8(v >> 24)}; feed_enm(b, 4); };
         auto timer3 = [&](const Timer& t, std::vector<u32>& w) { w.push_back(u32(t.previous)); w.push_back(u32(t.current)); w.push_back(bits(t.current_f)); };
         auto vec3 = [&](const Vec3& v, std::vector<u32>& w) { w.push_back(bits(v.x)); w.push_back(bits(v.y)); w.push_back(bits(v.z)); };
         auto has = [](u32 id) -> u32 { return id != 0 ? 1u : 0u; };
@@ -504,10 +510,16 @@ int main(int argc, char** argv) {
 
         if (!digest_only) std::printf("{\"stage\":%d,\"shot\":%d,\"season\":%d,\"frames\":[", stage, shot, season);
         i32 held = 0;
+        i32 enemy_hold = -1;
+        i32 dialogue_hold = -1;
+        // 提供了 enemies/dialogue 时间表时，由桩接管 PlayerWorld 对应字段（保持“最后一次赋值”语义）
+        if (!enemy_script.empty()) session.sync_enemy_count = false;
         for (int f = 0; f < frames; ++f) {
             for (const Event& e : input_script) if (e.frame == f) held = e.value;
-            for (const Event& e : enemy_script) if (e.frame == f) session.game.world.enemy_count = e.value;
-            for (const Event& e : dialogue_script) if (e.frame == f) session.game.world.dialogue = e.value != 0;
+            for (const Event& e : enemy_script) if (e.frame == f) enemy_hold = e.value;
+            for (const Event& e : dialogue_script) if (e.frame == f) dialogue_hold = e.value;
+            if (enemy_hold >= 0) session.game.world.enemy_count = enemy_hold;
+            if (dialogue_hold >= 0) session.game.world.dialogue = dialogue_hold != 0;
             session.injected_input = u32(held);
             if (!session.logic_step()) return fail(session.failure.c_str());
 
@@ -590,6 +602,29 @@ int main(int argc, char** argv) {
             for (i32 s : session.sfx_events) w.push_back(u32(s));
             for (u32 v : w) feed_u32(v);
             feed(reinterpret_cast<const u8*>(&pl.vm), kSnapshotBytes);
+            {
+                u32 live_enm = 0;
+                for (const auto& ep : session.game.enemies.enemies) if (ep) ++live_enm;
+                feed_enm_u32(u32(f + 1));
+                feed_enm_u32(u32(session.game.enemies.enemy_count));
+                feed_enm_u32(live_enm);
+                for (const auto& ep : session.game.enemies.enemies) {
+                    if (!ep) continue;
+                    const Enemy& e = *ep;
+                    feed_enm_u32(e.id);
+                    feed_enm_u32(e.flags);
+                    const u32* m1 = reinterpret_cast<const u32*>(&e.motion1);
+                    const u32* m2 = reinterpret_cast<const u32*>(&e.motion2);
+                    for (int k = 0; k < 17; ++k) feed_enm_u32(m1[k]);
+                    for (int k = 0; k < 17; ++k) feed_enm_u32(m2[k]);
+                    feed_enm_u32(bits(e.primary.time));
+                    feed_enm_u32(u32(e.primary.routine));
+                    feed_enm_u32(u32(e.primary.instruction_offset));
+                    feed_enm_u32(u32(e.life));
+                    feed_enm_u32(u32(e.life_max));
+                    if (const char* rn = e.routine_name()) feed_enm(reinterpret_cast<const u8*>(rn), std::strlen(rn));
+                }
+            }
             if (digest_only) continue;
 
             std::printf("%s{\"frame\":%d,\"game_frame\":%d,\"stage_frame\":%d,\"input\":[%u,%u],\"power\":%d,\"season_gauge\":%d,"
@@ -660,9 +695,32 @@ int main(int argc, char** argv) {
             std::printf(",\"vm\":\"");
             const u8* raw = reinterpret_cast<const u8*>(&pl.vm);
             for (size_t i = 0; i < kSnapshotBytes; ++i) std::printf("%02x", raw[i]);
-            std::printf("\"}}");
+            std::printf("\"},\"enemies\":{\"count\":%d,\"enemies\":[", session.game.enemies.enemy_count);
+            bool first_enm = true;
+            for (const auto& ep : session.game.enemies.enemies) {
+                if (!ep) continue;
+                const Enemy& e = *ep;
+                const char* rname = e.routine_name();
+                std::printf("%s{\"id\":%u,\"flags\":%u,\"pos\":[%.9g,%.9g,%.9g],",
+                            first_enm ? "" : ",", e.id, e.flags, e.pos.x, e.pos.y, e.pos.z);
+                first_enm = false;
+                auto print_motion = [&](const char* key, const MotionState& m) {
+                    const u32* mw = reinterpret_cast<const u32*>(&m);
+                    std::printf("\"%s\":[", key);
+                    for (int k = 0; k < 17; ++k) std::printf("%s%u", k ? "," : "", mw[k]);
+                    std::printf("]");
+                };
+                print_motion("motion1", e.motion1); std::printf(",");
+                print_motion("motion2", e.motion2); std::printf(",");
+                std::printf("\"ctx\":[%.9g,%d,%d,", e.primary.time, e.primary.routine, e.primary.instruction_offset);
+                if (rname) std::printf("\"%s\"", rname); else std::printf("null");
+                std::printf("],\"hp\":[%d,%d,0,0]}", e.life, e.life_max);
+            }
+            std::printf("]}}");
         }
-        if (digest_only) std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx\n", stage, shot, season, frames, (unsigned long long)digest);
+        if (digest_only)
+            std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx enemies=%016llx\n",
+                        stage, shot, season, frames, (unsigned long long)digest, (unsigned long long)enm_digest);
         else std::printf("]}\n");
         return 0;
     }
