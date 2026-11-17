@@ -14,11 +14,15 @@
 //   harness anm-draw <th16.dat> <name.anm> <script> <frames> [layer]
 //                                              → 每行一层绘制结果："frame layer script id blend x0 y0 x1 y1 x2 y2 x3 y3 u0 v0 u1 v1 u2 v2 u3 v3 color"
 //                                                （spawn 后 tick frames 次再 emit；对应上屏几何，texture 句柄以 entry_index+1 占位）
+//   harness scene-boot <th16.dat> <frames> [skip_at]
+//                                              → 模拟 Supervisor：Boot→Title 装载，frames 帧后报告 scene/boot_frames/title_live/quads
+//                                                skip_at≥0 时在该帧注入确定键以提前结束 0xb4 等待
 #include "../../web/cpp/game/Archive.hpp"
 #include "../../web/cpp/game/AnmManager.hpp"
 #include "../../web/cpp/game/AnmRenderer.hpp"
 #include "../../web/cpp/game/AnmResource.hpp"
 #include "../../web/cpp/game/Rng.hpp"
+#include "../../web/cpp/game/Supervisor.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -277,6 +281,75 @@ int main(int argc, char** argv) {
         std::fwrite(t.bgra.data(), 1, t.bgra.size(), f);
         std::fclose(f);
         std::printf("%u %u %u %u %u\n", t.format, t.width, t.height, anm.entries[index].x, anm.entries[index].y);
+        return 0;
+    }
+    if (command == "scene-boot" && argc >= 4) {
+        // 无头复现 Application 启动幕→标题时序（不含 SDL 绘制）。
+        const int frames = std::atoi(argv[3]);
+        const int skip_at = argc >= 5 ? std::atoi(argv[4]) : -1;
+        auto load_res = [&](const char* name, AnmResource& out) -> bool {
+            std::vector<u8> bytes;
+            if (!archive.read(name, bytes) || !out.parse(bytes.data(), u32(bytes.size()), name)) return false;
+            return true;
+        };
+        AnmResource ascii, sig, title, title_v;
+        if (!load_res("ascii.anm", ascii) || !load_res("sig.anm", sig) ||
+            !load_res("title.anm", title) || !load_res("title_v.anm", title_v))
+            return fail("cannot load boot/title anm");
+        AnmManager manager;
+        Supervisor supervisor;
+        manager.load(AnmManager::kAsciiSlot, ascii);
+        AnmFile* sig_file = manager.load(1, sig);
+        if (sig_file == nullptr) return fail("sig load");
+        manager.spawn(*sig_file, 0, -1);
+        supervisor.current = SceneId::Boot;
+        supervisor.boot_init_finished();
+
+        AnmRenderer renderer;
+        renderer.window_scale = 1.0f;
+        renderer.lookup = [](int /*slot*/, int entry) -> u32 { return u32(entry) + 1; };
+
+        for (int f = 0; f < frames; ++f) {
+            if (skip_at >= 0 && f == skip_at) {
+                supervisor.input.held = InputState::kShot;
+                supervisor.input.commit();
+            } else {
+                supervisor.input.held = 0;
+                supervisor.input.commit();
+            }
+            SceneId leave = SceneId::Invalid, enter = SceneId::Invalid;
+            if (supervisor.consume_switch(leave, enter) && enter == SceneId::Title) {
+                if (manager.load(0x10, title) == nullptr || manager.load(0x11, title_v) == nullptr)
+                    return fail("title load");
+                supervisor.title_assets_ready = true;
+            }
+            if (!supervisor.title_menu_live) {
+                ++supervisor.boot_frames;
+                if (supervisor.title_assets_ready && supervisor.boot_hold_elapsed()) {
+                    manager.kill_file(1);
+                    manager.tick_world();
+                    manager.unload(1);
+                    AnmFile* tf = manager.file(0x10);
+                    AnmFile* tv = manager.file(0x11);
+                    if (tf == nullptr || tv == nullptr) return fail("title banks");
+                    manager.spawn(*tf, 0x61, -1);
+                    manager.spawn(*tf, 0x65, -1);
+                    manager.spawn(*tf, 0, -1);
+                    manager.spawn(*tv, 0, -1);
+                    supervisor.title_menu_live = true;
+                }
+            }
+            manager.tick_world();
+        }
+        std::vector<AnmQuad> quads;
+        if (!renderer.emit_all(manager, quads)) return fail(renderer.error.c_str());
+        std::printf("scene=%d boot_frames=%u title_live=%d quads=%zu\n",
+                    int(supervisor.current), supervisor.boot_frames,
+                    supervisor.title_menu_live ? 1 : 0, quads.size());
+        for (const AnmQuad& q : quads) {
+            std::printf("%d %d %u %.8g %.8g %.8g %.8g %08x\n",
+                        q.layer, q.script, q.id, q.x0, q.y0, q.x1, q.y3, q.color0);
+        }
         return 0;
     }
     return fail("unknown command");

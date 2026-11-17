@@ -35,6 +35,17 @@ EMSCRIPTEN_KEEPALIVE const char* th16_error() { return last_error.c_str(); }
 EMSCRIPTEN_KEEPALIVE unsigned th16_frame() { return app ? app->frames : 0; }
 // 0 = 未初始化，1 = 启动幕，2 = 循环运行中
 EMSCRIPTEN_KEEPALIVE unsigned th16_phase() { return !app || !app->initialized ? 0 : running ? 2 : 1; }
+// DAT_004c17c4 口径：1 = Boot，4 = Title；未初始化返回 0
+EMSCRIPTEN_KEEPALIVE int th16_scene() {
+    if (!app || !app->initialized) return 0;
+    return int(app->supervisor.current);
+}
+EMSCRIPTEN_KEEPALIVE unsigned th16_boot_frames() {
+    return app ? app->supervisor.boot_frames : 0;
+}
+EMSCRIPTEN_KEEPALIVE int th16_title_live() {
+    return app && app->supervisor.title_menu_live ? 1 : 0;
+}
 
 EMSCRIPTEN_KEEPALIVE int th16_frame_tick() {
     if (!app || !app->initialized) return 0;

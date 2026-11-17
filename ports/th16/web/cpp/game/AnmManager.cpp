@@ -142,6 +142,23 @@ AnmFile* AnmManager::load(int slot, const AnmResource& resource) {
     return file;
 }
 
+void AnmManager::kill_file(int slot) {
+    // 0x46f270：按 AnmFile.slot（= bank 下标）给世界/UI 链上的 VM 打 0x20 待删位
+    auto mark = [slot](AnmListNode* head) {
+        for (AnmListNode* n = head; n != nullptr; n = n->next) {
+            AnmVm& vm = *n->owner;
+            if (vm.file_slot == slot) vm.flags_hi = (vm.flags_hi & 0xffffffbfu) | 0x20u;
+        }
+    };
+    mark(world_head_);
+    mark(ui_head_);
+}
+
+void AnmManager::unload(int slot) {
+    if (slot < 0 || slot >= kBankSlots) return;
+    banks_[slot].reset();
+}
+
 AnmVm* AnmManager::allocate() {
     if (!free_stack_.empty()) {
         const u32 index = free_stack_.back();

@@ -55,6 +55,10 @@ public:
     // （浏览器端为 GraphicsDevice 实际创建的纹理尺寸，离线 harness 为 entry 声明尺寸）。
     AnmFile* load(int slot, const AnmResource& resource);
     AnmFile* file(int slot) const { return slot >= 0 && slot < kBankSlots ? banks_[slot].get() : nullptr; }
+    // 0x46f270：标记该槽全部世界/UI VM 待删（flags_hi |= 0x20）；0x46d770 的前半。调用方随后 tick 回收，再 unload。
+    void kill_file(int slot);
+    // 释放 bank 槽（需已 kill + tick，或槽上无活跃 VM）
+    void unload(int slot);
 
     // 0x406380：生成脚本 VM（挂到世界链表尾），返回 id；out_vm 可取 VM 指针
     u32 spawn(AnmFile& file, int script, int layer, AnmVm** out_vm = nullptr);
