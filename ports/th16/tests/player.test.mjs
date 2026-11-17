@@ -97,3 +97,63 @@ test('player: full power (stage 2) — 4 子机 + 0x426160 前插附加 VM；sht
   // pl03.sht（文）等级 4 → DAT_004a5e4c 行 2 下标 6..9 的位置 × 128，相对自机 (0, 51200)
   assert.deepEqual(main.map(o => o.pos), [[384, 46080], [-384, 46080], [1152, 46592], [-1152, 46592]]);
 });
+
+test('player shooting (0x4455d0 / 0x445470 / 0x444e10 / 0x4456d0) — 琪露诺 + 秋：计时、出弹、伤害源、音效、出界回收', needDat, () => {
+  const c = golden.cases.find(x => x.name === 'shoot-cirno-autumn');
+  const frames = gameRun(c).frames;
+  // 第 20 帧（0 起）按下射击 → 第 21 帧计时 -1 → 0 并出弹：组 1（火力 100）的 6 条全部相位 0
+  const f21 = frames[20].player;
+  assert.deepEqual(f21.shot_timers.map(t => t.slice(0, 2)), [[0, 1], [0, 1]]);
+  assert.deepEqual(f21.bullets.map(b => b.shot_id), [0x100, 0x101, 0x102, 0x103, 0x104, 0x105]);
+  assert.deepEqual(f21.bullets.map(b => b.pos.slice(0, 2).map(f32)), [[-10, 392], [10, 392], [0, 368], [0, 368], [0, 368], [0, 368]],
+    '主弹 (±10, 400−8) 先减速度再推进一帧；子机弹从子机 (0, 368) 出发');
+  assert.deepEqual(f21.bullets.map(b => f32(b.speed)), [24, 24, 8, 8, 8, 8]);
+  assert.deepEqual(f21.bullets.map(b => b.damage), [14, 14, 14, 14, 14, 14]);
+  assert.deepEqual(f21.bullets.map(b => b.damage_source), [2, 3, 4, 5, 6, 7], '0x444b20 从上次下标 0 的下一个（池项 1）起分配，返回 1 起下标');
+  assert.deepEqual(f21.sfx, [0], '组内只有第一条 sfx 0，其余 -1');
+  assert.equal(f21.damage_sources.length, 6);
+  const ds = f21.damage_sources[0];
+  assert.deepEqual(ds.size.map(f32), [48, 16]);
+  assert.deepEqual(ds.tail, [0, 10000000, 1, 0, 0, 0, 1], '+0x78..+0x90：0 / 10000000 / 1 / 0 / 弹下标 / 0 / 类型 1');
+  assert.equal(ds.timer[1], 9999999, '寿命 9999999；伤害源回退循环在射击之前，本帧不减');
+  assert.equal(frames[21].player.damage_sources[0].timer[1], 9999998, '次帧起每帧回退 1');
+  // 主弹周期 3（第 24/27/30…帧），子机弹 0x102/0x103 周期 8（第 29/37 帧）；0x104/0x105 周期 30（第 21/51/81 帧）
+  const spawned = id => frames.slice(0, 40).map((fr, i) => fr.player.bullets.some(b => b.shot_id === id && b.timer[1] === 1) ? i + 1 : 0).filter(Boolean);
+  assert.deepEqual(spawned(0x100), [21, 24, 27, 30, 33, 36, 39]);
+  assert.deepEqual(spawned(0x102), [21, 29, 37]);
+  assert.deepEqual(spawned(0x104), [21]);
+  assert.ok(frames[50].player.bullets.some(b => b.shot_id === 0x104 && b.timer[1] === 1));
+  assert.deepEqual(frames[23].player.sfx, [0]);
+  assert.deepEqual(frames[24].player.sfx, []);
+  assert.deepEqual(frames[28].player.sfx, [], '子机弹 sfx -1：不入队');
+  // 主射击计时 0..14 环绕（0x4455d0 到 15 归零），第二计时继续增长
+  assert.deepEqual(frames[34].player.shot_timers.map(t => t[1]), [0, 15]);
+  assert.deepEqual(frames[35].player.shot_timers.map(t => t[1]), [1, 16]);
+  // 直线弹 24/帧 向上，第 41 帧出界回收（四角全部 y ≤ 0）
+  assert.ok(frames[39].player.bullets.some(b => b.index === 0));
+  assert.ok(!frames[40].player.bullets.some(b => b.index === 0));
+  assert.ok(!frames[40].player.damage_sources.some(d => d.index === 2), '伤害源随弹失活');
+  const last = frames.at(-1).player;
+  assert.equal(last.bullets.length, c.shooting.bullets);
+  assert.equal(last.damage_sources.length, c.shooting.damage_sources);
+  assert.equal(last.last_damage_index, c.shooting.last_damage_index);
+});
+
+test('player shooting — 低速组 5..9（+1+最大等级）、文 t4 弹回调 4/5（伤害源类型 2、+0.5/帧加速）', needDat, () => {
+  const focus = golden.cases.find(x => x.name === 'shoot-focus-cirno-autumn');
+  const ff = gameRun(focus, 72).frames;
+  assert.equal(ff[20].player.focus, 1);
+  assert.deepEqual(ff[20].player.bullets.map(b => b.shot_id), [0x600, 0x601, 0x602, 0x603, 0x604, 0x605], '低速：组 1 + 1 + 4 = 6');
+  assert.deepEqual(ff[71].player.bullets.filter(b => b.timer[1] === 1).map(b => b.shot_id), [0x100, 0x101], '松开低速后回到组 1');
+  const aya = golden.cases.find(x => x.name === 'shoot-aya-autumn');
+  const af = gameRun(aya, 64).frames;
+  const a21 = af[20].player;
+  assert.deepEqual(a21.bullets.map(b => [b.shot_id, f32(b.speed)]), [[0x100, 24], [0x101, 24], [0x102, 0.5], [0x103, 0.5]], 't4 弹初速 0，回调 5 本帧 +0.5');
+  assert.deepEqual(af[21].player.bullets.slice(2).map(b => f32(b.speed)), [1, 1]);
+  assert.deepEqual(a21.bullets.slice(2).map(b => b.size.map(f32)), [[48, 8], [48, 8]]);
+  const a61 = af[60].player;
+  const charge = a61.bullets.find(b => b.shot_id === 0x602);
+  assert.ok(charge, '低速组 6 的 t4 弹（周期 5）');
+  const cds = a61.damage_sources.find(d => d.index === charge.damage_source);
+  assert.equal(cds.tail[6], 2, '生成回调 4：伤害源 +0x90 = 2');
+});

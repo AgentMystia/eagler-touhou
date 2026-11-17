@@ -26,7 +26,8 @@
 //   harness stage-run <th16.dat> <stage> <frames>    → StageManager 单独驱动（0x409db0→0x40add0→每帧 0x409e50），逐帧 JSON
 //   harness stage-digest <th16.dat> <stage> <frames> → 同一状态流的 FNV-1a 64（tests/golden/stage.json，tools/oracle/stage-oracle.py 同口径）
 //   harness game-run <th16.dat> <stage> <shot> <season> <frames> <input "f:held,..."> [enemies "f:n,..."] [dialogue "f:v,..."]
-//                                              → 直接进入场景 7（GameSession::start_game_direct），逐帧 JSON：Player 规范字段 + 自机 VM 0x568 字节
+//                                              → 直接进入场景 7（GameSession::start_game_direct），逐帧 JSON：Player 规范字段（含射击计时、冷却表、
+//                                                自机弹 ×live、伤害源 ×live、本帧 sfx）+ 自机 VM 0x568 字节
 //                                                （与 tools/oracle/game-oracle.py 快照同结构；enemies/dialogue 为未移植管理器的 PlayerWorld 桩输入）
 //   harness game-digest <...同上...>              → 同一状态流的 FNV-1a 64（tests/golden/player.json，game-oracle.py --digest 同口径）
 #include "../../web/cpp/game/Archive.hpp"
@@ -553,6 +554,40 @@ int main(int argc, char** argv) {
             };
             for (const PlayerOption& o : pl.options) push_option(o);
             for (const PlayerOption& o : pl.sub_options) push_option(o);
+            // 射击系统：shot_misc、类型 2 冷却表、上次伤害源下标、活动自机弹、活动伤害源、本帧音效
+            const size_t shooting_begin = w.size();
+            w.push_back(u32(pl.shot_misc)); w.push_back(u32(pl.shot_misc_b));
+            for (i32 c : pl.option_cooldown) w.push_back(u32(c));
+            w.push_back(u32(pl.last_damage_index));
+            std::vector<const PlayerBullet*> live_bullets;
+            for (const PlayerBullet& b : pl.bullets) if (b.active != 0) live_bullets.push_back(&b);
+            w.push_back(u32(live_bullets.size()));
+            for (const PlayerBullet* b : live_bullets) {
+                w.push_back(u32(b->index)); w.push_back(b->flags); w.push_back(has(b->vm));
+                timer3(b->timer, w);
+                vec3(b->motion.pos, w); w.push_back(bits(b->motion.speed)); w.push_back(bits(b->motion.angle));
+                vec3(b->motion.velocity, w);
+                w.push_back(b->motion.mode); w.push_back(u32(b->active)); w.push_back(u32(b->target)); w.push_back(u32(b->damage));
+                w.push_back(bits(b->hit_w)); w.push_back(bits(b->hit_h));
+                w.push_back(b->shot_id); w.push_back(u32(b->damage_source));
+            }
+            std::vector<int> live_sources;
+            for (int i = 0; i < Player::kDamageSourceCount; ++i) if ((pl.damage_sources[i].flags & 1u) != 0) live_sources.push_back(i);
+            w.push_back(u32(live_sources.size()));
+            for (int i : live_sources) {
+                const DamageSource& d = pl.damage_sources[i];
+                w.push_back(u32(i + 1)); w.push_back(d.flags); w.push_back(bits(d.f04)); w.push_back(bits(d.f08));
+                w.push_back(bits(d.angle)); w.push_back(bits(d.angular_speed)); w.push_back(bits(d.size_x)); w.push_back(bits(d.size_y));
+                vec3(d.motion.pos, w);
+                const u32* motion_rest = reinterpret_cast<const u32*>(&d.motion) + 3;   // +0x28..+0x5f：pos2 … mode
+                for (int k = 0; k < 14; ++k) w.push_back(motion_rest[k]);
+                timer3(d.timer, w);
+                w.push_back(u32(d.damage));
+                w.push_back(u32(d.f78)); w.push_back(u32(d.f7c)); w.push_back(u32(d.f80)); w.push_back(u32(d.f84));
+                w.push_back(u32(d.owner)); w.push_back(u32(d.f8c)); w.push_back(u32(d.kind));
+            }
+            w.push_back(u32(session.sfx_events.size()));
+            for (i32 s : session.sfx_events) w.push_back(u32(s));
             for (u32 v : w) feed_u32(v);
             feed(reinterpret_cast<const u8*>(&pl.vm), kSnapshotBytes);
             if (digest_only) continue;
@@ -590,7 +625,39 @@ int main(int argc, char** argv) {
                             i ? "," : "", i32(o[0]), i32(o[1]), i32(o[2]), i32(o[3]), i32(o[4]), i32(o[5]), i32(o[6]), i32(o[7]), i32(o[8]),
                             o[9], o[10], i32(o[11]), i32(o[12]));
             }
-            std::printf("],\"vm\":\"");
+            std::printf("],");
+            at = shooting_begin;
+            std::printf("\"shot_misc\":[%d,%u],", i32(w[at]), w[at + 1]); at += 2;
+            print_words("cooldown", w, at, 16); at += 16; std::printf(",");
+            std::printf("\"last_damage_index\":%d,", i32(w[at])); at += 1;
+            const u32 bullet_count = w[at]; at += 1;
+            std::printf("\"bullets\":[");
+            for (u32 i = 0; i < bullet_count; ++i) {
+                const u32* b = &w[at];
+                std::printf("%s{\"index\":%d,\"flags\":%u,\"vm\":%u,\"timer\":[%d,%d,%u],\"pos\":[%u,%u,%u],\"speed\":%u,\"angle\":%u,"
+                            "\"velocity\":[%u,%u,%u],\"mode\":%u,\"active\":%d,\"target\":%d,\"damage\":%d,\"size\":[%u,%u],\"shot_id\":%u,\"damage_source\":%d}",
+                            i ? "," : "", i32(b[0]), b[1], b[2], i32(b[3]), i32(b[4]), b[5], b[6], b[7], b[8], b[9], b[10],
+                            b[11], b[12], b[13], b[14], i32(b[15]), i32(b[16]), i32(b[17]), b[18], b[19], b[20], i32(b[21]));
+                at += 22;
+            }
+            std::printf("],");
+            const u32 source_count = w[at]; at += 1;
+            std::printf("\"damage_sources\":[");
+            for (u32 i = 0; i < source_count; ++i) {
+                const u32* d = &w[at];
+                std::printf("%s{\"index\":%d,\"flags\":%u,\"f04\":[%u,%u],\"angle\":%u,\"angular_speed\":%u,\"size\":[%u,%u],\"pos\":[%u,%u,%u],",
+                            i ? "," : "", i32(d[0]), d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8], d[9], d[10]);
+                print_words("motion", w, at + 11, 14);
+                std::printf(",\"timer\":[%d,%d,%u],\"damage\":%d,", i32(d[25]), i32(d[26]), d[27], i32(d[28]));
+                print_words("tail", w, at + 29, 7);
+                std::printf("}");
+                at += 36;
+            }
+            std::printf("],");
+            const u32 sfx_count = w[at]; at += 1;
+            print_words("sfx", w, at, sfx_count); at += sfx_count;
+            if (at != w.size()) return fail("snapshot layout mismatch (shooting)");
+            std::printf(",\"vm\":\"");
             const u8* raw = reinterpret_cast<const u8*>(&pl.vm);
             for (size_t i = 0; i < kSnapshotBytes; ++i) std::printf("%02x", raw[i]);
             std::printf("\"}}");
