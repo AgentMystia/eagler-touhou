@@ -12,11 +12,12 @@
 | THA1 档案 / LZSS / 加密：215 条目逐字节一致 | `tests/archive.test.mjs` |
 | ANM v8 解析（entry/sprite/script/哨兵）+ THTX 四格式逐像素一致 | `tests/archive.test.mjs`、`tools/oracle/thtx-compare.py` |
 | SDL3 + GLES 3.0 运行时：th16.dat 整档进 MEMFS，启动幕 `sig.anm` 静态帧上屏 | `web/cpp/sdl/`、`web/sdl-runtime/th16.html` |
+| ANM v8 VM 与管理器（0x45f980 / 0x46a3a0 族）：0x5fc 结构体逐字段镜像、全部指令、31 种缓动、计时器、VM 池与链表、子 VM；54 个 ANM 文件 1887 个脚本 × 60 帧 VM 状态与 layer 绘制链对 Unicorn 直跑原版逐字节一致；wasm32 与本机输出相同；3600 帧 < 0.3s | `game/AnmVm.cpp`、`game/AnmManager.cpp`、`tests/anm-vm.test.mjs`、`tools/oracle/anm-oracle.py` |
 
 ## 顺序
 
 1. 帧循环与计时：supervisor、场景切换、输入采样（定位 0x43adc0 调用方与主循环）。
-2. ANM VM（0x45f980 族）：指令集、插值器、精灵/坐标/混合/相机、子脚本（ins_500）、渲染提交；以启动幕 → 标题画面逐帧对照 Unicorn/原版截图。
+2. ANM 渲染提交：layer 绘制链 → 顶点生成（精灵矩阵、锚点、翻转、uv 滚动、混合/渲染模式）→ `portable/sdl/Renderer`；启动幕 `sig.anm` 以 VM 驱动上屏并与原版截图对照。ANM 外部钩子待各子系统接入：ins_508 EffectManager（0x418af0）、sprite_mapper 表（0x491b1c）、update/draw/delete 回调表（0x4919e8 / 0x491b58）。
 3. ECL VM（0x41dcb0 族）：指令集、线程/子程序、变量、与 ANM 绑定。
 4. 敌机 / 子弹 / 激光 / 道具管理器；碰撞；分数/擦弹。
 5. 玩家与 4 机体 × 4 子季节（pl00–pl03 + .sht）；季节系统（Season gauge、Release）。

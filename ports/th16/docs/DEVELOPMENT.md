@@ -45,6 +45,21 @@ toolchains/venv/bin/python tools/oracle/thtx-compare.py tests/build/harness game
 
 `tests/archive.test.mjs` 在 `artifacts/th16/dat`（thdat 解包）与 `artifacts/th16/dumps/anm`（thanm -l16）存在时对照 215 个档案条目的字节与 ANM 结构；缺原版时跳过并说明。
 
+### ANM VM oracle
+
+```bash
+# Unicorn 直跑原版：构造 AnmManager(0x46a3a0) → ascii.anm 进槽 2 → 装载目标 ANM → 每个脚本 spawn(0x406380) + 60 帧 tick(0x46e340)
+toolchains/venv/bin/python ports/th16/tools/oracle/anm-oracle.py games/th16/original/th16.exe title.anm \
+    artifacts/th16/dat/title.anm all 60 artifacts/th16/oracle/title.json --extra 2:ascii.anm:artifacts/th16/dat/ascii.anm
+node tools/oracle/anm-golden.mjs ../../artifacts/th16/oracle/*.json      # 压成 tests/golden/anm-vm.json（每脚本 sha256）
+tests/build/harness anm-run ../../games/th16/original/th16.dat title.anm all 60   # 本实现的同格式快照
+tests/build/harness anm-bench ../../games/th16/original/th16.dat title.anm 0 3600 # 只推进（性能口径）
+```
+
+oracle 只桩掉堆分配、档案读取、D3D 纹理（按 THTX 头尺寸回报）、临界区与 Sleep，其余全为原版代码；装载完成后做内存检查点，每个脚本从同一状态开始。快照为 VM 结构体 0x568 字节纯数据区（其后为链表指针）加 36 条 layer 绘制链；`tests/anm-vm.test.mjs` 对 54 个 ANM 文件 1887 个脚本逐一比对摘要，失败时若本机有完整 oracle JSON 则报出首个差异字段。`effect.anm` 155–196 需 EffectManager（ins_508），待该子系统接入后加入 golden。
+
+`tools/run-harness.mjs` 对 stdout/stderr 的 `fd_write` 用 JS 同步写出：Node 22 自带 uvwasi 在输出到文件或 `/dev/null` 时会段错误（同一 wasm 在 wasmtime 下正常）。
+
 ## 页面壳
 
 `web/sdl-runtime/th16.html` 把 `assets/th16.dat` 整档 fetch 进 MEMFS `/assets/th16.dat`，C++ `Archive` 按名解密/LZSS 解码——与原版读档路径同构，不预解包。`python3 web/sdl-runtime/serve.py` 提供 no-store 服务。观测面：`mod._th16_frame()`、`mod._th16_phase()`、`mod._sdl_stats()`。

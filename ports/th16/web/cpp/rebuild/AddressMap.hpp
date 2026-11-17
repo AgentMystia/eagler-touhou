@@ -32,13 +32,46 @@ constexpr AddressAnchor kAnchors[] = {
     {"archive-lzss", 0x457F00, "game/Lzss.cpp Lzss::decode"},
     {"anm-bank-load", 0x46CDD0, "game/AnmResource.cpp AnmResource::parse（格式面）"},
     {"anm-entry-check", 0x46D0C0, "game/AnmResource.cpp（version==8 / hasdata / '@'）"},
-    {"anm-bank-slot", 0x46CF80, nullptr},  // 31 个 bank 槽（param_1 ≤ 0x1e），对象 0x13c 字节
+    {"anm-bank-slot", 0x46CF80, "game/AnmManager.cpp AnmManager::load"},  // 31 个 bank 槽（param_1 ≤ 0x1e），对象 0x13c 字节
+    {"anm-loader-step", 0x46D1C0, "game/AnmManager.cpp AnmManager::load（精灵表 / 模板预跑）"},
+    {"anm-sprite-table", 0x46D3B0, "game/AnmManager.cpp AnmManager::load（0x44 精灵记录，'@R' 用后备缓冲尺寸）"},
+    {"anm-sprite-normalize", 0x46D8A0, "game/AnmManager.cpp AnmManager::load（uv / ratio）"},
+    {"anm-manager-ctor", 0x46A3A0, "game/AnmManager.cpp AnmManager::AnmManager（0x1fff VM 池）"},
+    {"anm-vm-update", 0x45F980, "game/AnmVm.cpp AnmInterpreter::run"},   // 13109 字节、64 个调用方：ANM VM 指令解释
+    {"anm-vm-reset", 0x4090F0, "game/AnmManager.cpp reset_vm"},
+    {"anm-vm-reset-tail", 0x407A50, "game/AnmManager.cpp reset_tail"},
+    {"anm-template-init", 0x45F020, "game/AnmManager.cpp init_template"},
+    {"anm-template-copy", 0x407B20, "game/AnmManager.cpp AnmManager::init_from_template"},
+    {"anm-set-sprite", 0x45EDB0, "game/AnmVm.cpp AnmInterpreter::set_sprite"},
+    {"anm-int-var", 0x45F610, "game/AnmVm.cpp AnmInterpreter::int_var"},
+    {"anm-float-var", 0x45F2D0, "game/AnmVm.cpp AnmInterpreter::float_var"},
+    {"anm-interp-step", 0x463B30, "game/AnmVm.cpp AnmInterpreter::step_interps / step_interp / step_interp_angle"},
+    {"anm-ease", 0x4033F0, "game/AnmVm.cpp ease（31 种缓动）"},
+    {"anm-velocity", 0x4630F0, "game/AnmVm.cpp AnmInterpreter::apply_velocities"},
+    {"timer-tick", 0x406190, "game/AnmVm.cpp Timer::tick"},
+    {"timer-set", 0x406490, "game/AnmVm.hpp Timer::set"},
+    {"timer-untick", 0x40D490, "game/AnmVm.cpp Timer::untick"},
+    {"anm-spawn", 0x406380, "game/AnmManager.cpp AnmManager::spawn"},
+    {"anm-spawn-child", 0x46ED60, "game/AnmManager.cpp AnmManager::create_child（ins_500–506）"},
+    {"anm-spawn-detached", 0x46EEA0, "game/AnmManager.cpp AnmManager::create_detached（ins_507）"},
+    {"anm-pool-alloc", 0x46F600, "game/AnmManager.cpp AnmManager::allocate"},
+    {"anm-pool-free", 0x46EAB0, "game/AnmManager.cpp AnmManager::release"},
+    {"anm-mark-deleted", 0x46E660, "game/AnmManager.cpp AnmManager::mark_deleted"},
+    {"anm-world-insert-back", 0x46E7D0, "game/AnmManager.cpp AnmManager::insert_world_back"},
+    {"anm-world-insert-front", 0x46E890, "game/AnmManager.cpp AnmManager::insert_world_front"},
+    {"anm-ui-insert-back", 0x46E940, "game/AnmManager.cpp AnmManager::insert_ui_back"},
+    {"anm-ui-insert-front", 0x46EA00, "game/AnmManager.cpp AnmManager::insert_ui_front"},
+    {"anm-tick-world", 0x46E340, "game/AnmManager.cpp AnmManager::tick_world"},
+    {"anm-tick-ui", 0x46E490, "game/AnmManager.cpp AnmManager::tick_ui"},
+    {"anm-find", 0x46EFA0, "game/AnmManager.cpp AnmManager::find"},
+    {"ascii-manager-init", 0x407CB0, "game/AnmManager.hpp kAsciiSlot（ascii*.anm → 槽 2；ins_300 负下标回退精灵 0x102）"},
     // —— 已定位，待还原 ——
     {"ecl-dispatch", 0x41DCB0, nullptr},     // 19976 字节、81 个被调、switch 密集：ECL 指令主分发
-    {"anm-vm-update", 0x45F980, nullptr},    // 13109 字节、64 个调用方：ANM VM 指令解释
+    {"effect-attach", 0x418AF0, nullptr},    // ins_508：EffectManager（DAT_004a6db8）按效果种类表 DAT_004a2250 挂 update/draw 回调（effect.anm 155–196 依赖）
+    {"effect-ring-update", 0x405700, nullptr}, // 效果种类 1 的 update 回调（DAT_004919e8[2]）：环形顶点缓冲 + 生成 effect.anm 0x99
     {"title-scene-init", 0x44AC70, nullptr}, // 装载 title.anm(bank 0x10) / title_v.anm(bank 0x11)
-    {"boot-scene-init", 0x43ADC0, "sdl/Application.cpp"},  // sig.anm → text.anm → thbgm.fmt → thbgm.dat → score；静态首帧已上屏，VM 执行待 anm-vm-update
-    {"anm-load-file", 0x46D020, nullptr},    // AnmManager::load_file(slot, name)：从档案读 .anm 并进 bank
+    {"boot-scene-init", 0x43ADC0, "sdl/Application.cpp"},  // sig.anm → text.anm → thbgm.fmt → thbgm.dat → score；静态首帧已上屏，VM 执行待接入
+    {"anm-load-file", 0x46D020, nullptr},    // AnmManager::load_file(slot, name)：从档案读 .anm 并进 bank（同步等待装载线程）
     {"score-file", 0x4497E0, nullptr},       // scoreth16.dat 读写
     {"replay-file", 0x4403C5, nullptr},      // th16_%.2d.rpy
     {"ver-file", 0x43B480, nullptr},         // th16_%.4x%c.ver
