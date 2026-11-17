@@ -22,6 +22,9 @@
 //   harness chain-demo                          → ChainManager 走法自检
 //   harness frame-clock <t0> <t1> ...           → 每个墙钟时刻应执行的逻辑步数
 //   harness input-edges <held0> <held1> ...     → 0x405580 边沿/连发/释放位
+//   harness std <th16.dat> <stNN.std>          → STD 头 / 对象 / 四边形 / 实例 / 脚本（0x40ac30）
+//   harness stage-run <th16.dat> <stage> <frames>    → StageManager 单独驱动（0x409db0→0x40add0→每帧 0x409e50），逐帧 JSON
+//   harness stage-digest <th16.dat> <stage> <frames> → 同一状态流的 FNV-1a 64（tests/golden/stage.json，tools/oracle/stage-oracle.py 同口径）
 #include "../../web/cpp/game/Archive.hpp"
 #include "../../web/cpp/game/AnmManager.hpp"
 #include "../../web/cpp/game/AnmRenderer.hpp"
@@ -31,6 +34,8 @@
 #include "../../web/cpp/game/GameSession.hpp"
 #include "../../web/cpp/game/Input.hpp"
 #include "../../web/cpp/game/Rng.hpp"
+#include "../../web/cpp/game/Stage.hpp"
+#include "../../web/cpp/game/StageTable.hpp"
 #include "../../web/cpp/game/Std.hpp"
 #include "../../web/cpp/game/Supervisor.hpp"
 
@@ -184,6 +189,86 @@ int main(int argc, char** argv) {
             for (int n = 0; n < (ins.size - 8) / 4; ++n) std::printf(" %d/%.6g", ins.arg_i(n), ins.arg_f(n));
             std::printf("\n");
         }
+        return 0;
+    }
+    if ((command == "stage-run" || command == "stage-digest") && argc >= 5) {
+        // stage-digest：同一状态流按 tools/oracle/stage-oracle.py 的规范字节序列做 FNV-1a 64，供 golden 对照
+        const bool digest_only = command == "stage-digest";
+        // StageManager 单独驱动（0x409db0 → 0x40add0 → 每帧 0x409e50），逐帧导出相机/脚本/雾/面 VM/层精灵 VM，
+        // 与 tools/oracle/stage-oracle.py（Unicorn 直跑原版）对照
+        const int stage = std::atoi(argv[3]);
+        const int frames = std::atoi(argv[4]);
+        const StageEntry& entry = stage_entry(stage);
+        std::vector<u8> std_bytes;
+        if (!archive.read(entry.std_name, std_bytes)) return fail(archive.error.c_str());
+        StageManager st;
+        if (!st.load(std_bytes.data(), u32(std_bytes.size()), stage)) return fail(st.error.c_str());
+        std::vector<u8> anm_bytes;
+        if (!archive.read(st.std.anm_name.c_str(), anm_bytes)) return fail(archive.error.c_str());
+        AnmResource anm;
+        if (!anm.parse(anm_bytes.data(), u32(anm_bytes.size()), st.std.anm_name.c_str())) return fail(anm.error.c_str());
+        // 原版启动时 text.anm 已在槽 0：全零层精灵 VM（file_slot 0 / script 0）每帧会推进它的脚本 0
+        std::vector<u8> text_bytes;
+        AnmResource text;
+        if (!archive.read("text.anm", text_bytes) || !text.parse(text_bytes.data(), u32(text_bytes.size()), "text.anm")) return fail("cannot load text.anm");
+        AnmManager manager;
+        manager.load(0, text);
+        st.anm = manager.load(3 + (stage & 1), anm);
+        if (st.anm == nullptr) return fail("stage anm load failed");
+        st.start(manager);
+        constexpr size_t kSnapshotBytes = 0x568;
+        auto hex_vm = [&](const AnmVm& vm) {
+            const u8* raw = reinterpret_cast<const u8*>(&vm);
+            for (size_t i = 0; i < kSnapshotBytes; ++i) std::printf("%02x", raw[i]);
+        };
+        auto f3 = [&](const Vec3& v) { std::printf("[%u,%u,%u]", bits(v.x), bits(v.y), bits(v.z)); };
+        // 规范字节流（小端 u32）：frame, timer.current, timer.current_f, ins, rocking_mode, rocking_timer, stage_frame,
+        // flags, bg, cam[19]（pos facing up facing_norm pos_offset facing_offset fov）, fog[7], layer_ids[8], radius_sq,
+        // 然后面 VM × 0x568 字节、层精灵 VM 8 × 0x568 字节
+        u64 digest = 0xcbf29ce484222325ull;
+        auto feed = [&](const u8* p, size_t n) { for (size_t i = 0; i < n; ++i) { digest ^= p[i]; digest *= 0x100000001b3ull; } };
+        auto feed_u32 = [&](u32 v) { u8 b[4] = {u8(v), u8(v >> 8), u8(v >> 16), u8(v >> 24)}; feed(b, 4); };
+        if (!digest_only) std::printf("{\"stage\":%d,\"std\":\"%s\",\"anm\":\"%s\",\"frames\":[", stage, entry.std_name, st.std.anm_name.c_str());
+        for (int f = 0; f < frames; ++f) {
+            st.update(manager, 1.0f);
+            const StageCamera& c = st.camera;
+            const i32 ins_offset = (st.ins_index >= 0 && size_t(st.ins_index) < st.std.script.size()) ? i32(st.std.script[size_t(st.ins_index)].offset) : -1;
+            const u32 cam[19] = {bits(c.pos.x), bits(c.pos.y), bits(c.pos.z), bits(c.facing.x), bits(c.facing.y), bits(c.facing.z),
+                                 bits(c.up.x), bits(c.up.y), bits(c.up.z), bits(c.facing_norm.x), bits(c.facing_norm.y), bits(c.facing_norm.z),
+                                 bits(c.pos_offset.x), bits(c.pos_offset.y), bits(c.pos_offset.z),
+                                 bits(c.facing_offset.x), bits(c.facing_offset.y), bits(c.facing_offset.z), bits(c.fov)};
+            const u32 fog[7] = {bits(c.fog.near_), bits(c.fog.far_), bits(c.fog.c[0]), bits(c.fog.c[1]), bits(c.fog.c[2]), bits(c.fog.c[3]), c.fog.color};
+            const u32 head[9] = {u32(f + 1), u32(st.timer.current), bits(st.timer.current_f), u32(ins_offset), u32(st.rocking_mode),
+                                 u32(st.rocking_timer.current), u32(st.frame), st.flags, st.bg_color};
+            for (u32 v : head) feed_u32(v);
+            for (u32 v : cam) feed_u32(v);
+            for (u32 v : fog) feed_u32(v);
+            for (int i = 0; i < StageManager::kLayerSprites; ++i) feed_u32(u32(st.layer_ids[i]));
+            feed_u32(bits(st.distortion_radius_sq));
+            for (const AnmVm& vm : st.face_vms) feed(reinterpret_cast<const u8*>(&vm), kSnapshotBytes);
+            for (const AnmVm& vm : st.layer_vms) feed(reinterpret_cast<const u8*>(&vm), kSnapshotBytes);
+            if (digest_only) continue;
+            std::printf("%s{\"frame\":%d,\"timer\":[%d,%u],\"ins\":%d,\"rocking\":[%d,%d],\"stage_frame\":%d,\"flags\":%u,\"bg\":%u,",
+                        f == 0 ? "" : ",", f + 1, st.timer.current, bits(st.timer.current_f), ins_offset, st.rocking_mode, st.rocking_timer.current,
+                        st.frame, st.flags, st.bg_color);
+            std::printf("\"cam\":{\"pos\":"); f3(c.pos);
+            std::printf(",\"facing\":"); f3(c.facing);
+            std::printf(",\"up\":"); f3(c.up);
+            std::printf(",\"facing_norm\":"); f3(c.facing_norm);
+            std::printf(",\"pos_offset\":"); f3(c.pos_offset);
+            std::printf(",\"facing_offset\":"); f3(c.facing_offset);
+            std::printf(",\"fov\":%u},", bits(c.fov));
+            std::printf("\"fog\":[%u,%u,%u,%u,%u,%u,%u],", fog[0], fog[1], fog[2], fog[3], fog[4], fog[5], fog[6]);
+            std::printf("\"layer_ids\":[");
+            for (int i = 0; i < StageManager::kLayerSprites; ++i) std::printf("%s%d", i ? "," : "", st.layer_ids[i]);
+            std::printf("],\"radius_sq\":%u,\"faces\":[", bits(st.distortion_radius_sq));
+            for (size_t i = 0; i < st.face_vms.size(); ++i) { std::printf("%s\"", i ? "," : ""); hex_vm(st.face_vms[i]); std::printf("\""); }
+            std::printf("],\"layers\":[");
+            for (int i = 0; i < StageManager::kLayerSprites; ++i) { std::printf("%s\"", i ? "," : ""); hex_vm(st.layer_vms[i]); std::printf("\""); }
+            std::printf("]}");
+        }
+        if (digest_only) std::printf("stage=%d frames=%d faces=%zu digest=%016llx\n", stage, frames, st.face_vms.size(), (unsigned long long)digest);
+        else std::printf("]}\n");
         return 0;
     }
     if (command == "anm" && argc >= 4) {
