@@ -116,6 +116,8 @@ void GameSession::sample_input() {
 void GameSession::leave_title() {
     if (title_update_chain_) { chains.remove(title_update_chain_); title_update_chain_ = nullptr; }
     title_events.insert(title_events.end(), title.events.begin(), title.events.end());
+    // 0x44ad20：析构时对落叶发射器（ascii.anm，+0x73c）interrupt 1，发射器与其子落叶在脚本 case 1 后自删
+    animations.interrupt(title.vm[TitleScene::kLeafEmitter], 1);
     title = TitleScene{};
     animations.kill_file(0x10);
     animations.kill_file(0x11);

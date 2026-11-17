@@ -43,6 +43,9 @@
 | 0x402e70 / 0x418720 / 0x440c00 / 0x402de0 / 0x402e20 | MenuCursor：移动（wrap + 跳禁用）、设置、禁用、压栈、出栈 | `game/MenuCursor.hpp` |
 | 0x46f340 / 0x46f3b0 | 清 flags_lo bit1（显示）并递归子树 | `game/TitleScene.cpp` |
 | 0x46f510 / 0x46f0b0 / 0x46f130 | ANM 子树按脚本号查找；中断（含子 VM）；中断并立即 run | `game/AnmManager.cpp` |
+| 0x467410 / 0x46b900 / 0x464dd0 / 0x464f10 / 0x45ba80 | ANM mode 8：世界矩阵 × 相机投影、±128 单位四边形锚点变体、父链旋转累加、混合/采样/寻址状态、设备缺省状态 | `game/AnmRenderer.cpp`、`game/AnmVm.cpp`、`sdl/Application.cpp` |
+| 0x43cb10 / 0x43c780 / 0x43c710 | 相机组初始化（UI 相机 0x4c1560）、LookAtLH/PerspectiveFovLH 建矩阵、套用 view/proj/视口 | `game/AnmRenderer.hpp` AnmCamera |
+| 0x44ad20 | 标题析构：摘两条链、卸载槽 0x10/0x11、落叶发射器（+0x73c）interrupt 1 | `game/GameSession.cpp` |
 | 0x43ba40 / 0x43b3d0 / 0x43ce10 | Supervisor 注册 / 每帧泵 / 场景切换（+0x6f0/+0x6f4，DAT_004c17c4） | `game/Supervisor.hpp` |
 | 0x401d50 / 0x405580 | 输入采样与边沿 | `game/Input.hpp` |
 | 0x44aee0 / 0x44abc0 / 0x44ac70 | 标题创建；线程等启动幕 0xb4 帧（或 DAT_004c1800&0x180）后卸 sig、装 title*.anm、注册更新链 6 / 绘制链 0x45 | `game/GameSession.cpp` |

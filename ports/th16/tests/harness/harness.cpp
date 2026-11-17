@@ -383,8 +383,9 @@ int main(int argc, char** argv) {
         for (const TitleScene::Event& e : session.title_events) std::printf("event %s %d\n", e.kind, e.value);
         for (const TitleScene::Event& e : title.events) std::printf("event %s %d\n", e.kind, e.value);
         for (const AnmQuad& q : quads) {
-            std::printf("%d %d %u %.8g %.8g %.8g %.8g %08x\n",
-                        q.layer, q.script, q.id, q.x0, q.y0, q.x1, q.y3, q.color0);
+            std::printf("%d %d %u %.8g %.8g %.8g %.8g %08x z=%.6g,%.6g,%.6g,%.6g rhw=%.6g zw=%d slot=%d\n",
+                        q.layer, q.script, q.id, q.x0, q.y0, q.x1, q.y3, q.color0,
+                        q.z[0], q.z[1], q.z[2], q.z[3], q.rhw[0], q.depth_write ? 1 : 0, q.file_slot);
         }
         return 0;
     }

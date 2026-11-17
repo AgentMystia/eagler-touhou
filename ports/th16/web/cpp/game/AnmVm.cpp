@@ -253,6 +253,20 @@ struct Ins {
 
 }  // namespace
 
+Vec3 anm_world_rotation(AnmVm& v) {
+    v.world_rotation = v.rotation;
+    if (v.root != nullptr && (v.flags_hi & AnmVm::kHiDetached) == 0) {
+        const Vec3 p = anm_world_rotation(*v.root);
+        v.world_rotation.x = p.x + v.world_rotation.x;
+        v.world_rotation.y = p.y + v.world_rotation.y;
+        v.world_rotation.z = p.z + v.world_rotation.z;
+        v.rotation.x = normalize_angle(v.rotation.x);
+        v.rotation.y = normalize_angle(v.rotation.y);
+        v.rotation.z = normalize_angle(v.rotation.z);
+    }
+    return v.world_rotation;
+}
+
 void Timer::tick(float game_speed) noexcept { tick_timer(previous, current, current_f, speed_slot, game_speed); }
 
 void Timer::untick(float game_speed) noexcept {
@@ -348,21 +362,7 @@ struct AnmInterpreter {
     i32* refi(const Ins& ins, int n) { if (ins.var(n)) return int_ref(ins, n); scratch_i = ins.i(n); return &scratch_i; }
     float* reff(const Ins& ins, int n) { if (ins.var(n)) return float_ref(ins, n); scratch_f = ins.f(n); return &scratch_f; }
 
-    // 0x464dd0：沿父链累加旋转并归一化自身旋转
-    Vec3 world_rotation() { return world_rotation_of(vm); }
-    static Vec3 world_rotation_of(AnmVm& v) {
-        v.world_rotation = v.rotation;
-        if (v.root != nullptr && (v.flags_hi & AnmVm::kHiDetached) == 0) {
-            const Vec3 p = world_rotation_of(*v.root);
-            v.world_rotation.x = p.x + v.world_rotation.x;
-            v.world_rotation.y = p.y + v.world_rotation.y;
-            v.world_rotation.z = p.z + v.world_rotation.z;
-            v.rotation.x = normalize_angle(v.rotation.x);
-            v.rotation.y = normalize_angle(v.rotation.y);
-            v.rotation.z = normalize_angle(v.rotation.z);
-        }
-        return v.world_rotation;
-    }
+    Vec3 world_rotation() { return anm_world_rotation(vm); }
 
     const u8* script_base() { return file.scripts[vm.script_index]->bytes.data(); }
 
@@ -370,6 +370,7 @@ struct AnmInterpreter {
     int set_sprite(AnmFile& f, i32 index) {
         if (f.resource == nullptr) return -1;
         vm.sprite_index = index;
+        vm.sprite_source_slot = f.slot;
         const AnmRuntimeSprite& s = f.sprites[index];
         vm.uv[0] = {s.u0, s.v0};
         vm.uv[1] = {s.u1, s.v0};
