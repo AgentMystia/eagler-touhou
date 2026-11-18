@@ -1,7 +1,7 @@
 // th16 ScreenEffect——原版 0x45d150（0x40 字节，operator new）/ 0x45d1a0 按 kind 登记更新链 0x13 与绘制链 param_6。
 //
 //   kind 1（ECL 517 画面震动，绘制链 0x54）：0x45cd30 每帧计时后按 (to - from) × t / duration + from 取振幅，
-//   用 game_rng（DAT_004a6d80）各抽一次 % 3 决定 x / y 的 0 / +amp / -amp，写 DAT_004c1788/178c（逻辑偏移）
+//   用 game_rng（DAT_004a6d80）各双步 0x402be0 一次、无符号 % 3 决定 x / y 的 0 / +amp / -amp，写 DAT_004c1788/178c（逻辑偏移）
 //   与 DAT_004c1530/1534（× 窗口缩放 DAT_004d9d34）；计时达 duration 返回 7 → 0x45d130 摘除两条链并释放。
 //   其余 kind（0/2/3/5 淡入淡出、4/6/7/9 等纯绘制）不碰 RNG，渲染侧接入时补。
 //
