@@ -2524,7 +2524,9 @@ u32 EnemyManager::nearest_targetable_id(const Vec3& pos, float range) const noex
 }
 
 void EnemyManager::update(float game_speed) {
-    // 0x41b3d0：先保存 next，生成中 push_back 的新敌人本帧不再走完整更新；kill_all 标过 0x2000000 的直接移出
+    // 0x41b3d0：更新前先保存 next。列表末尾的敌机在本回合里（含其死亡子程序）生成的新敌机排在它之后，
+    // 本帧不再被访问，于是带着 0x40000 进入下一帧并在那里被整帧跳过；即使末尾敌机随即死亡也必须沿用保存的 next，
+    // 不能取 erase 返回的后继。kill_all 标过 0x2000000 的直接移出
     damage_dealt_bomb = 0;
     damage_dealt = 0;
     for (auto it = enemies.begin(); it != enemies.end();) {
