@@ -1098,6 +1098,8 @@ def main():
     ap.add_argument('--season', type=int, default=0)
     ap.add_argument('--difficulty', type=int, default=1)
     ap.add_argument('--lives', type=int, default=None, help='装载后覆盖 DAT_004a57f4 残机数（harness game-run 第 12 参同口径）')
+    ap.add_argument('--refill-lives', action='store_true',
+                    help='每帧开始前把 DAT_004a57f4 补回 --lives（≤8；残机显示 0x42c280 只有 8 槽）以越过 Game Over（harness 第 13 参同口径）')
     ap.add_argument('--input', default='')
     ap.add_argument('--seed', type=int, default=0)
     ap.add_argument('--every', type=int, default=1)
@@ -1134,6 +1136,8 @@ def main():
         if f in events:
             held = events[f]
         o.set_input(held)
+        if a.refill_lives and a.lives is not None and o.i32(0x4A57F4) < a.lives:
+            o.uc.mem_write(0x4A57F4, struct.pack('<i', a.lives))
         o.tick()
         if (f + 1) % a.every == 0:
             frames.append(o.snapshot())

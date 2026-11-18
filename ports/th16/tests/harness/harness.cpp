@@ -25,7 +25,7 @@
 //   harness std <th16.dat> <stNN.std>          → STD 头 / 对象 / 四边形 / 实例 / 脚本（0x40ac30）
 //   harness stage-run <th16.dat> <stage> <frames>    → StageManager 单独驱动（0x409db0→0x40add0→每帧 0x409e50），逐帧 JSON
 //   harness stage-digest <th16.dat> <stage> <frames> → 同一状态流的 FNV-1a 64（tests/golden/stage.json，tools/oracle/stage-oracle.py 同口径）
-//   harness game-run <th16.dat> <stage> <shot> <season> <frames> <input "f:held,..."> [enemies "f:n,..."] [dialogue "f:v,..."] [difficulty] [replay_slot] [lives]
+//   harness game-run <th16.dat> <stage> <shot> <season> <frames> <input "f:held,..."> [enemies "f:n,..."] [dialogue "f:v,..."] [difficulty] [replay_slot] [lives] [refill]
 //                                              → 直接进入场景 7（GameSession::start_game_direct），逐帧 JSON：Player 规范字段（含射击计时、冷却表、
 //                                                自机弹 ×live、伤害源 ×live、本帧 sfx）+ 自机 VM 0x568 字节
 //                                                （与 tools/oracle/game-oracle.py 快照同结构；enemies/dialogue 为未移植管理器的 PlayerWorld 桩输入）
@@ -497,6 +497,9 @@ int main(int argc, char** argv) {
         if (!session.start_game_direct()) return fail(session.failure.c_str());
         // 可选残机覆盖（game-oracle.py --lives 同口径：装载完成后写 DAT_004a57f4），用于无输入长程对拍不被 Game Over 截断
         if (argc >= 13 && argv[12][0] != '\0') session.globals.lives = std::atoi(argv[12]);
+        // refill != 0：每帧开始前把残机补回 lives（game-oracle.py --refill-lives 同口径）；原版残机显示 0x42c280 只有 8 槽，
+        // 不能直接写入 > 8 的残机数，长程无输入对拍只能靠补满越过 Game Over
+        const int refill_lives = (argc >= 14 && argv[13][0] != '\0' && std::atoi(argv[13]) != 0) ? session.globals.lives : -1;
 
         constexpr size_t kSnapshotBytes = 0x568;
         u64 digest = 0xcbf29ce484222325ull;
@@ -548,6 +551,7 @@ int main(int argc, char** argv) {
             if (enemy_hold >= 0) session.game.world.enemy_count = enemy_hold;
             if (dialogue_hold >= 0) session.game.world.dialogue = dialogue_hold != 0;
             session.injected_input = u32(held);
+            if (refill_lives >= 0 && session.globals.lives < refill_lives) session.globals.lives = refill_lives;
             if (!session.logic_step()) return fail(session.failure.c_str());
 
             const Player& pl = session.game.player;
