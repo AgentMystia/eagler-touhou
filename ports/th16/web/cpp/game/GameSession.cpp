@@ -64,6 +64,24 @@ bool GameSession::load_boot_banks() {
         return ChainResult::Continue;
     }, 0x1f, true);
     chains.enable(effect_update_chain_);
+    // 0x418790 → 0x46e740 / 0x46e710：AnmManager 的两条推进链。UI 表（链 9）排在 GameManager 之前，暂停时仍推进；
+    // 世界表（链 0x21）在 GameManager 返回 3 时与其它游戏链一起被截断，且装载中（flags bit0|bit2 且 bit1）跳过
+    ui_tick_chain_ = chains.create([this]() -> ChainResult {
+        animations.game_speed = supervisor.game_speed;
+        animations.tick_ui();
+        return ChainResult::Continue;
+    }, 9, true);
+    chains.enable(ui_tick_chain_);
+    world_tick_chain_ = chains.create([this]() -> ChainResult {
+        if (game_live) {
+            const u32 f = game.flags;
+            if ((((f >> 2) | f) & 1u) != 0 && (f & 2u) != 0) return ChainResult::Continue;
+        }
+        animations.game_speed = supervisor.game_speed;
+        animations.tick_world();
+        return ChainResult::Continue;
+    }, 0x21, true);
+    chains.enable(world_tick_chain_);
     // 0x43adc0 → 0x4497e0 → 0x449720（ScoreFile 构造）：对 DAT_004a6d88 做 0x1ee 次单步随机（0 -> 0x41b6）
     for (int i = 0; i < 0x1ee; ++i) animations.visual_rng.next16();
     return true;
@@ -178,6 +196,10 @@ bool GameSession::create_player() {
     if (mode == 2) { globals.lives = 0; globals.bombs = 0; }
     else if (mode == 0) globals.lives = 2;
     else globals.lives = 9;
+    // 剩余续关数（DAT_00492278 按难度：Extra 无续关）
+    static constexpr i32 kContinues[6] = {5, 5, 5, 5, 0, 0};
+    globals.continues_left = kContinues[diff];
+    globals.continues = 0;
 
     // 0x440fb0：pl0N.anm → 槽 9（DAT_00492ccc[shot+aux]）、pl0Nsub.anm → 槽 0x1e（DAT_00492cdc[season]）、.sht 两份
     static constexpr const char* kPlayerAnm[4] = {"pl00.anm", "pl02.anm", "pl03.anm", "pl01.anm"};
@@ -227,10 +249,21 @@ bool GameSession::create_player() {
         return ChainResult::Continue;
     }, 0x10, true);
     // 0x440fb0：自机更新链 0x16（0x443720 → 0x442560）与绘制链 0x1d（0x443730）
+    game.player.on_game_over = [this]() { if (menu_live) menu.open_continue(); };
     player_update_chain_ = chains.create([this]() -> ChainResult {
         game.player.update(animations, globals, game_input, game.world, animations.file(8), geometry, supervisor.game_speed);
         harvest_bomb_events();   // 状态 1 / 决死中发动的炸弹（音效先于自机本帧的射击音）
+        // 入场态 0x416d20 / 0x431a70 的消弹音效（0x47）在自机链内登记，先于本帧自机自身的音效
+        if (game.bullets_live) {
+            sfx_events.insert(sfx_events.end(), game.bullets->sfx_queue.begin(), game.bullets->sfx_queue.end());
+            game.bullets->sfx_queue.clear();
+        }
+        if (game.lasers_live) {
+            sfx_events.insert(sfx_events.end(), game.lasers->sfx_queue.begin(), game.lasers->sfx_queue.end());
+            game.lasers->sfx_queue.clear();
+        }
         harvest_player_sfx();
+        harvest_menu_events();   // 0x43f350 在自机更新内打开续关画面时登记的音效
         game.player.sfx_stop_queue.clear();
         game.player.gui_events.clear();
         return ChainResult::Continue;
@@ -323,13 +356,13 @@ bool GameSession::create_enemies() {
                     game.bullets->game_speed = supervisor.game_speed;
                     game.bullets->sfx_queue.clear();
                 }
+                game.enemies.sfx_sink = game.bullets_live ? &game.bullets->sfx_queue : nullptr;
                 sync_bomb_state();
                 game.enemies.update(supervisor.game_speed);
-                if (game.bullets_live) {
-                    // ECL 601 等发射期间登记的音效（0x45e1f0 调用序在敌人链内）
-                    sfx_events.insert(sfx_events.end(), game.bullets->sfx_queue.begin(), game.bullets->sfx_queue.end());
-                    game.bullets->sfx_queue.clear();
-                }
+                // 敌机受击 / 击破与 ECL 601 等发射音效按 0x45e1f0 调用序登记在敌人链内
+                std::vector<i32>& enemy_sfx = game.bullets_live ? game.bullets->sfx_queue : game.enemies.sfx_queue;
+                sfx_events.insert(sfx_events.end(), enemy_sfx.begin(), enemy_sfx.end());
+                enemy_sfx.clear();
                 if (sync_enemy_count) game.world.enemy_count = game.enemies.enemy_count;
                 for (const auto& request : game.enemies.shake_requests) create_screen_shake(request);
                 game.enemies.shake_requests.clear();
@@ -402,6 +435,9 @@ bool GameSession::enter_game() {
     game.mode = 0;
     game.entry = &stage_entry(globals.stage);
     game_input = InputState{};
+    // 各管理器链在 0x42cb60 中建为禁用，首帧 0x42d7b0 → 0x42dee0 统一启用；排在 GameManager（0xf）之前的 GameMenu 链 10
+    // 因此从第 2 帧起才推进
+    game.chains_suspended = true;
     // 0x42cb60 → 0x449e50 → 0x449030（Replay 构造）：重置 DAT_004a6d8c 调用计数
     animations.visual_rng.calls = 0;
 
@@ -503,6 +539,7 @@ bool GameSession::enter_game() {
         }, 0x23, false);
     }
 
+    create_menu();
     if (!create_enemies()) return false;
     create_bombs();
 
@@ -523,6 +560,8 @@ bool GameSession::enter_game() {
         game.gui.replay_playback = game.mode != 0;
         game.gui.spellcard_flags = &spellcard.flags;
         game.gui.bomb = game.bombs.main();
+        game.gui.on_continue_screen = [this]() { if (menu_live) menu.open_continue(); };
+        game.gui.on_practice_result = [this]() { if (menu_live) menu.open_practice_result(); };
         if (!game.gui.init(animations, animations.file(5), logo, *game.entry, std::move(msg_bytes))) {
             failure = game.gui.error;
             return false;
@@ -533,6 +572,7 @@ bool GameSession::enter_game() {
                 game.gui.update(supervisor.game_speed);
                 sfx_events.insert(sfx_events.end(), game.gui.sfx_queue.begin(), game.gui.sfx_queue.end());
                 game.gui.sfx_queue.clear();
+                harvest_menu_events();   // 对话 -2 / 练习过关在 Gui 更新内打开菜单时登记的音效
                 game.gui.bgm_events.clear();  // Sound 接入前无状态影响
                 if (game.gui.dialogue) game.gui.dialogue->text_requests.clear();  // 文字贴图：渲染接入前无状态影响
                 if (!game.gui.error.empty()) {
@@ -824,6 +864,12 @@ void GameSession::leave_game() {
     destroy_bombs();
     game.gui.bomb = nullptr;
     if (gui_update_chain_) { chains.remove(gui_update_chain_); gui_update_chain_ = nullptr; }
+    // 0x43e4c0：GameMenu 随 GameManager 一起销毁
+    if (menu_update_chain_) { chains.remove(menu_update_chain_); menu_update_chain_ = nullptr; }
+    if (menu_live) {
+        menu.destroy();
+        menu_live = false;
+    }
     if (game.gui_live) {
         // 0x427a20：对话 VM 标删；关卡 logo ANM 槽 6 回收
         game.gui.shutdown();
@@ -859,6 +905,53 @@ void GameSession::leave_game() {
     }
     game = GameManager{};
     game_live = false;
+}
+
+// 0x43e5a0（0x4314a0 之后、0x41b340 之前）：新开局建 GameMenu 并登记更新链 10；换关（next_stage）沿用同一对象
+void GameSession::create_menu() {
+    if (menu_live) {
+        menu.destroy();
+        menu_live = false;
+    }
+    menu = GameMenu{};
+    menu.reset_timers();   // 0x43e3f0 末：两只计时复位
+    menu.ctx.animations = &animations;
+    menu.ctx.globals = &globals;
+    menu.ctx.game = &game;
+    menu.ctx.gui = &game.gui;
+    menu.ctx.player = &game.player;
+    menu.ctx.scores = &scores;
+    menu.ctx.input = &supervisor.input;
+    menu.ctx.text_anm = animations.file(0);
+    menu.ctx.game_speed = &supervisor.game_speed;
+    menu.ctx.sound_thread_state = &globals.sound_thread_state;
+    menu.ctx.config_flags = &config_flags;
+    menu.ctx.current_bgm = &game.gui.current_bgm;
+    // 0x42e760：help.anm → 槽 0x13（原版由装载线程异步完成；这里同步装入）
+    menu.ctx.load_help_anm = [this]() -> AnmFile* {
+        if (AnmFile* loaded = animations.file(0x13)) return loaded;
+        AnmResource* res = nullptr;
+        if (!load_anm("help.anm", res)) return nullptr;
+        return animations.load(0x13, *res);
+    };
+    menu_live = true;
+    menu_update_chain_ = chains.create([this]() -> ChainResult {
+        if (!menu_live || game.chains_suspended) return ChainResult::Continue;
+        menu.update();
+        harvest_menu_events();
+        return ChainResult::Continue;
+    }, 10, true);
+    chains.enable(menu_update_chain_);
+}
+
+// GameMenu 登记的音效（0x45e150）并入本帧音效表；BGM / HUD 事件在 Sound / HUD 接入前无状态影响
+void GameSession::harvest_menu_events() {
+    if (!menu_live) return;
+    sfx_events.insert(sfx_events.end(), menu.sfx_queue.begin(), menu.sfx_queue.end());
+    menu.sfx_queue.clear();
+    menu.bgm_events.clear();
+    menu.gui_events.clear();
+    game.gui.hud_events.clear();
 }
 
 void GameSession::harvest_player_sfx() {
@@ -907,8 +1000,6 @@ bool GameSession::logic_step() {
         if (game.previous_stage) game.previous_stage->end_timer_step(supervisor.game_speed);
         if (game.stage) game.stage->end_timer_step(supervisor.game_speed);
     }
-    animations.game_speed = supervisor.game_speed;
-    animations.tick_world();
     return failure.empty();
 }
 

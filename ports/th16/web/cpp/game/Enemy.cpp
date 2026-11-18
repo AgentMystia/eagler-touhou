@@ -686,8 +686,8 @@ void Enemy::update_hit_flash() {
     flash(0xff0000ffu);
     hit_flash_timer = 4;
     if (manager == nullptr) return;
-    if (hit_sfx >= 0) manager->sfx_queue.push_back(hit_sfx);
-    else manager->sfx_queue.push_back(low_life_flash(200, 900) ? 0x23 : 0x22);
+    if (hit_sfx >= 0) manager->play_sfx(hit_sfx);
+    else manager->play_sfx(low_life_flash(200, 900) ? 0x23 : 0x22);
 }
 
 // 0x424e40
@@ -837,7 +837,7 @@ int Enemy::resolve_hits(float game_speed) {
             }
         }
         if (manager->bomb_active && damage_rate < 1.0f) {
-            if (applied != 0 && damage_rate <= 0.0f) manager->sfx_queue.push_back(0x24);
+            if (applied != 0 && damage_rate <= 0.0f) manager->play_sfx(0x24);
             applied = i32(float(applied) * damage_rate);
         }
         if (applied != 0) {
@@ -938,7 +938,7 @@ void Enemy::settle_season_drop() {
 
 // 0x41d520
 void Enemy::die(float game_speed) {
-    if (death_sfx >= 0 && manager != nullptr) manager->sfx_queue.push_back(death_sfx);
+    if (death_sfx >= 0 && manager != nullptr) manager->play_sfx(death_sfx);
     if (death_script >= 0) {
         const float dx = hit_pos.x - pos.x, dy = hit_pos.y - pos.y;
         float angle = -1.5707964f;
@@ -1141,7 +1141,7 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             interrupts[slot].timeout_sub = std::move(name);
             return 0;
         }
-        case 516: if (manager) manager->sfx_queue.push_back(iarg(0)); return 0;  // case 0x3d
+        case 516: if (manager) manager->play_sfx(iarg(0)); return 0;  // case 0x3d
         case 517: {  // case 0x3e：0x45d150(1, duration, from, to) 画面震动（每帧消耗两次 game_rng）
             const i32 to = iarg(2), from = iarg(1), duration = iarg(0);
             if (manager) manager->shake_requests.push_back({duration, from, to});
@@ -2403,7 +2403,7 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
         case 550: anm_layer = iarg(0); return 0;         // case 0x5b
         case 552: anm_layer_offset = iarg(0); return 0;  // case 0x5d
         case 561: {  // case 0x66：死亡音效 + 死亡特效（朝向 = 最后受击点 → 敌机）
-            if (death_sfx >= 0 && manager) manager->sfx_queue.push_back(death_sfx);
+            if (death_sfx >= 0 && manager) manager->play_sfx(death_sfx);
             if (death_script < 0) return 0;
             const float ddx = hit_pos.x - pos.x, ddy = hit_pos.y - pos.y;
             float angle = -1.5707964f;

@@ -258,7 +258,11 @@ public:
     Gui* gui = nullptr;                  // DAT_004a6dcc：ECL 518 / 519 / 554
     StageManager* stage = nullptr;       // DAT_004a6da0：ECL 630 背景脚本标签跳转（换关后由 GameSession 重新绑定）
     bool dialogue_active() const noexcept;
-    std::vector<i32> sfx_queue; // Enemy 触发的 0x45e1f0 音效（受击 0x22/0x23、死亡 3/4）
+    // Enemy 触发的 0x45e1f0 音效（受击 0x22/0x23、死亡 3/4、ECL 516）。原版与 ECL 601 等经 BulletManager 登记的音效
+    // 同在敌机链内按调用序写入声音队列；GameSession 把 sfx_sink 指向 BulletManager 的队列以保持这一顺序
+    std::vector<i32> sfx_queue;
+    std::vector<i32>* sfx_sink = nullptr;
+    void play_sfx(i32 id) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(id); }
     // ECL 517 → 0x45d150(1, duration, from, to)：宿主在敌机链之后登记为链 0x13 的 ScreenShake（下一帧起生效）
     struct ShakeRequest { i32 duration; i32 amp_from; i32 amp_to; };
     std::vector<ShakeRequest> shake_requests;

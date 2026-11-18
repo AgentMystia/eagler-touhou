@@ -17,6 +17,8 @@
 #include "Supervisor.hpp"
 #include "GameGlobals.hpp"
 #include "GameManager.hpp"
+#include "GameMenu.hpp"
+#include "ScoreFile.hpp"
 #include "TitleScene.hpp"
 
 #include <functional>
@@ -42,6 +44,10 @@ public:
     GameGlobals globals;
     TitleScene title;
     GameManager game;              // 场景 7：DAT_004a6dd4
+    GameMenu menu;                 // DAT_004a6ef4（0x43e5a0：新开局时与各管理器一起建，换关沿用，离开游戏时销毁）
+    bool menu_live = false;
+    ScoreFile scores;              // DAT_004a6f0c（成绩文件读写接入前为默认值）
+    u32 config_flags = 0;          // DAT_004c1800（bit4 失焦自动暂停 / bit13 回标题改为退出）
     StageCamera stage_camera;      // DAT_004c168c：当前运行中关卡每帧抄出的全局相机（ANM 变量 10016..10021）
     bool game_live = false;
     bool quit_requested = false;   // 场景 2/3：原版退出进程；宿主据此停循环
@@ -95,6 +101,9 @@ private:
     ChainEntry* bomb_draw_chain_ = nullptr;           // 0x28（0x40da70）
     ChainEntry* release_draw_chain_ = nullptr;        // 0x29
     ChainEntry* gui_update_chain_ = nullptr;
+    ChainEntry* menu_update_chain_ = nullptr;         // 10（0x43e720 → 0x43e5f0）
+    ChainEntry* ui_tick_chain_ = nullptr;             // 9（0x46e740 → 0x46e490：UI 表 VM 推进）
+    ChainEntry* world_tick_chain_ = nullptr;          // 0x21（0x46e710 → 0x46e340：世界表 VM 推进）
     std::vector<ChainEntry*> shake_chains_;  // 0x45d150(1) 实例（链 0x13，自删）
     std::vector<ChainEntry*> fade_chains_;   // 0x45d150(0/2/3/5) 实例（链 0x13，自删）
 
@@ -123,6 +132,9 @@ private:
     void create_screen_shake_envelope(const BombShakeRequest& request);
     bool load_gui_stage_assets(AnmFile*& logo, std::vector<u8>& msg_bytes);
     void bind_spellcard();
+    // 0x43e5a0 + 0x43e3f0：GameMenu 上下文绑定与更新链 10
+    void create_menu();
+    void harvest_menu_events();
     void register_game_chains();   // 0x42cb60 末：GameManager 链 0xf
     void unload_stage_anm(StageManager& stage);  // 0x4099a0：背景 ANM 槽回收（无 tick）
     void harvest_player_sfx();
