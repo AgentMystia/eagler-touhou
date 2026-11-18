@@ -83,6 +83,7 @@ private:
     ChainEntry* item_draw_chain_ = nullptr;
     ChainEntry* item_draw_season_chain_ = nullptr;
     ChainEntry* spellcard_update_chain_ = nullptr;
+    ChainEntry* gui_update_chain_ = nullptr;
     std::vector<ChainEntry*> shake_chains_;  // 0x45d150(1) 实例（链 0x13，自删）
 
     bool load_anm(const char* name, AnmResource*& out);

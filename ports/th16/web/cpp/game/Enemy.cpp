@@ -1,7 +1,9 @@
 // th16 Enemy / EnemyManager 还原——见 Enemy.hpp 锚点。
 #include "Enemy.hpp"
+
 #include "AnmManager.hpp"
 #include "Effect.hpp"
+#include "Gui.hpp"
 #include "Item.hpp"
 #include "Spellcard.hpp"
 #include "GameGlobals.hpp"
@@ -473,6 +475,8 @@ bool Enemy::update(float game_speed) {
     return true;
 }
 
+bool EnemyManager::dialogue_active() const noexcept { return world != nullptr && world->dialogue; }
+
 AnmFile* EnemyManager::anm_file(i32 index) const noexcept {
     if (animations == nullptr) return nullptr;
     if (index == 0) return animations->file(7);
@@ -764,7 +768,7 @@ int Enemy::resolve_hits(float game_speed) {
         }
         // +0x4520 伤害回调 / +0x3fe0 待加伤害：无 ECL 写入路径，恒 0
         if (player != nullptr && (player->state == 2 || player->state == 0)) dmg /= 5;
-        i32 applied = manager->dialogue_active ? 0 : dmg;
+        i32 applied = manager->dialogue_active() ? 0 : dmg;
         if (applied > 0) {
             if (!bomb_hit) {
                 manager->damage_dealt += applied;
@@ -815,7 +819,7 @@ int Enemy::resolve_hits(float game_speed) {
     if ((flags & 0x22u) == 0 && no_hit_timer.current < 1 && (flags & 0x4000000u) == 0 && player != nullptr) {
         int hit = 0;
         if (anm != nullptr)
-            hit = player->collide_body(*anm, anm_file(1), pos, hurtbox.x * 0.5f, manager->dialogue_active, false);
+            hit = player->collide_body(*anm, anm_file(1), pos, hurtbox.x * 0.5f, manager->dialogue_active(), false);
         if ((flags & 0x200u) != 0 && hit == 2 && life_timer.current % 6 == 0 && bullets != nullptr)
             bullets->graze(player->pos);
     }
@@ -1087,7 +1091,8 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             if (manager && manager->global_game_speed) *manager->global_game_speed = farg(0);
             else (void)farg(0);
             return 0;
-        case 554:  // case 0x5f：0x42c240 Boss 登场标题 VM（Gui+0x178 front.anm 脚本 0；无逻辑副作用）——Gui 接入时补
+        case 554:  // case 0x5f：0x42c240 Boss 登场标题（logo ANM 脚本 0）
+            if (manager && manager->gui) manager->gui->show_boss_title();
             return 0;
         case 567:  // case 0x6c：符卡布局上下翻转位（Spellcard kFlipped）
             if (manager && manager->spellcard)
@@ -1178,9 +1183,17 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             }
             return 0;
         }
-        case 518: case 519:
-            // case 0x3f / 0x40：对话开始（Gui 0x429ff0 + 0x416f40 全屏消弹 + 0x431af0 道具吸引）与等待对话结束——Gui 接入时补
+        case 518: {  // case 0x3f：对话开始 0x429ff0 + 0x416f40 全屏消弹 + 0x431af0 激光全灭 + 落入 case 0x46 敌机全灭
+            const i32 entry = iarg(0);
+            if (manager && manager->gui) {
+                if (!manager->gui->start_dialogue(entry)) { error = manager->gui->error; return -2; }
+                if (manager->bullets) manager->bullets->cancel_all(0);
+                manager->kill_all(0, nullptr);
+            }
             return 0;
+        }
+        case 519:  // case 0x40：对话存在且 Msg+0x18c == 0 时等待（op 12 放行）
+            return (manager && manager->gui && manager->gui->ecl_waits()) ? -1 : 0;
         // —— 运动指令 400–447（0x41dcb0 case 0x16–0x2c）：偶数码作用于 motion1、奇数码作用于 motion2 ——
         case 400: case 402: {  // case 0x16：直接设坐标
             MotionState& m = opcode == 402 ? motion2 : motion1;

@@ -370,7 +370,6 @@ bool GameSession::enter_game() {
                     game.bullets->game_speed = supervisor.game_speed;
                     game.bullets->sfx_queue.clear();
                 }
-                game.enemies.dialogue_active = game.world.dialogue;
                 game.enemies.update(supervisor.game_speed);
                 if (game.bullets_live) {
                     // ECL 601 等发射期间登记的音效（0x45e1f0 调用序在敌人链内）
@@ -387,6 +386,48 @@ bool GameSession::enter_game() {
             }
             return ChainResult::Continue;
         }, 0x1a, true);
+    }
+
+    // 0x427ca0 / 0x426b00 / 0x426c10：Gui——front.anm（槽 5）、关卡 logo ANM → 槽 6、按机体的 msg 文件；
+    // 更新链 0x20（0x429af0 → 0x427cf0）。原版在 Bullet 之前创建，这里放到 ECL 之后以便直接绑定各管理器指针
+    {
+        AnmResource* logo_res = nullptr;
+        if (!load_anm(game.entry->logo_anm, logo_res)) return false;
+        AnmFile* logo = animations.load(Gui::kLogoSlot, *logo_res);
+        if (logo == nullptr) { failure = "stage logo anm load failed"; return false; }
+        std::vector<u8> msg_bytes;
+        const char* msg_name = game.entry->msg_names[(globals.shot + globals.shot_aux) & 3];
+        if (!archive_.read(msg_name, msg_bytes)) { failure = archive_.error; return false; }
+        game.gui.enemies = &game.enemies;
+        game.gui.bullets = game.bullets.get();
+        game.gui.player = game.player_live ? &game.player : nullptr;
+        game.gui.world = &game.world;
+        game.gui.globals = &globals;
+        game.gui.input = &game_input;
+        game.gui.geometry = &geometry;
+        game.gui.replay_playback = game.mode != 0;
+        if (!game.gui.init(animations, animations.file(5), logo, *game.entry, std::move(msg_bytes))) {
+            failure = game.gui.error;
+            return false;
+        }
+        game.gui_live = true;
+        game.enemies.gui = &game.gui;
+        game.enemies.world = &game.world;
+        gui_update_chain_ = chains.create([this]() -> ChainResult {
+            if (game.gui_live) {
+                game.gui.update(supervisor.game_speed);
+                sfx_events.insert(sfx_events.end(), game.gui.sfx_queue.begin(), game.gui.sfx_queue.end());
+                game.gui.sfx_queue.clear();
+                game.gui.bgm_events.clear();  // Sound 接入前无状态影响
+                if (game.gui.dialogue) game.gui.dialogue->text_requests.clear();  // 文字贴图：渲染接入前无状态影响
+                if (!game.gui.error.empty()) {
+                    failure = game.gui.error;
+                    return ChainResult::BreakExit;
+                }
+            }
+            return ChainResult::Continue;
+        }, 0x20, true);
+        chains.enable(gui_update_chain_);
     }
 
     // 0x4178a0 / 0x417700：Spellcard（ECL 之后、Bomb 之后创建）；更新链 0x1e（0x417ee0 → 0x417930）、绘制链 0xc
@@ -463,6 +504,14 @@ void GameSession::leave_game() {
     if (item_draw_chain_) { chains.remove(item_draw_chain_); item_draw_chain_ = nullptr; }
     if (item_draw_season_chain_) { chains.remove(item_draw_season_chain_); item_draw_season_chain_ = nullptr; }
     if (spellcard_update_chain_) { chains.remove(spellcard_update_chain_); spellcard_update_chain_ = nullptr; }
+    if (gui_update_chain_) { chains.remove(gui_update_chain_); gui_update_chain_ = nullptr; }
+    if (game.gui_live) {
+        // 0x427a20：对话 VM 标删；关卡 logo ANM 槽 6 回收
+        game.gui.shutdown();
+        animations.kill_file(Gui::kLogoSlot);
+        animations.tick_world();
+        animations.unload(Gui::kLogoSlot);
+    }
     for (ChainEntry* shake : shake_chains_) chains.remove(shake);
     shake_chains_.clear();
     screen_shake = ScreenShakeOffset{};

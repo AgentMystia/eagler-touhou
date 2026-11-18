@@ -95,13 +95,13 @@ public:
     bool emit_stage(AnmManager& manager, StageManager& stage, StagePass& out);
     // 0x468c00：VM 四角的屏幕坐标（逻辑侧出界判定用；mode 0/2/3 轴对齐、mode 1 带旋转，其它模式不写并返回 false）
     bool vm_corners(const AnmVm& vm, float out[4][3]) const;
+    // 0x406a70：按 scale mode 缩放、沿父链累加（父旋转 flag 0x800000）或加 layer group 偏移
+    Vec3 transform_position(const AnmVm& vm, Vec3 p) const;
+    // 0x406c40 + 0x406a70：把 VM 位置变换到屏幕空间（Gui 对话文字跟随文字框子 VM 亦用此）
+    Vec3 world_position(const AnmVm& vm) const;
 
 private:
     const AnmCamera* active_camera_ = &camera;   // DAT_004c17b8
-    // 0x406a70：按 scale mode 缩放、沿父链累加（父旋转 flag 0x800000）或加 layer group 偏移
-    Vec3 transform_position(const AnmVm& vm, Vec3 p) const;
-    // 0x406c40 + 0x406a70：把 VM 位置变换到屏幕空间
-    Vec3 world_position(const AnmVm& vm) const;
     // 0x467410：mode 8 世界空间四边形经相机投影
     bool emit_projected(AnmManager& manager, AnmVm& vm, const AnmRuntimeSprite& sprite, AnmQuad& out);
     // 0x465c40：轴对齐四角（未加位置）

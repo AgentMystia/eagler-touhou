@@ -9,11 +9,12 @@
 //             == 0x1e → 0x42dee0；+0x88 位：4 装载中 / 8 装载失败 / 0x10|0x20|0x40 结束 / 0x800 重试 /
 //             0x4000 过关 / 0x10000 关卡切换；末尾 DAT_004a579c++、DAT_004a57a0++、+0xc 计时推进
 //
-// 本阶段只接入 StageManager（关卡背景）；其它管理器按 roadmap 逐个接入。
+// Gui 当前只接入对话（Msg）与 Boss 标题；HUD 渲染阶段补齐。
 #pragma once
 #include "AnmVm.hpp"
 #include "Bullet.hpp"
 #include "Enemy.hpp"
+#include "Gui.hpp"
 #include "Item.hpp"
 #include "Player.hpp"
 #include "Stage.hpp"
@@ -55,6 +56,8 @@ public:
     bool bullets_live = false;
     std::unique_ptr<ItemManager> items;      // DAT_004a6ddc（0x1c972ec 字节，堆分配）
     bool items_live = false;
+    Gui gui;                     // DAT_004a6dcc（0x427ca0；对话 / Boss 标题；HUD 渲染阶段补齐）
+    bool gui_live = false;
     PlayerWorld world;           // 敌人 / 对话 / 过关状态；enemy_count 由 EnemyManager 同步
 
     // 0x42dc50 首帧初始化（关卡背景 + 生成 "main"）

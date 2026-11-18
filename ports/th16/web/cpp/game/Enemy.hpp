@@ -19,9 +19,11 @@ struct AnmFile;
 struct AnmVm;
 class Archive;
 class EffectManager;
+class Gui;
 class ItemManager;
 struct GameGlobals;
 class Player;
+struct PlayerWorld;
 struct Spellcard;
 
 // Boss 阶段中断表项（Enemy+0x5284 起 ×8，步长 0x88；op 514 / 521 写，0x424f00 / 0x425010 查）
@@ -235,7 +237,9 @@ public:
     i32 damage_dealt_bomb = 0;  // +0xac：炸弹伤害（命中 flags&4 的伤害源时按血量折算）
     bool bomb_active = false;   // DAT_004a6da8+0x30 == 1（Bomb 接入前恒 false）
     bool release_active = false;// DAT_004a6da4+0x30 == 1（季节解放接入前恒 false）
-    bool dialogue_active = false;  // Gui+0x1c8 != 0（对话中伤害为 0、不判体碰撞）
+    const PlayerWorld* world = nullptr;  // Gui+0x1c8 != 0 的镜像（对话中伤害为 0、不判体碰撞；ECL 518 当帧即生效）
+    Gui* gui = nullptr;                  // DAT_004a6dcc：ECL 518 / 519 / 554
+    bool dialogue_active() const noexcept;
     std::vector<i32> sfx_queue; // Enemy 触发的 0x45e1f0 音效（受击 0x22/0x23、死亡 3/4）
     // ECL 517 → 0x45d150(1, duration, from, to)：宿主在敌机链之后登记为链 0x13 的 ScreenShake（下一帧起生效）
     struct ShakeRequest { i32 duration; i32 amp_from; i32 amp_to; };

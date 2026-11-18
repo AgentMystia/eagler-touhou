@@ -878,6 +878,20 @@ int main(int argc, char** argv) {
                             has(sc.vm_ids[2]), has(sc.vm_ids[3]), has(sc.vm_ids[4]), session.game.world.dialogue ? 1 : 0,
                             em.boss_ids[0], em.boss_ids[1], em.boss_ids[2], g.enemy_bonus_pending, g.enemy_bonus, g.spell_id);
             }
+            if (const Msg* m = session.game.gui.dialogue.get()) {
+                // 对话 Msg 快照（game-oracle.py msg_snapshot 同口径）
+                std::printf(",\"msg\":{\"entry\":%d,\"pc\":%u,\"age\":%d,\"timer\":%d,\"wait\":%d,\"ecl_release\":%d,"
+                            "\"flags\":%u,\"lines\":[%d,%d],\"side\":%d,\"text_pos\":[%u,%u],\"width\":%u,\"box_index\":%d,\"vm\":[",
+                            m->entry, u32(m->pc - session.game.gui.msg_data.data()), m->age.current, m->timer.current,
+                            m->wait.current, m->ecl_release, m->flags, m->lines_written, m->lines_cleared, m->side,
+                            bits(m->text_pos.x), bits(m->text_pos.y), bits(m->text_width), m->box_index);
+                const u32 vms[12] = {m->portrait_vm, m->face_vms[0], m->face_vms[1], m->face_vms[2], m->face_vms[3], m->frame_vm,
+                                     m->text_vms[0], m->text_vms[1], m->text_vms[2], m->text_vms[3], m->name_vm, m->box_vm};
+                for (int i = 0; i < 12; ++i) std::printf("%s%u", i ? "," : "", has(vms[i]));
+                std::printf("]}");
+            } else {
+                std::printf(",\"msg\":null");
+            }
             std::printf("}");
         }
         if (digest_only)
