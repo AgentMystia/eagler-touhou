@@ -3,7 +3,10 @@
 // HUD（残机 / 炸弹 / Boss 血条 / 计时数字：0x426d70 建 VM、0x42c280 / 0x42c390 / 0x42c4f0 等）在渲染阶段补齐。
 //
 //   0x426c10  装 logo ANM（关卡表 +0x24 → 槽 6）；按机体读 msg 文件（关卡表 +0x14[shot + shot_aux]）到 +0x1cc；
-//             +0x154 计时复位；+0x170 = DAT_004a57b0；+0x1d0 / +0x1d8 = -1
+//             +0x154 计时复位；+0x170 = DAT_004a57b0；+0x1d0 / +0x1d8 = -1（过关换关时 0x42cb60 再次调用，Gui 对象本身不重建）
+//   0x427970  换关：删 Msg、卸 logo 槽 6、释放 msg 文件（+0x1ac 标志与过关奖励计时保留，下一关首帧 0x42c1b0 才清）
+//   0x42bc10  每帧（GameManager 0x42d7b0 调用）：+0x170 显示分向 DAT_004a57b0 逼近，+0x174 为步长；超过最高分时
+//             DAT_004a59b8 / DAT_004a59bc 更新并置 DAT_004a5bec bit2
 //   0x429ff0  对话开始（ECL 518）：entry ≥ 0 → 删旧 Msg，new Msg(0x1c8) 以 msg[4 + entry×8] 为脚本起点；
 //             -1 / -3 为结局入口、-2 为过关（0x42e150）/ 续关（0x43f350）——后续阶段接入
 //   0x427cf0  每帧（Msg 部分）：0x42a1d0 返回 0 → Msg+0x4 年龄计时推进；非 0（op 0 结束）→ 0x4264a0 删 VM、释放
@@ -97,6 +100,8 @@ public:
     u32 flags_1ac = 0;               // +0x1ac（bit4 过关结算中、bit8 过关奖励显示中）
     Timer timer_154;                 // +0x154
     Timer clear_timer;               // +0x1b0：过关奖励显示计时（0x42c070 复位；0x42d7b0 < 0x78 时暂停游戏推进）
+    i32 displayed_score = 0;         // +0x170：HUD 显示分（0x42bc10 逐帧逼近 DAT_004a57b0）
+    i32 score_step = 0;              // +0x174
     i32 boss_timer_display = -1;     // +0x1d0
     i32 boss_timer_shown = -1;       // +0x1d8
 
@@ -120,8 +125,18 @@ public:
     std::string current_bgm;                 // DAT_004dc0f0：当前曲文件名（Sound 接入前仅由本类的切曲事件维护）
     std::string error;
 
-    // 0x426c10（msg 部分）：按机体选 msg 文件；logo ANM 由 GameSession 装入槽 6 后传入
+    // 0x427ca0 构造 + 0x426c10：进游戏时一次性绑定 front.anm 并做关卡初始化
     bool init(AnmManager& anm, AnmFile* front_anm, AnmFile* logo_anm, const StageEntry& stage, std::vector<u8> msg_bytes);
+    // 0x426c10（msg 部分）：logo ANM 由 GameSession 装入槽 6 后传入；+0x154 计时复位、显示分 = 当前分、Boss 计时 -1
+    bool stage_init(AnmFile* logo_anm, const StageEntry& stage, std::vector<u8> msg_bytes);
+    // 0x427970：换关——删 Msg、释放 msg 文件（logo 槽 6 由 GameSession 卸载）
+    void end_stage();
+    // 0x42c1b0：下一关首帧——过关奖励 VM 中断 1、清 bit8、过关计时复位
+    void clear_stage_bonus();
+    // 0x42d7b0 的过关等待：bit8 置且 +0x1b4 < 0x78 时 GameManager 整帧不推进
+    bool clear_bonus_pending() const noexcept { return (flags_1ac & 0x100u) != 0 && clear_timer.current < 0x78; }
+    // 0x42bc10
+    void roll_score();
     // 0x429ff0：entry ≥ 0 开始对话；-1 / -3 切曲 + logo 标题；-2 过关（符卡 bit7 续关流程未接入时记错误）
     bool start_dialogue(i32 entry_index);
     // ECL 519（0x41dcb0 case 0x40）：对话存在且 ecl_release == 0 时需等待

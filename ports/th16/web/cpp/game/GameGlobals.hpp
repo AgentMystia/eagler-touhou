@@ -45,6 +45,13 @@ struct GameGlobals {
 
     // 得分（0x43e080 累加，上限 999999999）与分数 extend（0x43ddd0 阈值表 DAT_00491880 / Extra DAT_004917c4）
     i32 score = 0;               // DAT_004a57b0
+    i32 continues = 0;           // DAT_004a57b8：续关次数（0x42d200 场景 0xe 时 +1，上限 9）
+    // 0x42cb60 新开局自成绩文件取本机体 × 难度的最高分（无成绩文件时 0x4497e0 默认 100000）与其续关数；
+    // 0x42bc10 每帧以 Gui 显示分越过时更新并置 flags bit2；换关 0x42cb60 另取 max(最高分, 当前分)
+    i32 hiscore = 100000;        // DAT_004a59b8
+    i32 hiscore_continues = 0;   // DAT_004a59bc
+    // DAT_004c0f40：0x42d200 置 1、0x42cb60 末清 0、0x42d7b0 每帧递减；非零时 ScreenEffect 淡入淡出（0x45c900）暂停
+    i32 post_load_frames = 0;
     i32 extend_index = 0;        // DAT_004a57fc：下一个分数 extend 阈值下标
     i32 spell_id = 0;            // DAT_004a5798：当前符卡 / 阶段编号（op 524）
     i32 enemy_bonus_pending = 0; // DAT_004a5880：op 569 登记的敌机击破奖励
