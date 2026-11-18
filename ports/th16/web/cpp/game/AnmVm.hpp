@@ -152,6 +152,9 @@ struct AnmVm {
     // file_slot 的精灵表取纹理号——下标 0x102 对 title.anm 等已越界，读到的是堆上邻接数据。
     // 这里记录 UV 真正来源的文件槽，按作者意图取该文件的纹理，避免复现未定义读取。
     i32 sprite_source_slot = -1;
+    // 原版 0x5ec 存宿主对象指针（敌弹 0x412cb0 / 激光 / 道具写入，sprite_mapper 钩子回读）；
+    // 为保持 wasm32 下 0x5fc 之前的布局原样，指针放在附加区，0x5ec 保留原槽位。
+    void* owner = nullptr;
 
     // 原版 flags_lo（0x530）位
     enum : u32 {
