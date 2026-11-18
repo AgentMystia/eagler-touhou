@@ -34,6 +34,7 @@
 //   harness game-digest <...同上...>              → 同一状态流的 FNV-1a 64（tests/golden/player.json，game-oracle.py --digest 同口径）
 #include "../../web/cpp/game/Archive.hpp"
 #include "../../web/cpp/game/AnmManager.hpp"
+#include "../../web/cpp/game/AnmGeometry.hpp"
 #include "../../web/cpp/game/AnmRenderer.hpp"
 #include "../../web/cpp/game/AnmResource.hpp"
 #include "../../web/cpp/game/Bomb.hpp"
@@ -47,6 +48,7 @@
 #include "../../web/cpp/game/StageTable.hpp"
 #include "../../web/cpp/game/Std.hpp"
 #include "../../web/cpp/game/Supervisor.hpp"
+#include "RecordingDevice.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -253,7 +255,7 @@ int main(int argc, char** argv) {
             for (u32 v : cam) feed_u32(v);
             for (u32 v : fog) feed_u32(v);
             for (int i = 0; i < StageManager::kLayerSprites; ++i) feed_u32(u32(st.layer_ids[i]));
-            feed_u32(bits(st.distortion_radius_sq));
+            feed_u32(bits(st.cull_distance_sq));
             for (const AnmVm& vm : st.face_vms) feed(reinterpret_cast<const u8*>(&vm), kSnapshotBytes);
             for (const AnmVm& vm : st.layer_vms) feed(reinterpret_cast<const u8*>(&vm), kSnapshotBytes);
             if (digest_only) continue;
@@ -270,7 +272,7 @@ int main(int argc, char** argv) {
             std::printf("\"fog\":[%u,%u,%u,%u,%u,%u,%u],", fog[0], fog[1], fog[2], fog[3], fog[4], fog[5], fog[6]);
             std::printf("\"layer_ids\":[");
             for (int i = 0; i < StageManager::kLayerSprites; ++i) std::printf("%s%d", i ? "," : "", st.layer_ids[i]);
-            std::printf("],\"radius_sq\":%u,\"faces\":[", bits(st.distortion_radius_sq));
+            std::printf("],\"radius_sq\":%u,\"faces\":[", bits(st.cull_distance_sq));
             for (size_t i = 0; i < st.face_vms.size(); ++i) { std::printf("%s\"", i ? "," : ""); hex_vm(st.face_vms[i]); std::printf("\""); }
             std::printf("],\"layers\":[");
             for (int i = 0; i < StageManager::kLayerSprites; ++i) { std::printf("%s\"", i ? "," : ""); hex_vm(st.layer_vms[i]); std::printf("\""); }
@@ -420,18 +422,26 @@ int main(int argc, char** argv) {
         AnmFile* file = manager.load(0, anm);
         if (file == nullptr || script < 0 || size_t(script) >= file->scripts.size()) return fail("script out of range");
         manager.spawn(*file, script, layer);
-        AnmRenderer renderer;
-        renderer.window_scale = 1.0f;
-        renderer.lookup = [](int /*slot*/, int entry) -> u32 { return u32(entry) + 1; };
+        // 每帧 tick 后以 UI 相机把全部层（0x46e750 0..0x2a）画进录制设备，按四边形打印
+        AnmGeometry geometry;
+        AnmRenderer renderer(manager, geometry);
+        RecordingDevice device;
+        renderer.device = &device;
+        Camera ui;
+        ui.viewport = {0, 0, 640, 480};
+        ui.kind = Camera::kUi;
+        ui.reset_to_viewport_center();
         for (int f = 0; f <= frames; ++f) {
             manager.tick_world();  // spawn 后每次 tick 建/刷新 layer 链（与 Application::step 同序）
-            std::vector<AnmQuad> quads;
-            if (!renderer.emit_all(manager, quads)) return fail(renderer.error.c_str());
-            for (const AnmQuad& q : quads) {
-                std::printf("%d %d %d %u %d %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %08x\n",
-                            f, q.layer, q.script, q.id, q.blend,
-                            q.x0, q.y0, q.x1, q.y1, q.x2, q.y2, q.x3, q.y3,
-                            q.u0, q.v0, q.u1, q.v1, q.u2, q.v2, q.u3, q.v3, q.color0);
+            device.begin_frame();
+            renderer.reset_state_cache();   // 0x43d140 每帧清状态缓存（纹理键等），否则上一帧的键会跳过绑定
+            renderer.use_camera(ui);
+            renderer.begin_frame();
+            for (int l = 0; l < AnmManager::kLayerCount; ++l) renderer.draw_layer(l);
+            renderer.end_frame();
+            for (const RecordingDevice::QuadSummary& q : device.quads()) {
+                std::printf("%d ", f);
+                RecordingDevice::print_quad(q);
             }
         }
         return 0;
@@ -481,12 +491,22 @@ int main(int argc, char** argv) {
         std::printf("%u %u %u %u %u\n", t.format, t.width, t.height, anm.entries[index].x, anm.entries[index].y);
         return 0;
     }
-    if ((command == "game-run" || command == "game-digest") && argc >= 8) {
+    if ((command == "game-run" || command == "game-digest" || command == "game-draw") && argc >= 8) {
         // 直接进入场景 7（跳过启动幕/标题），每帧注入 held 位并按 tools/oracle/game-oracle.py 的规范字段导出 Player 状态。
         // 参数：<th16.dat> <stage> <shot> <season> <frames> <input "f:held,..."> [enemies "f:count,..."] [dialogue "f:v,..."]
         // 输入脚本语义与 game-oracle --input 相同：第 f 帧（0 起）起 held 持续到下一事件。
         // enemies/dialogue 为其它管理器未移植时的 PlayerWorld 外部输入（oracle 快照 enemy_count / dialogue 字段）。
         const bool digest_only = command == "game-digest";
+        // game-draw：与 game-run 同参，另加第 16/17 参 <out.jsonl> [from_frame]；跑绘制链并把每帧设备调用写成 JSON 行
+        const bool draw_mode = command == "game-draw";
+        std::FILE* draw_out = nullptr;
+        int draw_from = 1;
+        if (draw_mode) {
+            if (argc < 16) return fail("game-draw needs <out.jsonl>");
+            draw_out = std::fopen(argv[15], "w");
+            if (draw_out == nullptr) return fail("cannot open draw output");
+            if (argc >= 17) draw_from = std::atoi(argv[16]);
+        }
         const int stage = std::atoi(argv[3]);
         const int shot = std::atoi(argv[4]);
         const int season = std::atoi(argv[5]);
@@ -512,7 +532,9 @@ int main(int argc, char** argv) {
 
         GameSession session;
         if (!session.open(dat.data(), u32(dat.size()))) return fail(session.failure.c_str());
-        session.run_draw_chains = false;   // oracle 不跑 0x4015a0
+        session.run_draw_chains = draw_mode;   // 非 draw 模式与不跑 0x4015a0 的 oracle 同口径
+        RecordingDevice device;
+        if (draw_mode) session.attach_device(&device);
         session.globals.stage = stage;
         session.globals.stage_copy = stage;
         session.globals.shot = shot;
@@ -680,7 +702,9 @@ int main(int argc, char** argv) {
             session.injected_input = u32(held);
             if (refill_lives >= 0 && session.globals.lives < refill_lives) session.globals.lives = refill_lives;
             trace_state.current = f + 1;
+            device.begin_frame();
             if (!session.logic_step()) return fail(session.failure.c_str());
+            if (draw_out != nullptr && f + 1 >= draw_from) device.write_frame(draw_out, f + 1);
             if (!session.game_live) {
                 scene_exit = i32(session.supervisor.current);
                 exit_frame = f + 1;
@@ -1157,6 +1181,13 @@ int main(int argc, char** argv) {
                 std::fprintf(stderr, "%s%d", i ? "," : "", session.game.enemies.unknown_ops[i]);
             std::fprintf(stderr, "\n");
         }
+        if (draw_out != nullptr) {
+            std::fclose(draw_out);
+            // 未实现的 render mode 计数：对拍前先看这里有没有缺口
+            for (u32 mode = 0; mode < 32; ++mode)
+                if (session.renderer.unimplemented_modes[mode] != 0)
+                    std::fprintf(stderr, "unimplemented_render_mode=%u count=%u\n", mode, session.renderer.unimplemented_modes[mode]);
+        }
         return 0;
     }
     if (command == "scene-boot" && argc >= 4) {
@@ -1184,17 +1215,16 @@ int main(int argc, char** argv) {
         }
         if (!session.begin_boot()) return fail(session.failure.c_str());
 
-        AnmRenderer renderer;
-        renderer.window_scale = 1.0f;
-        renderer.lookup = [](int /*slot*/, int entry) -> u32 { return u32(entry) + 1; };
-
+        // 绘制链每帧都跑（与 Application 相同），录制设备只保留最后一帧的调用
+        RecordingDevice device;
+        session.attach_device(&device);
         for (int f = 0; f < frames; ++f) {
             session.injected_input = 0;
             for (const Key& k : script) if (k.frame == f) session.injected_input |= k.bits;
+            device.begin_frame();
             if (!session.logic_step()) return fail(session.failure.c_str());
         }
-        std::vector<AnmQuad> quads;
-        if (!renderer.emit_all(session.animations, quads)) return fail(renderer.error.c_str());
+        const std::vector<RecordingDevice::QuadSummary> quads = device.quads();
         const Supervisor& sup = session.supervisor;
         const TitleScene& title = session.title;
         const GameGlobals& g = session.globals;
@@ -1204,17 +1234,11 @@ int main(int argc, char** argv) {
                     session.chains.update_count(), session.chains.draw_count(), quads.size());
         for (const TitleScene::Event& e : session.title_events) std::printf("event %s %d\n", e.kind, e.value);
         for (const TitleScene::Event& e : title.events) std::printf("event %s %d\n", e.kind, e.value);
-        for (const AnmQuad& q : quads) {
-            std::printf("%d %d %u %.8g %.8g %.8g %.8g %08x z=%.6g,%.6g,%.6g,%.6g rhw=%.6g zw=%d slot=%d\n",
-                        q.layer, q.script, q.id, q.x0, q.y0, q.x1, q.y3, q.color0,
-                        q.z[0], q.z[1], q.z[2], q.z[3], q.rhw[0], q.depth_write ? 1 : 0, q.file_slot);
-        }
+        for (const RecordingDevice::QuadSummary& q : quads) RecordingDevice::print_quad(q);
         if (session.game_live && session.game.stage) {
             // 场景 7：GameManager / StageManager 状态与关卡背景绘制（0x409f90）
             StageManager& st = *session.game.stage;
             const StageCamera& c = st.camera;
-            StagePass pass;
-            if (!renderer.emit_stage(session.animations, st, pass)) return fail(renderer.error.c_str());
             std::printf("game flags=%x frame=%d game_frame=%d stage_frame=%d std=%s anm=%s objects=%zu instances=%zu faces=%d\n",
                         session.game.flags, session.game.timer.current, g.game_frame, g.stage_frame,
                         session.game.entry ? session.game.entry->std_name : "-", st.std.anm_name.c_str(),
@@ -1223,15 +1247,18 @@ int main(int argc, char** argv) {
                         st.frame, st.ins_index, st.timer.current, st.rocking_mode,
                         c.pos.x, c.pos.y, c.pos.z, c.facing.x, c.facing.y, c.facing.z, c.up.x, c.up.y, c.up.z, c.fov,
                         c.fog.color, c.fog.near_, c.fog.far_, st.bg_color);
-            std::printf("stagepass active=%d clear=%08x quads=%zu drawn_instances=%d drawn_quads=%d\n",
-                        pass.active ? 1 : 0, pass.clear_color, pass.quads.size(), st.drawn_instances, st.drawn_quads);
-            for (const AnmQuad& q : pass.quads) {
-                std::printf("sq %d %d %.8g %.8g %.8g %.8g %.8g %.8g %.8g %.8g %08x z=%.6g,%.6g,%.6g,%.6g rhw=%.6g,%.6g,%.6g,%.6g fog=%d,%u,%u,%u,%u zt=%d zw=%d uv=%.6g,%.6g,%.6g,%.6g\n",
-                            q.layer, q.script, q.x0, q.y0, q.x1, q.y1, q.x2, q.y2, q.x3, q.y3, q.color0,
-                            q.z[0], q.z[1], q.z[2], q.z[3], q.rhw[0], q.rhw[1], q.rhw[2], q.rhw[3],
-                            q.fog ? 1 : 0, q.fog_factor[0], q.fog_factor[1], q.fog_factor[2], q.fog_factor[3],
-                            q.depth_test ? 1 : 0, q.depth_write ? 1 : 0, q.u0, q.v0, q.u3, q.v3);
+            // clear = 画面合成开头清场地的颜色（DAT_004c1b0c）；fog_clear = 关卡背景 0x409f90 清场地用的雾色
+            u32 field_clear = 0, fog_clear = 0;
+            bool first_rect_clear = true;
+            for (const RecordingDevice::Op& op : device.ops) {
+                if (op.kind != RecordingDevice::OpKind::Clear || !op.has_rect) continue;
+                if (first_rect_clear) { field_clear = op.clear_color; first_rect_clear = false; }
+                else if ((op.clear_flags & kClearColor) != 0) { fog_clear = op.clear_color; break; }
             }
+            size_t stage_quads = 0;
+            for (const RecordingDevice::QuadSummary& q : quads) if (q.kind == 'w' && q.texture.slot == 3 + (st.stage_number & 1)) ++stage_quads;
+            std::printf("stagepass active=%d clear=%08x fog_clear=%08x quads=%zu drawn_instances=%d culled=%d drawn_quads=%d\n",
+                        (st.flags & 1) ? 1 : 0, field_clear, fog_clear, stage_quads, st.drawn_instances, st.culled_instances, st.drawn_quads);
         }
         return 0;
     }

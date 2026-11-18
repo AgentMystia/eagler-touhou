@@ -20,27 +20,32 @@ function parse(out) {
   const lines = out.trim().split('\n');
   const header = Object.fromEntries(lines[0].split(' ').map(kv => kv.split('=')).map(([k, v]) => [k, Number(v)]));
   const events = lines.filter(l => l.startsWith('event ')).map(l => l.split(' ').slice(1));
-  const quads = lines.filter(l => /^-?\d+ \d+ \d+ /.test(l));
+  // quad <s|w> slot=N entry=N x0 y0 x1 y1 x2 y2 x3 y3 color z=… rhw=… fog=… zt= zw= uv=…
+  const quads = lines.filter(l => l.startsWith('quad '));
   return {header, events, quads};
 }
 
 // 位：0x1 Z，0x2 X，0x10 ↑，0x20 ↓，0x100 Esc，0x80000 Enter
 const Z = '0x1', X = '0x2', UP = '0x10', DOWN = '0x20', LEFT = '0x40', RIGHT = '0x80', ESC = '0x100', ENTER = '0x80000';
-const MENU_LIVE = 180;       // 启动幕 +0x638 到 0xb4 的那一帧激活标题更新链
-const MAIN = MENU_LIVE + 11; // Timer 0x78→0x83（>0x82）进入 case 2
+const MENU_LIVE = 180;       // 启动幕 +0x638 到 0xb4 的那一帧（绘制之后）标题线程登记更新链；该链从下一帧起运行
+const MAIN = MENU_LIVE + 12; // Timer 0x78→0x83（>0x82）进入 case 2
+// 常驻绘制链：Supervisor 画面合成 10 条（0x43ba40）+ AnmManager 层绘制 39 条（0x46a3a0：33 条普通层 + 6 条切相机的特殊层）
+const PERMANENT_DRAW_CHAINS = 49;
 
 test('scene-boot: boot hold is exactly 0xb4 draw-chain frames, then title decor/intro', needDat, () => {
   const before = parse(run(['scene-boot', dat, String(MENU_LIVE)]));
   assert.equal(before.header.title_live, 1);
   assert.equal(before.header.boot_frames, 180);
-  assert.equal(before.header.screen, 1, '0x44af80 case 0 → 0x44a560(1) main menu on the activation frame');
-  assert.equal(before.header.sub, 1, '0x44b5f0 case 0 falls into case 1 (Intro)');
-  assert.equal(before.header.draw_chains, 0, 'boot draw chain removed once the title thread unloads sig.anm');
+  assert.equal(before.header.draw_chains, PERMANENT_DRAW_CHAINS, 'boot draw chain removed once the title thread unloads sig.anm');
   assert.equal(before.header.update_chains, 4, 'AnmManager UI/world tick chains (prio 9 / 0x21, 0x46e740 / 0x46e710) + EffectManager chain (prio 0x1f, 0x4187d0 at boot) + title update chain (prio 6) registered');
+  // 标题更新链的首帧
+  const firstTick = parse(run(['scene-boot', dat, String(MENU_LIVE + 1)]));
+  assert.equal(firstTick.header.screen, 1, '0x44af80 case 0 → 0x44a560(1) main menu on the first title tick');
+  assert.equal(firstTick.header.sub, 1, '0x44b5f0 case 0 falls into case 1 (Intro)');
+  assert.ok(firstTick.header.quads >= 10, `title quads expected, got ${firstTick.header.quads}`);
   const notYet = parse(run(['scene-boot', dat, String(MENU_LIVE - 1)]));
   assert.equal(notYet.header.title_live, 0);
-  assert.equal(notYet.header.draw_chains, 1);
-  assert.ok(before.header.quads >= 10, `title quads expected, got ${before.header.quads}`);
+  assert.equal(notYet.header.draw_chains, PERMANENT_DRAW_CHAINS + 1);
 });
 
 test('scene-boot: input cannot skip the boot hold; DAT_004c1800&0x180 can', needDat, () => {
@@ -192,14 +197,15 @@ test('game start flow: Normal / Cirno / Autumn → scene 7 with stage 1, title d
   // 其脚本 case 1 在 10/14 帧后自删，所以切场后短暂只剩槽 2 的落叶（mode 8）
   assert.ok(started.quads.length > 0, 'leaf particles (ascii.anm mode 8) still falling right after the switch');
   // 加上新游戏在装载期（0x4440e0）就生成的子机 VM：pl02.anm（槽 9，琪露诺脚本 7）
-  const leaves = started.quads.filter(l => / slot=2$/.test(l));
-  const others = started.quads.filter(l => !/ slot=2$/.test(l));
+  // 槽 0 = text.anm（画面合成的渲染目标拷贝）、槽 4 = st01wl.anm（关卡背景）不算在内
+  const leaves = started.quads.filter(l => / slot=2 entry=/.test(l));
+  const others = started.quads.filter(l => !/ slot=(0|2|4) entry=/.test(l));
   assert.ok(leaves.length > 0, 'leaf particles still present');
-  assert.ok(others.length > 0 && others.every(l => /^\d+ 7 .* slot=9$/.test(l)), 'only ascii.anm leaves + player option (pl02.anm script 7) remain: ' + others.slice(0, 3).join(' | '));
+  assert.ok(others.length > 0 && others.every(l => / slot=9 entry=/.test(l)), 'only ascii.anm leaves + player option (pl02.anm) remain: ' + others.slice(0, 3).join(' | '));
   assert.ok(leaves.every(l => / zw=1 /.test(l)), 'mode 8 writes Z (0x43c530)');
   assert.deepEqual(started.events.at(-1), ['scene', '7']);
   const settled = parse(run(['scene-boot', dat, String(season + 2 + 0x28 + 2 + 16), script]));
-  assert.ok(settled.quads.every(l => / slot=9$/.test(l)), 'emitter (interrupt 1 → ins_1 after 14 frames) and its leaves are gone; only the player option remains');
+  assert.ok(settled.quads.filter(l => !/ slot=(0|4) entry=/.test(l)).every(l => / slot=9 entry=/.test(l)), 'emitter (interrupt 1 → ins_1 after 14 frames) and its leaves are gone; only the player option remains');
   assert.ok(settled.quads.length > 0, 'player option VM keeps drawing');
 });
 
@@ -211,11 +217,13 @@ test('season panel (title script 145, mode 8): Y-flip through the UI camera, the
   const script = [`${t}:${Z}`, `${diff}:${Z}`, `${shot}:${RIGHT}`, `${shot + 2}:${Z}`].join(',');
   const panel = frame => {
     const out = parse(run(['scene-boot', dat, String(frame), script]));
-    const line = out.quads.find(l => /^26 145 /.test(l));
+    // 季节面板 = title.anm（槽 16）贴图 38（weapon01b）
+    const line = out.quads.find(l => / slot=16 entry=38 /.test(l));
     assert.ok(line, `script 145 drawn at frame ${frame}`);
-    const [, , , x0, y0, x1, y3] = line.split(' ').map(Number);
+    const p = line.split(' ').map(Number);
+    const [x0, y0, x1, y3] = [p[4], p[5], p[6], p[11]];
     const z = line.match(/z=([^ ]+)/)[1].split(',').map(Number);
-    const rhw = Number(line.match(/rhw=([^ ]+)/)[1]);
+    const rhw = Number(line.match(/rhw=([^ ,]+)/)[1]);
     const zw = Number(line.match(/zw=(\d)/)[1]);
     return {x0, y0, x1, y3, z, rhw, zw};
   };

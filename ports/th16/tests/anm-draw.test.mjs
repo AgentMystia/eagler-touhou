@@ -13,17 +13,19 @@ const harness = process.env.TH16_HARNESS ?? resolve(here, 'build/harness');
 const dat = process.env.TH16_DAT ?? resolve(monorepo, 'games/th16/original/th16.dat');
 const available = existsSync(dat);
 
+// 行格式：frame quad <s|w> slot=N entry=N x0 y0 x1 y1 x2 y2 x3 y3 color z=… rhw=… fog=… zt= zw= uv=u0,v0,u3,v3
 function rows(script, frames, layer = -1) {
   return execFileSync(harness, ['anm-draw', dat, 'sig.anm', String(script), String(frames), String(layer)], {encoding: 'utf8'})
     .trim().split('\n').filter(Boolean).map(line => {
       const p = line.split(' ');
+      const field = name => p.find(x => x.startsWith(name + '=')).slice(name.length + 1);
+      const uv = field('uv').split(',').map(Number);
       return {
-        frame: Number(p[0]), layer: Number(p[1]), script: Number(p[2]), id: Number(p[3]), blend: Number(p[4]),
+        frame: Number(p[0]), kind: p[2], slot: Number(field('slot')), entry: Number(field('entry')),
         x0: Number(p[5]), y0: Number(p[6]), x1: Number(p[7]), y1: Number(p[8]),
         x2: Number(p[9]), y2: Number(p[10]), x3: Number(p[11]), y3: Number(p[12]),
-        u0: Number(p[13]), v0: Number(p[14]), u1: Number(p[15]), v1: Number(p[16]),
-        u2: Number(p[17]), v2: Number(p[18]), u3: Number(p[19]), v3: Number(p[20]),
-        color: p[21],
+        u0: uv[0], v0: uv[1], u3: uv[2], v3: uv[3],
+        color: p[13],
       };
     });
 }
@@ -32,17 +34,18 @@ test('sig.anm script0: two layer-26 quads cover 640×480 with THTX UVs and fade 
   const all = rows(0, 15, -1);
   const steady = all.filter(r => r.frame === 15);
   assert.equal(steady.length, 2);
-  const byScript = Object.fromEntries(steady.map(r => [r.script, r]));
-  // script0：1024×960 @ (0,0) ×0.5 → 512×480，pixel snap -0.5
-  assert.equal(byScript[0].layer, 26);
-  assert.deepEqual([byScript[0].x0, byScript[0].y0, byScript[0].x1, byScript[0].y3], [-0.5, -0.5, 511.5, 479.5]);
-  assert.deepEqual([byScript[0].u0, byScript[0].v0, byScript[0].u1, byScript[0].v2], [0, 0, 1, 0.9375]);
-  assert.equal(byScript[0].color, 'ffffffff');
-  // script1：256×960 @ (1024,0) ×0.5 → 128×480 @ x=512
-  assert.equal(byScript[1].layer, 26);
-  assert.deepEqual([byScript[1].x0, byScript[1].y0, byScript[1].x1, byScript[1].y3], [511.5, -0.5, 639.5, 479.5]);
-  assert.deepEqual([byScript[1].u0, byScript[1].v0, byScript[1].u1, byScript[1].v2], [0, 0, 1, 0.9375]);
-  assert.equal(byScript[1].color, 'ffffffff');
+  // 两块都是屏幕四边形，贴图取 sig.anm（槽 0）的 entry 0 / entry 1
+  const byEntry = Object.fromEntries(steady.map(r => [r.entry, r]));
+  assert.deepEqual(steady.map(r => r.kind), ['s', 's']);
+  assert.deepEqual(steady.map(r => r.slot), [0, 0]);
+  // script0（entry 0）：1024×960 @ (0,0) ×0.5 → 512×480，pixel snap -0.5
+  assert.deepEqual([byEntry[0].x0, byEntry[0].y0, byEntry[0].x1, byEntry[0].y3], [-0.5, -0.5, 511.5, 479.5]);
+  assert.deepEqual([byEntry[0].u0, byEntry[0].v0, byEntry[0].u3, byEntry[0].v3], [0, 0, 1, 0.9375]);
+  assert.equal(byEntry[0].color, 'ffffffff');
+  // script1（entry 1，script0 的子 VM）：256×960 @ (1024,0) ×0.5 → 128×480 @ x=512
+  assert.deepEqual([byEntry[1].x0, byEntry[1].y0, byEntry[1].x1, byEntry[1].y3], [511.5, -0.5, 639.5, 479.5]);
+  assert.deepEqual([byEntry[1].u0, byEntry[1].v0, byEntry[1].u3, byEntry[1].v3], [0, 0, 1, 0.9375]);
+  assert.equal(byEntry[1].color, 'ffffffff');
   // 淡入：frame 0 非白，frame 15 纯白（ins_408 10 帧）
   const first = all.filter(r => r.frame === 0);
   assert.equal(first.length, 2);
