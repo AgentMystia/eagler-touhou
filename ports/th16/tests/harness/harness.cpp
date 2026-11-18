@@ -948,6 +948,12 @@ int main(int argc, char** argv) {
                         (unsigned long long)bul_digest, (unsigned long long)vm_digest, (unsigned long long)item_digest,
                         (unsigned long long)spell_digest);
         else std::printf("]}\n");
+        if (!session.game.enemies.unknown_ops.empty()) {
+            std::fprintf(stderr, "unknown_ecl_ops=");
+            for (size_t i = 0; i < session.game.enemies.unknown_ops.size(); ++i)
+                std::fprintf(stderr, "%s%d", i ? "," : "", session.game.enemies.unknown_ops[i]);
+            std::fprintf(stderr, "\n");
+        }
         return 0;
     }
     if (command == "scene-boot" && argc >= 4) {

@@ -1,6 +1,8 @@
 // th16 Enemy / EnemyManager 还原——见 Enemy.hpp 锚点。
 #include "Enemy.hpp"
 
+#include <algorithm>
+
 #include "AnmManager.hpp"
 #include "Effect.hpp"
 #include "Gui.hpp"
@@ -1596,6 +1598,41 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             season_item_step = iarg(0);
             season_item_next = damage_accum;
             return 0;
+        // —— 800..802（0x41dcb0 case 0xa8..0xaa）：跨敌机控制 ——
+        case 800: {  // 0x422966：0x41a9c0 按 id 找敌机 → 0x41a4f0 释放子线程、0x41a5a0 复位主上下文、0x474890 绑定子程序（下帧起跑）
+            Enemy* target = manager ? manager->find_id(u32(iarg(0))) : nullptr;
+            if (target == nullptr || !ctx.instruction) return 0;
+            const auto* bytes = reinterpret_cast<const u8*>(ctx.instruction);
+            std::string name;
+            for (u32 k = 0x18; k < ctx.instruction->length && bytes[k] != 0; ++k) name.push_back(char(bytes[k]));
+            target->async_threads.clear();
+            target->reset_context(target->primary, target->program ? target->program->find_index(name.c_str()) : -1);
+            return 0;
+        }
+        case 801: {  // 0x4228a2：指定敌机坐标原样拷入两个整型目标槽（与 324 不同：找不到不回退自身）
+            const Enemy* target = manager ? manager->find_id(u32(iarg(2))) : nullptr;
+            if (target == nullptr) return 0;
+            i32* dx = ctx.integer_destination(0);
+            if (!dx) return -2;
+            std::memcpy(dx, &target->pos.x, 4);
+            i32* dy = ctx.integer_destination(1);
+            if (!dy) return -2;
+            std::memcpy(dy, &target->pos.y, 4);
+            return 0;
+        }
+        case 802: {  // 0x4228da：其他 Boss 槽（0x417580，非自身槽）的中断表项 n 若有效，则切到其 sub（不立即执行）
+            const i32 n = iarg(0);
+            if (n < 0 || n >= kInterruptSlots) return 0;
+            for (int slot = 0; slot < 3; ++slot) {
+                if (slot == boss_slot) continue;
+                Enemy* other = boss(slot);
+                if (other == nullptr || other->interrupts[n].life_threshold < 0) continue;
+                other->async_threads.clear();
+                other->reset_context(other->primary,
+                                     other->program ? other->program->find_index(other->interrupts[n].sub.c_str()) : -1);
+            }
+            return 0;
+        }
         // —— ANM 绑定 302..340（0x41dcb0 case 1..0x15 / 0x423260 / 0x4233a0）——
         case 303: {  // 0x423260
             const i32 slot = iarg(0);
@@ -2138,6 +2175,10 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             return 0;
         default:
             // 未识别操作码：先空操作以免整条 ECL 链因后续关卡指令中断；oracle 对拍时再逐个补全
+            if (manager) {
+                auto& seen = manager->unknown_ops;
+                if (std::find(seen.begin(), seen.end(), i32(opcode)) == seen.end()) seen.push_back(i32(opcode));
+            }
             return 0;
     }
 }
