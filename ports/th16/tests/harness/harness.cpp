@@ -26,7 +26,7 @@
 //   harness std <th16.dat> <stNN.std>          → STD 头 / 对象 / 四边形 / 实例 / 脚本（0x40ac30）
 //   harness stage-run <th16.dat> <stage> <frames>    → StageManager 单独驱动（0x409db0→0x40add0→每帧 0x409e50），逐帧 JSON
 //   harness stage-digest <th16.dat> <stage> <frames> → 同一状态流的 FNV-1a 64（tests/golden/stage.json，tools/oracle/stage-oracle.py 同口径）
-//   harness game-run <th16.dat> <stage> <shot> <season> <frames> <input "f:held,..."> [enemies "f:n,..."] [dialogue "f:v,..."] [difficulty] [replay_slot] [lives] [refill]
+//   harness game-run <th16.dat> <stage> <shot> <season> <frames> <input "f:held,..."> [enemies "f:n,..."] [dialogue "f:v,..."] [difficulty] [replay_slot] [lives] [refill] [mode]
 //                                              → 直接进入场景 7（GameSession::start_game_direct），逐帧 JSON：Player 规范字段（含射击计时、冷却表、
 //                                                自机弹 ×live、伤害源 ×live、本帧 sfx）+ 自机 VM 0x568 字节
 //                                                （与 tools/oracle/game-oracle.py 快照同结构；enemies/dialogue 为未移植管理器的 PlayerWorld 桩输入）
@@ -517,7 +517,8 @@ int main(int argc, char** argv) {
         session.globals.stage_copy = stage;
         session.globals.shot = shot;
         session.globals.season = season;
-        session.globals.set_mode(0);       // 0x449190：普通模式默认 replay_slot = -1
+        // 第 15 参 mode（game-oracle.py --mode 同口径）：0 普通 / 1 练习 / 2 符卡练习；0x449190 普通模式默认 replay_slot = -1
+        session.globals.set_mode((argc >= 15 && argv[14][0] != '\0') ? std::atoi(argv[14]) : 0);
         if (!enemy_script.empty()) {
             session.sync_enemy_count = false;
             session.globals.replay_slot = 0;  // 旧 player.json 桩在 replay_slot=0 下录制
@@ -542,8 +543,9 @@ int main(int argc, char** argv) {
                 if (s_trace == nullptr || s_trace->current != s_trace->frame) return;
                 if (&rng != &s_trace->session->animations.game_rng) return;
                 const AnmVm* vm = s_trace->session->animations.running_vm;
-                std::fprintf(stderr, "rng frame=%d step=%d script=%d sprite=%d\n", s_trace->current, step,
-                             vm != nullptr ? vm->script_index : -1, vm != nullptr ? vm->sprite_index : -1);
+                std::fprintf(stderr, "rng frame=%d step=%d slot=%d script=%d sprite=%d\n", s_trace->current, step,
+                             vm != nullptr ? vm->file_slot : -1, vm != nullptr ? vm->script_index : -1,
+                             vm != nullptr ? vm->sprite_index : -1);
             };
         }
 
