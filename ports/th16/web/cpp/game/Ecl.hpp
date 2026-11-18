@@ -102,10 +102,12 @@ class EclContext {
     bool local_offset(i32 byte_offset, i32& result) noexcept;
     bool expression(i32 byte_offset, u32& value, u8& type) noexcept;
     bool select_routine(i32 id) noexcept;
-    bool call_into(EclContext& target, u32 skipped_arguments = 0);
     int return_from_call() noexcept;
 
 public:
+    // 0x471db0：以本上下文当前指令（call / 异步 spawn）的名字与参数在 target 上建立调用帧；
+    // skipped_arguments 为名字之后、参数之前要跳过的 4 字节参数数（op 16 的线程 id）
+    bool call_into(EclContext& target, u32 skipped_arguments = 0);
     float time = 0;
     i32 routine = -1;
     i32 instruction_offset = -1;
