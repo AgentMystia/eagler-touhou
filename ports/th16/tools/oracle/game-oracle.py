@@ -13,6 +13,8 @@
            ext_velocity, option_count, power_level, sub_count, flags, invincible, shot_timers, rects, radii, rects2, scale,
            options×12, shot_misc, cooldown×16, last_damage_index, bullets[活动自机弹], damage_sources[活动伤害源],
            sfx[Player 代码段登记的音效], vm(0x568 字节)} / stage{frame, ins, flags}
+    --enemies → enemies{count, enemies[...]}；--bullets → bullets{count, bullets[...]}；
+    --items → items{active, spawned, point_counter, scale, items[...]} + resources{score, lives, bombs, point_value, …}
     digest 里 VM id 只取有无（池分配顺序取决于未移植的管理器）；enemy_count / dialogue 不进 digest，供 harness 的 PlayerWorld 桩。
 
 执行链（原版代码；桩同 anm-oracle.py，另加）：
@@ -87,6 +89,7 @@ class GameOracle(Oracle):
         self.debug = debug
         self.enemy_snap = False  # --enemies：每帧敌人快照（不进 digest，Enemy 移植阶段的对照）
         self.bullet_snap = False # --bullets：每帧敌弹快照（BulletManager 链表）
+        self.item_snap = False   # --items：每帧道具快照（ItemManager 池）与得分/残机等资源全局
         self.ecl_trace = None
         self.run_draw = False   # --draw：也跑绘制链（需 D3DXVec3ProjectArray 等桩，待渲染/裁剪阶段接入）
         self.import_log = []
@@ -730,6 +733,45 @@ class GameOracle(Oracle):
             node = self.u32(node + 4)
         return out
 
+    def item_snapshot(self):
+        """ItemManager（DAT_004a6ddc，0x1c972ec 字节）：+0x14 起 0x1258 个道具（0xc78 字节；前 600 个为普通池，
+        其后 0x1000 个为得点/季节池），+0x1c972dc 活动数、+0x1c972e0 生成计数、+0x1c972e4/+0x1c972e8 得点池计数。
+        道具：+0xc08 位置、+0xc14 速度、+0xc20 减速速度、+0xc24 角度、+0xc28 Timer、+0xc50 状态、+0xc54 种类、
+        +0xc58 种类副本、+0xc5c 吸引速度、+0xc60 延迟计数、+0xc68 标志；VM +0x10（主）/ +0x60c（副）。"""
+        m = self.u32(0x4A6DDC)
+        if not m:
+            return None
+        out = {'active': self.i32(m + 0x1C972DC), 'spawned': self.i32(m + 0x1C972E0),
+               'point_counter': self.words(m + 0x1C972E4, 2), 'scale': self.u32(m + 0xE4B974), 'items': []}
+        base = m + 0x14
+        for i in range(0x1258):
+            it = base + i * 0xC78
+            state = self.i32(it + 0xC50)
+            if state == 0:
+                continue
+            out['items'].append({
+                'index': i, 'state': state, 'type': self.i32(it + 0xC54), 'type2': self.i32(it + 0xC58),
+                'pos': self.words(it + 0xC08, 3), 'vel': self.words(it + 0xC14, 3),
+                'speed': self.u32(it + 0xC20), 'angle': self.u32(it + 0xC24), 'timer': self.timer(it + 0xC28),
+                'attract_speed': self.u32(it + 0xC5C), 'counter': self.i32(it + 0xC60), 'serial': self.i32(it + 0xC64),
+                'flag': self.i32(it + 0xC68),
+                'vm': [self.i32(it + 0x10 + 0x24), self.i32(it + 0x10 + 0x20), self.u32(it + 0x10 + 0x530), self.u32(it + 0x10 + 0x520),
+                       self.i32(it + 0x60C + 0x24), self.i32(it + 0x60C + 0x20), self.u32(it + 0x60C + 0x530)],
+            })
+        return out
+
+    def resource_snapshot(self):
+        """得分 / 残机 / 炸弹 / 得点值等由道具拾取改写的全局（0x43e080 / 0x43df70 / 0x43dff0 / 0x430dc0 …）。"""
+        return {
+            'score': self.i32(0x4A57B0), 'extend_index': self.i32(0x4A57FC),
+            'lives': self.i32(0x4A57F4), 'life_fragments': self.i32(0x4A57F8),
+            'bombs': self.i32(0x4A5800), 'bomb_fragments': self.i32(0x4A5804),
+            'point_value': self.i32(0x4A57D8), 'point_value_max': self.i32(0x4A57E0),
+            'point_items': self.i32(0x4A57D4), 'graze': self.i32(0x4A57C0),
+            'collect': [self.i32(0x4A5860), self.i32(0x4A5868), self.i32(0x4A586C), self.i32(0x4A587C)],
+            'collect_pos': self.words(0x4A5870, 3),
+        }
+
     def player_snapshot(self):
         """Player（DAT_004a6ef8，0x2c828 字节）规范字段；与 harness `game-run` 输出一一对应。"""
         p = self.u32(DAT_PLAYER)
@@ -823,6 +865,9 @@ class GameOracle(Oracle):
             snap['enemies'] = self.enemy_snapshot()
         if self.bullet_snap:
             snap['bullets'] = self.bullet_snapshot()
+        if self.item_snap:
+            snap['items'] = self.item_snapshot()
+            snap['resources'] = self.resource_snapshot()
         if sm:
             snap['stage'] = {'frame': self.i32(sm + 0x66E0), 'ins': self.i32(sm + 0x20), 'flags': self.u32(sm + 0x66C4)}
         return snap
@@ -935,6 +980,30 @@ def bullet_digest(frames, digest=0xCBF29CE484222325):
     return digest
 
 
+def item_digest(frames):
+    """道具池 + 资源全局的 FNV-1a 64（harness game-digest items= 同口径）：
+    每帧 [frame, active, spawned, 资源 10 字] + 每道具 [index, state, type, type2, pos×3, vel×3, speed, angle, attract_speed,
+    counter, flag, timer×3, vm×7]。"""
+    digest = 0xCBF29CE484222325
+    mask = (1 << 64) - 1
+    def feed(data):
+        nonlocal digest
+        for b in data:
+            digest = ((digest ^ b) * 0x100000001B3) & mask
+    for f in frames:
+        it = f.get('items') or {'active': 0, 'spawned': 0, 'items': []}
+        r = f.get('resources') or {}
+        words = [f['frame'], it['active'], it['spawned'],
+                 r.get('score', 0), r.get('lives', 0), r.get('bombs', 0), r.get('bomb_fragments', 0), r.get('point_value', 0),
+                 r.get('point_items', 0)] + (r.get('collect') or [0, 0, 0, 0])
+        feed(b''.join(struct.pack('<I', w & 0xFFFFFFFF) for w in words))
+        for i in it['items']:
+            iw = ([i['index'], i['state'], i['type'], i['type2']] + i['pos'] + i['vel'] +
+                  [i['speed'], i['angle'], i['attract_speed'], i['counter'], i['flag']] + i['timer'][:3] + i['vm'])
+            feed(b''.join(struct.pack('<I', w & 0xFFFFFFFF) for w in iw))
+    return digest
+
+
 def parse_input(spec):
     events = {}
     if spec:
@@ -948,7 +1017,9 @@ def main():
     if len(sys.argv) >= 3 and sys.argv[1] == '--digest':
         for path in sys.argv[2:]:
             data = json.loads(pathlib.Path(path).read_text())
-            print('stage=%d shot=%d frames=%d digest=%016x' % (data['stage'], data['shot'], len(data['frames']), frame_digest(data['frames'])))
+            fr = data['frames']
+            print('stage=%d shot=%d frames=%d digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x' % (
+                data['stage'], data['shot'], len(fr), frame_digest(fr), enemy_digest(fr), enemy_vm_digest(fr), bullet_digest(fr), item_digest(fr)))
         return 0
     ap = argparse.ArgumentParser()
     ap.add_argument('exe')
@@ -966,6 +1037,7 @@ def main():
     ap.add_argument('--draw', action='store_true', help='每帧也跑绘制链 0x4015a0（实验）')
     ap.add_argument('--enemies', action='store_true', help='每帧附敌人快照（EnemyManager 链表）')
     ap.add_argument('--bullets', action='store_true', help='每帧附敌弹快照（BulletManager 链表）')
+    ap.add_argument('--items', action='store_true', help='每帧附道具快照（ItemManager 池）与得分/残机/得点值等资源全局')
     ap.add_argument('--replay-slot', type=int, default=-1, help='DAT_004a57c8（默认 -1 走 MainFront；0 走 MainBossSpell）')
     ap.add_argument('--trace-ecl', default='', help='把每条执行的 ECL 指令 (frame, enemy, sub, pc, time, ins_time, op) 写到此文件')
     ap.add_argument('--trace-rng', default='', help='把回放同步 RNG（DAT_004a6d88）的每次调用 (frame, 步数, 返回地址, 包装外层调用方) 写到此文件')
@@ -974,6 +1046,7 @@ def main():
     o.run_draw = a.draw
     o.enemy_snap = a.enemies
     o.bullet_snap = a.bullets
+    o.item_snap = a.items
     if a.trace_ecl:
         o.enable_ecl_trace()
     if a.trace_rng:
@@ -998,11 +1071,12 @@ def main():
         pathlib.Path(a.trace_ecl).write_text(json.dumps(o.ecl_trace, separators=(',', ':')))
     if a.trace_rng:
         pathlib.Path(a.trace_rng).write_text(json.dumps(o.rng_trace, separators=(',', ':')))
-    print('game-oracle: %d frames → %s digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x errors=%s' % (
+    print('game-oracle: %d frames → %s digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x errors=%s' % (
         a.frames, a.out, frame_digest(frames),
         enemy_digest(frames) if a.enemies else 0,
         enemy_vm_digest(frames) if a.enemies else 0,
         bullet_digest(frames) if a.bullets else 0,
+        item_digest(frames) if a.items else 0,
         notes[:3]))
     return 0
 
