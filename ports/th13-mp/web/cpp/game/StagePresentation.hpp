@@ -148,6 +148,9 @@ public:
         i32 option_character = -1, option_count = -1;
         bool option_anchor_deferred = false, option_rebuild_pending = false;
         bool options_hidden = false, death_options_queued = false, full_options = false;
+        // Multiplayer dead/ghost seats keep option script ticks, but the
+        // draw bit is cleared after the chain update. Restored on respawn.
+        bool options_draw_suppressed = false;
         u32 bomb_generation = 0, bomb_background = 0, bomb_beam = 0;
     };
     struct SnapshotData {
@@ -188,6 +191,7 @@ public:
         i32 option_character = -1, option_count = -1;
         bool option_anchor_deferred = false, option_rebuild_pending = false;
         bool options_hidden = false, death_options_queued = false;
+        bool options_draw_suppressed = false;
         bool full_options = false, frame_synced = false;
         u32 bomb_generation = 0, bomb_background = 0, bomb_beam = 0;
         std::vector<u32> player_effect_handles;
@@ -343,6 +347,8 @@ private:
     std::vector<u32> player_effect_handles_;
     bool sync_all_player_effects(StageBattle&);
     bool sync_player_options(StageBattle&, bool power_rebuild, i32 seat);
+    void set_option_tree_drawn(u32 handle, bool drawn);
+    void suppress_dead_option_draw();
     i32 player_bank(i32 seat) const { return seat ? banks.teammate_player[size_t(seat - 1)] : banks.player; }
     bool sync_player_effects(StageBattle&, i32 seat = -1);
     bool sync_bomb_effects(const StageBattle&, i32 seat);

@@ -205,6 +205,21 @@ TEST(mixed_character_options_focus_and_death_stay_with_their_seat) {
     StagePresentation::SnapshotData after; CHECK(f.presentation.capture_presentation(after));
     CHECK(!dying.death_option_rebuild);CHECK(after.teammate_effects[0].death_options_queued);
     CHECK(!after.death_options_queued && !after.teammate_effects[1].death_options_queued);
+    CHECK(after.teammate_effects[0].options_draw_suppressed);
+    CHECK(!after.options_draw_suppressed && !after.teammate_effects[1].options_draw_suppressed);
+    const auto drawn = [](AnmRegistry& registry, u32 handle) {
+        const auto* vm = registry.find(handle);
+        return vm && vm->visible && (vm->visual.flags & 1u) != 0;
+    };
+    CHECK(!drawn(f.animations.registry, after.teammate_effects[0].option_handles[0]));
+    CHECK(drawn(f.animations.registry, after.option_handles[0]));
+    dying.phase = StageBattle::PlayerPhase::Active;
+    dying.dead = false;
+    dying.ghost = false;
+    CHECK(f.presentation.initialize_player_effects(f.battle));
+    CHECK(f.presentation.capture_presentation(after));
+    CHECK(!after.teammate_effects[0].options_draw_suppressed);
+    CHECK(drawn(f.animations.registry, after.teammate_effects[0].option_handles[0]));
     CHECK(after.option_handles == before.option_handles);
     CHECK(after.teammate_effects[1].option_handles == before.teammate_effects[1].option_handles);
     CHECK(f.presentation.hide_player_options());CHECK(f.presentation.interrupt_player_options());
@@ -279,6 +294,7 @@ TEST(teammate_presentation_fields_are_captured_and_hashed) {
     check_mutation([](auto& v){v.option_rebuild_pending=!v.option_rebuild_pending;});
     check_mutation([](auto& v){v.options_hidden=!v.options_hidden;});
     check_mutation([](auto& v){v.death_options_queued=!v.death_options_queued;});
+    check_mutation([](auto& v){v.options_draw_suppressed=!v.options_draw_suppressed;});
     check_mutation([](auto& v){v.full_options=!v.full_options;});
     check_mutation([](auto& v){v.bomb_generation++;});
     check_mutation([](auto& v){v.bomb_background++;});

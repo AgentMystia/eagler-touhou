@@ -528,9 +528,11 @@ void ItemManager::collect_life_piece(i32 amount) {
     if (life_changed) life_changed(hud.extra_lives, hud.life_pieces);
 }
 
-// 0x0043d480 灵击碎片 +amount：be800(+0x48) > 8 → be804=0 收；
-// be804 += amount；be804 > 7 → 归零、be800 = min(be800+1, 9)（先 +1 后
-// ≥10 钳 9，0043d480.c:11-17；sound 0x2e 在 <10 支路）。
+// 0x0043d480 灵击碎片 +amount：be800(+0x48) >= 9 → be804=0 收；
+// be804 += amount；cmp be804, 8；jl 跳过；否则 be804=0、be800+1，
+// >9 钳 9（0x43d493 cmp 8 / 0x43d49a mov 0，v1.00c）。一次 +2 从 7
+// 落到 0 并加一枚 Bomb，不保留 9-8。灵界 kind2 在 0x438d84 把 edx=2
+// 传入这一次调用。
 void ItemManager::collect_bomb_piece(i32 amount) {
     ItemCollector& c = last_player_;
     HudPlayerState& hud = *c.player;

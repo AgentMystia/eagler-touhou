@@ -632,6 +632,26 @@ TEST(spirit_collect_bit0_path_no_common_trance) {
     CHECK_EQ(fix.hud.bomb_pieces, 2);         // kind2 → 0x43d480(2)
 }
 
+// v1.00c 0x43d480 stores 0 when pieces >= 8. Trance kind2 (0x438d84) passes
+// edx=2 once, so 7+2 becomes 0/8 and one bomb, not a remainder of 1.
+TEST(spirit_trance_bomb_piece_at_seven_stores_zero) {
+    GameRandom random(3);
+    SessionState session;
+    trance_begin(session);
+    ItemManager mgr(&random);
+    mgr.bind_session(session);
+    Fixture fix(0.0f, 200.0f, 20.0f);
+    fix.hud.bombs = 2;
+    fix.hud.bomb_pieces = 7;
+    mgr.spawn_value_item(2, 0.0f, 200.0f, 0.0f, 0.5f);
+    Spirit& s = mgr.spirits()[0];
+    s.x = 5.0f; s.y = 205.0f;
+    mgr.update_spirits(fix.collector);
+    CHECK(!s.alive);
+    CHECK_EQ(fix.hud.bombs, 3);
+    CHECK_EQ(fix.hud.bomb_pieces, 0);
+}
+
 TEST(spirit_collect_kind1_max_point_and_char2_trance) {
     GameRandom random(3);
     ItemManager mgr(&random);

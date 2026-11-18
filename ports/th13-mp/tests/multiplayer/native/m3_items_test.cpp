@@ -721,6 +721,11 @@ TEST(resource_all_types_caps) {
     a.bombs=b.bombs=c.bombs=2; a.bomb_pieces=b.bomb_pieces=c.bomb_pieces=0;
     spirit(2,false); CHECK_EQ(a.bomb_pieces,1); CHECK_EQ(b.bomb_pieces,1); CHECK_EQ(c.bomb_pieces,1); CHECK_EQ(f.progress.ending_points,4);
     spirit(2,true); CHECK_EQ(a.bomb_pieces,3); CHECK_EQ(b.bomb_pieces,3); CHECK_EQ(c.bomb_pieces,3); CHECK_EQ(f.progress.ending_points,4);
+    // 0x43d480 / 0x438d84: one edx=2 add from 7 stores 0 and grants one bomb.
+    a.bombs=b.bombs=c.bombs=2; a.bomb_pieces=b.bomb_pieces=c.bomb_pieces=7;
+    spirit(2,true);
+    CHECK_EQ(a.bomb_pieces,0); CHECK_EQ(b.bomb_pieces,0); CHECK_EQ(c.bomb_pieces,0);
+    CHECK_EQ(a.bombs,3); CHECK_EQ(b.bombs,3); CHECK_EQ(c.bombs,3);
     CHECK(f.battle.seats[0].ghost);
 
     // R-I8: a dead seat can hold -1 lives while its teammate collects pieces.

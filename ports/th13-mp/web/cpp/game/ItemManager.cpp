@@ -639,11 +639,14 @@ void ItemManager::grant_resources(const ResourceGrant& grant,
             }
         }
         if (grant.bomb_pieces) {
+            // 与 0x43d480 同式：碎片达到 8 就归零并加一枚 Bomb。
+            // 灵界 kind2 一次 +2，从 7 得到 0，不留余数 1。
             if (hud.bombs >= 9) hud.bomb_pieces = 0;
             else {
                 hud.bomb_pieces += grant.bomb_pieces;
                 if (hud.bomb_pieces > 7) {
                     hud.bomb_pieces = 0; ++hud.bombs; bomb_gained = true;
+                    if (hud.bombs > 9) hud.bombs = 9;
                 }
             }
         }
@@ -738,9 +741,11 @@ void ItemManager::collect_life_piece(i32 amount) {
     if (life_changed) life_changed(0, hud.extra_lives, hud.life_pieces);
 }
 
-// 0x0043d480 灵击碎片 +amount：be800(+0x48) > 8 → be804=0 收；
-// be804 += amount；be804 > 7 → 归零、be800 = min(be800+1, 9)（先 +1 后
-// ≥10 钳 9，0043d480.c:11-17；sound 0x2e 在 <10 支路）。
+// 0x0043d480 灵击碎片 +amount：be800(+0x48) >= 9 → be804=0 收；
+// be804 += amount；cmp be804, 8；jl 跳过；否则 be804=0、be800+1，
+// >9 钳 9（0x43d493 cmp 8 / 0x43d49a mov 0，v1.00c）。一次 +2 从 7
+// 落到 0 并加一枚 Bomb，不保留 9-8。灵界 kind2 在 0x438d84 把 edx=2
+// 传入这一次调用。
 void ItemManager::collect_bomb_piece(i32 amount) {
     ItemCollector& c = last_player_;
     HudPlayerState& hud = *c.player;
