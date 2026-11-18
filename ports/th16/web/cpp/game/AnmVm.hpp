@@ -42,6 +42,8 @@ struct Timer {
     void untick(float game_speed) noexcept;
     // 0x43ac80：回退 n 帧（Player 射击计时环绕）
     void rewind(i32 n, float game_speed) noexcept;
+    // 0x405f20 内联：前进 n 帧（充能环中断 1 一次跳 300 帧）
+    void advance(float n, float game_speed) noexcept;
 };
 static_assert(sizeof(Timer) == 0x14, "Timer 为 0x14 字节");
 
@@ -155,6 +157,8 @@ struct AnmVm {
     // 原版 0x5ec 存宿主对象指针（敌弹 0x412cb0 / 激光 / 道具写入，sprite_mapper 钩子回读）；
     // 为保持 wasm32 下 0x5fc 之前的布局原样，指针放在附加区，0x5ec 保留原槽位。
     void* owner = nullptr;
+    // 0x46eab0 回收时 free(vertex_buffer)：原版为 CRT 堆块；移植版由分配方给出析构函数（EffectManager 的种类缓冲等）
+    void (*vertex_buffer_free)(void*) = nullptr;
 
     // 原版 flags_lo（0x530）位
     enum : u32 {
@@ -199,6 +203,32 @@ struct AnmVm {
     int blend_mode() const noexcept { return int((flags_lo & kBlendMask) >> kBlendShift); }
     int render_mode() const noexcept { return int((flags_lo & kRenderModeMask) >> kRenderModeShift); }
 };
+
+// 0x406d80：设 layer 并按区间改 flags_hi 的层组位
+void anm_set_layer(AnmVm& vm, i32 layer) noexcept;
+// 0x4173f0 / 0x425f10 / 0x425e70 / 0x426020 / 0x425dd0 等插值器启动（Timer 归零；bezier 按各原函数清零与否）
+inline void anm_begin_vec3_interp(Interp<Vec3>& it, i32 time, i32 mode, const Vec3& initial, const Vec3& goal) noexcept {
+    it.end_time = time;
+    it.bezier1 = {}; it.bezier2 = {};
+    it.mode = mode;
+    it.initial = initial;
+    it.goal = goal;
+    it.timer.reset();
+}
+inline void anm_begin_color_interp(Interp<IVec3>& it, i32 time, i32 mode, const u8* cur, u8 b, u8 g, u8 r) noexcept {
+    it.end_time = time;
+    it.bezier1 = {}; it.bezier2 = {};
+    it.mode = mode;
+    it.initial = {cur[0], cur[1], cur[2]};
+    it.goal = {b, g, r};
+    it.timer.reset();
+}
+inline void anm_begin_scalar_interp(Interp<i32>& it, i32 time, i32 mode, i32 initial, i32 goal) noexcept {
+    it.end_time = time; it.mode = mode; it.initial = initial; it.goal = goal; it.bezier1 = 0; it.bezier2 = 0; it.timer.reset();
+}
+inline void anm_begin_vec2_interp(Interp<Vec2>& it, i32 time, i32 mode, const Vec2& initial, const Vec2& goal) noexcept {
+    it.end_time = time; it.mode = mode; it.initial = initial; it.goal = goal; it.timer.reset();
+}
 
 static_assert(offsetof(AnmVm, interrupt_return_offset) == 0x14, "layout");
 static_assert(offsetof(AnmVm, ins_offset) == 0x28, "layout");

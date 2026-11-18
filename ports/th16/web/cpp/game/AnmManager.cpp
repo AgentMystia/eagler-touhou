@@ -278,43 +278,21 @@ u32 AnmManager::insert_ui_front(AnmVm& vm) {
 
 // 0x406380
 u32 AnmManager::spawn(AnmFile& file, int script, int layer, AnmVm** out_vm) {
-    ++spawn_count;
-    AnmVm* vm = allocate();
-    if (out_vm != nullptr) *out_vm = vm;
-    init_from_template(file, *vm, script);
-    const u32 hi = vm->flags_hi;
-    vm->flags_hi = hi | 0x400u;
-    if (layer >= 0) {
-        vm->layer = layer;
-        if (layer < 0x18) vm->flags_hi = (hi & 0xfff7ffffu) | 0x40400u;
-    }
-    vm->entity_offset = {};
-    vm->rotation.z = 0;
-    run(*vm);
-    vm->creation_flags = 0;
-    return insert_world_back(*vm);
+    return spawn_vm(file, script, layer, Vec3{}, 0.0f, 0, false, out_vm);
 }
 
 // 0x40e5c0
 u32 AnmManager::spawn_effect(AnmFile& file, int script, int layer, const Vec3& pos, float rotation_z) {
-    ++spawn_count;
-    AnmVm* vm = allocate();
-    init_from_template(file, *vm, script);
-    const u32 hi = vm->flags_hi;
-    vm->flags_hi = hi | 0x400u;
-    if (layer >= 0) {
-        vm->layer = layer;
-        if (layer < 0x18) vm->flags_hi = (hi & 0xfff7ffffu) | 0x40400u;
-    }
-    vm->entity_offset = pos;
-    vm->rotation.z = rotation_z;
-    run(*vm);
-    vm->creation_flags = 0;
-    return insert_world_back(*vm);
+    return spawn_vm(file, script, layer, pos, rotation_z, 0, false, nullptr);
 }
 
 // 0x426160
 u32 AnmManager::spawn_front(AnmFile& file, int script, int layer, AnmVm** out_vm) {
+    return spawn_vm(file, script, layer, Vec3{}, 0.0f, 2, true, out_vm);
+}
+
+u32 AnmManager::spawn_vm(AnmFile& file, int script, int layer, const Vec3& offset, float rotation_z,
+                         i32 creation_flags, bool front, AnmVm** out_vm) {
     ++spawn_count;
     AnmVm* vm = allocate();
     if (out_vm != nullptr) *out_vm = vm;
@@ -325,11 +303,22 @@ u32 AnmManager::spawn_front(AnmFile& file, int script, int layer, AnmVm** out_vm
         vm->layer = layer;
         if (layer < 0x18) vm->flags_hi = (hi & 0xfff7ffffu) | 0x40400u;
     }
-    vm->entity_offset = {};
-    vm->rotation.z = 0;
+    vm->entity_offset = offset;
+    vm->rotation.z = rotation_z;
     run(*vm);
-    vm->creation_flags = 2;
-    return insert_world_front(*vm);
+    vm->creation_flags = creation_flags;
+    return front ? insert_world_front(*vm) : insert_world_back(*vm);
+}
+
+// 0x406340
+float AnmManager::root_slowdown(const AnmVm& vm) noexcept {
+    const AnmVm* cur = &vm;
+    const AnmVm* up = cur->root;
+    while (up != nullptr && (cur->flags_hi & AnmVm::kHiDetached) == 0) {
+        cur = up;
+        up = cur->root;
+    }
+    return cur->slowdown;
 }
 
 // 0x46f220
@@ -338,6 +327,14 @@ void AnmManager::kill_tree(AnmVm& vm) {
     vm.flags_hi = (vm.flags_hi & ~0x40u) | 0x20u;
     for (AnmListNode* n = vm.children.next; n != nullptr; n = n->next) {
         if (n->owner) kill_tree(*n->owner);
+    }
+}
+
+// 0x46f3b0
+void AnmManager::hide_tree(AnmVm& vm) {
+    vm.flags_lo &= ~2u;
+    for (AnmListNode* n = vm.children.next; n != nullptr; n = n->next) {
+        if (n->owner) hide_tree(*n->owner);
     }
 }
 
@@ -431,9 +428,12 @@ AnmVm* AnmManager::find_child(AnmVm& vm, i32 script, i32 nth) {
 void AnmManager::interrupt(u32 id, i32 value) {
     AnmVm* vm = find(id);
     if (vm == nullptr) return;
+    if (vm->interrupt_callback != 0 && hooks != nullptr) hooks->interrupted(*vm, value);
     vm->pending_interrupt = value;
     for (AnmListNode* n = vm->children.next; n != nullptr; n = n->next) {
-        if (n->owner) n->owner->pending_interrupt = value;
+        if (n->owner == nullptr) continue;
+        if (n->owner->interrupt_callback != 0 && hooks != nullptr) hooks->interrupted(*n->owner, value);
+        n->owner->pending_interrupt = value;
     }
 }
 
@@ -441,10 +441,12 @@ void AnmManager::interrupt(u32 id, i32 value) {
 void AnmManager::interrupt_now(u32 id, i32 value) {
     AnmVm* vm = find(id);
     if (vm == nullptr) return;
+    if (vm->interrupt_callback != 0 && hooks != nullptr) hooks->interrupted(*vm, value);
     vm->pending_interrupt = value;
     run(*vm);
     for (AnmListNode* n = vm->children.next; n != nullptr; n = n->next) {
         if (n->owner == nullptr) continue;
+        if (n->owner->interrupt_callback != 0 && hooks != nullptr) hooks->interrupted(*n->owner, value);
         n->owner->pending_interrupt = value;
         run(*n->owner);
     }
@@ -477,7 +479,7 @@ void AnmManager::release(AnmVm& vm) {
     if (&node == world_head_) world_head_ = node.next;
     if (&node == ui_tail_) ui_tail_ = node.prev;
     if (&node == ui_head_) ui_head_ = node.next;
-    // delete_callback（DAT_00491b58 表）：待特效子系统
+    if (vm.delete_callback != 0 && hooks != nullptr) hooks->deleted(vm);
     unlink(node);
     unlink(vm.delete_node);
     unlink(vm.sibling_node);
@@ -486,7 +488,9 @@ void AnmManager::release(AnmVm& vm) {
     if (vm.pool_index < kPoolSize && &pool_[vm.pool_index] == &vm) {
         pool_in_use_[vm.pool_index] = 0;
         free_stack_.push_back(vm.pool_index);
+        if (vm.vertex_buffer != nullptr && vm.vertex_buffer_free != nullptr) vm.vertex_buffer_free(vm.vertex_buffer);
         vm.vertex_buffer = nullptr;
+        vm.vertex_buffer_free = nullptr;
         vm.vertex_buffer_size = 0;
         vm.ins_offset = -1;
         vm.id = 0;

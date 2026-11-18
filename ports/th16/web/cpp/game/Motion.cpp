@@ -16,18 +16,31 @@ float sin_f(float a) noexcept { return float(std::sin(double(a))); }
 float cos_f(float a) noexcept { return float(std::cos(double(a))); }
 float floor_f(float a) noexcept { return float(std::floor(double(a))); }
 
+// 不能先把 cos 舍成 float 再乘（会双重舍入差 1 ulp）
+Vec3 polar(float angle, float length) noexcept {
+    return {float(std::cos(double(angle)) * double(length)), float(std::sin(double(angle)) * double(length)), 0.0f};
+}
+
+float atan2_f(float y, float x) noexcept { return float(std::atan2(double(y), double(x))); }
+
+Vec3 normalize3(const Vec3& v) noexcept {
+    const float len = std::sqrt((v.x * v.x + v.y * v.y) + v.z * v.z);
+    if (len == 0.0f) return v;
+    return {v.x / len, v.y / len, v.z / len};
+}
+
 namespace {
-// 0x4054d0：x87 fcos/fsin（扩展精度）× 长度后才舍入到单精度——不能先把 cos 舍成 float 再乘（会双重舍入差 1 ulp）
-inline void polar(float angle, float length, float& x, float& y) noexcept {
-    x = float(std::cos(double(angle)) * double(length));
-    y = float(std::sin(double(angle)) * double(length));
+inline void polar_into(float angle, float length, float& x, float& y) noexcept {
+    const Vec3 p = polar(angle, length);
+    x = p.x;
+    y = p.y;
 }
 }  // namespace
 
 void MotionState::update_velocity(float game_speed) noexcept {
     switch (mode & 0xf) {
     case 0:
-        polar(angle, speed * game_speed, velocity.x, velocity.y);
+        polar_into(angle, speed * game_speed, velocity.x, velocity.y);
         break;
     case 2:
     case 3:
@@ -52,7 +65,7 @@ void MotionState::integrate(float game_speed) noexcept {
         break;
     case 2: {
         float lx, ly;
-        polar(angle, radius, lx, ly);
+        polar_into(angle, radius, lx, ly);
         pos.x = lx + velocity.x;
         pos.y = velocity.y + ly;
         pos.z = velocity.z + 0.0f;
