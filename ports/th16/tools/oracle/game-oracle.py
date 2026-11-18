@@ -31,6 +31,9 @@ spec = importlib.util.spec_from_file_location('anm_oracle', HERE / 'anm-oracle.p
 anm_oracle = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(anm_oracle)
 Oracle = anm_oracle.Oracle
+spec_d3d = importlib.util.spec_from_file_location('d3d_recorder', HERE / 'd3d-recorder.py')
+d3d_recorder = importlib.util.module_from_spec(spec_d3d)
+spec_d3d.loader.exec_module(d3d_recorder)
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_ESI, UC_X86_REG_EDI, UC_X86_REG_ESP, UC_X86_REG_EIP
 
@@ -85,7 +88,7 @@ def f32(v):
 
 class GameOracle(Oracle):
     def __init__(self, exe, dat_dir, stage=1, shot=0, season=0, difficulty=1, seed=0, debug=False, replay_slot=-1,
-                 lives=None, mode=0):
+                 lives=None, mode=0, draw=False):
         dat_dir = pathlib.Path(dat_dir)
         self.mode = mode   # DAT_004a5bec bit4-5：0 普通 / 1 练习 / 2 符卡练习（0x449190）
         super().__init__(exe, 'text.anm', (dat_dir / 'text.anm').read_bytes())
@@ -101,7 +104,10 @@ class GameOracle(Oracle):
         self.bomb_snap = False   # --bombs：每帧 Bomb / 季节解放对象快照（DAT_004a6da8 / DAT_004a6da4）
         self.ecl_trace = None
         self.frame = -1  # 装载阶段（GAME_LOAD 之前）的 RNG 调用记为 -1 帧
-        self.run_draw = False   # --draw：也跑绘制链（需 D3DXVec3ProjectArray 等桩，待渲染/裁剪阶段接入）
+        self.run_draw = draw    # --draw：每帧按 0x45a8a0 的顺序跑绘制链 0x4015a0，设备调用由 DeviceRecorder 记录
+        self.recorder = None
+        self.device_calls = {}      # 伪设备（非 --draw）各方法调用计数
+        self.on_draw_frame = None   # --draw：每帧设备调用序列的接收回调 (frame, calls)
         self.import_log = []
         self.uc.mem_map(STUB2, STUB2_SIZE)
         self.stub2_count = 0
@@ -113,6 +119,7 @@ class GameOracle(Oracle):
         # 链登记走原版代码
         del self.replaced[0x401300]
         del self.replaced[0x4013B0]
+        del self.replaced[0x4090D0]   # sprintf(buf, fmt, ...)：HUD 数字 / 文件名用到 "%d" 等格式，交给 0x405540 → vsprintf 桩
         self.hooks[ANM_LOAD_FILE] = self.on_anm_load_file
         self.replaced[THREAD_CREATE] = (0, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0))
         self.replaced[0x479A65] = (0, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0))  # CRT _chdir（成绩/回放目录切换）
@@ -135,7 +142,10 @@ class GameOracle(Oracle):
         self.replaced[0x47BD3A] = (0, self.on_calloc)                                    # __calloc_base
         self.replaced[0x483CB9] = (0, self.on_realloc)                                   # __realloc_base
         self.setup_imports()
-        self.setup_device()
+        if draw:
+            self.recorder = d3d_recorder.DeviceRecorder(self)
+        else:
+            self.setup_device()
         self.setup_laser_sound_buffer()
         self.narrow_hooks()
         if debug:
@@ -414,6 +424,7 @@ class GameOracle(Oracle):
             'D3DXMatrixMultiply': (12, self.on_matrix_multiply),
             'D3DXVec3Transform': (12, self.on_vec3_transform),
             'D3DXVec3Project': (24, self.on_vec3_project),
+            'D3DXVec3ProjectArray': (36, self.on_vec3_project_array),
             'D3DXLoadSurfaceFromSurface': (36, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0)),  # 截屏（暂停/结束画面）
         }
         for imp in imports:
@@ -567,6 +578,17 @@ class GameOracle(Oracle):
 
     def on_vec3_project(self, o):
         out, v_p, vp_p, proj_p, view_p, world_p = (self.arg(i) for i in range(6))
+        self.project_one(out, v_p, vp_p, proj_p, view_p, world_p)
+        self.uc.reg_write(UC_X86_REG_EAX, out)
+
+    def on_vec3_project_array(self, o):
+        # D3DXVec3ProjectArray(out, out_stride, in, in_stride, viewport, proj, view, world, n)：逐点同 Vec3Project
+        out, out_stride, v_p, in_stride, vp_p, proj_p, view_p, world_p, n = (self.arg(i) for i in range(9))
+        for i in range(n):
+            self.project_one(out + i * out_stride, v_p + i * in_stride, vp_p, proj_p, view_p, world_p)
+        self.uc.reg_write(UC_X86_REG_EAX, out)
+
+    def project_one(self, out, v_p, vp_p, proj_p, view_p, world_p):
         v = self.read_f(v_p, 3) + [1.0]
         mats = [self.read_f(p, 16) for p in (world_p, view_p, proj_p) if p]
         for m in mats:
@@ -585,7 +607,6 @@ class GameOracle(Oracle):
         sy = f32(f32(f32(1.0 - y) * 0.5) * vh + vy)
         sz = f32(f32(z * f32(maxz - minz)) + minz)
         self.write_f(out, [sx, sy, sz])
-        self.uc.reg_write(UC_X86_REG_EAX, out)
 
     # ---- 文件 ----
     def on_read_file(self, o):
@@ -648,6 +669,9 @@ class GameOracle(Oracle):
         self.call(anm_oracle.MANAGER_CTOR, ecx=self.manager)
         uc.mem_write(anm_oracle.DAT_MANAGER, struct.pack('<I', self.manager))
         uc.mem_write(anm_oracle.DAT_BACKBUFFER_W, struct.pack('<IIf', 640, 480, 1.0))
+        if self.run_draw:
+            # 0x43b520 → 0x46b900：九锚点四边形顶点缓冲（mode 8 DrawPrimitive 的流源）与批量顶点缓冲初值
+            self.call(0x46B900)
         # 0x43b520（Supervisor 初始化）：清色、相机 0x43cb10、DAT_004a6dc8（0x88）、4 个装载幕 VM
         uc.mem_write(DAT_GAME_SPEED, struct.pack('<f', 1.0))
         uc.mem_write(DAT_BG_COLOR, struct.pack('<I', 0xFF000000))
@@ -765,14 +789,40 @@ class GameOracle(Oracle):
     def tick(self):
         self.sfx_log = []
         self.switch_scene()
+        if self.run_draw:
+            # 0x45a8a0 更新前：排空批量顶点、3D 相机 DAT_004c1560 的 VIEW / PROJECTION 与视口（DAT_004c17b8 + 0xe0）
+            self.call(0x465A80, ecx=self.manager)
+            self.uc.mem_write(0x4C17B8, struct.pack('<I', 0x4C1560))
+            self.call(0x43C710, args=(0x4C1560,))   # cdecl(camera*)
+            self.device_call(0xBC, 0x4C1560 + 0xE0)
+            self.uc.mem_write(0x4C17BC, struct.pack('<I', 2))
         # 更新链含 AnmManager 自身的世界 tick（优先级 9，0x46e740），无需另行调用 0x46e340
         self.call(CHAIN_RUN_UPDATE, ecx=self.chain_manager)
-        # 绘制链（0x4015a0，读 DAT_004a6d94）：Player 0x443730 等在此把 pos 抄进 VM entity_offset；D3D 设备为空桩
+        # 绘制链（0x4015a0，读 DAT_004a6d94）：Player 0x443730 等在此把 pos 抄进 VM entity_offset
         if self.run_draw:
+            # 0x45a8a0 绘制段：BeginScene、0x465a30 批量缓冲复位、DAT_004c1adc = 0xff、UI 相机 0x43c4f0(0x4c10d0)、
+            # 绘制链、排空批量顶点、SetTexture(0, NULL)、EndScene
+            self.recorder.begin_frame()
+            self.device_call(0xA4)
+            self.call(0x465A30)
+            self.uc.mem_write(0x4C1ADC, b'\xff')
+            self.call(0x43C4F0, ecx=0x4C10D0)
             self.call(CHAIN_RUN_DRAW)
+            self.call(0x465A80, ecx=self.manager)
+            self.device_call(0x104, 0, 0)
+            self.device_call(0xA8)
+            calls = self.recorder.end_frame()
+            if self.on_draw_frame is not None:
+                self.on_draw_frame(self.frame + 1, calls)
         else:
             self.stage_draw_side_effects()
         self.frame += 1
+
+    def device_call(self, vtable_offset, *args):
+        # 以原版口径调用伪设备方法（stdcall：this + 参数）
+        dev = self.u32(DAT_D3D_DEVICE)
+        fn = self.u32(self.u32(dev) + vtable_offset)
+        self.call(fn, args=(dev,) + tuple(args))
 
     def chain_list(self):
         out = []
@@ -1427,7 +1477,9 @@ def main():
     ap.add_argument('--seed', type=int, default=0)
     ap.add_argument('--every', type=int, default=1)
     ap.add_argument('--debug', action='store_true')
-    ap.add_argument('--draw', action='store_true', help='每帧也跑绘制链 0x4015a0（实验）')
+    ap.add_argument('--draw', action='store_true', help='每帧按 0x45a8a0 顺序跑绘制链 0x4015a0，D3D 设备调用由 d3d-recorder.py 记录')
+    ap.add_argument('--draw-out', default='', help='--draw 的设备调用流输出（JSON Lines，每帧一行；默认 <out>.draw.jsonl）')
+    ap.add_argument('--draw-from', type=int, default=1, help='--draw 只记录帧号 ≥ 此值的帧（1 起）')
     ap.add_argument('--enemies', action='store_true', help='每帧附敌人快照（EnemyManager 链表）')
     ap.add_argument('--bullets', action='store_true', help='每帧附敌弹快照（BulletManager 链表）')
     ap.add_argument('--items', action='store_true', help='每帧附道具快照（ItemManager 池）与得分/残机/得点值等资源全局')
@@ -1441,8 +1493,7 @@ def main():
     ap.add_argument('--trace-vm', default='', help='把每次 ANM VM 生成 (frame, AnmFile 指针, 脚本号, 0x407b20 返回地址) 写到此文件')
     a = ap.parse_args()
     o = GameOracle(pathlib.Path(a.exe), a.dat_dir, a.stage, a.shot, a.season, a.difficulty, a.seed, a.debug, a.replay_slot,
-                   a.lives, a.mode)
-    o.run_draw = a.draw
+                   a.lives, a.mode, draw=a.draw)
     o.enemy_snap = a.enemies
     o.bullet_snap = a.bullets
     o.item_snap = a.items
@@ -1459,6 +1510,13 @@ def main():
     print('booted: chains=%s banks=%s device_calls=%s' % (
         [(p, hex(cb)) for p, cb, _ in o.chain_list()], o.loaded_banks, o.device_calls), file=sys.stderr)
     events = parse_input(a.input)
+    draw_file = None
+    if a.draw:
+        draw_file = open(a.draw_out or (a.out + '.draw.jsonl'), 'w')
+        def write_draw_frame(frame, calls):
+            if frame >= a.draw_from:
+                draw_file.write(json.dumps({'frame': frame, 'calls': calls}, separators=(',', ':')) + '\n')
+        o.on_draw_frame = write_draw_frame
     held = 0
     frames = []
     for f in range(a.frames):
@@ -1474,6 +1532,8 @@ def main():
             break
         if (f + 1) % a.every == 0:
             frames.append(o.snapshot())
+    if draw_file is not None:
+        draw_file.close()
     notes = [e for e in o.errors if not e.startswith('note')]
     pathlib.Path(a.out).write_text(json.dumps({'stage': a.stage, 'shot': a.shot, 'season': a.season, 'difficulty': a.difficulty,
                                                'input': a.input, 'scene_exit': o.scene_exit, 'exit_frame': o.frame if o.scene_exit is not None else None,
