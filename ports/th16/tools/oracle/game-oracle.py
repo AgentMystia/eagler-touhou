@@ -58,6 +58,7 @@ DAT_GAME_FLAGS = 0x4A5BEC
 DAT_D3D_DEVICE = 0x4C10D8
 DAT_LOADING_VMS = 0x4C128C          # 4 个 VM 指针（0x43b520）
 DAT_INPUT_HELD = 0x4A50B0
+INPUT_EDGES = 0x405580              # 主循环 0x401d50 末：从 held/previous 推出 pressed（+0xc）/ repeat（+0x8）——GameMenu 读这组
 DAT_GAME_INPUT = 0x4A52C8
 DAT_CAMERA_TEMPLATE = 0x4C168C
 DAT_BG_COLOR = 0x4C1B0C
@@ -122,8 +123,11 @@ class GameOracle(Oracle):
         self.sfx_log = []
         self.replaced[0x4792A8] = (0, self.on_vsprintf)                                  # __stdio_common_vsprintf（CRT 需 FLS/线程数据）
         self.replaced[0x459240] = (0x20, lambda o: None)                                 # GDI 文字 → 纹理像素（无逻辑副作用）
-        self.replaced[0x43EF20] = (0, lambda o: None)                                    # 暂停/续关菜单背景截屏（D3DXLoadSurfaceFromSurface，无逻辑副作用）
+        # 0x43ef20 暂停/续关背景截屏：text.anm 0x34 VM 照常生成（占 VM 池、计入 spawn 计数），只跳过
+        # GetSurfaceLevel / D3DXLoadSurfaceFromSurface / Release 这段纯 D3D 搬运（0x43f088 → 0x43f0df）
+        self.skips[0x43F088] = 0x43F0DF
         self.replaced[0x471BD0] = (0, lambda o: None)                                    # BGM 播放位置回绕（DAT_004df470 在 oracle 中为空；0x43f350 续关画面）
+        self.replaced[0x471C90] = (0, lambda o: None)                                    # BGM 缓冲重填（同上为空；0x42d7b0 换关 / 0x43f980 续关恢复）
         self.replaced[0x449A00] = (0, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0))    # 成绩文件写盘（0x42d200 换关 / 退出；只改成绩缓冲与校验和，无游戏状态副作用）
         self.replaced[0x47BCEC] = (0, self.on_malloc)                                    # __malloc_base
         self.replaced[0x47BD3A] = (0, self.on_calloc)                                    # __calloc_base
@@ -693,6 +697,7 @@ class GameOracle(Oracle):
     def set_input(self, held):
         prev = self.u32(DAT_INPUT_HELD)
         self.uc.mem_write(DAT_INPUT_HELD, struct.pack('<II', held, prev))
+        self.call(INPUT_EDGES, ecx=DAT_INPUT_HELD)
 
     def switch_scene(self):
         """0x43ce10 的场景切换（主循环每帧在链更新前执行）。目前只接 case 0xc（过关 → 下一关）：
@@ -980,6 +985,36 @@ class GameOracle(Oracle):
             'spell_id': self.i32(0x4A5798),
         }
 
+    def menu_snapshot(self):
+        """GameMenu（DAT_004a6ef4，0x3f4 字节，0x43e350）：暂停 / 续关 / 练习结算菜单。
+        +0xc 计时、+0x20 副计时、+0x34 光标（index / previous / count）、+0x10c 名字输入光标、+0x1e4 菜单 VM、
+        +0x1e8 截图 VM、+0x1ec 模式（0 关闭 1 暂停 2 续关 3 练习结算）、+0x1f0 上一模式、+0x1f4 状态、+0x1f8 名字长度、
+        +0x1fc 练习标志、+0x200 无排名、+0x204 菜单种类、+0x208 保存的声音线程状态、+0x2e0 保存的游戏速度、+0x3ec 标志。
+        另附 GameManager+0x88 标志、全局游戏速度、续关次数（DAT_004a57b8）/ 剩余续关（DAT_004a5bfc）与本帧全部音效。"""
+        m = self.u32(0x4A6EF4)
+        gm = self.u32(DAT_GAME_MANAGER)
+        has = lambda v: 1 if v else 0
+        out = {
+            'game_flags': self.u32(gm + 0x88) if gm else 0,
+            'game_speed': self.u32(DAT_GAME_SPEED),
+            'continues_used': self.i32(0x4A57B8), 'continues_left': self.i32(0x4A5BFC),
+            'sfx': [s for s, _ in self.sfx_log],
+        }
+        if not m:
+            out['menu'] = None
+            return out
+        out['menu'] = {
+            'mode': self.i32(m + 0x1EC), 'prev_mode': self.i32(m + 0x1F0), 'state': self.i32(m + 0x1F4),
+            'timer': self.timer(m + 0xC), 'timer2': self.timer(m + 0x20),
+            'cursor': [self.i32(m + 0x34), self.i32(m + 0x38), self.i32(m + 0x3C), self.i32(m + 0x34 + 0xD4)],
+            'name_cursor': [self.i32(m + 0x10C), self.i32(m + 0x110), self.i32(m + 0x114)],
+            'vm': [has(self.u32(m + 0x1E4)), has(self.u32(m + 0x1E8))],
+            'name_len': self.i32(m + 0x1F8), 'practice': self.i32(m + 0x1FC), 'no_rank': self.i32(m + 0x200),
+            'kind': self.i32(m + 0x204), 'saved_sound': self.i32(m + 0x208), 'saved_speed': self.u32(m + 0x2E0),
+            'flags': self.u32(m + 0x3EC),
+        }
+        return out
+
     def msg_snapshot(self):
         """Gui+0x1c8 对话 Msg（0x429b20）：脚本偏移 / 三计时器 / 标志 / 侧 / 行计数 / 文字框 / VM 有无。
         与 harness `game-run` 的 msg 字段同口径；无对话时为 None。"""
@@ -1103,6 +1138,7 @@ class GameOracle(Oracle):
             snap['bombs'] = self.bomb_snapshot()
         if self.enemy_snap:
             snap['spell'] = self.spell_snapshot()
+        snap['menu'] = self.menu_snapshot()
         if sm:
             snap['stage_vm'] = {'frame': self.i32(sm + 0x66E0), 'ins': self.i32(sm + 0x20), 'flags': self.u32(sm + 0x66C4)}
         return snap
@@ -1312,6 +1348,28 @@ def spell_digest(frames):
     return digest
 
 
+def menu_digest(frames):
+    """GameMenu 的 FNV-1a 64（harness game-digest menu= 同口径）：
+    每帧 [frame, game_flags, game_speed, continues_used, continues_left, 音效数, 音效…, 菜单有无] + 菜单 [mode, prev_mode, state,
+    timer×3, timer2×3, cursor×4, name_cursor×3, vm×2, name_len, practice, no_rank, kind, saved_sound, saved_speed, flags]。"""
+    digest = 0xCBF29CE484222325
+    mask = (1 << 64) - 1
+    for f in frames:
+        s = f.get('menu')
+        if s is None:
+            words = [f['frame']]
+        else:
+            words = [f['frame'], s['game_flags'], s['game_speed'], s['continues_used'], s['continues_left'], len(s['sfx'])] + s['sfx']
+            m = s['menu']
+            words.append(1 if m else 0)
+            if m:
+                words += ([m['mode'], m['prev_mode'], m['state']] + m['timer'][:3] + m['timer2'][:3] + m['cursor'] + m['name_cursor'] +
+                          m['vm'] + [m['name_len'], m['practice'], m['no_rank'], m['kind'], m['saved_sound'], m['saved_speed'], m['flags']])
+        for b in b''.join(struct.pack('<I', w & 0xFFFFFFFF) for w in words):
+            digest = ((digest ^ b) * 0x100000001B3) & mask
+    return digest
+
+
 def parse_input(spec):
     events = {}
     if spec:
@@ -1326,9 +1384,9 @@ def main():
         for path in sys.argv[2:]:
             data = json.loads(pathlib.Path(path).read_text())
             fr = data['frames']
-            print('stage=%d shot=%d frames=%d digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x lasers=%016x bombs=%016x' % (
+            print('stage=%d shot=%d frames=%d digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x lasers=%016x bombs=%016x menu=%016x' % (
                 data['stage'], data['shot'], len(fr), frame_digest(fr), enemy_digest(fr), enemy_vm_digest(fr), bullet_digest(fr),
-                item_digest(fr), spell_digest(fr), laser_digest(fr), bomb_digest(fr)))
+                item_digest(fr), spell_digest(fr), laser_digest(fr), bomb_digest(fr), menu_digest(fr)))
         return 0
     ap = argparse.ArgumentParser()
     ap.add_argument('exe')
@@ -1397,7 +1455,7 @@ def main():
         pathlib.Path(a.trace_rng).write_text(json.dumps(o.rng_trace, separators=(',', ':')))
     if a.trace_vm:
         pathlib.Path(a.trace_vm).write_text(json.dumps(o.vm_trace, separators=(',', ':')))
-    print('game-oracle: %d frames → %s digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x lasers=%016x bombs=%016x errors=%s' % (
+    print('game-oracle: %d frames → %s digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x lasers=%016x bombs=%016x menu=%016x errors=%s' % (
         a.frames, a.out, frame_digest(frames),
         enemy_digest(frames) if a.enemies else 0,
         enemy_vm_digest(frames) if a.enemies else 0,
@@ -1406,6 +1464,7 @@ def main():
         spell_digest(frames) if a.enemies else 0,
         laser_digest(frames) if a.lasers else 0,
         bomb_digest(frames) if a.bombs else 0,
+        menu_digest(frames),
         notes[:3]))
     return 0
 
