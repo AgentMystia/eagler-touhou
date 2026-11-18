@@ -65,8 +65,8 @@ void ItemManager::reset() {
         Item& it = items[size_t(i)];
         it = Item{};
         // 原版 memset 整池为 0（VM 的精灵号、缩放等亦为 0，与模板复制前的快照一致）
-        std::memset(static_cast<void*>(&it.vm), 0, sizeof it.vm);
-        std::memset(static_cast<void*>(&it.vm2), 0, sizeof it.vm2);
+        it.vm.clear();
+        it.vm2.clear();
         it.index = i;
         it.vm.owner = &it;
         it.vm2.owner = &it;
