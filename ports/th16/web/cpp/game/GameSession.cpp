@@ -885,12 +885,19 @@ void GameSession::create_screen_fade(i32 kind, i32 duration, u32 color) {
     fade->duration = duration;
     fade->color = color;
     fade->timer.reset();
+    // 0x45d1a0：kind 3 从全不透明开始淡入
+    if (kind == 3) fade->alpha = 0xff;
     screen_fades.push_back(fade);
-    ChainEntry* entry = chains.create([this, fade]() -> ChainResult {
-        const bool frozen = ((game.flags | (game.flags >> 2)) & 1u) != 0;
-        return screen_fade_step(*fade, globals.post_load_frames, frozen, supervisor.game_speed)
-                   ? ChainResult::Continue
-                   : ChainResult::Destroy;
+    const bool fade_in = kind == 0 || kind == 3;   // 0x45c630；其余 kind 走 0x45c900
+    ChainEntry* entry = chains.create([this, fade, fade_in]() -> ChainResult {
+        bool alive;
+        if (fade_in) {
+            alive = screen_fade_in_step(*fade, globals.post_load_frames, supervisor.game_speed);
+        } else {
+            const bool frozen = ((game.flags | (game.flags >> 2)) & 1u) != 0;
+            alive = screen_fade_step(*fade, globals.post_load_frames, frozen, supervisor.game_speed);
+        }
+        return alive ? ChainResult::Continue : ChainResult::Destroy;
     }, 0x13, true);
     entry->on_destroy = [this, entry, fade]() {
         fade_chains_.erase(std::remove(fade_chains_.begin(), fade_chains_.end(), entry), fade_chains_.end());

@@ -101,4 +101,17 @@ bool screen_fade_step(ScreenFade& fade, i32 post_load_frames, bool game_frozen, 
     return true;
 }
 
+bool screen_fade_in_step(ScreenFade& fade, i32 post_load_frames, float game_speed) {
+    if (post_load_frames != 0) return false;
+    const i32 d = fade.duration;
+    if (d != 0) {
+        // 单精度：255 − current_f × 255 / duration，截断后钳到 0
+        fade.alpha = i32(255.0f - fade.timer.current_f * 255.0f / float(d));
+        if (fade.alpha < 0) fade.alpha = 0;
+    }
+    if (fade.timer.current >= d) return false;
+    fade.timer.tick(game_speed);
+    return true;
+}
+
 }  // namespace th16
