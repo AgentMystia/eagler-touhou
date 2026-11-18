@@ -37,6 +37,11 @@ struct GameGlobals {
     i32 season_step[8] = {};     // DAT_004a5810：0x43deb0 参数
     i32 season_threshold[8] = {};// DAT_004a5838：0x43deb0 前缀和；DAT_004a583c.. = [1..6] 为子机数阈值
 
+    // 难度秩与擦弹（0x444cf0 累加，上限 99999999）
+    i32 rank = 0;                // DAT_004a57bc：ECL -9960 / 弹幕 617–622 按秩选参
+    i32 graze = 0;               // DAT_004a57c0：本局擦弹数
+    i32 graze_total = 0;         // DAT_004a57c4：累计擦弹（含续关）
+
     // 外部推力（DAT_004d9dc4 / +4 / DAT_004d9dcc）：0x442560 每帧抄进 Player，0x441cf0 叠加到移动
     float push_x = 0, push_y = 0, push_z = 0;
 

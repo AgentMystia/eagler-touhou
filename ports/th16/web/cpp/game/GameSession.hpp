@@ -42,7 +42,8 @@ public:
     // 逻辑侧屏幕几何（DAT_004d9d34 窗口缩放 / DAT_004d9d50,54 场地偏移 / DAT_004d9d48,4c）：自机弹出界判定 0x468c00 用；
     // 原版由 Supervisor 绘制链 0x43b3d0 每帧写为 640/2、(480-448)/2，这里取同值常量
     AnmRenderer geometry;
-    std::vector<i32> sfx_events;       // 本帧 0x45e1f0 音效登记（Player 等逻辑产生；Sound 接入前供 harness 对拍）
+    std::vector<i32> sfx_events;       // 本帧 0x45e1f0 音效登记（全部管理器；Sound 接入前供 harness 对拍）
+    std::vector<i32> player_sfx_events; // 其中由 Player 代码段（0x440000..0x449000：更新/被弹/擦弹）登记的子集
     bool run_draw_chains = true;  // harness 对拍 oracle（不跑 0x4015a0）时关掉
     // harness 提供 enemies 时间表时置 false，由桩保持 PlayerWorld.enemy_count（对齐旧桩语义）
     bool sync_enemy_count = true;
@@ -68,6 +69,8 @@ private:
     ChainEntry* player_update_chain_ = nullptr;
     ChainEntry* player_draw_chain_ = nullptr;
     ChainEntry* enemy_update_chain_ = nullptr;
+    ChainEntry* bullet_update_chain_ = nullptr;
+    ChainEntry* bullet_draw_chain_ = nullptr;
 
     bool load_anm(const char* name, AnmResource*& out);
     bool load_boot_banks();            // 0x43adc0 / 0x407cb0 / 0x43ad20 / 0x418790 的同步装载部分
@@ -77,6 +80,7 @@ private:
     void leave_title();
     bool enter_game();     // 0x43ce10 case 7 → 0x42d700 + 0x42cb60（同步装载）
     void leave_game();     // 0x42d200
+    void harvest_player_sfx();
     void sample_input();
 };
 

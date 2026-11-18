@@ -12,11 +12,13 @@
 // 本阶段只接入 StageManager（关卡背景）；其它管理器按 roadmap 逐个接入。
 #pragma once
 #include "AnmVm.hpp"
+#include "Bullet.hpp"
 #include "Enemy.hpp"
 #include "Player.hpp"
 #include "Stage.hpp"
 #include "StageTable.hpp"
 #include "Types.hpp"
+#include <memory>
 
 namespace th16 {
 
@@ -48,6 +50,8 @@ public:
     bool player_live = false;
     EnemyManager enemies;        // DAT_004a6dc0
     bool enemies_live = false;
+    std::unique_ptr<BulletManager> bullets;  // DAT_004a6dac（0x1403b28 字节，堆分配）
+    bool bullets_live = false;
     PlayerWorld world;           // 敌人 / 对话 / 过关状态；enemy_count 由 EnemyManager 同步
 
     // 0x42dc50 首帧初始化（关卡背景 + 生成 "main"）
