@@ -23,6 +23,7 @@ enum class SceneId : i32 {
     Quit = 2,     // 0x44af80 case 2：DAT_004c17c4 = 2（或 3，DAT_004c1800 bit13）
     Title = 4,    // DAT_004c17c4 = 4（0x43b290）
     Game = 7,     // 0x450af0 / 0x450ef0 case 3：DAT_004c17c4 = 7
+    NextStage = 0xc,  // 0x42e150 过关：DAT_004c17c4 = 0xc → 0x43ce10 case 0xc 销毁 / 重建 GameManager 后 current 回到 7
 };
 
 class Supervisor {

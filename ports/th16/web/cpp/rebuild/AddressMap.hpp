@@ -168,12 +168,27 @@ constexpr AddressAnchor kAnchors[] = {
     {"game-input-edges", 0x418650, "game/Input.hpp InputState::commit（DAT_004a52c8 族）"},
     {"anm-unload-file", 0x46D770, "game/AnmManager.cpp AnmManager::unload"},
     {"game-manager-create", 0x42D700, "game/GameSession.cpp GameSession::enter_game（DAT_004a6dd4；更新链 0xf / 绘制链 2；装载线程 0x42d1f0→0x42cb60）"},
-    {"game-manager-load", 0x42CB60, "game/GameSession.cpp enter_game（Player + StageManager + EnemyManager/ECL + BulletManager + ItemManager；Gui/Laser/Bomb/Spellcard 待还原）"},
-    {"game-manager-update", 0x42D7B0, "game/GameManager.cpp GameManager::update（timer 0 → first_frame；DAT_004a579c/DAT_004a57a0++）"},
-    {"game-manager-first-frame", 0x42DC50, "game/GameManager.cpp GameManager::first_frame（0x40add0 启动关卡面 VM、0x441740 自机复位、0x41aa70 生成 main）"},
-    {"game-manager-destroy", 0x42D200, "game/GameSession.cpp GameSession::leave_game"},
+    {"game-manager-load", 0x42CB60, "game/GameSession.cpp enter_game / next_stage（Player + StageManager + EnemyManager/ECL + BulletManager + ItemManager + Gui + Spellcard；换关路径 0x449030 / 0x426c10 / 0x409db0 / 0x41b340 / 0x4178a0；Laser/Bomb 待还原）"},
+    {"game-manager-update", 0x42D7B0, "game/GameManager.cpp GameManager::update（过关结算计数与 kind 5 淡出、Gui 过关奖励等待整帧跳过、timer 0 → first_frame、0x1e → deferred_init、上一关 bit3 析构、0x42bc10 显示分、DAT_004a579c/DAT_004a57a0++、DAT_004c0f40 递减）"},
+    {"game-manager-first-frame", 0x42DC50, "game/GameManager.cpp GameManager::first_frame（0x42c1b0 清过关奖励、0x40add0 启动关卡面 VM；有上一关 → 0x40c0d0 + 0x40c210 + flags 0x800；否则 reset_for_stage：0x411b70 / 0x441740 / 0x4184a0 / 0x4185b0 复位、0x41aa70 生成 main、0x4440e0 子机、启用链）"},
+    {"game-manager-deferred-init", 0x42DEE0, "game/GameManager.cpp GameManager::deferred_init（flags 0x800 → reset_for_stage、Loading VM 中断、计时 reset）"},
+    {"game-manager-destroy", 0x42D200, "game/GameSession.cpp GameSession::leave_game / next_stage（bit1 路径：0x41a390 Loading VM、0x427970 Gui 关卡清理、当前关转 DAT_004a6d9c、Item 复位、0x41b1a0 / 0x46f270 / 0x417790 析构、DAT_004c0f40 = 1）"},
+    {"game-manager-free", 0x42D780, "game/GameSession.cpp GameSession::next_stage（0x43ce10 case 0xc：销毁后 0x42d700 重建、DAT_004c17d0 = 0）"},
+    {"supervisor-next-stage", 0x43CE10, "game/GameSession.cpp GameSession::logic_step（case 0xc：Supervisor::SceneId::NextStage → next_stage 后 current 回 7）"},
+    {"stage-destroy", 0x4099A0, "game/GameManager.cpp GameManager::update + GameSession::unload_stage_anm（摘链 0x11、DAT_004a5bec bit0 清时释放背景 ANM 槽 3 + (stage & 1)）"},
+    {"stage-begin-end-previous", 0x40C0D0, "game/GameManager.cpp GameManager::first_frame → create_screen_fade(2, 0x1e) + StageManager::begin_end(0x1e, 2)"},
+    {"stage-begin-fade-in", 0x40C210, "game/Stage.cpp StageManager::begin_end(0x3c, 4)"},
+    {"stage-end-timer-step", 0x40A410, "game/Stage.cpp StageManager::end_timer_step（绘制链 6 尾部：0x40d490 倒数、bit1 → bit3、+0x3350 = 0xffffff；GameSession::logic_step 在更新链之后按上一关 / 当前关顺序执行）"},
+    {"screen-fade-update", 0x45C900, "game/ScreenEffect.cpp screen_fade_step（DAT_004c0f40 非零自删；alpha = t × 255 / duration；GameManager 非装载 / 非结束时推进计时；t ≥ duration + 2 返回 7）"},
+    {"gui-stage-init", 0x426C10, "game/Gui.cpp Gui::stage_init（logo 槽 6 / 机体 msg / +0x154 计时 / +0x170 显示分 = 当前分 / Boss 计时 -1；0x427ca0 构造 → Gui::init）"},
+    {"gui-stage-end", 0x427970, "game/Gui.cpp Gui::end_stage + GameSession::next_stage（Msg 删除、msg 释放、(bec & 9) == 0 卸 logo 槽 6）"},
+    {"gui-clear-bonus-reset", 0x42C1B0, "game/Gui.cpp Gui::clear_stage_bonus（+0x120 / +0x124 中断 1、flags_1ac &= ~0x100、+0x1b0 计时复位）"},
+    {"gui-score-roll", 0x42BC10, "game/Gui.cpp Gui::roll_score（显示分按 (差值 >> 5) 逼近、最高分 DAT_004a59b8 / DAT_004a59bc 更新并置 DAT_004a5bec bit2）"},
+    {"enemy-manager-reset", 0x4185B0, "game/Enemy.cpp EnemyManager::reset（ECL ANIM 槽 10..15 VM 标删、敌机析构 0x41ba10、Boss 槽清零）"},
+    {"enemy-manager-destroy", 0x41B1A0, "game/Enemy.cpp EnemyManager::destroy（reset + 卸载 ECL ANIM 槽）"},
+    {"spellcard-destroy", 0x417790, "game/Spellcard.cpp Spellcard::destroy（+0x10 / +0x14 / +0x18 VM 标删后 reset）"},
     {"score-rng-init", 0x449720, "game/GameSession.cpp load_boot_banks（0x4497e0 ScoreFile 构造：DAT_004a6d88 做 0x1ee 次 next16）"},
-    {"replay-rng-reset", 0x449030, "game/GameSession.cpp enter_game（0x449e50 Replay 构造：重置 DAT_004a6d8c 调用计数）"},
+    {"replay-rng-reset", 0x449030, "game/GameSession.cpp enter_game（0x449e50 Replay 构造：重置 DAT_004a6d8c 调用计数）/ next_stage（DAT_004a5bec bit1：game_rng 种子 := visual_rng 种子低 16 位）"},
     {"ecl-load", 0x474530, "game/Ecl.cpp EclResource::open + EclProgram::attach（SCPT 头、ANIM/ECLI 包含、ECLH 子程序表排序）"},
     {"ecl-find-sub", 0x474740, "game/Ecl.cpp EclProgram::find_index（二分查找合并子程序表）"},
     {"ecl-step", 0x472030, "game/Ecl.cpp EclContext::step（通用 ECL 虚拟机操作码 0..0x5d、栈帧、表达式栈、插值槽）"},
@@ -285,7 +300,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"camera-matrices", 0x43C940, "game/AnmRenderer.cpp AnmCamera::look_at（LookAtLH + PerspectiveFovLH zn=30 zf=8000）"},
     {"fog-color-add", 0x40D370, "game/Stage.cpp fog_add（BGRA 浮点分量相加）"},
     // —— 已定位，待还原 ——
-    {"stage-draw-6", 0x40A410, nullptr},     // 绘制链 6：ANM 层 0x20/0x21 用 3D 相机
+    {"stage-draw-6", 0x40A410, nullptr},     // 绘制链 6 绘制部分：ANM 层 0x20/0x21 用 3D 相机（逻辑尾部见 stage-end-timer-step）
     {"stage-frustum-cull", 0x40A7D0, nullptr}, // 对象包围盒视锥剔除（当前全部视为可见，只影响实例 bit0）
     {"stage-distortion", 0x40C4A0, nullptr}, // ins 17 畸变效果（+0x3314）
     {"stage-effect-fade", 0x43D140, nullptr}, // 绘制链 1：清后台缓冲、RT DAT_004c127c、场地矩形清色 DAT_004c1b0c

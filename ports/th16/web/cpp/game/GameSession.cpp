@@ -246,124 +246,75 @@ bool GameSession::create_player() {
     return true;
 }
 
-bool GameSession::enter_game() {
-    // 0x42d700：flags |= 4、模式参数；0x42cb60 装载线程（此处同步）
-    game = GameManager{};
-    game.flags = GameManager::kLoading;
-    game.mode = 0;
-    game.entry = &stage_entry(globals.stage);
-    game_input = InputState{};
-    // 0x42cb60 → 0x449e50 → 0x449030（Replay 构造）：重置 DAT_004a6d8c 调用计数
-    animations.visual_rng.calls = 0;
-
-    // 0x42cb60：新游戏（DAT_004c17d0，0x43ce10 case 7 置位）先建 Player，再建 Gui / Stage / …
-    if (!create_player()) return false;
-
-    // 0x409db0 / 0x4097c0 / 0x40ac30：STD → 背景 ANM 进槽 3 + (stage & 1)
+bool GameSession::create_stage() {
+    // 0x409db0 / 0x4097c0 / 0x40ac30：STD → 背景 ANM 进槽 3 + (stage & 1)；更新链 0x11（0x4097c0 建、0x40add0 启用）
+    auto stage = std::make_unique<StageManager>();
     std::vector<u8> std_bytes;
     if (!archive_.read(game.entry->std_name, std_bytes)) { failure = archive_.error; return false; }
-    if (!game.stage.load(std_bytes.data(), u32(std_bytes.size()), globals.stage)) { failure = game.stage.error; return false; }
+    if (!stage->load(std_bytes.data(), u32(std_bytes.size()), globals.stage)) { failure = stage->error; return false; }
     AnmResource* stage_anm = nullptr;
-    if (!load_anm(game.stage.std.anm_name.c_str(), stage_anm)) return false;
+    if (!load_anm(stage->std.anm_name.c_str(), stage_anm)) return false;
     const int slot = 3 + (globals.stage & 1);
-    game.stage.anm = animations.load(slot, *stage_anm);
-    if (game.stage.anm == nullptr) { failure = "stage anm load failed"; return false; }
+    stage->anm = animations.load(slot, *stage_anm);
+    if (stage->anm == nullptr) { failure = "stage anm load failed"; return false; }
+    stage->camera_global = &stage_camera;
+    game.stage = std::move(stage);
     game.stage_live = true;
-    animations.camera_pos = &game.stage.camera_global.pos;
-    animations.camera_pos_offset = &game.stage.camera_global.pos_offset;
-    animations.camera_facing_norm = &game.stage.camera_global.facing_norm;
+    animations.camera_pos = &stage_camera.pos;
+    animations.camera_pos_offset = &stage_camera.pos_offset;
+    animations.camera_facing_norm = &stage_camera.facing_norm;
+    stage_update_chain_ = chains.create([this]() -> ChainResult {
+        if (game.stage) game.stage->update(animations, supervisor.game_speed);
+        return ChainResult::Continue;
+    }, 0x11, true);
+    return true;
+}
 
-    // 0x411dd0：BulletManager（bullet.anm 槽 7、effect.anm 槽 8）；更新链 0x1c（0x411880）、绘制链 0x25（0x411a30）
-    {
-        AnmFile* bullet_anm = animations.file(BulletManager::kBulletAnmSlot);
-        if (bullet_anm == nullptr) { failure = "bullet.anm not loaded"; return false; }
-        game.bullets = std::make_unique<BulletManager>();
-        game.bullets->create(animations, *bullet_anm, animations.file(8), globals,
-                             game.player_live ? &game.player : nullptr, &game.world, animations.visual_rng);
-        game.bullets_live = true;
-        bullet_update_chain_ = chains.create([this]() -> ChainResult {
-            // 0x411880：GameManager 装载中（bit2）或结束位（bit0 经 >>2 映射）时跳过
-            if (game.bullets_live && ((game.flags | (game.flags >> 2)) & 1u) == 0) {
-                game.bullets->sfx_queue.clear();
-                game.bullets->update(supervisor.game_speed, (game.flags & 0x400u) != 0);
-                sfx_events.insert(sfx_events.end(), game.bullets->sfx_queue.begin(), game.bullets->sfx_queue.end());
-                game.bullets->sfx_queue.clear();
-                // 被弹（0x443f10）在弹幕链内登记的自机音效本帧即生效
-                if (game.player_live) harvest_player_sfx();
-            }
-            return ChainResult::Continue;
-        }, 0x1c, true);
-        bullet_draw_chain_ = chains.create([this]() -> ChainResult {
-            if (game.bullets_live && (game.flags & GameManager::kLoading) == 0) game.bullets->prepare_draw();
-            return ChainResult::Continue;
-        }, 0x25, false);
-    }
+void GameSession::unload_stage_anm(StageManager& stage) {
+    // 0x4099a0 末：DAT_004a5bec bit0 清时释放背景 ANM 槽（0x46d770 标删该槽 VM 后释放；回收在下一次世界 tick）
+    if ((globals.flags & 1u) != 0) return;
+    const int slot = 3 + (stage.stage_number & 1);
+    animations.kill_file(slot);
+    animations.unload(slot);
+}
 
-    // 0x42f440：ItemManager；更新链 0x1d（0x4308f0 → 0x42f4e0）、绘制链 0x21 / 0x13（0x4307a0）
-    {
-        game.items = std::make_unique<ItemManager>();
-        game.items->create(animations, animations.file(BulletManager::kBulletAnmSlot), animations.file(8), globals,
-                           game.player_live ? &game.player : nullptr, animations.game_rng);
-        game.items_live = true;
-        game.bullets->items = game.items.get();
-        item_update_chain_ = chains.create([this]() -> ChainResult {
-            // 0x4308f0：GameManager 装载中（bit2）/ 结束位（bit0 经 >>2 映射）/ 0x400 冻结时跳过
-            if (game.items_live && ((game.flags | (game.flags >> 2)) & 1u) == 0 && (game.flags & 0x400u) == 0) {
-                game.items->dialogue = game.world.dialogue;
-                game.items->focus_held = (game_input.held & 0x8u) != 0;
-                game.items->update(supervisor.game_speed);
-                sfx_events.insert(sfx_events.end(), game.items->sfx_queue.begin(), game.items->sfx_queue.end());
-                game.items->sfx_queue.clear();
-                // 0x44a460 弹出数字 / 0x42bcf0 Gui 通知：Ascii / Gui 接入前无状态影响
-                game.items->popups.clear();
-                game.items->gui_events.clear();
-            }
-            return ChainResult::Continue;
-        }, 0x1d, true);
-        item_draw_chain_ = chains.create([this]() -> ChainResult {
-            if (game.items_live && (game.flags & GameManager::kLoading) == 0) game.items->prepare_draw(false);
-            return ChainResult::Continue;
-        }, 0x21, false);
-        item_draw_season_chain_ = chains.create([this]() -> ChainResult {
-            if (game.items_live && (game.flags & GameManager::kLoading) == 0) game.items->prepare_draw(true);
-            return ChainResult::Continue;
-        }, 0x13, false);
-    }
-
+bool GameSession::create_enemies() {
     // 0x41b340 / 0x41ae70：装 ECL，登记敌人更新链优先级 0x1a（0x41b4f0→0x41b3d0）
-    {
-        auto read_ecl = [](void* user, const std::string& name, std::vector<u8>& data) -> bool {
-            return static_cast<Archive*>(user)->read(name.c_str(), data);
-        };
-        auto load_enemy_anm = [](void* user, u32 slot, const std::string& name) -> bool {
-            auto* self = static_cast<GameSession*>(user);
-            AnmResource* res = nullptr;
-            if (!self->load_anm(name.c_str(), res) || res == nullptr) return false;
-            return self->animations.load(int(slot), *res) != nullptr;
-        };
-        game.enemies.read_user = &archive_;
-        game.enemies.read_fn = read_ecl;
-        game.enemies.anm_user = this;
-        game.enemies.anm_fn = load_enemy_anm;
-        game.enemies.bullets = game.bullets.get();
-        game.enemies.items = game.items.get();
-        game.enemies.effects = &effects;
-        game.enemies.spellcard = &spellcard;
-        game.player.spellcard = &spellcard;
-        if (!game.enemies.create(game.entry->ecl_name, globals, game.player_live ? &game.player : nullptr,
-                                 animations.visual_rng, animations, u8(1u << (globals.difficulty & 31)))) {
-            failure = game.enemies.error;
-            return false;
-        }
-        game.enemies_live = true;
-        game.player.enemies = &game.enemies;
-        game.player.items = game.items.get();
-        game.player.effects = &effects;
-        game.player.bullet_manager = game.bullets.get();
-        game.player.global_game_speed = &supervisor.game_speed;
-        game.enemies.global_game_speed = &supervisor.game_speed;
+    auto read_ecl = [](void* user, const std::string& name, std::vector<u8>& data) -> bool {
+        return static_cast<Archive*>(user)->read(name.c_str(), data);
+    };
+    auto load_enemy_anm = [](void* user, u32 slot, const std::string& name) -> bool {
+        auto* self = static_cast<GameSession*>(user);
+        AnmResource* res = nullptr;
+        if (!self->load_anm(name.c_str(), res) || res == nullptr) return false;
+        return self->animations.load(int(slot), *res) != nullptr;
+    };
+    game.enemies.read_user = &archive_;
+    game.enemies.read_fn = read_ecl;
+    game.enemies.anm_user = this;
+    game.enemies.anm_fn = load_enemy_anm;
+    game.enemies.bullets = game.bullets.get();
+    game.enemies.items = game.items.get();
+    game.enemies.effects = &effects;
+    game.enemies.spellcard = &spellcard;
+    game.player.spellcard = &spellcard;
+    if (!game.enemies.create(game.entry->ecl_name, globals, game.player_live ? &game.player : nullptr,
+                             animations.visual_rng, animations, u8(1u << (globals.difficulty & 31)))) {
+        failure = game.enemies.error;
+        return false;
+    }
+    game.enemies_live = true;
+    game.player.enemies = &game.enemies;
+    game.player.items = game.items.get();
+    game.player.effects = &effects;
+    game.player.bullet_manager = game.bullets.get();
+    game.player.global_game_speed = &supervisor.game_speed;
+    game.enemies.global_game_speed = &supervisor.game_speed;
+    game.enemies.gui = &game.gui;
+    game.enemies.world = &game.world;
+    if (enemy_update_chain_ == nullptr) {
         enemy_update_chain_ = chains.create([this]() -> ChainResult {
-            if (game.enemies_live) {
+            if (game.enemies_live && !game.chains_suspended) {
                 game.enemies.sfx_queue.clear();
                 game.enemies.shake_requests.clear();
                 if (game.bullets_live) {
@@ -387,17 +338,139 @@ bool GameSession::enter_game() {
             return ChainResult::Continue;
         }, 0x1a, true);
     }
+    return true;
+}
+
+bool GameSession::load_gui_stage_assets(AnmFile*& logo, std::vector<u8>& msg_bytes) {
+    // 0x426c10：关卡 logo ANM → 槽 6（0x46d020：槽已占用时沿用）、按机体的 msg 文件
+    logo = animations.file(Gui::kLogoSlot);
+    if (logo == nullptr) {
+        AnmResource* logo_res = nullptr;
+        if (!load_anm(game.entry->logo_anm, logo_res)) return false;
+        logo = animations.load(Gui::kLogoSlot, *logo_res);
+        if (logo == nullptr) { failure = "stage logo anm load failed"; return false; }
+    }
+    const char* msg_name = game.entry->msg_names[(globals.shot + globals.shot_aux) & 3];
+    if (!archive_.read(msg_name, msg_bytes)) { failure = archive_.error; return false; }
+    return true;
+}
+
+void GameSession::bind_spellcard() {
+    // 0x4178a0 / 0x417700：Spellcard（ECL 之后、Bomb 之后创建）；更新链 0x1e（0x417ee0 → 0x417930）、绘制链 0xc
+    spellcard.reset();
+    spellcard.animations = &animations;
+    spellcard.enemies = &game.enemies;
+    spellcard.player = game.player_live ? &game.player : nullptr;
+    spellcard.globals = &globals;
+    spellcard.stage = game.stage.get();
+    spellcard.entry = game.entry;
+    game.gui.spellcard_flags = &spellcard.flags;
+    if (spellcard_update_chain_ == nullptr) {
+        spellcard_update_chain_ = chains.create([this]() -> ChainResult {
+            if (game.chains_suspended) return ChainResult::Continue;
+            spellcard.update(supervisor.game_speed);
+            sfx_events.insert(sfx_events.end(), spellcard.sfx_queue.begin(), spellcard.sfx_queue.end());
+            spellcard.sfx_queue.clear();
+            gui_events.insert(gui_events.end(), spellcard.gui_events.begin(), spellcard.gui_events.end());
+            spellcard.gui_events.clear();
+            spellcard.gui_timer_events.clear();  // Gui+0x94 / +0x98 计时 VM 中断：Gui 接入时补
+            return ChainResult::Continue;
+        }, 0x1e, true);
+    }
+}
+
+void GameSession::register_game_chains() {
+    // 0x42cb60 末：GameManager 更新链（优先级 0xf）；ScreenEffect / 上一关析构回调
+    game_update_chain_ = chains.create([this]() -> ChainResult {
+        return game.update(animations, globals, supervisor.game_speed) ? ChainResult::Continue : ChainResult::BreakExit;
+    }, 0xf, true);
+    game.on_screen_fade = [this](i32 kind, i32 duration, u32 color) { create_screen_fade(kind, duration, color); };
+    game.on_previous_stage_destroyed = [this](StageManager& stage) {
+        if (previous_stage_update_chain_) { chains.remove(previous_stage_update_chain_); previous_stage_update_chain_ = nullptr; }
+        unload_stage_anm(stage);
+    };
+}
+
+bool GameSession::enter_game() {
+    // 0x42d700：flags |= 4、模式参数；0x42cb60 装载线程（此处同步）
+    game = GameManager{};
+    game.flags = GameManager::kLoading;
+    game.mode = 0;
+    game.entry = &stage_entry(globals.stage);
+    game_input = InputState{};
+    // 0x42cb60 → 0x449e50 → 0x449030（Replay 构造）：重置 DAT_004a6d8c 调用计数
+    animations.visual_rng.calls = 0;
+
+    // 0x42cb60：新游戏（DAT_004c17d0，0x43ce10 case 7 置位）先建 Player，再建 Gui / Stage / …
+    if (!create_player()) return false;
+    if (!create_stage()) return false;
+
+    // 0x411dd0：BulletManager（bullet.anm 槽 7、effect.anm 槽 8）；更新链 0x1c（0x411880）、绘制链 0x25（0x411a30）
+    {
+        AnmFile* bullet_anm = animations.file(BulletManager::kBulletAnmSlot);
+        if (bullet_anm == nullptr) { failure = "bullet.anm not loaded"; return false; }
+        game.bullets = std::make_unique<BulletManager>();
+        game.bullets->create(animations, *bullet_anm, animations.file(8), globals,
+                             game.player_live ? &game.player : nullptr, &game.world, animations.visual_rng);
+        game.bullets_live = true;
+        bullet_update_chain_ = chains.create([this]() -> ChainResult {
+            // 0x411880：GameManager 装载中（bit2）或结束位（bit0 经 >>2 映射）时跳过
+            if (game.bullets_live && !game.chains_suspended && ((game.flags | (game.flags >> 2)) & 1u) == 0) {
+                game.bullets->sfx_queue.clear();
+                game.bullets->update(supervisor.game_speed, (game.flags & 0x400u) != 0);
+                sfx_events.insert(sfx_events.end(), game.bullets->sfx_queue.begin(), game.bullets->sfx_queue.end());
+                game.bullets->sfx_queue.clear();
+                // 被弹（0x443f10）在弹幕链内登记的自机音效本帧即生效
+                if (game.player_live) harvest_player_sfx();
+            }
+            return ChainResult::Continue;
+        }, 0x1c, true);
+        bullet_draw_chain_ = chains.create([this]() -> ChainResult {
+            if (game.bullets_live && !game.chains_suspended && (game.flags & GameManager::kLoading) == 0) game.bullets->prepare_draw();
+            return ChainResult::Continue;
+        }, 0x25, false);
+    }
+
+    // 0x42f440：ItemManager；更新链 0x1d（0x4308f0 → 0x42f4e0）、绘制链 0x21 / 0x13（0x4307a0）
+    {
+        game.items = std::make_unique<ItemManager>();
+        game.items->create(animations, animations.file(BulletManager::kBulletAnmSlot), animations.file(8), globals,
+                           game.player_live ? &game.player : nullptr, animations.game_rng);
+        game.items_live = true;
+        game.bullets->items = game.items.get();
+        item_update_chain_ = chains.create([this]() -> ChainResult {
+            // 0x4308f0：GameManager 装载中（bit2）/ 结束位（bit0 经 >>2 映射）/ 0x400 冻结时跳过
+            if (game.items_live && !game.chains_suspended && ((game.flags | (game.flags >> 2)) & 1u) == 0 &&
+                (game.flags & 0x400u) == 0) {
+                game.items->dialogue = game.world.dialogue;
+                game.items->focus_held = (game_input.held & 0x8u) != 0;
+                game.items->update(supervisor.game_speed);
+                sfx_events.insert(sfx_events.end(), game.items->sfx_queue.begin(), game.items->sfx_queue.end());
+                game.items->sfx_queue.clear();
+                // 0x44a460 弹出数字 / 0x42bcf0 Gui 通知：Ascii / Gui 接入前无状态影响
+                game.items->popups.clear();
+                game.items->gui_events.clear();
+            }
+            return ChainResult::Continue;
+        }, 0x1d, true);
+        item_draw_chain_ = chains.create([this]() -> ChainResult {
+            if (game.items_live && !game.chains_suspended && (game.flags & GameManager::kLoading) == 0) game.items->prepare_draw(false);
+            return ChainResult::Continue;
+        }, 0x21, false);
+        item_draw_season_chain_ = chains.create([this]() -> ChainResult {
+            if (game.items_live && !game.chains_suspended && (game.flags & GameManager::kLoading) == 0) game.items->prepare_draw(true);
+            return ChainResult::Continue;
+        }, 0x13, false);
+    }
+
+    if (!create_enemies()) return false;
 
     // 0x427ca0 / 0x426b00 / 0x426c10：Gui——front.anm（槽 5）、关卡 logo ANM → 槽 6、按机体的 msg 文件；
     // 更新链 0x20（0x429af0 → 0x427cf0）。原版在 Bullet 之前创建，这里放到 ECL 之后以便直接绑定各管理器指针
     {
-        AnmResource* logo_res = nullptr;
-        if (!load_anm(game.entry->logo_anm, logo_res)) return false;
-        AnmFile* logo = animations.load(Gui::kLogoSlot, *logo_res);
-        if (logo == nullptr) { failure = "stage logo anm load failed"; return false; }
+        AnmFile* logo = nullptr;
         std::vector<u8> msg_bytes;
-        const char* msg_name = game.entry->msg_names[(globals.shot + globals.shot_aux) & 3];
-        if (!archive_.read(msg_name, msg_bytes)) { failure = archive_.error; return false; }
+        if (!load_gui_stage_assets(logo, msg_bytes)) return false;
         game.gui.enemies = &game.enemies;
         game.gui.bullets = game.bullets.get();
         game.gui.player = game.player_live ? &game.player : nullptr;
@@ -412,8 +485,6 @@ bool GameSession::enter_game() {
             return false;
         }
         game.gui_live = true;
-        game.enemies.gui = &game.gui;
-        game.enemies.world = &game.world;
         gui_update_chain_ = chains.create([this]() -> ChainResult {
             if (game.gui_live) {
                 game.gui.update(supervisor.game_speed);
@@ -431,33 +502,9 @@ bool GameSession::enter_game() {
         chains.enable(gui_update_chain_);
     }
 
-    // 0x4178a0 / 0x417700：Spellcard（ECL 之后、Bomb 之后创建）；更新链 0x1e（0x417ee0 → 0x417930）、绘制链 0xc
-    spellcard.reset();
-    spellcard.animations = &animations;
-    spellcard.enemies = &game.enemies;
-    spellcard.player = game.player_live ? &game.player : nullptr;
-    spellcard.globals = &globals;
-    spellcard.stage = &game.stage;
-    spellcard.entry = game.entry;
-    spellcard_update_chain_ = chains.create([this]() -> ChainResult {
-        spellcard.update(supervisor.game_speed);
-        sfx_events.insert(sfx_events.end(), spellcard.sfx_queue.begin(), spellcard.sfx_queue.end());
-        spellcard.sfx_queue.clear();
-        gui_events.insert(gui_events.end(), spellcard.gui_events.begin(), spellcard.gui_events.end());
-        spellcard.gui_events.clear();
-        spellcard.gui_timer_events.clear();  // Gui+0x94 / +0x98 计时 VM 中断：Gui 接入时补
-        return ChainResult::Continue;
-    }, 0x1e, true);
+    bind_spellcard();
     chains.enable(spellcard_update_chain_);
-
-    // 0x4097c0：关卡更新链（优先级 0x11）；0x42cb60：GameManager 更新链（优先级 0xf）
-    stage_update_chain_ = chains.create([this]() -> ChainResult {
-        game.stage.update(animations, supervisor.game_speed);
-        return ChainResult::Continue;
-    }, 0x11, true);
-    game_update_chain_ = chains.create([this]() -> ChainResult {
-        return game.update(animations, globals, supervisor.game_speed) ? ChainResult::Continue : ChainResult::BreakExit;
-    }, 0xf, true);
+    register_game_chains();
     // 0x42cb60 末：+0x90 = 0x3c、清 flags&4、0x418420 启用链
     game.transition_length = 0x3c;
     game.flags &= ~GameManager::kLoading;
@@ -471,6 +518,90 @@ bool GameSession::enter_game() {
     if (item_draw_season_chain_) chains.enable(item_draw_season_chain_);
     if (enemy_update_chain_) chains.enable(enemy_update_chain_);
     game_live = true;
+    return true;
+}
+
+bool GameSession::next_stage() {
+    // 0x43ce10 case 0xc：DAT_004c17d0（新开局）= 0；当前场景 7 → 0x42d780 销毁；请求改回 7；0x42d700(模式) 重建
+    // ---- 0x42d780 → 0x42d200（DAT_004a5bec bit1 路径）----
+    // 0x449a00 成绩文件写盘：ScoreFile 接入时补
+    globals.flags &= ~3u;
+    supervisor.game_speed = 1.0f;
+    // 0x41a390：AsciiManager "Loading" VM（ascii.anm 0x11，层 -1；原版位置取自未初始化的 XMM 寄存器，逻辑上无影响）
+    if (game.loading_vm == 0) {
+        if (AnmFile* ascii = animations.file(AnmManager::kAsciiSlot))
+            game.loading_vm = animations.spawn_effect(*ascii, 0x11, -1, Vec3{}, 0.0f);
+    }
+    globals.flags |= 2u;
+    // 0x427970：Gui 删 Msg、释放 msg；(bec & 9) == 0 → 卸 logo 槽 6
+    if (game.gui_live) {
+        game.gui.end_stage();
+        if ((globals.flags & 9u) == 0) {
+            animations.kill_file(Gui::kLogoSlot);
+            animations.unload(Gui::kLogoSlot);
+        }
+    }
+    // 上一关若仍存活（连续两次换关）先析构；当前关转入 DAT_004a6d9c，链 0x11 继续运行
+    if (game.previous_stage) {
+        if (previous_stage_update_chain_) { chains.remove(previous_stage_update_chain_); previous_stage_update_chain_ = nullptr; }
+        unload_stage_anm(*game.previous_stage);
+        game.previous_stage.reset();
+    }
+    game.previous_stage = std::move(game.stage);
+    previous_stage_update_chain_ = stage_update_chain_;
+    stage_update_chain_ = nullptr;
+    if (previous_stage_update_chain_) {
+        previous_stage_update_chain_->callback = [this]() -> ChainResult {
+            if (game.previous_stage) game.previous_stage->update(animations, supervisor.game_speed);
+            return ChainResult::Continue;
+        };
+    }
+    // 暂停 / Bullet / Replay 链禁用（0x42dee0 再启用）；0x4184a0 Item 复位
+    game.chains_suspended = true;
+    if (game.items_live) game.items->reset();
+    // (bec & 9) == 0：0x41b1a0 EnemyManager 析构（ECL ANIM 槽卸载）、0x46f270 标删 effect.anm / bullet.anm 全部 VM、
+    // 0x40da90 Bomb 析构（Bomb 接入时补）、0x417790 Spellcard 析构
+    if ((globals.flags & 9u) == 0) {
+        if (game.enemies_live) { game.enemies.destroy(); game.enemies_live = false; }
+        animations.kill_file(8);
+        animations.kill_file(BulletManager::kBulletAnmSlot);
+        spellcard.destroy();
+    }
+    if (game_update_chain_) { chains.remove(game_update_chain_); game_update_chain_ = nullptr; }
+    // 0x42e4d0 声音循环 / DAT_004c1b0c：Sound 接入时补
+    globals.post_load_frames = 1;
+
+    // ---- 0x42d700 + 0x42cb60（DAT_004c17d0 == 0）----
+    game.flags = GameManager::kLoading;
+    game.timer = Timer{};
+    game.transition_frame = 0;
+    game.transition_length = 0;
+    game.end_counter = 0;
+    game.entry = &stage_entry(globals.stage);
+    game.world = PlayerWorld{};
+    globals.game_frame = 0;
+    globals.stage_frame = 0;
+    if (globals.hiscore < globals.score) globals.hiscore = globals.score;
+    // 0x449030（Replay 关卡段）：game_rng 种子 := visual_rng 种子低 16 位；视觉 RNG 调用计数清零
+    animations.game_rng.seed = animations.visual_rng.seed & 0xffffu;
+    animations.visual_rng.calls = 0;
+    {
+        AnmFile* logo = nullptr;
+        std::vector<u8> msg_bytes;
+        if (!load_gui_stage_assets(logo, msg_bytes)) return false;
+        if (!game.gui.stage_init(logo, *game.entry, std::move(msg_bytes))) { failure = game.gui.error; return false; }
+    }
+    if (!create_stage()) return false;
+    if ((globals.flags & 9u) == 0 && !create_enemies()) return false;
+    bind_spellcard();
+    register_game_chains();
+    game.transition_length = 0x3c;
+    game.flags &= ~GameManager::kLoading;
+    globals.flags &= ~0xbu;
+    globals.post_load_frames = 0;
+    game.timer.set(0);
+    chains.enable(game_update_chain_);
+    chains.enable(stage_update_chain_);
     return true;
 }
 
@@ -494,10 +625,34 @@ void GameSession::create_screen_shake(const EnemyManager::ShakeRequest& request)
     chains.enable(entry);
 }
 
+// 0x45d150(kind ∈ {0,2,3,5}, duration, color) + 0x45d1a0：更新链 0x13（0x45c900）、绘制链 0x54（0x45c990）
+void GameSession::create_screen_fade(i32 kind, i32 duration, u32 color) {
+    auto fade = std::make_shared<ScreenFade>();
+    fade->kind = kind;
+    fade->duration = duration;
+    fade->color = color;
+    fade->timer.reset();
+    screen_fades.push_back(fade);
+    ChainEntry* entry = chains.create([this, fade]() -> ChainResult {
+        const bool frozen = ((game.flags | (game.flags >> 2)) & 1u) != 0;
+        return screen_fade_step(*fade, globals.post_load_frames, frozen, supervisor.game_speed)
+                   ? ChainResult::Continue
+                   : ChainResult::Destroy;
+    }, 0x13, true);
+    entry->on_destroy = [this, entry, fade]() {
+        fade_chains_.erase(std::remove(fade_chains_.begin(), fade_chains_.end(), entry), fade_chains_.end());
+        screen_fades.erase(std::remove(screen_fades.begin(), screen_fades.end(), fade), screen_fades.end());
+        chains.remove(entry);
+    };
+    fade_chains_.push_back(entry);
+    chains.enable(entry);
+}
+
 void GameSession::leave_game() {
     // 0x42d200：摘链、释放管理器；关卡背景 ANM 槽回收
     if (game_update_chain_) { chains.remove(game_update_chain_); game_update_chain_ = nullptr; }
     if (stage_update_chain_) { chains.remove(stage_update_chain_); stage_update_chain_ = nullptr; }
+    if (previous_stage_update_chain_) { chains.remove(previous_stage_update_chain_); previous_stage_update_chain_ = nullptr; }
     if (enemy_update_chain_) { chains.remove(enemy_update_chain_); enemy_update_chain_ = nullptr; }
     if (bullet_update_chain_) { chains.remove(bullet_update_chain_); bullet_update_chain_ = nullptr; }
     if (bullet_draw_chain_) { chains.remove(bullet_draw_chain_); bullet_draw_chain_ = nullptr; }
@@ -516,16 +671,21 @@ void GameSession::leave_game() {
     for (ChainEntry* shake : shake_chains_) chains.remove(shake);
     shake_chains_.clear();
     screen_shake = ScreenShakeOffset{};
+    for (ChainEntry* fade : fade_chains_) chains.remove(fade);
+    fade_chains_.clear();
+    screen_fades.clear();
     animations.camera_pos = animations.camera_pos_offset = animations.camera_facing_norm = nullptr;
     if (replay_record_chain_) { chains.remove(replay_record_chain_); replay_record_chain_ = nullptr; }
     if (player_update_chain_) { chains.remove(player_update_chain_); player_update_chain_ = nullptr; }
     if (player_draw_chain_) { chains.remove(player_draw_chain_); player_draw_chain_ = nullptr; }
-    if (game.stage_live) {
-        const int slot = 3 + (game.stage.stage_number & 1);
+    for (StageManager* stage : {game.stage.get(), game.previous_stage.get()}) {
+        if (stage == nullptr) continue;
+        const int slot = 3 + (stage->stage_number & 1);
         animations.kill_file(slot);
         animations.tick_world();
         animations.unload(slot);
     }
+    stage_camera = StageCamera{};
     if (game.player_live) {
         // 0x441a50 析构：pl0N.anm / pl0Nsub.anm 的 VM 全部标删（0x46f270）并释放槽 9 / 0x1e
         animations.kill_file(9);
@@ -550,13 +710,24 @@ bool GameSession::logic_step() {
     player_sfx_events.clear();
     gui_events.clear();
 
+    // 游戏中登记的 DAT_004c17c4（过关 0x42e150 → 0xc、装载失败 → 2）在下一帧主循环 0x43ce10 处被消费
+    if (game_live && globals.scene_request >= 0) {
+        supervisor.request(SceneId(globals.scene_request));
+        globals.scene_request = -1;
+    }
     SceneId leave = SceneId::Invalid, enter = SceneId::Invalid;
     if (supervisor.consume_switch(leave, enter)) {
         if (leave == SceneId::Title) leave_title();
         if (enter == SceneId::Title && !enter_title_assets()) return false;
-        if (leave == SceneId::Game) leave_game();
-        if (enter == SceneId::Quit) quit_requested = true;
-        if (enter == SceneId::Game && !enter_game()) return false;
+        if (enter == SceneId::NextStage) {
+            // 0x43ce10 case 0xc：GameManager 销毁 / 重建后场景仍为 7
+            if (!next_stage()) return false;
+            supervisor.current = supervisor.requested = SceneId::Game;
+        } else {
+            if (leave == SceneId::Game) leave_game();
+            if (enter == SceneId::Quit) quit_requested = true;
+            if (enter == SceneId::Game && !enter_game()) return false;
+        }
     }
 
     // 启动幕：绘制链推进 boot_frames；标题线程等待条件（0x44abea / 0x44ac00）
@@ -568,6 +739,11 @@ bool GameSession::logic_step() {
     }
 
     chains.run_update();
+    // 0x40a410（绘制链 6）尾部的结束计时倒数影响逻辑状态，不跑绘制链时也要执行：上一关（先登记）在前
+    if (game_live) {
+        if (game.previous_stage) game.previous_stage->end_timer_step(supervisor.game_speed);
+        if (game.stage) game.stage->end_timer_step(supervisor.game_speed);
+    }
     animations.game_speed = supervisor.game_speed;
     animations.tick_world();
     return failure.empty();

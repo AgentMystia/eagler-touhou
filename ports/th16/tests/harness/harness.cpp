@@ -995,9 +995,9 @@ int main(int argc, char** argv) {
                         q.layer, q.script, q.id, q.x0, q.y0, q.x1, q.y3, q.color0,
                         q.z[0], q.z[1], q.z[2], q.z[3], q.rhw[0], q.depth_write ? 1 : 0, q.file_slot);
         }
-        if (session.game_live) {
+        if (session.game_live && session.game.stage) {
             // 场景 7：GameManager / StageManager 状态与关卡背景绘制（0x409f90）
-            StageManager& st = session.game.stage;
+            StageManager& st = *session.game.stage;
             const StageCamera& c = st.camera;
             StagePass pass;
             if (!renderer.emit_stage(session.animations, st, pass)) return fail(renderer.error.c_str());
