@@ -119,10 +119,8 @@ public:
 
     Timer timer;                 // +0x0c
     Timer timer2;                // +0x20
-    MenuCursor cursor;           // +0x34
+    MenuCursor cursor;           // +0x34（+0x104 = cursor.wrap，菜单打开时置 1；+0x108 = cursor.disabled_count，切模式时清零）
     i32 cursor_previous = 0;     // +0x38
-    i32 menu_shown = 0;          // +0x104
-    i32 field_108 = 0;           // +0x108（切模式时清零；th16 未见其它写入）
     MenuCursor name_cursor;      // +0x10c
     i32 name_cursor_previous = 0;// +0x110
     i32 name_entry_active = 0;   // +0x1dc
