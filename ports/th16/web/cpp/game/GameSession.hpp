@@ -20,6 +20,7 @@
 #include "TitleScene.hpp"
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -69,7 +70,7 @@ public:
 
 private:
     Archive archive_;
-    std::vector<AnmResource> resources_;
+    std::vector<std::unique_ptr<AnmResource>> resources_;  // 地址稳定：AnmManager 持有 resource 指针；逐关累加不设上限
     std::vector<std::string> resource_names_;
     ChainEntry* boot_draw_chain_ = nullptr;
     ChainEntry* effect_update_chain_ = nullptr;

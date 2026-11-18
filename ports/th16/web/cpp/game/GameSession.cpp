@@ -14,7 +14,7 @@ bool GameSession::open(const u8* bytes, u32 size) {
 
 AnmResource* GameSession::resource(const char* name) {
     for (size_t i = 0; i < resource_names_.size(); ++i)
-        if (resource_names_[i] == name) return &resources_[i];
+        if (resource_names_[i] == name) return resources_[i].get();
     return nullptr;
 }
 
@@ -22,11 +22,9 @@ bool GameSession::load_anm(const char* name, AnmResource*& out) {
     if (AnmResource* existing = resource(name)) { out = existing; return true; }
     std::vector<u8> bytes;
     if (!archive_.read(name, bytes)) { failure = archive_.error; return false; }
-    resources_.reserve(16);  // 地址稳定：AnmManager 持有 resource 指针
-    if (resources_.size() >= 16) { failure = "resource table full"; return false; }
-    resources_.emplace_back();
+    resources_.push_back(std::make_unique<AnmResource>());
     resource_names_.emplace_back(name);
-    AnmResource& res = resources_.back();
+    AnmResource& res = *resources_.back();
     if (!res.parse(bytes.data(), u32(bytes.size()), name)) { failure = std::string(name) + ": " + res.error; return false; }
     for (u32 i = 0; i < res.entries.size(); ++i) {
         const auto& e = res.entries[i];

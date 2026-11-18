@@ -244,6 +244,8 @@ public:
     // ECL 517 → 0x45d150(1, duration, from, to)：宿主在敌机链之后登记为链 0x13 的 ScreenShake（下一帧起生效）
     struct ShakeRequest { i32 duration; i32 amp_from; i32 amp_to; };
     std::vector<ShakeRequest> shake_requests;
+    // 0x41c890 执行到尚未还原的 ECL 操作码时记录（去重）；harness game-digest 末尾打印，用于按关卡清点缺口
+    std::vector<i32> unknown_ops;
     float* global_game_speed = nullptr;  // DAT_004a5788（ECL 547 写入）
     BulletManager* bullets = nullptr;  // DAT_004a6dac（GameSession 在 BulletManager 创建后绑定）
     ItemManager* items = nullptr;      // DAT_004a6ddc（同上；道具掉落 0x41a720 / 0x41d700 / op 1001 直接生成）
