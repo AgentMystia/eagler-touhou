@@ -51,23 +51,66 @@ std::string Gui::decrypt_text(const u8* src) {
 }
 
 bool Gui::init(AnmManager& anm, AnmFile* front_anm, AnmFile* logo_anm, const StageEntry& stage, std::vector<u8> msg_bytes) {
+    // 0x427ca0：对象整块清零后绑定 front.anm
     animations = &anm;
     front = front_anm;
+    dialogue.reset();
+    boss_name_vm = vm_110 = boss_title_vm = clear_bonus_vm = 0;
+    clear_bonus = 0;
+    flags_1ac = 0;
+    clear_timer = Timer{};
+    displayed_score = score_step = 0;
+    return stage_init(logo_anm, stage, std::move(msg_bytes));
+}
+
+bool Gui::stage_init(AnmFile* logo_anm, const StageEntry& stage, std::vector<u8> msg_bytes) {
+    // 0x426c10
     logo = logo_anm;
     entry = &stage;
     msg_data = std::move(msg_bytes);
-    dialogue.reset();
-    boss_name_vm = vm_110 = boss_title_vm = 0;
-    flags_1ac = 0;
-    timer_154 = Timer{};
-    timer_154.reset();
-    boss_timer_display = boss_timer_shown = -1;
     if (msg_data.size() < 4) { error = "msg file too short"; return false; }
     u32 count;
     std::memcpy(&count, msg_data.data(), 4);
     if (4 + size_t(count) * 8 > msg_data.size()) { error = "msg entry table out of range"; return false; }
+    timer_154 = Timer{};
+    timer_154.reset();
+    displayed_score = globals != nullptr ? globals->score : 0;
+    boss_timer_display = boss_timer_shown = -1;
     sync_world();
     return true;
+}
+
+void Gui::end_stage() {
+    // 0x427970：Msg 删除（0x4264a0）、msg 文件释放；logo 槽 6 的卸载（0x46d770）由 GameSession 做
+    destroy_dialogue();
+    logo = nullptr;
+    msg_data.clear();
+}
+
+void Gui::clear_stage_bonus() {
+    // 0x42c1b0（+0x124 为 6 / Extra 面残机奖励 VM，结局流程接入时补）
+    if (animations != nullptr) animations->interrupt(clear_bonus_vm, 1);
+    flags_1ac &= ~0x100u;
+    clear_timer.reset();
+}
+
+void Gui::roll_score() {
+    // 0x42bc10：显示分每帧按 (差值 >> 5)（1..0x8d55e）逼近实际分；越过最高分时记录并置 DAT_004a5bec bit2
+    if (globals == nullptr) return;
+    const i32 score = globals->score;
+    if (score != displayed_score) {
+        u32 step = u32(score - displayed_score) >> 5;
+        if (step < 0x8d55eu) { if (step == 0) step = 1; } else step = 0x8d55eu;
+        if (score_step < i32(step)) score_step = i32(step);
+        if (score - displayed_score < score_step) score_step = score - displayed_score;
+        displayed_score = displayed_score + score_step;
+        if (score <= displayed_score) score_step = 0;
+    }
+    if (globals->hiscore < displayed_score) {
+        globals->hiscore_continues = globals->continues;
+        globals->flags |= 0x4u;
+        globals->hiscore = displayed_score;
+    }
 }
 
 void Gui::sync_world() noexcept {
@@ -267,6 +310,11 @@ void Gui::clear_text_vms(Msg& m) {
 
 // 0x427cf0（Msg 部分）
 void Gui::update(float game_speed) {
+    // 0x427cf0 开头：过关奖励显示中 +0x1b0 计时（速度槽强制 0 → 游戏速度）推进
+    if ((flags_1ac & 0x100u) != 0) {
+        clear_timer.speed_slot = 0;
+        clear_timer.tick(game_speed);
+    }
     if (!dialogue) return;
     if (!run_dialogue(game_speed)) {
         Msg& m = *dialogue;
