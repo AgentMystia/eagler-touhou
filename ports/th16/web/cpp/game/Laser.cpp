@@ -264,10 +264,10 @@ i32 LaserManager::spawn_beam(const BeamLaserArgs& args) {
     return l->id;
 }
 
-// 0x413860 Ex 0x8000000：弹幕在自身位置派生激光（a==0 直线 / a==1 照射）；参数取本步与下一步
-void LaserManager::consume_bullet_requests() {
-    if (bullets == nullptr) return;
-    for (const BulletLaserRequest& req : bullets->laser_requests) {
+// 0x413860 Ex 0x8000000：弹幕在自身位置派生激光（a==0 直线 / a==1 照射）；参数取本步与下一步。
+// 在弹幕更新内即时调用：生成音效先于该弹随后的消弹音效，新激光挂到链尾、下一帧起推进
+void LaserManager::spawn_from_bullet(const BulletLaserRequest& req) {
+    {
         const BulletExStep& st = req.step;
         const BulletExStep& next = req.next;
         if (req.kind == 0) {
@@ -312,7 +312,6 @@ void LaserManager::consume_bullet_requests() {
             spawn_infinite(args);
         }
     }
-    bullets->laser_requests.clear();
 }
 
 // =============================================================================================
