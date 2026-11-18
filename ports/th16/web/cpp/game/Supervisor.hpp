@@ -24,6 +24,13 @@ enum class SceneId : i32 {
     Title = 4,    // DAT_004c17c4 = 4（0x43b290）
     Game = 7,     // 0x450af0 / 0x450ef0 case 3：DAT_004c17c4 = 7
     NextStage = 0xc,  // 0x42e150 过关：DAT_004c17c4 = 0xc → 0x43ce10 case 0xc 销毁 / 重建 GameManager 后 current 回到 7
+    Restart = 0xa,        // GameMenu “重新开始”（通常模式）：0x42d780 销毁后以 stage_copy 重建（新开局）
+    RestartPractice = 0xb,    // GameMenu “重新开始”（练习）：同上，0x42d700(1)
+    PracticeFromTitle = 0xd,  // 标题进练习：0x42d700(1)
+    RestartExtra = 0xe,       // Extra 续关 / 重开：同 Restart
+    Ending = 0xf,         // 第 6 面通关倒计时结束：0x419640 结局
+    ExtraEnding = 0x10,   // Extra 通关：直接回标题（DAT_004a6f1c = 3）
+    RestartSpellPractice = 0x13,  // 符卡练习重开：DAT_004c17d4 = 1
 };
 
 class Supervisor {

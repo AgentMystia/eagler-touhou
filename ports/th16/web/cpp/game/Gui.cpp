@@ -1,4 +1,5 @@
 #include "Gui.hpp"
+#include "ScoreFile.hpp"
 
 #include <cstdlib>
 #include <cstring>
@@ -266,17 +267,37 @@ void Gui::stage_clear() {
     }
     if (player != nullptr && animations != nullptr) player->gather_options(*animations);
     if (bomb != nullptr) bomb->on_stage_clear();   // 灵梦：把尚未引爆的阴阳玉全部引爆
+    const int shot = globals->shot + globals->shot_aux;
     if (mode != 0) {
-        // 练习 / 符卡练习：练习过关位（成绩文件 +0x519c，接入时补）+ 0x43f500 结算菜单
+        // 练习 / 符卡练习：回放中直接回标题；否则记练习解锁位（符卡练习另记 +0x970 最高分，符卡练习接入时补）并进结算菜单
+        if (replay_playback) {
+            if (on_return_to_title) on_return_to_title();
+            return;
+        }
+        if (mode != 2 && scores != nullptr) scores->mark_practice_cleared(shot, globals->difficulty, globals->stage);
         if (on_practice_result) on_practice_result();
         return;
     }
     if (globals->stage == 6 || globals->stage == 7) {
-        // 6 / Extra 面：游戏 flags |= 0x4000（结局 / 结算倒计时 0x42d7b0）、残机 ×5 + 碎片 奖励：结局流程接入时补
-        error = "final stage clear (ending flow) not ported";
+        // 通关：GameManager flags |= 0x4000 后 0x42d7b0 以 +0xb0 倒计时进结局；结算中位 bit4；
+        // 奖励 =（残弹 + 残机 × 5）× 1,000,000，第 6 面只在 Easy..Lunatic 给（Extra 难度 4 走不到第 6 面）
+        flags_1ac |= 0x10u;
+        i32 bonus = 0;
+        if (globals->stage == 7 || globals->difficulty <= 3) bonus = (globals->bombs + globals->lives * 5) * 1000000;
+        if (globals->stage == 6 && on_final_clear) on_final_clear();
+        globals->add_score(bonus);
+        clear_bonus += bonus;
+        if (replay_playback) {
+            if (on_return_to_title) on_return_to_title();
+            if (globals->stage == 6) return;
+        } else if (scores != nullptr) {
+            scores->record_clear(shot, globals->difficulty, globals->continues == 0);
+        }
+        if (globals->stage == 7 && on_final_clear) on_final_clear();
         return;
     }
-    // 成绩文件 +0x519c 过关位（非回放）在 ScoreFile 接入时补；场景请求 0xc：GameManager 重建进入下一关
+    // 练习解锁位（非回放）；场景请求 0xc：GameManager 重建进入下一关
+    if (!replay_playback && scores != nullptr) scores->mark_practice_cleared(shot, globals->difficulty, globals->stage);
     globals->scene_request = 0xc;
     if (globals->stage < 7) globals->stage = globals->stage + 1;
 }

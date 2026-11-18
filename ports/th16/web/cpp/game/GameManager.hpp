@@ -89,6 +89,8 @@ public:
     std::function<void(i32, i32, u32)> on_screen_fade;
     // 0x4099a0 之后：GameSession 卸载上一关背景 ANM 槽
     std::function<void(StageManager&)> on_previous_stage_destroyed;
+    // 0x43f240：回放中通关倒计时结束 → GameMenu 的“回标题”流程
+    std::function<void()> on_return_to_title;
 
     // 0x42dc50 首帧初始化；返回 false 表示装载失败（原版返回 1 → 场景请求 2/3）
     bool first_frame(AnmManager& manager, GameGlobals& globals);

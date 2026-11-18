@@ -159,6 +159,7 @@ public:
     void open_continue();
     void open_practice_result();
     void open_return_to_title();
+    void accumulate_play_time(); // 0x42dbc0：本局游玩时间计入成绩文件（成绩文件接入前仅保留调用点）
     bool is_open() const noexcept { return mode != Closed; }
     // 0x43e4c0：摘链后释放回放槽信息 / 操作说明对象
     void destroy();
@@ -177,7 +178,6 @@ private:
     void enter_replay_slots();   // case 10
     void begin_name_entry();     // case 0xb 确认 / 0x43f7e0 入榜：名字缓冲与光标初值
     void capture_screenshot();   // 0x43ef20
-    void accumulate_play_time(); // 0x42dbc0（成绩文件接入前仅保留调用点）
     void cursor_interrupt(i32 base);            // 0x46f0b0(menu_vm, cursor + base)
     void child_interrupt(i32 script, i32 value);// 0x46f5a0 + 0x46f0b0
     void hide_menu();            // 0x46f340

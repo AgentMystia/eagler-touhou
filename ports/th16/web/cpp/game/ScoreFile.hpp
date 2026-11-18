@@ -36,6 +36,8 @@ struct ScoreFile {
 
     ScoreEntry ranks[kShots][kDifficulties][kRanks];
     PracticeRecord practice[kShots][kPracticeSlots];
+    u32 clears[kShots][kDifficulties] = {};          // +0x5168：各难度通关次数（上限 99999）
+    u32 no_continue_clears[kShots][kDifficulties] = {};  // +0x5184：未续关通关次数
     char last_name[9];                       // +0x19f8c
 
     ScoreFile() {
@@ -68,6 +70,14 @@ struct ScoreFile {
         }
         return -1;
     }
+
+    // 0x42e150 第 6 面 / Extra 通关（非回放）：通关次数 +1，未续关再 +1
+    void record_clear(int shot, int difficulty, bool no_continue) {
+        if (clears[shot][difficulty] < 99999) ++clears[shot][difficulty];
+        if (no_continue && no_continue_clears[shot][difficulty] < 99999) ++no_continue_clears[shot][difficulty];
+    }
+    // 0x42e150 过关（非回放、非符卡练习）：练习选关解锁位 +0x519c
+    void mark_practice_cleared(int shot, int difficulty, int stage) { practice[shot][difficulty * 8 + stage].cleared = 1; }
 
     // 0x43f7e0 练习分支：练习最高分只升不降
     void update_practice(int shot, int difficulty, int stage, u32 score) {
