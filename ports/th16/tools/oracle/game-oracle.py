@@ -94,6 +94,7 @@ class GameOracle(Oracle):
         self.enemy_snap = False  # --enemies：每帧敌人快照（不进 digest，Enemy 移植阶段的对照）
         self.bullet_snap = False # --bullets：每帧敌弹快照（BulletManager 链表）
         self.item_snap = False   # --items：每帧道具快照（ItemManager 池）与得分/残机等资源全局
+        self.laser_snap = False  # --lasers：每帧激光快照（LaserManager 链表）
         self.ecl_trace = None
         self.frame = -1  # 装载阶段（GAME_LOAD 之前）的 RNG 调用记为 -1 帧
         self.run_draw = False   # --draw：也跑绘制链（需 D3DXVec3ProjectArray 等桩，待渲染/裁剪阶段接入）
@@ -334,6 +335,26 @@ class GameOracle(Oracle):
         # CMP byte ptr [0x4c10b6], 0
         self.splice_hook(0x402B70, bytes.fromhex('803db6104c0000'), make(1))
         self.splice_hook(0x402BE0, bytes.fromhex('803db6104c0000'), make(2))
+
+    def normalize_laser_graze_z(self):
+        """激光自机判定把擦弹点的 z 留在未初始化栈槽上（0x43ad00 极坐标只写 x/y）：0x433510 直线（非全长判定时 z =
+        pos.z + 垃圾）、0x435610 照射（z 槽从未写入）、0x437cf0 曲线（z = 垃圾 + 节点 z）。传给 0x444cf0 的 z 是上层调用
+        残留的堆指针位——与堆布局相关、原版亦不可复现；擦弹得点道具会原样继承该 z（道具逻辑不读 z）。为让道具快照可对拍，
+        在 0x444cf0 入口把这三处的擦弹点 z 归零（直线全长判定 z = pos.z 是确定值，保持不动）；移植端同口径传 0。"""
+        def on_graze(o):
+            uc = self.uc
+            esp = uc.reg_read(UC_X86_REG_ESP)
+            ret = self.u32(esp)
+            if 0x433510 <= ret < 0x433720:
+                laser = uc.reg_read(UC_X86_REG_ESI)
+                if self.u32(laser + 0x608) & 2:
+                    return
+            elif not (0x435610 <= ret < 0x4357A0 or 0x437CF0 <= ret < 0x437EE0):
+                return
+            pos = self.u32(esp + 4)
+            uc.mem_write(pos + 8, struct.pack('<f', 0.0))
+        # PUSH EBP; MOV EBP,ESP; AND ESP,-8
+        self.splice_hook(0x444CF0, bytes.fromhex('558bec83e4f8'), on_graze)
 
     def enable_vm_trace(self):
         """0x407b20（AnmFile::init_vm：按脚本模板初始化 VM）入口：记录每次 VM 生成 (frame, AnmFile this, 脚本号, 返回地址)。"""
@@ -807,6 +828,40 @@ class GameOracle(Oracle):
             node = self.u32(node + 4)
         return out
 
+    LASER_VTABLES = {0x492424: 0, 0x4923B8: 1, 0x4922E0: 2, 0x49234C: 3}  # Line / Infinite / Curve / Beam
+
+    def laser_snapshot(self):
+        """LaserManager（DAT_004a6ee0，0x610 字节）：+0x14 链首（激光自身即结点：+4 prev / +8 next），+0x5e4 计数，
+        +0x5e8 句柄计数器。激光公共区：+0xc 生命周期位、+0x10 状态、+0x18/+0x2c/+0x40 三计时器、+0x54 起点、+0x60 速度向量、
+        +0x6c 角度、+0x70 长度、+0x74 宽度、+0x78 速率、+0x7c 起点已越过距离、+0x80 句柄、+0x594 Ex 下标、+0x598 Ex 位、
+        +0x5c8 免疫、+0x5cc 弹种、+0x5d0 颜色；曲线激光另附 +0x5f4 采样点数与 +0x1524 采样点数组（0x20 字节：pos / vel / angle / speed）。"""
+        m = self.u32(0x4A6EE0)
+        if not m:
+            return None
+        out = {'count': self.i32(m + 0x5E4), 'next_handle': self.i32(m + 0x5E8), 'lasers': []}
+        l = self.u32(m + 0x14)
+        while l:
+            kind = self.LASER_VTABLES.get(self.u32(l), -1)
+            entry = {
+                'kind': kind, 'lc': self.u32(l + 0xC), 'state': self.i32(l + 0x10), 'id': self.i32(l + 0x80),
+                'type': self.i32(l + 0x5CC), 'color': self.i32(l + 0x5D0),
+                'pos': self.words(l + 0x54, 3), 'vel': self.words(l + 0x60, 3),
+                'angle': self.u32(l + 0x6C), 'length': self.u32(l + 0x70), 'width': self.u32(l + 0x74),
+                'speed': self.u32(l + 0x78), 'start_drawn': self.u32(l + 0x7C),
+                'ex_index': self.i32(l + 0x594), 'ex_flags': self.u32(l + 0x598), 'no_cancel': self.i32(l + 0x5C8),
+                'age': self.timer(l + 0x18), 'graze': self.timer(l + 0x2C), 'frame': self.timer(l + 0x40),
+                'nodes': [],
+            }
+            if kind == 2:
+                n = max(0, min(self.i32(l + 0x5F4), 0x40))
+                nodes = self.u32(l + 0x1524)
+                for i in range(n):
+                    nd = nodes + i * 0x20
+                    entry['nodes'].append(self.words(nd, 3) + [self.u32(nd + 0x18), self.u32(nd + 0x1C)])
+            out['lasers'].append(entry)
+            l = self.u32(l + 8)
+        return out
+
     def item_snapshot(self):
         """ItemManager（DAT_004a6ddc，0x1c972ec 字节）：+0x14 起 0x1258 个道具（0xc78 字节；前 600 个为普通池，
         其后 0x1000 个为得点/季节池），+0x1c972dc 活动数、+0x1c972e0 生成计数、+0x1c972e4/+0x1c972e8 得点池计数。
@@ -981,6 +1036,8 @@ class GameOracle(Oracle):
         if self.item_snap:
             snap['items'] = self.item_snapshot()
             snap['resources'] = self.resource_snapshot()
+        if self.laser_snap:
+            snap['lasers'] = self.laser_snapshot()
         if self.enemy_snap:
             snap['spell'] = self.spell_snapshot()
         if sm:
@@ -1119,6 +1176,29 @@ def item_digest(frames):
     return digest
 
 
+def laser_digest(frames):
+    """激光链表的 FNV-1a 64（harness game-digest lasers= 同口径）：
+    每帧 [frame, count, len] + 每激光 [kind, lc, state, id, type, color, pos×3, vel×3, angle, length, width, speed, start_drawn,
+    ex_index, ex_flags, no_cancel, age×3, graze×3, frame×3, node_count] + 每采样点 [pos×3, angle, speed]。"""
+    digest = 0xCBF29CE484222325
+    mask = (1 << 64) - 1
+    def feed(words):
+        nonlocal digest
+        for b in b''.join(struct.pack('<I', w & 0xFFFFFFFF) for w in words):
+            digest = ((digest ^ b) * 0x100000001B3) & mask
+    for f in frames:
+        lz = f.get('lasers') or {'count': 0, 'lasers': []}
+        lst = lz.get('lasers') or []
+        feed([f['frame'], lz['count'], len(lst)])
+        for l in lst:
+            feed([l['kind'], l['lc'], l['state'], l['id'], l['type'], l['color']] + l['pos'] + l['vel'] +
+                 [l['angle'], l['length'], l['width'], l['speed'], l['start_drawn'], l['ex_index'], l['ex_flags'], l['no_cancel']] +
+                 l['age'][:3] + l['graze'][:3] + l['frame'][:3] + [len(l['nodes'])])
+            for nd in l['nodes']:
+                feed(nd)
+    return digest
+
+
 def spell_digest(frames):
     """Spellcard 的 FNV-1a 64（harness game-digest spell= 同口径）：
     每帧 [frame, flags, timer×3, id, bonus, bonus_initial, time_limit, count, state, vm 有无×5, dialogue, boss_ids×3,
@@ -1151,9 +1231,9 @@ def main():
         for path in sys.argv[2:]:
             data = json.loads(pathlib.Path(path).read_text())
             fr = data['frames']
-            print('stage=%d shot=%d frames=%d digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x' % (
+            print('stage=%d shot=%d frames=%d digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x lasers=%016x' % (
                 data['stage'], data['shot'], len(fr), frame_digest(fr), enemy_digest(fr), enemy_vm_digest(fr), bullet_digest(fr),
-                item_digest(fr), spell_digest(fr)))
+                item_digest(fr), spell_digest(fr), laser_digest(fr)))
         return 0
     ap = argparse.ArgumentParser()
     ap.add_argument('exe')
@@ -1175,6 +1255,7 @@ def main():
     ap.add_argument('--enemies', action='store_true', help='每帧附敌人快照（EnemyManager 链表）')
     ap.add_argument('--bullets', action='store_true', help='每帧附敌弹快照（BulletManager 链表）')
     ap.add_argument('--items', action='store_true', help='每帧附道具快照（ItemManager 池）与得分/残机/得点值等资源全局')
+    ap.add_argument('--lasers', action='store_true', help='每帧附激光快照（LaserManager 链表；曲线激光含采样点）')
     ap.add_argument('--replay-slot', type=int, default=-1, help='DAT_004a57c8（默认 -1 走 MainFront；0 走 MainBossSpell）')
     ap.add_argument('--trace-ecl', default='', help='把每条执行的 ECL 指令 (frame, enemy, sub, pc, time, ins_time, op) 写到此文件')
     ap.add_argument('--trace-rng', default='', help='把回放同步 RNG（DAT_004a6d88）的每次调用 (frame, 步数, 返回地址, 包装外层调用方) 写到此文件')
@@ -1187,6 +1268,8 @@ def main():
     o.enemy_snap = a.enemies
     o.bullet_snap = a.bullets
     o.item_snap = a.items
+    o.laser_snap = a.lasers
+    o.normalize_laser_graze_z()
     if a.trace_ecl:
         o.enable_ecl_trace()
     if a.trace_rng:
@@ -1217,13 +1300,14 @@ def main():
         pathlib.Path(a.trace_rng).write_text(json.dumps(o.rng_trace, separators=(',', ':')))
     if a.trace_vm:
         pathlib.Path(a.trace_vm).write_text(json.dumps(o.vm_trace, separators=(',', ':')))
-    print('game-oracle: %d frames → %s digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x errors=%s' % (
+    print('game-oracle: %d frames → %s digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x lasers=%016x errors=%s' % (
         a.frames, a.out, frame_digest(frames),
         enemy_digest(frames) if a.enemies else 0,
         enemy_vm_digest(frames) if a.enemies else 0,
         bullet_digest(frames) if a.bullets else 0,
         item_digest(frames) if a.items else 0,
         spell_digest(frames) if a.enemies else 0,
+        laser_digest(frames) if a.lasers else 0,
         notes[:3]))
     return 0
 
