@@ -1034,14 +1034,14 @@ int main(int argc, char** argv) {
                     const u32 orb_count = h[24];
                     const ReimuBomb* reimu = b->as_reimu();
                     for (u32 i = 0; i < orb_count; ++i) {
-                        const u32* o = &bw[25 + size_t(i) * 22];
+                        const u32* o = &bw[25 + size_t(i) * 21];
                         const Timer& ot = reimu->orbs[i].timer;
                         std::printf("%s{\"vm\":%u,\"pos\":[%u,%u,%u],\"speed\":%u,\"angle\":%u,\"radius\":%u,\"center\":[%u,%u,%u],"
                                     "\"mode\":%u,\"active\":%d,\"timer\":[%u,%u,%u,%u,%u],\"delta\":[%u,%u,%u],\"target\":%u,\"index\":%d,"
-                                    "\"source\":%d,\"burst\":%d}",
+                                    "\"source\":%d}",
                                     i ? "," : "", o[0], o[1], o[2], o[3], o[4], o[5], o[6], o[7], o[8], o[9], o[10], i32(o[11]),
                                     o[12], o[13], o[14], u32(ot.speed_slot), ot.flags, o[15], o[16], o[17], o[18], i32(o[19]),
-                                    i32(o[20]), i32(o[21]));
+                                    i32(o[20]));
                     }
                     std::printf("]}");
                 }

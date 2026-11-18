@@ -891,7 +891,7 @@ class GameOracle(Oracle):
         """Bomb 对象（0x108 字节，0x40d890 按机体 / 季节建两只：DAT_004a6da8 主炸弹、DAT_004a6da4 季节解放）：
         +0x14 位置、+0x20 角速度、+0x2c 角度、+0x30 活动、+0x34 计时、+0x5c / +0x64 两枚 VM、+0x68 符卡中发动标志、
         +0x70 灵梦阴阳玉数组（8 × 0xd8：VM、运动体 0x44、+0xa0 活动、+0xa4 计时、+0xb8 位移、+0xc4 目标敌机、
-        +0xcc 序号、+0xd0 伤害源、+0xd4 已引爆）、+0xd4 种类、+0xd8 发动时等级、+0xdc 累计奖励、+0xe0 显示奖励、
+        +0xcc 序号、+0xd0 伤害源；+0xd4 为未写入的填充）、+0xd4 种类、+0xd8 发动时等级、+0xdc 累计奖励、+0xe0 显示奖励、
         +0xe4 奖励飘字计时、+0xf8 飘字等级、+0xfc 飘字坐标。"""
         out = {}
         for key, slot in (('main', 0x4A6DA8), ('sub', 0x4A6DA4)):
@@ -918,7 +918,7 @@ class GameOracle(Oracle):
                         'angle': self.u32(o + 0x20), 'radius': self.u32(o + 0x24), 'center': self.words(o + 0x38, 3),
                         'mode': self.u32(o + 0x44), 'active': self.i32(o + 0xA0), 'timer': self.timer(o + 0xA4),
                         'delta': self.words(o + 0xB8, 3), 'target': self.u32(o + 0xC4), 'index': self.i32(o + 0xCC),
-                        'source': self.i32(o + 0xD0), 'burst': self.i32(o + 0xD4),
+                        'source': self.i32(o + 0xD0),
                     })
             out[key] = entry
         return out
