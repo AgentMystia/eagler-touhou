@@ -2159,6 +2159,27 @@ bool EnemyManager::create(const char* ecl_name, GameGlobals& g, Player* pl, Rng&
     return true;
 }
 
+void EnemyManager::reset() {
+    // 0x4185b0
+    if (animations != nullptr) {
+        for (int slot = 10; slot < 16; ++slot) animations->kill_file(slot);
+    }
+    for (auto& e : enemies) {
+        if (e) e->destroy();
+    }
+    enemies.clear();
+    for (u32& id : boss_ids) id = 0;
+}
+
+void EnemyManager::destroy() {
+    // 0x41b1a0
+    reset();
+    program = EclProgram{};
+    if (animations != nullptr) {
+        for (int slot = 10; slot < 16; ++slot) animations->unload(slot);
+    }
+}
+
 bool EnemyManager::spawn_main() {
     EnemySpawnArgs args;
     args.pos = {};

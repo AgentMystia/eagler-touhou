@@ -37,6 +37,14 @@ void Spellcard::reset() {
     gui_timer_events.clear();
 }
 
+void Spellcard::destroy() {
+    // 0x417790
+    if (animations != nullptr) {
+        for (int i = 1; i <= 3; ++i) animations->kill(vm_ids[i]);
+    }
+    reset();
+}
+
 // 0x417f00 / 0x417930 内联：EnemyManager+0x48 槽 0 的 Boss；链表找不到时原版落在最后遍历到的敌机上
 Vec3 Spellcard::boss_position() const {
     if (enemies == nullptr || enemies->boss_ids[0] == 0) return Vec3{};
