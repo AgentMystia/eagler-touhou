@@ -109,16 +109,20 @@ class OracleState:
 
     def fold(self, calls):
         ops = []
+        chain = None    # 最近一次 ["chain", 回调地址]（game-oracle 在 0x4015a0 调回调前记录）
         for call in calls:
             kind = call[0]
-            if kind == 'clear':
-                ops.append({'op': 'clear', 'flags': call[1], 'color': call[2], 'target': self.texture_ref(self.rt), 'rect': call[3]})
+            if kind == 'chain':
+                chain = call[1]
+            elif kind == 'clear':
+                ops.append({'op': 'clear', 'flags': call[1], 'color': call[2], 'target': self.texture_ref(self.rt), 'rect': call[3],
+                            'chain': chain})
             elif kind == 'draw':
                 _, prim_type, prim_count, fvf, stride, words = call
                 layout = FVF_TO_LAYOUT.get(fvf, 'fvf:%x' % fvf)
                 op = {'op': 'draw', 'topology': TOPOLOGY.get(prim_type, str(prim_type)), 'layout': layout,
                       'primitives': prim_count, 'target': self.texture_ref(self.rt), 'texture': self.texture_ref(self.tex),
-                      'viewport': list(self.vp), 'state': self.state(), 'words': words}
+                      'viewport': list(self.vp), 'state': self.state(), 'words': words, 'chain': chain}
                 if layout in WORLD_LAYOUTS:
                     op['world'] = self.xf[256]
                     op['view'] = self.xf[2]
@@ -213,6 +217,45 @@ def describe(op):
     return 'draw %s %s n=%d tex=%s vp=%s target=%s' % (op['topology'], op['layout'], op['primitives'], op['texture'], op['viewport'], op['target'])
 
 
+def describe_vertices(op, limit=4):
+    """--dump 用：前 limit 个顶点的 (x, y[, 颜色])，屏幕格式直接读坐标，世界格式只给模型坐标。"""
+    if op['op'] != 'draw':
+        return ''
+    per, _ = LAYOUT_WORDS.get(op['layout'], (1, ()))
+    words = op['words']
+    color_index = {'ScreenColorUv': 4, 'ScreenColor': 4, 'WorldColorUv': 3}.get(op['layout'])
+    parts = []
+    for i in range(0, min(len(words), per * limit), per):
+        v = words[i:i + per]
+        text = '(%.6g, %.6g' % (f32(v[0]), f32(v[1]))
+        if color_index is not None:
+            text += ' %08x' % v[color_index]
+        parts.append(text + ')')
+    return ' '.join(parts)
+
+
+def dump_frames(frames_map, frames, fold):
+    """按帧逐条打印绘制操作（oracle 侧先折叠状态调用）。"""
+    st = OracleState()
+    for frame in sorted(frames_map):
+        if frame > frames[-1]:
+            break
+        rec = frames_map[frame]
+        if fold:
+            for call in rec.get('prefix', []):
+                st.apply(call)
+            ops = st.fold(rec['calls'])
+        else:
+            ops = [op for op in rec['ops'] if op['op'] in ('clear', 'draw')]
+        if frame < frames[0]:
+            continue
+        print('frame %d: %d ops' % (frame, len(ops)))
+        for i, op in enumerate(ops):
+            chain = op.get('chain')
+            tag = ('[%#x] ' % chain) if isinstance(chain, int) else ''
+            print('  %3d %s%s %s' % (i, tag, describe(op), describe_vertices(op)))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('oracle')
@@ -221,16 +264,20 @@ def main():
     ap.add_argument('--eps', type=float, default=1e-4, help='float 相对误差容限')
     ap.add_argument('--max-report', type=int, default=20)
     ap.add_argument('--ignore-state', default='', help='逗号分隔的忽略状态键')
+    ap.add_argument('--dump', choices=('oracle', 'port'), help='不比较，只按帧列出一侧的绘制操作')
     a = ap.parse_args()
     ignore_state = set(filter(None, a.ignore_state.split(',')))
     oracle, port = load_jsonl(a.oracle), load_jsonl(a.port)
-    frames = sorted(set(oracle) & set(port))
+    frames = sorted(set(oracle) & set(port)) if a.dump is None else sorted(oracle if a.dump == 'oracle' else port)
     if a.frames:
         lo, hi = (int(x) for x in a.frames.split('-'))
         frames = [f for f in frames if lo <= f <= hi]
     if not frames:
         print('no common frames', file=sys.stderr)
         return 2
+    if a.dump is not None:
+        dump_frames(oracle if a.dump == 'oracle' else port, frames, fold=a.dump == 'oracle')
+        return 0
     st = OracleState()
     mismatches = 0
     reported = 0

@@ -144,6 +144,12 @@ class GameOracle(Oracle):
         self.setup_imports()
         if draw:
             self.recorder = d3d_recorder.DeviceRecorder(self)
+            # 0x4015a0 绘制链游标：0x40160a MOV ECX,[EDI+0x24]; MOV EAX,[EDI+8]（EDI = 链节点，+8 = 回调）——
+            # 在每个绘制链回调前记一条 ["chain", 回调地址]，供 draw-compare --dump 把绘制调用归到链上
+            def on_draw_chain(o):
+                node = self.uc.reg_read(UC_X86_REG_EDI)
+                self.recorder.record(['chain', self.u32(node + 8)])
+            self.splice_hook(0x40160A, bytes.fromhex('8b4f248b4708'), on_draw_chain)
         else:
             self.setup_device()
         self.setup_laser_sound_buffer()
@@ -1566,8 +1572,9 @@ def main():
     if a.trace_vm:
         o.enable_vm_trace()
     o.boot()
-    print('booted: chains=%s banks=%s device_calls=%s' % (
-        [(p, hex(cb)) for p, cb, _ in o.chain_list()], o.loaded_banks, o.device_calls), file=sys.stderr)
+    print('booted: chains=%s banks=%s bank_ptrs=%s device_calls=%s' % (
+        [(p, hex(cb)) for p, cb, _ in o.chain_list()], o.loaded_banks,
+        {slot: hex(o.u32(o.manager + BANK_ARRAY + slot * 4)) for slot in o.loaded_banks}, o.device_calls), file=sys.stderr)
     events = parse_input(a.input)
     draw_file = None
     if a.draw:
