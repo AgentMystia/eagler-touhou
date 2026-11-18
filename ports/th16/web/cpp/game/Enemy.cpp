@@ -353,7 +353,9 @@ bool Enemy::init(EnemyManager& mgr, EclProgram& prog, const char* sub, const Ene
     score_bonus_spell = globals != nullptr ? globals->spell_id : 0;  // puVar6[0x15cd] = DAT_004a5798
     bomb_script = bomb_script_restore = 0;
     for (auto& it : interrupts) it = EnemyInterrupt{};
-    int_regs[0] = 1;  // 0x41aa70：puVar6[0x1498] = 1
+    std::memcpy(int_regs, args.int_regs, sizeof int_regs);
+    std::memcpy(float_regs, args.float_regs, sizeof float_regs);
+    std::memcpy(temp_regs, args.temp_regs, sizeof temp_regs);
     invuln.set(2);
     life_timer.set(0x3c);
     season_drop_timer.set(0x3c);
@@ -975,6 +977,9 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             args.life = float(read_i(2));
             args.score = read_i(3);
             args.item = read_i(4);
+            std::memcpy(args.int_regs, int_regs, sizeof args.int_regs);
+            std::memcpy(args.float_regs, float_regs, sizeof args.float_regs);
+            std::memcpy(args.temp_regs, temp_regs, sizeof args.temp_regs);
             if (!manager->spawn_enemy(sub, args)) { error = manager->error; return -2; }
             return 0;
         }
