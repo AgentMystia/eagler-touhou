@@ -447,8 +447,6 @@ constexpr AddressAnchor kAnchors[] = {
     {"player-laser-create", 0x446200, "game/Player.cpp Player::start_laser（长度 0、音效 0x14、伤害源 f80=1 / size_x=0、清弹 flags bit0 → 伤害源由激光自己同步）"},
     {"player-laser-tick", 0x446260, "game/Player.cpp Player::tick_laser（贴子机坐标、朝向 .sht 角 / 低速 -π/2、长度 +18 至 512、VM flags 8 / 0x10 写 sprite_size.x / uv_scale.x、中点矩形伤害源；持续条件失效 → active 2 + 中断 1 + 冷却清零）"},
     {"player-laser-hit", 0x446870, "game/Player.cpp Player::hit_laser（敌机转到激光坐标系：|perp| ≤ 半宽+r、along ≥ -(半宽+r)、端部圆；截到表面 sqrt(1-(perp/r)²)·r 再 +8；每隔一帧 pl01 脚本 8 / pl01sub 脚本 2 火花沿激光飘 64；每 4 帧结算伤害）"},
-    // —— 未定位 ——
-    {"laser-manager", 0x4314A0, nullptr},
 };
 
 }  // namespace th16::rebuild
