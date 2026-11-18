@@ -175,12 +175,7 @@ bool Enemy::spawn(EclContext& source, i32 id, u32 /*skipped_arguments*/) {
     ctx->thread_id = id;
     ctx->program = program;
     if (!source.instruction || !program) return false;
-    const u32 name_size = source.instruction->argument<u32>(0);
-    const auto* bytes = reinterpret_cast<const u8*>(source.instruction);
-    if (name_size == 0 || name_size > source.instruction->length - 20) return false;
-    const i32 routine = program->find_index(reinterpret_cast<const char*>(bytes + 20));
-    if (routine < 0) { error = "async sub missing"; return false; }
-    if (!ctx->bind(*program, routine)) { error = ctx->error; return false; }
+    if (!source.call_into(*ctx, skipped_arguments)) { error = source.error; return false; }
     async_threads.push_front(std::move(ctx));
     return true;
 }
@@ -297,18 +292,21 @@ bool Enemy::update(float game_speed) {
         flags |= kFlagAlive;
     }
 
+    // 0x473bc0：先取下一节点再执行当前上下文——执行中头插的新线程（0x474430）本帧不跑
     primary.interpolation_rate = game_speed;
+    auto it = async_threads.begin();
     int r = primary.step(game_speed);
     if (r == -2) { error = primary.error; alive = false; return false; }
     if (r == -1) { alive = false; return false; }
-    for (auto it = async_threads.begin(); it != async_threads.end();) {
+    while (it != async_threads.end()) {
+        auto next = std::next(it);
         auto& t = *it;
-        if (!t || t->instruction_offset < 0) { it = async_threads.erase(it); continue; }
+        if (!t || t->instruction_offset < 0) { async_threads.erase(it); it = next; continue; }
         t->interpolation_rate = game_speed;
         const int ar = t->step(game_speed);
         if (ar == -2) { error = t->error; alive = false; return false; }
-        if (ar == -1) { it = async_threads.erase(it); continue; }
-        ++it;
+        if (ar == -1) async_threads.erase(it);
+        it = next;
     }
 
     // 0x41c330：受击结算（0x445a30 伤害源碰撞）与死亡判定（0x41d520）
