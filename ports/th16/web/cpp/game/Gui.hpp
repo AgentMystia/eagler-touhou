@@ -17,6 +17,7 @@
 // 文字经 0x42bbe0 解密（key 0x77，步长 7 起每字节 +0x10）。文字贴图（0x46d990 AsciiManager 画进 VM 纹理）
 // 不改变逻辑状态，这里把解密后的文本与颜色记入 text_requests 供宿主渲染。
 #pragma once
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -154,6 +155,19 @@ public:
     void update(float game_speed);
     // 0x427a20 / 0x4264a0：离开游戏时删掉全部对话 VM
     void shutdown();
+    // 0x43f350（对话 -2 且符卡标志 bit7）/ 0x43f500（练习 / 符卡练习过关）：GameMenu 的续关 / 结算入口，GameSession 绑定
+    std::function<void()> on_continue_screen;
+    std::function<void()> on_practice_result;
+    // 0x42b610 / 0x42b820：暂停 / 续关菜单打开与关闭时隐藏 / 显示对话的全部 VM（flags_lo bit1 及其子树）
+    void hide_dialogue();
+    void show_dialogue();
+    // 0x42c580 / 0x42c5c0：同上，针对 HUD 根 VM（+0x12c）；HUD VM 在渲染阶段建立，之前为空操作
+    void hide_hud();
+    void show_hud();
+    // 0x42c280 / 0x42c390：残机 / 炸弹显示刷新（续关、extend）。HUD VM 建立前只记录事件（1 残机 / 2 炸弹）
+    std::vector<i32> hud_events;
+    void refresh_lives_display() { hud_events.push_back(1); }
+    void refresh_bombs_display() { hud_events.push_back(2); }
 
 private:
     // 0x429b20

@@ -46,6 +46,7 @@ public:
     enum : u32 {
         kLoading = 0x4,
         kLoadFailed = 0x8,
+        kMenuOpen = 0x10,            // 暂停 / 续关菜单打开（0x43f0f0 / 0x43f350 置；0x42d7b0 据此返回 3 截断其后更新链）
         kEndMask = 0x70,
         kFirstUpdate = 0x80,
         kRetry = 0x800,
