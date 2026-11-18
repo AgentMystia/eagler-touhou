@@ -202,8 +202,12 @@ test('game start flow: Normal / Cirno / Autumn → scene 7 with stage 1, title d
   // 槽 0 = text.anm（画面合成的渲染目标拷贝）、槽 4 = st01wl.anm（关卡背景）不算在内
   // 槽 5 = front.anm HUD 边框、槽 6 = st01logo.anm 关卡标题（都由 0x426d70 在 Gui 首帧生成；标题脚本 1 在层 0x17，
   // 340 帧后自删）：原版 game-oracle --draw 切场后第 1 帧就有 tex[5,0] n=8 与 tex[6,1] 的四边形，故也在允许之列
-  const leaves = started.quads.filter(l => / slot=2 entry=/.test(l));
+  // 槽 2 还有 AsciiManager 的 HUD 文字（0x428e70：屏幕四边形 `quad s`，精灵 0）；落叶是世界四边形 `quad w`
+  const text = started.quads.filter(l => /^quad s slot=2 entry=0 /.test(l));
+  const leaves = started.quads.filter(l => /^quad w slot=2 entry=/.test(l));
   const others = started.quads.filter(l => !/ slot=(0|2|4) entry=/.test(l));
+  assert.ok(text.some(l => / 183.5 451.5 /.test(l) && / 60606060 /.test(l)), 'season level "0" at (183.5, 451.5) colour 60606060, as the oracle draw dump shows (group 1, field viewport)');
+  assert.ok(text.some(l => / 527.5 41.5 /.test(l)), 'hiscore "100,000" starts at (527.5, 41.5) (right-aligned at 620, font 4)');
   assert.ok(leaves.length > 0, 'leaf particles still present');
   assert.ok(others.length > 0 && others.every(l => / slot=(5|6|9) entry=/.test(l)), 'only ascii.anm leaves + HUD frame (front.anm) + stage logo (st01logo.anm) + player option (pl02.anm) remain: ' + others.filter(l => !/ slot=(5|6|9) entry=/.test(l)).slice(0, 3).join(' | '));
   assert.ok(others.some(l => / slot=6 entry=1 /.test(l)), 'stage logo title (script 1) drawn from the first game frame, as in the original');
@@ -211,7 +215,7 @@ test('game start flow: Normal / Cirno / Autumn → scene 7 with stage 1, title d
   assert.ok(leaves.every(l => / zw=1 /.test(l)), 'mode 8 writes Z (0x43c530)');
   assert.deepEqual(started.events.at(-1), ['scene', '7']);
   const settled = parse(run(['scene-boot', dat, String(season + 2 + 0x28 + 2 + 16), script]));
-  assert.ok(settled.quads.filter(l => !/ slot=(0|4) entry=/.test(l)).every(l => / slot=(5|6|9) entry=/.test(l)), 'emitter (interrupt 1 → ins_1 after 14 frames) and its leaves are gone; only the HUD, the stage logo and the player option remain');
+  assert.ok(settled.quads.filter(l => !/ slot=(0|4) entry=/.test(l) && !/^quad s slot=2 entry=0 /.test(l)).every(l => / slot=(5|6|9) entry=/.test(l)), 'emitter (interrupt 1 → ins_1 after 14 frames) and its leaves are gone; only the HUD (frame + text), the stage logo and the player option remain');
   assert.ok(settled.quads.length > 0, 'player option VM keeps drawing');
 });
 

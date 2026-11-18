@@ -42,6 +42,8 @@ struct ScoreFile;
 struct PlayerWorld;
 struct StageEntry;
 struct AnmFile;
+struct Spellcard;
+class AsciiManager;
 
 // 对话脚本（msg 文件）：entry 表 {u32 count; {u32 offset; u32 pad}[count]}，指令 {u16 time; u8 op; u8 size; u8 data[size]}
 struct MsgInstruction {
@@ -198,6 +200,7 @@ public:
     const StageEntry* entry = nullptr;       // DAT_004a6f18
     bool replay_playback = false;            // GameManager+0xac != 0
     const u32* spellcard_flags = nullptr;    // DAT_004a6db0->0x78（0x429ff0(-2) 的续关判定 bit7）
+    const Spellcard* spellcard = nullptr;    // DAT_004a6db0（0x428e70 的符卡用时文字）
     class Bomb* bomb = nullptr;              // DAT_004a6da8（0x42e150 过关时仍在发动 → 收尾 vtable+0x14）
     class Bomb* season_release = nullptr;    // DAT_004a6da4（0x427cf0：解放可发动 ↔ 面板炸弹可用标）
     std::vector<i32> sfx_queue;              // 0x45e150：op 11 按键推进 0
@@ -241,6 +244,7 @@ public:
     std::function<void()> on_practice_result;
     std::function<void()> on_return_to_title;    // 0x43f240：回放中过关 / 第 6 面 / Extra 通关
     std::function<void()> on_final_clear;        // 0x42e150 第 6 面 / Extra：GameManager flags |= 0x4000、+0xb0 = 0、0x42dbc0
+    std::function<void()> on_hud_init;           // 0x426d70 首行：Gui 的更新链与两条绘制链 |= 2（GameSession 在此启用绘制链）
     ScoreFile* scores = nullptr;                 // DAT_004a6f0c：过关记录（通关次数 / 练习解锁位）
     // 0x42b610 / 0x42b820：暂停 / 续关菜单打开与关闭时隐藏 / 显示对话的全部 VM（flags_lo bit1 及其子树）
     void hide_dialogue();
@@ -282,6 +286,9 @@ public:
     // 0x4175d0（符卡开始：中断 2）/ 0x417650（符卡结束：中断 3）：两位计时数字立即切样式
     enum class TimerStyle : i32 { Spell = 2, Normal = 3 };
     void set_boss_timer_style(TimerStyle style);
+    // 0x428e70（绘制链 0x30）：把 HUD 文字入队到 AsciiManager——过关奖励数、符卡用时、最高分 / 得分（末位续关数）、
+    // 下一 extend 分、炸弹碎片 n/5、火力 x.xx/x.00、得点值（舍到十位）、擦弹数、Boss 计时的百分秒、场地底部季节等级
+    void draw_hud_text(AsciiManager& text);
 
 private:
     // 0x427cf0 的 HUD 段，按原版顺序由 update 调用

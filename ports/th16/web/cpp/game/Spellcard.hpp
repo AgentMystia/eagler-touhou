@@ -20,6 +20,8 @@
 namespace th16 {
 
 class Gui;
+class AsciiManager;
+struct ScoreFile;
 
 class AnmManager;
 class EnemyManager;
@@ -52,6 +54,8 @@ struct Spellcard {
     i32 time_limit = 0;     // +0x84：op 537–539 arg 1（帧）
     i32 capture_count = 0;  // +0x88：0x417bc0 符卡练习计次
     i32 state = 0;          // +0x8c：开始后逐帧 +1
+    i32 timed_frames = 0;   // +0x90：实时计时结束时抄下的 state（Gui 0x428e70 画 "秒.百分秒"）
+    i32 time_record = 0;    // +0xa4：0x417bc0 按墙钟算出的取得用时，带校验的编码（0x426840 解码；0 = 未计时）
     Vec3 boss_pos;          // +0xa8：倒计时 VM 跟随的 Boss 坐标
 
     // 宿主绑定（GameSession）
@@ -65,6 +69,8 @@ struct Spellcard {
     std::vector<i32>* sfx_sink = nullptr;
     void play_sfx(i32 id) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(id); }
     Gui* gui = nullptr;                 // DAT_004a6dcc：计时数字样式（0x4175d0 / 0x417650）、弹出通知（0x42bcf0）、extend 残机显示
+    ScoreFile* scores = nullptr;        // DAT_004a6f0c：符卡挑战 / 取得记录
+    bool replay_playback = false;       // DAT_004a6f08+0xc == 1（= GameManager+0xac）：回放中不写记录
 
     // 0x4178a0：memset 0 后 flags |= 2
     void reset();
@@ -76,9 +82,13 @@ struct Spellcard {
     void update(float game_speed);
     // 0x4182f0
     void end();
+    // 0x417d70（绘制链 0xc）：符卡进行中在名牌 VM（ascii.anm 1）旁入队奖励分（或已失去奖励的 "$"）与取得 / 挑战数
+    void draw_text(AsciiManager& text) const;
 
 private:
     Vec3 boss_position() const;  // 0x417f00 / 0x417930 内联：EnemyManager+0x48 槽 0 Boss 坐标，无则取 0
+    int record_shot() const;     // 成绩文件机体块：DAT_004a57a4 + DAT_004a57a8
+    bool is_spell_practice() const;  // (DAT_004a5bec & 0x30) == 0x20
 };
 
 }  // namespace th16

@@ -9,11 +9,13 @@
 //   0x427cf0  每帧 HUD 段：文字底存活、面板让位、Boss 血条、符卡星、Boss 方位标、炸弹可用标
 //   0x42c8f0 / 0x42c8c0 / 0x42c890 / 0x418440 / 0x418470  计时数字移位 → Gui::move_timer_digit
 //   0x42c580 / 0x42c5c0  HUD 根 VM 隐藏 / 显示（+0x12c 在 th16 无创建路径）→ Gui::hide_hud / show_hud
+//   0x428e70  绘制链 0x30：HUD 文字入队 AsciiManager（0x426840 解码符卡用时）  → Gui::draw_hud_text
 //
 // 原版 Gui+0x1ac bit11 / bit12（符卡奖励滚动显示，0x42c4f0 收尾）在 th16 没有任何置位方，属前作遗留的死代码，不移植。
 #include "Gui.hpp"
 
 #include "AnmManager.hpp"
+#include "Ascii.hpp"
 #include "Bomb.hpp"
 #include "Enemy.hpp"
 #include "GameGlobals.hpp"
@@ -55,6 +57,7 @@ AnmVm* Gui::panel_child(i32 script) {
 
 // 0x426d70
 void Gui::init_hud(AnmFile* ascii) {
+    if (on_hud_init) on_hud_init();
     if (animations == nullptr || front == nullptr || globals == nullptr) return;
     if (hud_frame_vm == 0) hud_frame_vm = animations->spawn_ui(*front, kHudFrame);
     if (life_vms[0] == nullptr) {
@@ -449,6 +452,193 @@ void Gui::update_bomb_ready_mark() {
         animations->interrupt_now(mark != nullptr ? mark->id : 0u, 3);
     }
     bomb_ready_shown = 0;
+}
+
+// ---------------------------------------------------------------------------------------------
+// HUD 文字（绘制链 0x30）
+
+namespace {
+
+// 0x426840：Spellcard+0xa4 的取得用时编码 → (秒, 百分秒)。编码 = ((秒 + 22 + 百分秒) × 1000 + (秒 + 66) % 1000) × 100
+// + (百分秒 + 33) % 100；校验不符（含从未计时的 0）时显示 999.99
+void decode_spell_time(i32 record, i32& seconds, i32& hundredths) {
+    const i32 s = ((record / 100) % 1000 + 0x3a6) % 1000;
+    const i32 h = (record % 100 + 0x43) % 100;
+    if (record / 100000 - 0x16 != s + h) {
+        seconds = 999;
+        hundredths = 99;
+        return;
+    }
+    seconds = s;
+    hundredths = h;
+}
+
+u32 vm_color(const AnmVm& vm) {
+    return u32(vm.color[0]) | (u32(vm.color[1]) << 8) | (u32(vm.color[2]) << 16) | (u32(vm.color[3]) << 24);
+}
+
+// 场地底部季节等级数字的颜色（0..6 级）
+constexpr u32 kSeasonLevelColors[7] = {
+    0x60606060, 0xa0b0b080, 0xb0b8b880, 0xc0c0c080, 0xd0d0d080, 0xe0e0e080, 0xffffff30,
+};
+
+}  // namespace
+
+// 0x428e70
+void Gui::draw_hud_text(AsciiManager& text) {
+    using Font = AsciiManager::Font;
+    using Group = AsciiManager::Group;
+    using HAlign = AsciiManager::HAlign;
+    using VAlign = AsciiManager::VAlign;
+    if (globals == nullptr || animations == nullptr) return;
+    AsciiManager::Style& style = text.style;
+
+    // 过关奖励分：跟着 front.anm 0x78 奖励 VM 的透明度，场地中央大字
+    if (AnmVm* bonus = find_or_clear(clear_bonus_vm)) {
+        text.set_alpha(bonus->color[3]);
+        style.group = Group::FieldLate;
+        style.font = Font::Large;
+        style.h_align = HAlign::Center;
+        style.v_align = VAlign::Middle;
+        text.print_grouped({224.0f, 200.0f, 0.0f}, u32(clear_bonus));
+        text.set_alpha(0xff);
+        style.font = Font::Default;
+        style.group = Group::Ui;
+        style.h_align = HAlign::Left;
+        style.v_align = VAlign::Top;
+    }
+    // Gui+0x12c HUD 根 VM 上的符卡奖励明细：th16 从不创建该 VM，整段不可达
+
+    // 符卡用时：本次 "秒.百分秒s" 与解码出的记录各一行，跟着奖励文字底 VM 的透明度
+    if (notice_label_active != 0) {
+        AnmVm* label = find_or_clear(notice_label_vm);
+        if (spellcard == nullptr) {
+            notice_label_active = 0;
+            animations->kill(notice_label_vm);
+            notice_label_vm = 0;
+        } else if (label == nullptr) {
+            notice_label_active = 0;
+        } else {
+            text.set_alpha(label->color[3]);
+            style.group = Group::FieldLate;
+            style.font = Font::Large;
+            const i32 frames = spellcard->timed_frames;
+            i32 seconds = frames / 60;
+            if (seconds >= 1000) seconds = 999;
+            text.printf({224.0f, 144.0f, 0.0f}, "%3d.", seconds);
+            style.scale = {0.6f, 0.6f};
+            text.printf({268.0f, 150.0f, 0.0f}, "%.2ds", ((frames % 60) * 100) / 60);
+            style.color = 0xff808080;
+            text.set_alpha(label->color[3]);
+            style.scale = {1.0f, 1.0f};
+            i32 record_seconds, record_hundredths;
+            decode_spell_time(spellcard->time_record, record_seconds, record_hundredths);
+            text.printf({224.0f, 160.0f, 0.0f}, "%3d.", record_seconds);
+            style.scale = {0.6f, 0.6f};
+            text.printf({268.0f, 166.0f, 0.0f}, "%.2ds", record_hundredths);
+            text.set_alpha(0xff);
+            style.scale = {1.0f, 1.0f};
+            style.font = Font::Default;
+            style.group = Group::Ui;
+            style.color = 0xffffffff;
+        }
+    }
+
+    // 右栏：透明度跟第一个残机格（自机靠近面板时整栏变淡）
+    const u8 panel_alpha = life_vms[0] != nullptr ? life_vms[0]->color[3] : 0xff;
+    style.color = 0xff808080;
+    style.font = Font::Large;
+    text.set_alpha(panel_alpha);
+    style.h_align = HAlign::Right;
+    style.v_align = VAlign::Top;
+    text.print_score({620.0f, 42.0f, 0.0f}, u32(globals->hiscore), u32(globals->hiscore_continues));
+    style.color = 0xffffffff;
+    text.set_alpha(panel_alpha);
+    text.print_score({620.0f, 64.0f, 0.0f}, u32(displayed_score), u32(globals->continues));
+    // 下一 extend 分（表尾 1e9 哨兵不画）
+    style.h_align = HAlign::Left;
+    style.v_align = VAlign::Top;
+    style.color = 0xff80c0f0;
+    style.h_align = HAlign::Right;
+    style.v_align = VAlign::Top;
+    text.set_alpha(panel_alpha);
+    style.scale = {0.6f, 0.6f};
+    const i32 extend_threshold = globals->extend_threshold();
+    if (u32(extend_threshold) < 900000000u) text.print_grouped({618.0f, 118.0f, 0.0f}, u32(extend_threshold * 10));
+    // 炸弹碎片 n/5
+    style.color = 0xffffffff;
+    style.h_align = HAlign::Left;
+    style.v_align = VAlign::Top;
+    text.set_alpha(panel_alpha);
+    style.scale = {0.6f, 0.6f};
+    text.printf({576.0f, 158.0f, 0.0f}, "%3d", globals->bomb_fragments);
+    text.printf({597.0f, 158.0f, 0.0f}, "/%d", 5);
+    // 火力 x.xx / y.00
+    style.color = 0xffff8030;
+    style.scale = {1.0f, 1.0f};
+    text.set_alpha(panel_alpha);
+    const i32 per_level = globals->power_per_level != 0 ? globals->power_per_level : 1;
+    text.printf({540.0f, 182.0f, 0.0f}, "%d.", globals->power / per_level);
+    style.scale = {0.6f, 0.6f};
+    text.printf({560.0f, 189.0f, 0.0f}, "%.2d", ((globals->power % per_level) * 100) / per_level);
+    style.scale = {1.0f, 1.0f};
+    text.printf({574.0f, 182.0f, 0.0f}, "/%d.", globals->power_max / per_level);
+    style.scale = {0.6f, 0.6f};
+    text.printf({606.0f, 189.0f, 0.0f}, "00");
+    // 得点值（舍到十位）与擦弹数
+    style.color = 0xff40c0ff;
+    style.scale = {1.0f, 1.0f};
+    style.h_align = HAlign::Right;
+    style.v_align = VAlign::Top;
+    text.set_alpha(panel_alpha);
+    const i32 point_value = globals->point_value / 100;
+    text.print_grouped({620.0f, 204.0f, 0.0f}, u32(point_value - point_value % 10));
+    style.color = 0xffffffff;
+    text.set_alpha(panel_alpha);
+    text.print_grouped({620.0f, 226.0f, 0.0f}, u32(globals->graze));
+    style.color = 0xffffffff;
+    style.h_align = HAlign::Left;
+    style.v_align = VAlign::Top;
+    style.scale = {1.0f, 1.0f};
+    text.set_alpha(0xff);
+    style.font = Font::Default;
+    style.group = Group::Ui;
+
+    // Boss 计时的小数点与百分秒：挂在第一位计时数字 VM 旁，颜色跟它
+    const bool boss_timer_shown = enemies != nullptr && boss_timer_display >= 0 && enemies->boss_slot(0) != nullptr &&
+                                  !enemies->hud_hidden && dialogue == nullptr &&
+                                  (game_flags == nullptr || (*game_flags & 0x10000u) == 0);
+    if (boss_timer_shown && boss_timer_vms[0] != nullptr) {
+        const AnmVm& digit = *boss_timer_vms[0];
+        const float x = digit.pos.x + 16.0f;
+        const float y = digit.pos.y - 7.0f;
+        style.color = vm_color(digit);
+        style.font = Font::Large;
+        style.group = Group::FieldLate;
+        text.printf({x, y, 0.0f}, ".");
+        style.scale = {0.6f, 0.6f};
+        text.printf({x + 8.0f, y + 6.0f, 0.0f}, "%.2d", boss_timer_fraction);
+        style.scale = {1.0f, 1.0f};
+        style.color = 0xffffffff;
+        style.group = Group::Ui;
+        style.font = Font::Default;
+    }
+
+    // 场地底部的季节等级数字（场地相机组，坐标以场地左上为原点）
+    const i32 level = globals->season_option_count();
+    style.color = kSeasonLevelColors[level];
+    if ((flags_1ac & 1u) != 0) text.set_alpha(0x40);
+    style.group = Group::Field;
+    style.font = Font::Medium;
+    style.h_align = HAlign::Center;
+    style.v_align = VAlign::Bottom;
+    text.print_grouped({-132.0f, 446.0f, 0.0f}, u32(level));
+    style.color = 0xffffffff;
+    text.set_alpha(0xff);
+    style.font = Font::Default;
+    style.group = Group::Ui;
+    style.h_align = HAlign::Left;
+    style.v_align = VAlign::Top;
 }
 
 }  // namespace th16
