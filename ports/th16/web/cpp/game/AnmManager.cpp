@@ -351,6 +351,14 @@ void AnmManager::hide_tree(AnmVm& vm) {
     }
 }
 
+// 0x46f380
+void AnmManager::show_tree(AnmVm& vm) {
+    vm.flags_lo |= 2u;
+    for (AnmListNode* n = vm.children.next; n != nullptr; n = n->next) {
+        if (n->owner) show_tree(*n->owner);
+    }
+}
+
 // 0x46f1c0
 void AnmManager::kill(u32 id) {
     AnmVm* vm = find(id);

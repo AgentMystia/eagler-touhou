@@ -518,6 +518,13 @@ AnmFile* Enemy::anm_file(i32 index) const noexcept {
     return manager ? manager->anm_file(index) : nullptr;
 }
 
+// ECL 502 / 503：对全部 16 个 VM 槽（EnemyInf+0x124..0x160）按 id 找到即整棵子树应用
+void Enemy::for_each_vm_tree(void (*apply)(AnmVm&)) {
+    for (int slot = 0; slot < kVmSlots; ++slot) {
+        if (AnmVm* vm = vm_at(slot)) apply(*vm);
+    }
+}
+
 AnmVm* Enemy::vm_at(int slot) noexcept {
     if (slot < 0 || slot >= kVmSlots || manager == nullptr || manager->animations == nullptr) return nullptr;
     AnmVm* vm = manager->animations->find(vm_ids[slot]);
@@ -1047,8 +1054,14 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             return 0;
         }
         case 501: hurtbox.x = farg(0); hurtbox.y = farg(1); return 0;
-        case 502: flags |= u32(iarg(0)); return 0;
-        case 503: flags &= ~u32(iarg(0)); return 0;
+        case 502:  // case 0x2f：置位后若处于隐藏（0x20）则整棵 VM 树隐藏（0x46f340）
+            flags |= u32(iarg(0));
+            if ((flags & 0x20u) != 0) for_each_vm_tree(AnmManager::hide_tree);
+            return 0;
+        case 503:  // case 0x30：清位后若不再隐藏则整棵 VM 树显示（0x46f300）——即使本次未动 0x20 位也会执行
+            flags &= ~u32(iarg(0));
+            if ((flags & 0x20u) == 0) for_each_vm_tree(AnmManager::show_tree);
+            return 0;
         case 504: {
             const float x = farg(0), y = farg(1), w = farg(2), h = farg(3);
             flags |= 0x20000u;

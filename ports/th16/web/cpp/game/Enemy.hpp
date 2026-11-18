@@ -209,6 +209,8 @@ public:
     void update_hit_flash();
     // DAT_004917b8 函数表项；返回非 0 → 敌机移出列表
     int run_frame_hook(FrameHook hook);
+    // ECL 502 / 503：对全部 VM 槽的子树应用 hide_tree / show_tree
+    void for_each_vm_tree(void (*apply)(AnmVm&));
 
     // ECL 601 / 702 / 703 / 711 / 713 共用：发射器实际发射坐标（ECL 628 绝对坐标优先，否则敌机坐标 + 偏移）
     Vec3 shooter_origin(int slot) const noexcept;
