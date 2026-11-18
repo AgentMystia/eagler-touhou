@@ -195,7 +195,7 @@ void BulletManager::shoot(const EtShooter& shooter) {
             if (spawn_single(shooter, way_idx, stack_idx, aim) == 1) { pool_empty = true; break; }
         }
     }
-    if ((shooter.flags & 0x20u) != 0) sfx_queue.push_back(shooter.shoot_sfx);
+    if ((shooter.flags & 0x20u) != 0) play_sfx(shooter.shoot_sfx);
 }
 
 // 0x412cb0：从空闲链头取槽、头插活动链，按瞄准模式算角速度，初始化 VM 与 Ex
@@ -226,13 +226,13 @@ int BulletManager::spawn_single(const EtShooter& sh, i32 way_idx, i32 stack_idx,
         case 2: case 3: {
             float a = (sh.aim_mode == 2) ? aim + 0.0f : 0.0f;
             a = a + (float(way_idx) * kTwoPi) / way_f;
-            angle = a + float(stack_idx) * sh.angle2 + sh.angle1;
+            angle = a + (float(stack_idx) * sh.angle2 + sh.angle1);   // 0x412e4b：先算层项再相加（舍入序）
             break;
         }
         case 4: case 5: {
             float a = (sh.aim_mode == 4) ? aim + 0.0f : 0.0f;
             a = a + kPi / way_f + (float(way_idx) * kTwoPi) / way_f;
-            angle = a + float(stack_idx) * sh.angle2 + sh.angle1;
+            angle = a + (float(stack_idx) * sh.angle2 + sh.angle1);
             break;
         }
         case 6: {
@@ -243,7 +243,7 @@ int BulletManager::spawn_single(const EtShooter& sh, i32 way_idx, i32 stack_idx,
         case 7: {
             const float s2 = sh.speed2;
             speed = float(rng->unit() * s2) + sh.speed1;
-            angle = (float(way_idx) * kTwoPi) / way_f + 0.0f + float(stack_idx) * sh.angle2 + sh.angle1;
+            angle = (float(way_idx) * kTwoPi) / way_f + 0.0f + (float(stack_idx) * sh.angle2 + sh.angle1);
             break;
         }
         case 8: {
@@ -649,7 +649,7 @@ void BulletManager::cancel_bullet(Bullet& b, i32 item_mode) {
     if ((b.flags & Bullet::kFlagHidden) == 0) {
         if (b.cancel_script >= 0)
             cancel_effect_ids[u32(b.index)] = animations->spawn_effect(*anm, b.cancel_script, -1, b.pos, 0.0f);
-        sfx_queue.push_back(0x47);
+        play_sfx(0x47);
         convert_cancel_item(b.pos, item_mode);
     }
     const float vy = b.velocity.y * game_speed;
@@ -747,7 +747,7 @@ void BulletManager::run_ex(Bullet& b, float gs) {
             return wrap_angle(v);
         };
         auto step_sfx_if_started = [&]() {
-            if (b.ex_index != 0 && b.step_sfx >= 0) sfx_queue.push_back(b.step_sfx);
+            if (b.ex_index != 0 && b.step_sfx >= 0) play_sfx(b.step_sfx);
         };
 
         switch (t) {
@@ -861,7 +861,7 @@ void BulletManager::run_ex(Bullet& b, float gs) {
                 ++b.ex_index;
                 break;
             case kExSfx:
-                sfx_queue.push_back(st.a);
+                play_sfx(st.a);
                 ++b.ex_index;
                 break;
             case kExWrap:
@@ -976,6 +976,7 @@ void BulletManager::run_ex(Bullet& b, float gs) {
                 b.ex200000_timer.reset();
                 b.ex200000_duration = st.a;
                 b.ex200000_acc_vec = polar(b.ex200000_angle, b.ex200000_acc);
+                step_sfx_if_started();   // 原版经 LAB_00413a88 与 Ex 4 / 8 共用收尾（含变换音效）
                 ++b.ex_index;
                 break;
             case kExScale:
@@ -1122,7 +1123,7 @@ int BulletManager::ex_stop_turn(Bullet& b, float gs) {
         b.ex10_timer.tick(gs);
         return 0;
     }
-    if (b.step_sfx >= 0) sfx_queue.push_back(b.step_sfx);
+    if (b.step_sfx >= 0) play_sfx(b.step_sfx);
     b.ex10_count = b.ex10_count + 1;
     switch (b.ex10_mode) {
         case 0: case 5: b.angle = wrap_angle(b.angle + b.ex10_target_angle); break;
@@ -1221,7 +1222,7 @@ int BulletManager::ex_bounce(Bullet& b, float gs) {
     b.velocity = polar(b.angle, b.speed);
     if (bounced) {
         b.ex40_count = b.ex40_count + 1;
-        if (b.step_sfx >= 0) sfx_queue.push_back(b.step_sfx);
+        if (b.step_sfx >= 0) play_sfx(b.step_sfx);
     }
     if (b.ex40_count < b.ex40_max_bounces) return 0;
     b.ex_flags &= ~kExBounce;
@@ -1244,7 +1245,7 @@ int BulletManager::ex_wrap(Bullet& b) {
     else if ((mask & 8u) != 0 && b.pos.x > 192.0f) b.pos.x = b.pos.x - (sprite->width + 384.0f);
     else return 0;
     b.ex1000_count = b.ex1000_count + 1;
-    if (b.step_sfx >= 0) sfx_queue.push_back(b.step_sfx);
+    if (b.step_sfx >= 0) play_sfx(b.step_sfx);
     if (b.ex1000_count < b.ex1000_max) return 0;
     b.ex_flags ^= kExWrap;
     return 1;
