@@ -2,6 +2,7 @@
 #include "Item.hpp"
 
 #include "AnmManager.hpp"
+#include "AnmRenderer.hpp"
 #include "GameGlobals.hpp"
 #include "Motion.hpp"
 #include "Player.hpp"
@@ -578,13 +579,14 @@ void ItemManager::collect(Item& it) {
 // ---------------------------------------------------------------------------------------------
 // 0x4307a0
 
-void ItemManager::prepare_draw(bool season_pass) {
+void ItemManager::draw(AnmRenderer& renderer, bool season_pass) {
     for (Item& it : items) {
         if (it.state == 0 || (it.vm.flags_lo & 1u) == 0 || it.counter >= 1) continue;
         if ((it.type == kItemSeason) != season_pass) continue;
         it.vm.entity_offset = it.pos;
         it.vm2.entity_offset = it.pos;
         if (it.vm.pos.y >= -8.0f) {
+            renderer.draw_vm(it.vm);
             it.above_screen = 0;
             continue;
         }
@@ -592,6 +594,7 @@ void ItemManager::prepare_draw(bool season_pass) {
             const float y = it.vm2.pos.y;
             it.vm2.pos.y = 8.0f;
             it.vm2.color[3] = (y + 8.0f < 32.0f) ? u8(i32((y + 8.0f) * 0.03125f * 255.0f)) : 0xff;
+            renderer.draw_vm(it.vm2);
         }
         it.above_screen = 1;
     }

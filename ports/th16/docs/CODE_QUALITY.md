@@ -27,7 +27,7 @@
    - 核心原版函数锚点表（`0x4314a0  构造与链登记` 等），方便与 `AddressMap.hpp` 和 Ghidra 对照。
    - 与相邻管理器的交互关系（例如 `LaserManager` 如何通过 `BulletManager::convert_cancel_item` 转化消弹道具、通过 `Player::graze` 结算擦弹）。
 3. **类内排布顺序**：
-   公开常量与枚举 → 公开数据成员（按语义分组，每组配一行组标题注释）→ 生命周期方法（`create` / `reset` / `destroy`）→ 每帧主入口（`update` / `prepare_draw`）→ 公开操作接口 → 私有辅助函数。
+   公开常量与枚举 → 公开数据成员（按语义分组，每组配一行组标题注释）→ 生命周期方法（`create` / `reset` / `destroy`）→ 每帧主入口（`update` / `draw`）→ 公开操作接口 → 私有辅助函数。
 
 ---
 

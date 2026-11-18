@@ -25,6 +25,7 @@
 namespace th16 {
 
 class AnmManager;
+class AnmRenderer;
 struct AnmGeometry;
 struct AnmFile;
 class BulletManager;
@@ -210,8 +211,8 @@ public:
     // 0x442560：更新链 0x16。geometry：0x468c00 出界判定用的屏幕几何（DAT_004d9d34/50/54）
     void update(AnmManager& manager, GameGlobals& globals, const InputState& game_input, const PlayerWorld& world,
                 AnmFile* effect_anm, const AnmGeometry& geometry, float game_speed);
-    // 0x443730：绘制链 0x1d 的逻辑部分（pos → VM entity_offset，flags 0x40000）
-    void prepare_draw();
+    // 0x443730：绘制链 0x1d。自机 VM 不挂图层，由这里直接绘制（pos → VM entity_offset，flags 0x40000，再 0x468490）
+    void draw(AnmRenderer& renderer);
     // 0x42ca80（0x42e150 过关）：flags bit1 子机收拢、全部子机 VM 中断 3、收拢计数清零
     void gather_options(AnmManager& manager);
     // 0x443f10：被弹——音效 2、effect.anm 脚本 0x1d、符卡取得标志、状态 4（决死猶予）、无敌 6 帧、主 VM 重播脚本 0
