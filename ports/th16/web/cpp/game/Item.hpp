@@ -98,7 +98,7 @@ public:
     bool release_attract = false;      // DAT_004a6da4->0x30 == 1 && +0x38 < 10000（季节解放中全收）
     bool dialogue = false;             // DAT_004a6dcc->0x1c8 != 0（对话中全收）
     bool focus_held = false;           // DAT_004a52c8 & 8（低速时收点圈取擦弹框）
-    float release_value = 0;           // DAT_004a6da4->0xdc：季节得点累加（解放管理器接入前暂存）
+    float* release_bonus = nullptr;    // DAT_004a6da4->0xdc：拾取季节得点时无条件累加到解放的奖励（飘字 "+%d"）
     std::vector<i32> sfx_queue;        // 0x45e150 / 0x45e1f0 音效登记（宿主每帧取走）
     std::vector<ScorePopup> popups;    // 0x44a460 弹出数字（宿主每帧取走）
     std::vector<i32> gui_events;       // 0x42bcf0(0, n) Gui 弹出通知：2 = 满火力、4 = extend；0x42c280 / 0x42c390 / 0x42c600 由 Gui 接入时读全局

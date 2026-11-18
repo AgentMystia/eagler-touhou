@@ -5,6 +5,7 @@
 
 #include "AnmManager.hpp"
 #include "AnmRenderer.hpp"
+#include "Bomb.hpp"
 #include "Bullet.hpp"
 #include "Enemy.hpp"
 #include "GameGlobals.hpp"
@@ -207,7 +208,7 @@ void Gui::create_dialogue(i32 entry_index, const u8* script) {
         if (AnmVm* vm = find_or_clear(id)) vm->draw_callback = 5;
     // 0x416f40 全屏消弹（不转道具）、0x431af0 激光全灭、0x41d900 敌机全灭
     if (bullets != nullptr) bullets->cancel_all(0);
-    if (lasers != nullptr) lasers->cancel_all(false);
+    if (lasers != nullptr) lasers->cancel_all(0);
     if (enemies != nullptr) enemies->kill_all(0, nullptr);
     m.flags &= ~Msg::kShotPressed;
     m.text_pos = Vec3{384.0f, 640.0f, 0.0f};
@@ -264,7 +265,7 @@ void Gui::stage_clear() {
         clear_timer.reset();
     }
     if (player != nullptr && animations != nullptr) player->gather_options(*animations);
-    // DAT_004a6da8[0xc] != 0 → Bomb 虚函数 +0x14（Bomb 接入时补）
+    if (bomb != nullptr) bomb->on_stage_clear();   // 灵梦：把尚未引爆的阴阳玉全部引爆
     if (mode != 0) {
         // 练习 / 符卡练习：成绩文件记录 + 0x43f500 返回菜单
         error = "stage clear in practice mode (0x43f500) not ported";

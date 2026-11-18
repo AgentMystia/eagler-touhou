@@ -22,6 +22,7 @@
 // Gui 当前接入对话（Msg）、过关结算与显示分；HUD 渲染阶段补齐。
 #pragma once
 #include "AnmVm.hpp"
+#include "Bomb.hpp"
 #include "Bullet.hpp"
 #include "Enemy.hpp"
 #include "Gui.hpp"
@@ -72,6 +73,7 @@ public:
     bool items_live = false;
     std::unique_ptr<LaserManager> lasers;    // DAT_004a6ee0（0x610 字节；0x4314a0）
     bool lasers_live = false;
+    BombManager bombs;           // DAT_004a6da8 / DAT_004a6da4（0x40d890 每关装载时建，0x40da90 离开时毁）
     Gui gui;                     // DAT_004a6dcc（0x427ca0；对话 / Boss 标题 / 过关结算；HUD 渲染阶段补齐）
     bool gui_live = false;
     PlayerWorld world;           // 敌人 / 对话 / 过关状态；enemy_count 由 EnemyManager 同步

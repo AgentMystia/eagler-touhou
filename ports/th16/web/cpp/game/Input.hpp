@@ -22,6 +22,7 @@ struct InputState {
     static constexpr u32 kRight = 1u << 7;
     static constexpr u32 kEscape = 1u << 8;
     static constexpr u32 kSkip = 1u << 9;
+    static constexpr u32 kRelease = 1u << 11;   // 季节解放（C 键）
     static constexpr u32 kQ = 1u << 16;
     static constexpr u32 kS = 1u << 17;
     static constexpr u32 kPause = 1u << 18;
