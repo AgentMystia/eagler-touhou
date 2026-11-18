@@ -280,7 +280,11 @@ Vec3 anm_world_rotation(AnmVm& vm);
 Vec3 step_interp_vec3(Interp<Vec3>& it, float game_speed);
 // 0x4171c0：float 插值推进（Player 缩放 +0x2c798）
 float step_interp_float(Interp<float>& it, float game_speed);
+// 0x425570：Vec2 插值推进（敌机 radius / radius_speed）
+Vec2 step_interp_vec2(Interp<Vec2>& it, float game_speed);
 // 0x4033f0：缓动曲线（mode 0..）
 float interp_ease(int mode, float t, float end) noexcept;
+// 模式 8 的 Hermite 曲线：goal*h01 + initial*h00 + b1*h10 + b2*h11
+float hermite(float initial, float goal, float b1, float b2, float r) noexcept;
 
 }  // namespace th16

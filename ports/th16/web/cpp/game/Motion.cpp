@@ -48,15 +48,28 @@ void MotionState::update_velocity(float game_speed) noexcept {
         angle = wrap_angle(speed * game_speed + angle);
         break;
     case 4:
-        // 0x405420(+0x30) + 极坐标(angle2) → velocity；+0x3c = 0 —— 敌弹移植时补
+        // 0x405420：f30 += radius_speed × 速度后折回；velocity = polar(angle2, speed × 速度)
+        f30 = wrap_angle(radius_speed * game_speed + f30);
+        polar_into(angle2, speed * game_speed, velocity.x, velocity.y);
+        velocity.z = 0.0f;
         break;
     default:
         break;
     }
 }
 
+// 0x405390：angle 相对 angle2 的差（跨 ±π 时取另一侧），再折回
+static float angle_offset(float angle, float base) noexcept {
+    float d = angle - base;
+    if (d <= 3.1415927f) {
+        if (3.1415927f < base - angle) d = angle - (base - 6.2831855f);
+    } else {
+        d = angle - (base + 6.2831855f);
+    }
+    return wrap_angle(d);
+}
+
 void MotionState::integrate(float game_speed) noexcept {
-    (void)game_speed;
     switch (mode & 0xf) {
     case 0:
         pos.x += velocity.x;
@@ -71,10 +84,35 @@ void MotionState::integrate(float game_speed) noexcept {
         pos.z = velocity.z + 0.0f;
         break;
     }
-    case 3:
-    case 4:
-        // 0x405390 角差 / 轨道积分 —— 敌弹移植时补
+    case 3: {
+        // 椭圆：以 angle2 为长轴方向、f2c 为长短轴比，围绕圆心（velocity）定位
+        float lx, ly;
+        polar_into(wrap_angle(angle_offset(angle, angle2)), radius, lx, ly);
+        const float sx = f2c * lx;
+        const float s = sin_f(angle2), c = cos_f(angle2);
+        const float y = velocity.y + (ly * c + s * sx);
+        const float x = velocity.x + (c * sx - ly * s);
+        pos.x = x;
+        pos.y = y;
+        pos.z = velocity.z + 0.0f;
         break;
+    }
+    case 4: {
+        // 轨道：pos2 积分速度，再沿 angle2 + π/2 方向叠加 sin(f30) × radius 的横向摆动；angle 取本帧位移方向
+        const float old_x = pos.x, old_y = pos.y;
+        pos2.x = velocity.x + pos2.x;
+        pos2.y = velocity.y + pos2.y;
+        pos2.z = velocity.z + pos2.z;
+        const float a = wrap_angle(angle2 + 1.5707964f);
+        const float len = sin_f(f30) * radius * game_speed;
+        float dx, dy;
+        polar_into(wrap_angle(a), len, dx, dy);
+        pos.x = dx + pos2.x;
+        pos.y = pos2.y + dy;
+        pos.z = pos2.z + 0.0f;
+        angle = wrap_angle(atan2_f(pos.y - old_y, pos.x - old_x));
+        break;
+    }
     default:
         break;
     }

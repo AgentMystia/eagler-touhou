@@ -84,7 +84,9 @@ template <> [[maybe_unused]] Vec2 add(const Vec2& a, const Vec2& b) { return {a.
 template <> [[maybe_unused]] Vec3 add(const Vec3& a, const Vec3& b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
 template <> [[maybe_unused]] IVec3 add(const IVec3& a, const IVec3& b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
 
-// Hermite：goal*h01 + initial*h00 + b1*h10 + b2*h11（乘加顺序与原版一致）
+}  // namespace
+
+// Hermite：goal*h01 + initial*h00 + b1*h10 + b2*h11（乘加顺序与原版一致；0x4258b0 敌机位置插值同一公式）
 float hermite(float initial, float goal, float b1, float b2, float r) noexcept {
     const float s = r - 1.0f;
     const float h11 = s * r * r;
@@ -93,6 +95,8 @@ float hermite(float initial, float goal, float b1, float b2, float r) noexcept {
     const float h10 = (1.0f - r) * (1.0f - r) * r;
     return goal * h01 + initial * h00 + b1 * h10 + b2 * h11;
 }
+
+namespace {
 float lerp(float initial, float goal, float f) noexcept { return (goal - initial) * f + initial; }
 
 template <typename T> T hermite_v(const T& i, const T& g, const T& b1, const T& b2, float r);
@@ -255,6 +259,7 @@ struct Ins {
 
 Vec3 step_interp_vec3(Interp<Vec3>& it, float game_speed) { return step_interp(it, game_speed); }
 float step_interp_float(Interp<float>& it, float game_speed) { return step_interp(it, game_speed); }
+Vec2 step_interp_vec2(Interp<Vec2>& it, float game_speed) { return step_interp(it, game_speed); }
 float interp_ease(int mode, float t, float end) noexcept { return ease(mode, t, end); }
 
 Vec3 anm_world_rotation(AnmVm& v) {
