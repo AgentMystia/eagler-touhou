@@ -30,7 +30,7 @@
 | 0x46f600 / 0x46eab0 / 0x46e660 | 池 LIFO 分配 / 回收 / 递归标记删除 | `game/AnmManager.cpp` |
 | 0x46e7d0 / 0x46e890 / 0x46e940 / 0x46ea00 / 0x46e340 / 0x46e490 / 0x46efa0 | 世界/UI 链表插入、逐帧 tick（layer 绘制链 +0x1c6fc30）、按 id 查找 | `game/AnmManager.cpp` |
 | 0x407cb0 | AsciiManager：`ascii*.anm` 进槽 2；ins_300 负下标回退精灵 0x102 | `game/AnmManager.hpp kAsciiSlot` |
-| 0x468490 / 0x46e750 | 按 VM / 按 layer 绘制；mode 0..3 为屏幕四边形 | `game/AnmRenderer.cpp` |
+| 0x468490 / 0x46e750 / 0x465280 / 0x467410 / 0x469640 / 0x469a00 / 0x469bd0 / 0x465a80 / 0x465a30 / 0x464f10 | 按 VM / 按 layer 绘制：mode 0..3 屏幕四边形（像素对齐 / UV 滚动 / 顶点色 / 视口剔除后入批，出批为 FVF 0x144 三角形列表）；mode 8 / 0xf 世界四边形（±128 单位顶点缓冲 × 世界矩阵 × 纹理矩阵，TFACTOR 着色）；mode 0x11 / 0x12 / 0x13 无贴图正多边形（扇面 / 轮廓 / 环带，边数 $I0）。设备状态经 AnmManager 缓存（纹理键 / 混合 / 过滤 / 寻址 / 顶点格式 / 调制），只在变化时出批下发；0x43d140 每帧复位缓存 | `game/AnmRenderer.cpp`、`game/AnmGeometry.cpp` |
 | 0x465c40 / 0x4660b0 / 0x465280 | 轴对齐角点 / 旋转角点 / 像素对齐·UV·颜色提交 | `game/AnmRenderer.cpp` |
 | 0x406c40 / 0x406a70 | 世界位置（pos+offset+pos2）与窗口缩放 / root 链 | `game/AnmRenderer.cpp` |
 | 0x43adc0 / 0x43b300 / 0x43b290 | 启动幕：装载 `sig.anm`；绘制链 0x44 帧计数；装载完成后请求 Title=4 | `game/GameSession.cpp` / `game/Supervisor.hpp` |
@@ -44,7 +44,7 @@
 | 0x46f340 / 0x46f3b0 | 清 flags_lo bit1（显示）并递归子树 | `game/TitleScene.cpp` |
 | 0x46f510 / 0x46f0b0 / 0x46f130 | ANM 子树按脚本号查找；中断（含子 VM）；中断并立即 run | `game/AnmManager.cpp` |
 | 0x467410 / 0x46b900 / 0x464dd0 / 0x464f10 / 0x45ba80 | ANM mode 8：世界矩阵 × 相机投影、±128 单位四边形锚点变体、父链旋转累加、混合/采样/寻址状态、设备缺省状态 | `game/AnmRenderer.cpp`、`game/AnmVm.cpp`、`sdl/Application.cpp` |
-| 0x43cb10 / 0x43c780 / 0x43c710 | 相机组初始化（UI 相机 0x4c1560）、LookAtLH/PerspectiveFovLH 建矩阵、套用 view/proj/视口 | `game/AnmRenderer.hpp` AnmCamera |
+| 0x43cb10 / 0x43c780 / 0x43c710 / 0x43c940 | 四台相机（UI 0x4c1560 全窗口 / 场地 0x4c1308 (32,16,384,448) / 宽场地 0x4c1434 (128,16,384,448) / 渲染目标 0x4c168c (116,4,408,472)）：以视口中心为眼位建 LookAtLH / PerspectiveFovLH；0x43c940 按 pos + pos_offset / facing_norm 建关卡相机（zn 30、zf 8000）；0x43c710 出批后下发 view / projection，抖动偏移转为绘制偏移，再 SetViewport | `game/Camera.cpp`、`game/ScreenCompositor.cpp` init_cameras、`game/AnmRenderer.cpp` use_camera |
 | 0x44ad20 | 标题析构：摘两条链、卸载槽 0x10/0x11、落叶发射器（+0x73c）interrupt 1 | `game/GameSession.cpp` |
 | 0x43ba40 / 0x43b3d0 / 0x43ce10 | Supervisor 注册 / 每帧泵 / 场景切换（+0x6f0/+0x6f4，DAT_004c17c4） | `game/Supervisor.hpp` |
 | 0x401d50 / 0x405580 | 输入采样与边沿 | `game/Input.hpp` |
@@ -55,7 +55,7 @@
 | 0x40ac30 | STD：头 {i16 对象数, i16 面 VM 数, u32 实例偏移, u32 脚本偏移} + anm_name[0x80] + 对象偏移表；对象 {id, layer, flags, pos, size} + 四边形 {type, size, anm_script, vm_index(运行时), pos, w, h}；实例 {object, flags, pos}…0xffff；脚本 {time, op, size, args}；背景 ANM → 槽 3 + (stage & 1) | `game/Std.cpp`、`game/Stage.cpp` |
 | 0x4097c0 / 0x409db0 / 0x40add0 / 0x409e50 / 0x40aed0 / 0x40b2f0 | StageManager（0x66f0，DAT_004a6d9c/a0）：相机默认 (0,0,-600)/(0,300,600)/(0,1,0)、更新链 0x11 / 绘制链 3、6；首帧面 VM init_from_template + run、vm_index 顺序分配；每帧 脚本 → 摇晃 → 面 VM → 层精灵 → 相机矩阵；面 VM 全停则清对象 bit0；interrupt（arg+7） | `game/Stage.cpp` |
 | 0x40b3b0 | 关卡脚本（param_1 = this+0xc，跳转表 0x40bfbc 0..0x14，0xf/0x10 空）：0 stop、1 jmp、2 pos、3 posTime(t,mode,目标)、4 facing、5 facingTime、6 up、7 fov、8 fog、9 fogTime、10/11 bezier、12 摇晃模式（1,2,3,4,7,8,9：周期 0x200/0xc00/0x800/0xc00/0x800/0x400/0x200）、13 bgColor DAT_004c1b0c、14 层精灵、17 畸变、18 upTime、19 interrupt、20 半径² | `game/Stage.cpp` |
-| 0x409f90 / 0x40af70 / 0x40c280 / 0x43c940 / 0x40d370 | 背景绘制：场地矩形清色、相机 0x4c168c（视口 (116,4,408,472)、LookAtLH(eye=pos+offset, at=eye+facing_norm) + PerspectiveFovLH(fov, w/h, 30, 8000)）、逐层 0..7：层精灵（无雾、Z 关）→ 实例 × 四边形（entity_offset = quad.pos + inst.pos，scale = wh / 精灵尺寸，雾 mode 8/0x18，ZENABLE=!(lo&0x2000)）；雾色 BGRA 浮点相加；顶点线性雾 f=(far−z_eye)/(far−near)，z_eye=1/rhw | `game/AnmRenderer.cpp` emit_stage、`game/Stage.cpp` draw_layer、`sdl/GraphicsDevice.cpp` screen_quad_fog |
+| 0x409f90 / 0x40a410 / 0x40af70 / 0x40c280 / 0x40a7d0 / 0x40d370 | 关卡绘制链 3 / 6：bit3 置位跳过；非切关或计时 < 0x3c 时套关卡相机 0x4c168c、Z 写 / ZFUNC LESSEQUAL、雾参数、以雾色（切关计时 ≤ 0x21 时透明黑）清场地；切关 bit2 期间计时 < 0x1e 建 ScreenEffect kind 3 淡入并置 bit0、结束计时置 1，否则清 bit0；bit0 时开雾画层 0..7（链 3）/ 8..11（链 6，另有 ANM 层 0x20 / 0x21 用 3D 相机）；每层先画 8 个层精灵（无雾、Z 关、抖动偏移），再逐实例 0x40a7d0 剔除（距离平方 > +0x331c，或 16 个包围点投影后与场地 384×448 ±8 不相交）→ 四边形 entity_offset = quad.pos + inst.pos、scale = wh / 精灵尺寸，雾 mode 8 / 0xf，Z 写 = !(lo & 0x2000)；链 6 尾部 0x40d490 倒数结束计时。无设备时只执行逻辑部分（transition_step / end_timer_step）| `game/Stage.cpp` draw_background / draw_foreground / draw_layer / draw_layer_sprites / instance_visible |
 | 0x441c60 / 0x440fb0 / 0x441740 / 0x441a50 | Player（0x2c828，DAT_004a6ef8）：创建（VM 0x4093f0、两实体 0x440ec0、memset）；初始化（pl0N.anm 槽 9 / pl0Nsub.anm 槽 0x1e、.sht ×2、更新链 0x16 / 绘制链 0x1d、脚本 0 → 自机 VM、0x440e40 置 (0,400)×128、速度 ×128、每级火力 100 → DAT_004a57e8/ec、季节阶梯 0x43deb0 {0,100,0x82,0xa0,200,0xfa,300,0}、半径 DAT_00492c98/88/68 ×0.5、三组判定矩形、滞后 0x1e）；首帧复位（状态 1、计时器、flags&~9、kill 特效 VM、Gui 残机、子机 interrupt 2、0x4440e0） | `game/Player.cpp` init / reset、`game/GameSession.cpp` create_player |
 | 0x443790 | .sht：+2 组数、+4/8/c 半径（被 exe 表覆盖）、+0x10..0x1c 四档速度、+0x20 最大等级、+0x24 每级火力、+0x40/+0xe8 子机位置 ×21、+0x190 组偏移（基 +0x1b8）、0x58 字节条目（首字节 <0 结束，+0x28..+0x34 回调表 DAT_004919c0/19a0/4a6f04/1980） | `game/ShotTable.cpp` |
 | 0x443720 → 0x442560 | 自机每帧：状态机 0 入场（0xf000 − t×0x2800/0x3c）/ 1 正常（炸弹 0x40dda0 + 0x441cf0）/ 2 复活等待 / 3 / 4 被弹；伤害源 ×257；无敌计时倒数（0x16638，每 3 帧 color2 0xff0000ff + flags_lo 0x20000）；speed_mult 复位、推力 DAT_004d9dc4；自机 VM run；flags 0x10 缩放模式（0x4171c0）否则 scale 1 + 判定矩形（收点框 ×0.5）；三计时器 tick；射击门限（Gui+0x1c8==0 && 敌人数≠0 && !过关 && Timer3>0x13 && !(flags&0x14)）→ 0x4455d0，否则射击计时复位；0x4456d0 自机弹 | `game/Player.cpp` update |
@@ -102,7 +102,7 @@ ANM VM 的还原证据：`tests/anm-vm.test.mjs` 以 `tools/oracle/anm-oracle.py
 | 原版地址 | 含义 |
 | --- | --- |
 | 0x43adc0（其余步骤） | 启动幕后续：`text.anm` → `../../bgm/thbgm.fmt` → `thbgm.dat` → score 对象（0x4497e0）；目前只完成 sig 上屏与向 Title 切换 |
-| 0x43d140 / 0x43d2f0 / 0x43d820 / 0x43d6f0 | 渲染目标合成链（绘制链 1 / 0xf / 0x38 / 0x2b）：场地先画进 RT DAT_004c127c（中心 (320,240)），再由 front.anm RT 精灵 VM 0x4c128c/0x4c1298 贴回后台缓冲（场地中心 (224,240)）；移植版暂以 GL 视口裁剪到 (32,16,384,448) + x−96 等效，后端尚无 RT |
+| 0x43b520 / 0x43d140 / 0x43d400 / 0x43d2f0 / 0x43d5a0 / 0x43d4a0 / 0x43d6f0 / 0x43d640 / 0x43d820 / 0x43d7c0 / 0x43d870 / 0x45a8a0 | 画面合成（Supervisor 绘制链 1 / 0xe / 0xf / 0x19 / 0x1a / 0x2b / 0x2c / 0x38 / 0x39 / 0x55）：text.anm '@R' 项 2 / 3 为两张渲染目标，四个合成 VM（text.anm 0x3b / 0x41 / 0x3e / 0x44）在两目标间来回拷贝场地画面（BLENDOP ADD、关 alpha test），最后 VM3 贴回后备缓冲；场地在渲染目标里以 (116,4,408,472) 相机绘制，HUD 层在后备缓冲以 UI 相机绘制。帧序（0x45a8a0）：更新链 → BeginScene → 丢弃残批 → UI 相机 → 绘制链 → 出批 → SetTexture(0, NULL) → EndScene。场地清屏色 DAT_004c1b0c 由 STD ins 13 写、0x42d200 析构时回黑 | `game/ScreenCompositor.cpp`、`game/GameSession.cpp` draw_frame / register_layer_draw_chains |
 | 0x40a410 / 0x40a7d0 / 0x40c4a0 | 绘制链 6（ANM 层 0x20/0x21 用 3D 相机）、对象包围盒视锥剔除、畸变效果（ins 17） |
 | 0x44c570 / 0x451750 / 0x452330 / 0x4546f0 / 0x4545a0 / 0x4553d0 | 标题余项（Option / Replay / Player Data / Music Room / Manual / Spell Practice）；0x44af80 开头的 demo 录像触发；0x44a850 / 0x44a8e0 / 0x44a800 存档判定；0x41a390 + 0x418ba0 过场；0x43c470 BGM 淡出 |
 | 0x46d020 | AnmManager::load_file(slot, name)（同步等待装载线程） |
