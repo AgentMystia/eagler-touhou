@@ -1262,6 +1262,38 @@ def laser_digest(frames):
     return digest
 
 
+BOMB_CLASS_INDEX = ['ReimuA', 'CirnoA', 'AyaA', 'MarisaA', 'ReimuSub', 'CirnoSub', 'AyaSub', 'MarisaSub', 'AllSub']
+
+
+def bomb_digest(frames):
+    """炸弹 / 季节解放的 FNV-1a 64（harness game-digest bombs= 同口径）：
+    每帧 [frame] + 主炸弹、解放各 [有无] + 公共区 24 字 [class, pos×3, angular, angle, active, timer×3, vm×2, in_spell, kind,
+    level, bonus, bonus_shown, popup×3, popup_level, popup_pos×3] + 阴阳玉数 + 每枚 21 字
+    [vm, pos×3, speed, angle, radius, center×3, mode, active, timer×3, delta×3, target, index, source]。"""
+    digest = 0xCBF29CE484222325
+    mask = (1 << 64) - 1
+    def feed(words):
+        nonlocal digest
+        for b in b''.join(struct.pack('<I', w & 0xFFFFFFFF) for w in words):
+            digest = ((digest ^ b) * 0x100000001B3) & mask
+    for f in frames:
+        feed([f['frame']])
+        bombs = f.get('bombs') or {}
+        for key in ('main', 'sub'):
+            b = bombs.get(key)
+            feed([1 if b else 0])
+            if not b:
+                continue
+            cls = BOMB_CLASS_INDEX.index(b['class']) if b['class'] in BOMB_CLASS_INDEX else 0xFFFFFFFF
+            feed([cls] + b['pos'] + [b['angular'], b['angle'], b['active']] + b['timer'][:3] + b['vm'] +
+                 [b['in_spell'], b['kind'], b['level'], b['bonus'], b['bonus_shown']] + b['popup'][:3] +
+                 [b['popup_level']] + b['popup_pos'] + [len(b['orbs'])])
+            for o in b['orbs']:
+                feed([o['vm']] + o['pos'] + [o['speed'], o['angle'], o['radius']] + o['center'] + [o['mode'], o['active']] +
+                     o['timer'][:3] + o['delta'] + [o['target'], o['index'], o['source']])
+    return digest
+
+
 def spell_digest(frames):
     """Spellcard 的 FNV-1a 64（harness game-digest spell= 同口径）：
     每帧 [frame, flags, timer×3, id, bonus, bonus_initial, time_limit, count, state, vm 有无×5, dialogue, boss_ids×3,
@@ -1294,9 +1326,9 @@ def main():
         for path in sys.argv[2:]:
             data = json.loads(pathlib.Path(path).read_text())
             fr = data['frames']
-            print('stage=%d shot=%d frames=%d digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x lasers=%016x' % (
+            print('stage=%d shot=%d frames=%d digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x lasers=%016x bombs=%016x' % (
                 data['stage'], data['shot'], len(fr), frame_digest(fr), enemy_digest(fr), enemy_vm_digest(fr), bullet_digest(fr),
-                item_digest(fr), spell_digest(fr), laser_digest(fr)))
+                item_digest(fr), spell_digest(fr), laser_digest(fr), bomb_digest(fr)))
         return 0
     ap = argparse.ArgumentParser()
     ap.add_argument('exe')
@@ -1365,7 +1397,7 @@ def main():
         pathlib.Path(a.trace_rng).write_text(json.dumps(o.rng_trace, separators=(',', ':')))
     if a.trace_vm:
         pathlib.Path(a.trace_vm).write_text(json.dumps(o.vm_trace, separators=(',', ':')))
-    print('game-oracle: %d frames → %s digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x lasers=%016x errors=%s' % (
+    print('game-oracle: %d frames → %s digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x lasers=%016x bombs=%016x errors=%s' % (
         a.frames, a.out, frame_digest(frames),
         enemy_digest(frames) if a.enemies else 0,
         enemy_vm_digest(frames) if a.enemies else 0,
@@ -1373,6 +1405,7 @@ def main():
         item_digest(frames) if a.items else 0,
         spell_digest(frames) if a.enemies else 0,
         laser_digest(frames) if a.lasers else 0,
+        bomb_digest(frames) if a.bombs else 0,
         notes[:3]))
     return 0
 
