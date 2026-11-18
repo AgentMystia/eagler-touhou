@@ -54,7 +54,10 @@ struct EnemySpawnArgs {
     i32 score = 0;
     i32 item = 0;
     u32 mirror = 0;          // → flags bit 19
-    u32 extras[8]{};
+    // +0x20..+0x4c：生成者的 I0..I3 / F0..F3 / F4..F7（0x423050 抄自 EnemyInf+0x28c..0x2b8，0x41aa70 写入子机同位）
+    i32 int_regs[4]{};
+    float float_regs[4]{};
+    float temp_regs[4]{};
 };
 
 class Enemy;
@@ -132,8 +135,8 @@ public:
     Vec2 sprite_size{};         // EnemyInf+0x3f58..0x3f5c：主 VM 的 |sprite_size.y×scale.y| / |sprite_size.x×scale.x|
     Vec2 bound_center{};        // EnemyInf+0x3f60..0x3f64（op 504）
     Vec2 bound_size{};          // EnemyInf+0x3f68..0x3f6c（op 504）
-    i32 int_regs[4]{};          // EnemyInf+0x1498 旁整数槽（部分与 life 重叠，先独立）
-    float float_regs[4]{};
+    i32 int_regs[4]{};          // EnemyInf+0x28c..0x298（-9985..-9982；生成时承自生成者）
+    float float_regs[4]{};      // EnemyInf+0x29c..0x2a8（-9981..-9978）
     float temp_regs[4]{};       // EnemyInf+0x14b8..0x14c4（-9935..-9932）
     // 运动插值器（下标 0 = motion1 / 1 = motion2；0x41bb50 每帧推进）
     EnemyPosInterp pos_interp[2]{};     // EnemyInf+0x2f8 / +0x360（op 401/403/425/426/434–439）
