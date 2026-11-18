@@ -10,6 +10,8 @@
 //   0x464f10  逐 VM 设备状态缓存：混合模式 / 采样过滤 / 寻址模式
 //   0x469640 / 0x469a00 / 0x469bd0  mode 0x11 / 0x12 / 0x13：无贴图的正多边形（扇面 / 轮廓 / 环带），
 //             边数 = $I0，半径 = 精灵宽 × scale，顶点格式 XYZRHW|DIFFUSE
+//   0x468c70 / 0x469570 / 0x469330 / 0x468fc0  mode 0x10 / 0x14 / 0x15 / 0x16 / 0x1a / 0x1b：无贴图矩形（实心 /
+//             描边 / 线段 / 线框），宽高 = ins_606 族的精灵尺寸 × scale，锚点取 ins_421
 //   0x465b50  入批（每四边形 6 顶点 XYZRHW|DIFFUSE|TEX1）  0x465a80  出批 DrawPrimitiveUP
 //   0x46e750  遍历一层绘制链
 //   0x43c710  切相机：下发 view / projection，抖动偏移进绘制偏移
@@ -57,13 +59,16 @@ enum class AnmRenderMode : u32 {
     Mode11 = 0xb,
     VertexBuffer12 = 0xc, VertexBuffer13 = 0xd, VertexBuffer14 = 0xe,
     WorldFogToggle = 0xf,  // 开雾画 mode 8 再关雾
-    Ellipse = 0x10,
+    Rect = 0x10,           // 0x468c70：单色实心矩形（ins_605 之后的旧式尺寸）
     PolygonFan = 0x11,     // 0x469640：中心色 color、边缘色 color2 的实心正多边形
     PolygonOutline = 0x12, // 0x469a00：线段带轮廓
     PolygonRing = 0x13,    // 0x469bd0：内外半径差 = 精灵高 × scale 的环带
-    Ellipse2 = 0x14, Ring = 0x15, Ring2 = 0x16,
-    Strip = 0x18, Strip2 = 0x19,
-    Arc = 0x1a, Arc2 = 0x1b,
+    GradientRect = 0x14,   // 0x468c70：左 color → 右 color2 的实心矩形（ins_606）
+    OutlinedRect = 0x15,   // 0x469570：先画大一像素、半透明的底，再画单色矩形（ins_607）
+    OutlinedGradientRect = 0x16,  // 0x469570 的渐变版（ins_608）
+    Strip = 0x18, Strip2 = 0x19,  // 0x4681f0 族：宿主顶点缓冲条带（ins_609 / 610）
+    Line = 0x1a,           // 0x469330：沿旋转方向、长 = 精灵宽 的线段，两端 color / color2
+    RectOutline = 0x1b,    // 0x468fc0：矩形线框（线段带 5 点）
 };
 
 class AnmRenderer {
@@ -147,6 +152,11 @@ private:
     int draw_world_quad(AnmVm& vm, const AnmRuntimeSprite& sprite);
     // 0x468490 mode 0x11..0x13 分支 + 0x469640 / 0x469a00 / 0x469bd0
     int draw_polygon(AnmVm& vm, AnmRenderMode mode);
+    // 0x468490 mode 0x10 / 0x14..0x16 / 0x1a / 0x1b 分支 + 0x468c70 / 0x469570 / 0x469330 / 0x468fc0
+    int draw_rectangle(AnmVm& vm, AnmRenderMode mode);
+    // 0x468c70：矩形四角（左上 c1、右上 c2、左下 c1、右下 c2 的三角条带）
+    void submit_rectangle(float x, float y, float width, float height, float rotation, u32 c1, u32 c2,
+                          u32 anchor_x, u32 anchor_y);
     // 多边形顶点提交前的共同状态：ALPHAOP / COLOROP = SELECTARG2、ARG2 = DIFFUSE、FVF XYZRHW|DIFFUSE
     void prepare_untextured_draw();
     // 0x464f10

@@ -30,7 +30,7 @@
 | 0x46f600 / 0x46eab0 / 0x46e660 | 池 LIFO 分配 / 回收 / 递归标记删除 | `game/AnmManager.cpp` |
 | 0x46e7d0 / 0x46e890 / 0x46e940 / 0x46ea00 / 0x46e340 / 0x46e490 / 0x46efa0 | 世界/UI 链表插入、逐帧 tick（layer 绘制链 +0x1c6fc30）、按 id 查找 | `game/AnmManager.cpp` |
 | 0x407cb0 | AsciiManager：`ascii*.anm` 进槽 2；ins_300 负下标回退精灵 0x102 | `game/AnmManager.hpp kAsciiSlot` |
-| 0x468490 / 0x46e750 / 0x465280 / 0x467410 / 0x469640 / 0x469a00 / 0x469bd0 / 0x465a80 / 0x465a30 / 0x464f10 | 按 VM / 按 layer 绘制：mode 0..3 屏幕四边形（像素对齐 / UV 滚动 / 顶点色 / 视口剔除后入批，出批为 FVF 0x144 三角形列表）；mode 8 / 0xf 世界四边形（±128 单位顶点缓冲 × 世界矩阵 × 纹理矩阵，TFACTOR 着色）；mode 0x11 / 0x12 / 0x13 无贴图正多边形（扇面 / 轮廓 / 环带，边数 $I0）。设备状态经 AnmManager 缓存（纹理键 / 混合 / 过滤 / 寻址 / 顶点格式 / 调制），只在变化时出批下发；0x43d140 每帧复位缓存 | `game/AnmRenderer.cpp`、`game/AnmGeometry.cpp` |
+| 0x468490 / 0x46e750 / 0x465280 / 0x467410 / 0x469640 / 0x469a00 / 0x469bd0 / 0x468c70 / 0x469570 / 0x469330 / 0x468fc0 / 0x465a80 / 0x465a30 / 0x464f10 | 按 VM / 按 layer 绘制：mode 0..3 屏幕四边形（像素对齐 / UV 滚动 / 顶点色 / 视口剔除后入批，出批为 FVF 0x144 三角形列表）；mode 8 / 0xf 世界四边形（±128 单位顶点缓冲 × 世界矩阵 × 纹理矩阵，TFACTOR 着色）；mode 0x11 / 0x12 / 0x13 无贴图正多边形（扇面 / 轮廓 / 环带，边数 $I0）；mode 0x10 / 0x14 / 0x15 / 0x16 / 0x1a / 0x1b 无贴图矩形（实心 / 左右渐变 / 带半透明描边底 / 线段 / 线框，宽高 = ins_606 族精灵尺寸 × scale）。设备状态经 AnmManager 缓存（纹理键 / 混合 / 过滤 / 寻址 / 顶点格式 / 调制），只在变化时出批下发；0x43d140 每帧复位缓存 | `game/AnmRenderer.cpp`、`game/AnmGeometry.cpp` |
 | 0x465c40 / 0x4660b0 / 0x465280 | 轴对齐角点 / 旋转角点 / 像素对齐·UV·颜色提交 | `game/AnmRenderer.cpp` |
 | 0x406c40 / 0x406a70 | 世界位置（pos+offset+pos2）与窗口缩放 / root 链 | `game/AnmRenderer.cpp` |
 | 0x43adc0 / 0x43b300 / 0x43b290 | 启动幕：装载 `sig.anm`；绘制链 0x44 帧计数；装载完成后请求 Title=4 | `game/GameSession.cpp` / `game/Supervisor.hpp` |
