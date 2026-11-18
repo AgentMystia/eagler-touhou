@@ -306,6 +306,8 @@ public:
     void cancel_bullet(Bullet& b, i32 item_mode);
     // 0x416c20 / 0x416d20：圆形范围消弹（check_immunity = 0x416d20 变体，跳过 +0x24 非零的弹）
     void cancel_radius(const Vec3& center, float radius, i32 item_mode, bool check_immunity);
+    // 0x444cf0：Player::graze（计数、特效、音效）后生成得点道具 0x10（敌机体擦弹 0x41c330 亦经此）
+    void graze(const Vec3& pos);
     // 0x416f40：全屏消弹（状态非 0/3 的全部槽）
     void cancel_all(i32 item_mode);
 
@@ -323,7 +325,6 @@ private:
     void run_ex(Bullet& b, float game_speed);           // 0x413860
     int check_player_collision(Bullet& b, bool force_graze, float game_speed); // 0x4124b0
     void start_hit_dissolve(Bullet& b, float game_speed);                     // 0x4124b0 / 0x411e70 状态 5 共用：中断 1 + 消弹特效飞散
-    void graze(const Vec3& pos);                                              // 0x444cf0
     void convert_cancel_item(const Vec3& pos, i32 item_mode);                 // 0x416a00
     void bind_appearance(Bullet& b, i32 type, i32 color);  // 0x412cb0 / Ex 0x200 共用：VM 重建 + 消弹脚本 + 判定/桶
     const AnmRuntimeSprite* main_sprite(const Bullet& b) const;  // vm_main 当前精灵（出界 / 反弹 / 穿墙尺寸）

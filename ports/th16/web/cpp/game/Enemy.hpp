@@ -15,9 +15,21 @@
 namespace th16 {
 
 class AnmManager;
+struct AnmFile;
+struct AnmVm;
 class Archive;
+class EffectManager;
 struct GameGlobals;
 class Player;
+struct Spellcard;
+
+// Boss 阶段中断表项（Enemy+0x5284 起 ×8，步长 0x88；op 514 / 521 写，0x424f00 / 0x425010 查）
+struct EnemyInterrupt {
+    i32 life_threshold = -1;   // +0x00：血量降到该值以下时切到 sub（-1 = 空槽）
+    i32 time_threshold = -1;   // +0x04：life_timer 到达该帧时切到 timeout_sub（op 514 arg2）
+    std::string sub;           // +0x08（0x40 字节）
+    std::string timeout_sub;   // +0x48（0x40 字节；op 521 可单独改写）
+};
 
 struct EnemySpawnArgs {
     Vec3 pos;
@@ -47,26 +59,60 @@ public:
     MotionState motion1;        // EnemyInf+0x88
     MotionState motion2;        // EnemyInf+0xcc
     Vec3 hitbox;                // EnemyInf+0x110（op 500）
-    Vec3 hurtbox;               // EnemyInf+0x11c（op 501）
+    Vec3 hurtbox;               // EnemyInf+0x118（op 501；x × 0.5 = 体碰撞半径）
     Timer invuln;               // EnemyInf+0x3ffc（生成时 = 2）
     Timer life_timer;           // 年龄计时（生成时 current=0x3c）
     i32 life = 0;               // EnemyInf+0x3f74 / Enemy+0x5180 / ECL -9954
     i32 life_max = 0;           // +0x3f78 / +0x5184
+    i32 life_display = 0;       // +0x3f7c / +0x5188：距下一阶段阈值的血量（Boss 血条 / 低血闪烁阈值）
     i32 life_budget = 0;        // +0x3f80 / +0x518c（符卡 7 倍血量池）
     i32 phase_life = 0;         // +0x3f84 / +0x5190
-    u32 life_flags = 0;         // +0x3f8c / +0x5198（bit0 = 符卡 7 倍减伤）
-    i32 anm_slot = 0;           // +0x264
-    bool has_main_vm = false;   // +0x124 非零标记
+    i32 damage_accum = 0;       // +0x3f88 / +0x5194：无敌 / flags&0x10 时累计的伤害（op 1001 季节道具按此放出）
+    u32 life_flags = 0;         // +0x3f8c / +0x5198（bit0 = 符卡 7 倍减伤；bit1 = 立即死亡）
+    float damage_rate = 1.0f;   // +0x4038 / +0x5244（op 565；Bomb 中按比例减伤，0 时音效 0x24）
+    i32 season_item_step = 0;   // +0x4058（op 1001 arg0：每累计该伤害放一个季节道具）
+    i32 season_item_next = 0;   // +0x405c（下一次放出的累计伤害阈值）
+    Timer hit_timer;            // +0x4024：受击后置 30 帧并逐帧回退（0x41c330 尾）
+    Timer no_hit_timer;         // +0x4010（op 541）：> 0 时不判体碰撞，逐帧回退
+    i32 score_bonus = 0;        // +0x452c / +0x5738（op 569）
+    i32 score_bonus_spell = 0;  // +0x4528 / +0x5734（op 524：奖励归属的 spell_id）
+    i32 bomb_script = 0;        // +0x4068（op 546 arg1：Bomb / 季节解放期间的主 VM 脚本）
+    i32 bomb_script_restore = 0;// +0x406c（op 546 时的 main_script）
+    static constexpr int kInterruptSlots = 8;
+    EnemyInterrupt interrupts[kInterruptSlots];  // Enemy+0x5284
+    // —— ANM VM 绑定（0x41dcb0 op 302..340 / 0x4233a0 / 0x423260）——
+    static constexpr int kVmSlots = 16;        // ids 16 槽；偏移/父槽表只有前 14 槽参与每帧同步
+    static constexpr int kVmSyncSlots = 14;
+    u32 vm_ids[kVmSlots]{};                    // EnemyInf+0x124
+    Vec3 vm_offsets[kVmSyncSlots]{};           // EnemyInf+0x164（op 320）
+    i32 vm_parent_slot[kVmSyncSlots];          // EnemyInf+0x224（op 322；-1 = 直接跟随敌机）
+    i32 anm_slot = 0;           // +0x264（op 302：EnemyManager anm 表下标）
+    i32 anm_slot_main = 0;      // +0x268：主 VM 来源的 anm 表下标（朝向切换重建用）
+    i32 main_script = 0;        // +0x26c：主 VM 脚本号
+    i32 main_script_base = 0;   // +0x270：朝向脚本族基号（+1..+4 = 左右倾/回正）
+    i32 sprite_direction = 0;   // +0x274：-1 左 / 0 正 / 1 右
+    i32 anm_layer = 0;          // +0x278（op 550）
+    i32 anm_layer_offset = 0;   // +0x27c（op 552）：spawn 层 = 该值 + 7
+    Vec3 hit_pos;               // EnemyInf+0x280：最后一次命中的伤害源坐标（0x445a30 出参）
+    Vec3 delta;                 // EnemyInf+0x78：0x41c1f0 本帧位移（朝向判定 / 0x80 位 VM 的朝向角）
+    float vm_rotation = 0;      // EnemyInf+0x120：上次写给 0x80 位 VM 的 rotation.z
+    i32 death_anm_slot = 0;     // +0x3fec（op 323 arg0）
+    i32 death_script = -1;      // +0x3fe8（op 323 arg1；≥0 时 0x41dcb0 case 0x66 死亡特效）
+    EffectManager* effects = nullptr;          // DAT_004a6db8
     Timer season_drop_timer;    // EnemyInf+0x403c / Enemy+0x5248（op 1000 限时季节掉落计时）
     i32 season_drop_duration = 0x3c; // +0x4050 / +0x525c（op 1000 arg0）
-    i32 season_drop_max = 0;    // +0x3fd0 / +0x51dc（op 1000 arg1）
+    i32 season_drop_max = 0;    // +0x3fd0 / +0x51dc（op 1000 arg1；0x41d700 掉落表第 15 项 = 季节道具数）
     i32 season_drop_min = 1;    // +0x4054 / +0x5260（op 1000 arg2）
+    i32 drop_item_type = 0;     // +0x3f90 / +0x519c（op 510：死亡/op 562 时先掉的单个道具）
+    i32 drop_counts[15]{};      // +0x3f94..+0x3fcc（掉落表：道具种类 1..15 的数量）
+    Vec2 drop_radius{32.0f, 32.0f};  // +0x3fd8 / +0x51e4（op 508；0x41b580 初值 32）
+    std::string death_sub;      // +0x44d8（op 556：死亡时切到该子程序立刻跑一帧）
     i32 hit_flash_timer = 0;    // +0x3ff0（受击闪烁/音效节流 4 帧）
     i32 hit_sfx = -1;           // +0x3ff8
     i32 death_sfx = -1;         // +0x3fe4 / +0x51f0（(id & 1) + 3）
     i32 boss_slot = -1;
     float rate = 0;             // +0x14f0
-    Vec2 sprite_size{};         // EnemyInf+0x3f58..0x3f5c（op 306 slot=0 时置 32×32）
+    Vec2 sprite_size{};         // EnemyInf+0x3f58..0x3f5c：主 VM 的 |sprite_size.y×scale.y| / |sprite_size.x×scale.x|
     Vec2 bound_center{};        // EnemyInf+0x3f60..0x3f64（op 504）
     Vec2 bound_size{};          // EnemyInf+0x3f68..0x3f6c（op 504）
     i32 int_regs[4]{};          // EnemyInf+0x1498 旁整数槽（部分与 life 重叠，先独立）
@@ -88,6 +134,40 @@ public:
     bool alive = true;
 
     const char* routine_name() const noexcept;
+
+    // EnemyManager+0x164 anm 表：0 → bullet.anm（槽 7）、1 → effect.anm（槽 8）、i ≥ 2 → ECL ANIM i-2（槽 8+i）
+    AnmFile* anm_file(i32 index) const noexcept;
+    // 0x46efa0 + 失效清零：找不到时 vm_ids[slot] = 0
+    AnmVm* vm_at(int slot) noexcept;
+    // op 303 / 306 / 313 / 316 / 318 公共体：杀旧 VM，用 anm_file(source) 的 script 在 anm_layer_offset+7 层
+    // 生成（0x426160 链表头）到 vm_ids[slot]；full 时 slot 0 同步 sprite_size、flags & 0x20 隐藏整棵子树
+    AnmVm* rebind_vm(int slot, i32 source, i32 script, bool full);
+    // 0x41ba10：移出列表时杀掉全部绑定 VM
+    void destroy();
+    // 0x41d700：按掉落表散布道具（visual_rng 调用序与原版一致），随后清表
+    void scatter_items();
+    // 0x41a720：先掉 drop_item_type（op 510），再 scatter_items()
+    void release_items();
+    // op 507 / 509 / 0x41d520 共用：按限时计时折算季节道具数到 season_drop_max
+    void settle_season_drop();
+    // 0x41d520：死亡结算（音效、死亡特效、掉落、死亡子程序）；返回后敌机移出列表
+    void die(float game_speed);
+    // 0x41c330：受击 / 阶段中断 / 死亡 / 体碰撞 / 闪烁；返回 0 继续，非 0 → 敌机移出列表
+    int resolve_hits(float game_speed);
+    // 0x424f00：按 interrupts 的血量阈值切阶段；返回要切入的子程序（空 = 无）并刷新 life_display / phase_life
+    const std::string* life_interrupt();
+    // 0x425010：按 interrupts 的时间阈值切阶段（并结算 Spellcard 超时）；返回要切入的子程序
+    const std::string* time_interrupt();
+    // 0x424f00 / 0x425010 / 0x41c330 共用：清线程、复位主上下文到 sub 并立即执行一帧；返回 false = ECL 结束
+    bool switch_routine(const std::string& sub, float game_speed);
+    // 0x424e40：登记阶段中断（life 阈值 / 时间阈值 / 子程序名，timeout_sub 同名）
+    void set_interrupt(int slot, i32 life_threshold, i32 time_threshold, const char* sub);
+    // 0x41bb50 尾：flags & 0x100000 时按 delta.x 切换朝向脚本，并从主 VM 回读 sprite_size
+    void sync_sprite_direction();
+    // 0x41d2e0 后段：按 vm_offsets / 父槽同步各 VM 的 entity_offset（0x80 位 VM 带朝向角）
+    void sync_vm_offsets();
+    // 0x41c330 尾：主 VM 的受击 / 低血闪烁（color2 + flags_lo 0x20000 位）与受击音效
+    void update_hit_flash();
 
     // EclVariables：0x423810 / 0x423f80（先覆盖 st01 前段用到的）
     bool integer(i32 id, i32& value) override;
@@ -118,7 +198,14 @@ public:
     i32 global_ints[4]{};       // +0x0c..0x18（-9926..-9923）
     float global_floats[8]{};   // +0x1c..0x38（-9922..-9915）
     i32 counters[3]{};          // +0x3c..0x44（-9949..-9947）
-    u32 boss_ids[3]{};          // +0x80..0x88
+    u32 boss_ids[3]{};          // +0x48..0x50（0x41a910 写 / 0x417580 查）
+    Spellcard* spellcard = nullptr;    // DAT_004a6db0（GameSession 持有）
+    EffectManager* effects = nullptr;  // DAT_004a6db8
+    i32 damage_dealt = 0;       // +0xb0：自机对敌总伤害
+    i32 damage_dealt_bomb = 0;  // +0xac：炸弹伤害（命中 flags&4 的伤害源时按血量折算）
+    bool bomb_active = false;   // DAT_004a6da8+0x30 == 1（Bomb 接入前恒 false）
+    bool release_active = false;// DAT_004a6da4+0x30 == 1（季节解放接入前恒 false）
+    bool dialogue_active = false;  // Gui+0x1c8 != 0（对话中伤害为 0、不判体碰撞）
     std::vector<i32> sfx_queue; // Enemy 触发的 0x45e1f0 音效（受击 0x22/0x23、死亡 3/4）
     BulletManager* bullets = nullptr;  // DAT_004a6dac（GameSession 在 BulletManager 创建后绑定）
     AnmManager* animations = nullptr;
@@ -150,6 +237,9 @@ public:
     void update(float game_speed);
     Enemy* spawn_enemy(const char* sub, const EnemySpawnArgs& args);
     Enemy* find_id(u32 id) noexcept;
+    // 0x41d900 / 0x41da30 / 0x41db70（ECL 525 / 551 / 571）：清掉落表后让非 Boss 族敌机全部死亡（下一帧移出）
+    // mode 1 只杀 anm_layer == *filter 的敌机；mode 2 另清死亡子程序
+    void kill_all(int mode, const i32* filter);
 };
 
 }  // namespace th16

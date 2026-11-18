@@ -9,6 +9,8 @@
 #include "AnmResource.hpp"
 #include "Archive.hpp"
 #include "Chain.hpp"
+#include "Effect.hpp"
+#include "Spellcard.hpp"
 #include "Input.hpp"
 #include "Supervisor.hpp"
 #include "GameGlobals.hpp"
@@ -27,6 +29,8 @@ public:
     using OnResourceLoaded = std::function<bool(AnmResource&)>;
 
     AnmManager animations;
+    EffectManager effects;        // DAT_004a6db8（0x418a30：启动期创建，更新链 0x1f）
+    Spellcard spellcard;          // DAT_004a6db0（0x4178a0：进游戏时创建；敌机 / 自机被弹共用其标志）
     Supervisor supervisor;
     ChainManager chains;
     GameGlobals globals;
@@ -62,6 +66,7 @@ private:
     std::vector<AnmResource> resources_;
     std::vector<std::string> resource_names_;
     ChainEntry* boot_draw_chain_ = nullptr;
+    ChainEntry* effect_update_chain_ = nullptr;
     ChainEntry* title_update_chain_ = nullptr;
     ChainEntry* game_update_chain_ = nullptr;
     ChainEntry* stage_update_chain_ = nullptr;
