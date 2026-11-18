@@ -133,6 +133,9 @@ class Oracle:
         generic = make_stub(11, 0, lambda o: o.uc.reg_write(UC_X86_REG_EAX, 0))
         for i in range(0x40):
             uc.mem_write(self.tex_vtable + i * 4, struct.pack('<I', generic))
+        # IUnknown：AddRef(this) / Release(this) 为 stdcall 1 参（RET 4）；0x46d770 卸载 ANM 时逐纹理 Release
+        uc.mem_write(self.tex_vtable + 4, struct.pack('<I', release))
+        uc.mem_write(self.tex_vtable + 8, struct.pack('<I', release))
         uc.mem_write(self.tex_vtable + 0x44, struct.pack('<I', get_level_desc))
         uc.mem_write(self.tex_vtable + 0x48, struct.pack('<I', get_surface_level))
         self.surface_vtable = self.alloc(0x40)

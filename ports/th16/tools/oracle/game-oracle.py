@@ -121,6 +121,7 @@ class GameOracle(Oracle):
         self.replaced[0x459240] = (0x20, lambda o: None)                                 # GDI 文字 → 纹理像素（无逻辑副作用）
         self.replaced[0x43EF20] = (0, lambda o: None)                                    # 暂停/续关菜单背景截屏（D3DXLoadSurfaceFromSurface，无逻辑副作用）
         self.replaced[0x471BD0] = (0, lambda o: None)                                    # BGM 播放位置回绕（DAT_004df470 在 oracle 中为空；0x43f350 续关画面）
+        self.replaced[0x449A00] = (0, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0))    # 成绩文件写盘（0x42d200 换关 / 退出；只改成绩缓冲与校验和，无游戏状态副作用）
         self.replaced[0x47BCEC] = (0, self.on_malloc)                                    # __malloc_base
         self.replaced[0x47BD3A] = (0, self.on_calloc)                                    # __calloc_base
         self.replaced[0x483CB9] = (0, self.on_realloc)                                   # __realloc_base
@@ -673,13 +674,13 @@ class GameOracle(Oracle):
     def stage_draw_side_effects(self):
         """不跑绘制链时补 0x40a410（Stage 绘制链）尾部唯一影响逻辑状态的部分：结束计时 +0x66c8 倒数（0x40d490），
         归零时 bit1（结束中）→ bit3（可销毁，0x42d7b0 据此释放上一关），并清 bit1 / bit2。覆盖当前关 DAT_004a6da0 与
-        过关切换后仍在运行的上一关 DAT_004a6d9c。"""
+        过关切换后仍在运行的上一关 DAT_004a6d9c。bit3 时整段跳过；"bit2 且计时 ≥ 0x3c" 只跳过绘制，计时照常倒数。"""
         for addr in (0x4A6DA0, 0x4A6D9C):
             stage = self.u32(addr)
             if not stage:
                 continue
             flags = self.u32(stage + 0x66C4)
-            if (flags & 8) or ((flags & 4) and self.i32(stage + 0x66CC) >= 0x3C):
+            if flags & 8:
                 continue
             if (flags & 4) and self.i32(stage + 0x66CC) > 0x1D:
                 self.uc.mem_write(stage + 0x3353, b'\x00')
