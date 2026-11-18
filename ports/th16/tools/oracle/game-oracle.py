@@ -130,6 +130,7 @@ class GameOracle(Oracle):
         self.replaced[0x483CB9] = (0, self.on_realloc)                                   # __realloc_base
         self.setup_imports()
         self.setup_device()
+        self.setup_laser_sound_buffer()
         self.narrow_hooks()
         if debug:
             from unicorn import UC_HOOK_BLOCK
@@ -427,6 +428,23 @@ class GameOracle(Oracle):
 
     def on_device_method(self, idx):
         self.device_calls[idx] = self.device_calls.get(idx, 0) + 1
+        self.uc.reg_write(UC_X86_REG_EAX, 0)
+
+    def setup_laser_sound_buffer(self):
+        """DAT_004dba74：魔理沙激光循环音的 IDirectSoundBuffer（0x446260 每帧按自机 x 调 +0x40 SetPan）。
+        oracle 没有声音设备，这里放一只全部方法都返回 0 的假对象（COM stdcall：this + 1 参，RET 8），只计数。"""
+        methods = 0x60 // 4
+        vt = self.alloc(methods * 4)
+        for i in range(methods):
+            addr = self.make_stub2(8, (lambda idx: (lambda o: self.on_laser_sound_method(idx)))(i))
+            self.uc.mem_write(vt + i * 4, struct.pack('<I', addr))
+        obj = self.alloc(0x10)
+        self.uc.mem_write(obj, struct.pack('<I', vt))
+        self.uc.mem_write(0x4DBA74, struct.pack('<I', obj))
+        self.laser_sound_calls = {}
+
+    def on_laser_sound_method(self, idx):
+        self.laser_sound_calls[idx] = self.laser_sound_calls.get(idx, 0) + 1
         self.uc.reg_write(UC_X86_REG_EAX, 0)
 
     # ---- D3DX 数学（float32 口径；仅供绘制矩阵，不参与游戏逻辑状态）----
@@ -864,8 +882,10 @@ class GameOracle(Oracle):
             l = self.u32(l + 8)
         return out
 
-    BOMB_VTABLES = {0x491E3C: 'ReimuA', 0x491DE8: 'CirnoA', 0x491E04: 'AyaA', 0x491E20: 'MarisaA',
-                    0x491DCC: 'ReimuSub', 0x491D5C: 'CirnoSub', 0x491D78: 'AyaSub', 0x491D94: 'MarisaSub', 0x491DB0: 'AllSub'}
+    # 类名取自 RTTI 类型描述符（Bomb<Name>Inf）；0x40d890：机体 0..3 → ReimuA / CirnoA / AyaA / MarisaA，
+    # 子季节 0..4 → ReimuSub / CirnoSub / AyaSub / MarisaSub / AllSub
+    BOMB_VTABLES = {0x491E3C: 'ReimuA', 0x491E04: 'CirnoA', 0x491DE8: 'AyaA', 0x491E20: 'MarisaA',
+                    0x491DCC: 'ReimuSub', 0x491D94: 'CirnoSub', 0x491D78: 'AyaSub', 0x491DB0: 'MarisaSub', 0x491D5C: 'AllSub'}
 
     def bomb_snapshot(self):
         """Bomb 对象（0x108 字节，0x40d890 按机体 / 季节建两只：DAT_004a6da8 主炸弹、DAT_004a6da4 季节解放）：

@@ -36,6 +36,7 @@
 #include "../../web/cpp/game/AnmManager.hpp"
 #include "../../web/cpp/game/AnmRenderer.hpp"
 #include "../../web/cpp/game/AnmResource.hpp"
+#include "../../web/cpp/game/Bomb.hpp"
 #include "../../web/cpp/game/Chain.hpp"
 #include "../../web/cpp/game/FrameClock.hpp"
 #include "../../web/cpp/game/GameSession.hpp"
@@ -553,8 +554,35 @@ int main(int argc, char** argv) {
         u64 item_digest = 0xcbf29ce484222325ull;
         u64 spell_digest = 0xcbf29ce484222325ull;
         u64 laser_digest = 0xcbf29ce484222325ull;
+        u64 bomb_digest = 0xcbf29ce484222325ull;
         auto feed_spell_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { spell_digest ^= u8(v >> (8 * i)); spell_digest *= 0x100000001b3ull; } };
         auto feed_laser_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { laser_digest ^= u8(v >> (8 * i)); laser_digest *= 0x100000001b3ull; } };
+        auto feed_bomb_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { bomb_digest ^= u8(v >> (8 * i)); bomb_digest *= 0x100000001b3ull; } };
+        // 炸弹 / 季节解放（game-oracle.py bomb_snapshot 同口径）：公共区 29 字 + 阴阳玉数 + 每枚 27 字
+        auto bomb_class_index = [](const char* name) -> u32 {
+            static const char* const kNames[] = {"ReimuA", "CirnoA", "AyaA", "MarisaA", "ReimuSub", "CirnoSub", "AyaSub", "MarisaSub", "AllSub"};
+            for (u32 i = 0; i < 9; ++i) if (std::strcmp(kNames[i], name) == 0) return i;
+            return 0xffffffffu;
+        };
+        auto bomb_words = [&](const Bomb& b, std::vector<u32>& w) {
+            const u32 head[] = {bomb_class_index(b.class_name()), bits(b.pos.x), bits(b.pos.y), bits(b.pos.z), bits(b.sweep_speed),
+                                bits(b.angle), u32(b.active), u32(b.timer.previous), u32(b.timer.current), bits(b.timer.current_f),
+                                b.primary_vm != 0 ? 1u : 0u, b.secondary_vm != 0 ? 1u : 0u, u32(b.started_in_spell), u32(b.role),
+                                u32(b.release_level), bits(b.release_bonus), bits(b.shown_bonus), u32(b.popup_timer.previous),
+                                u32(b.popup_timer.current), bits(b.popup_timer.current_f), u32(b.popup_level),
+                                bits(b.popup_pos.x), bits(b.popup_pos.y), bits(b.popup_pos.z)};
+            w.insert(w.end(), std::begin(head), std::end(head));
+            const ReimuBomb* reimu = b.as_reimu();
+            w.push_back(reimu ? u32(reimu->orbs.size()) : 0u);
+            if (reimu) for (const ReimuBomb::Orb& o : reimu->orbs) {
+                const u32 orb[] = {o.vm != 0 ? 1u : 0u, bits(o.motion.pos.x), bits(o.motion.pos.y), bits(o.motion.pos.z),
+                                   bits(o.motion.speed), bits(o.motion.angle), bits(o.motion.radius),
+                                   bits(o.motion.velocity.x), bits(o.motion.velocity.y), bits(o.motion.velocity.z), o.motion.mode,
+                                   u32(o.active), u32(o.timer.previous), u32(o.timer.current), bits(o.timer.current_f),
+                                   bits(o.delta.x), bits(o.delta.y), bits(o.delta.z), o.target_id, u32(o.index), u32(o.damage_source), 0u};
+                w.insert(w.end(), std::begin(orb), std::end(orb));
+            }
+        };
         // 激光（game-oracle.py laser_snapshot 同口径）：公共区 33 字 + 采样点数 + 每采样点 5 字
         auto laser_words = [&](const Laser& l, std::vector<u32>& w) {
             const u32 head[] = {u32(l.kind), l.lifecycle, u32(l.state), u32(l.id), u32(l.bullet_type), u32(l.bullet_color),
@@ -788,6 +816,17 @@ int main(int argc, char** argv) {
                     for (u32 v : lw) feed_laser_u32(v);
                 }
             }
+            // 炸弹 / 季节解放（game-oracle.py bomb_digest 同口径）：[frame] + 两只对象各 [有无] + 字段
+            {
+                feed_bomb_u32(u32(f + 1));
+                for (const Bomb* b : {session.game.bombs.main(), session.game.bombs.release()}) {
+                    feed_bomb_u32(b != nullptr ? 1u : 0u);
+                    if (b == nullptr) continue;
+                    std::vector<u32> bw;
+                    bomb_words(*b, bw);
+                    for (u32 v : bw) feed_bomb_u32(v);
+                }
+            }
             // 符卡（game-oracle.py spell_digest 同口径）：[frame, flags, timer×3, id, bonus, bonus_initial, time_limit,
             // count, state, vm 有无×5, dialogue, boss_ids×3, enemy_bonus×2, spell_id]
             {
@@ -975,6 +1014,40 @@ int main(int argc, char** argv) {
                 std::printf("]}");
             }
             {
+                // 炸弹 / 季节解放快照（game-oracle.py bomb_snapshot 同口径）
+                static const char* const kBombClassNames[] = {"ReimuA", "CirnoA", "AyaA", "MarisaA", "ReimuSub", "CirnoSub", "AyaSub", "MarisaSub", "AllSub"};
+                std::printf(",\"bombs\":{");
+                const Bomb* pair[2] = {session.game.bombs.main(), session.game.bombs.release()};
+                for (int k = 0; k < 2; ++k) {
+                    std::printf("%s\"%s\":", k ? "," : "", k ? "sub" : "main");
+                    const Bomb* b = pair[k];
+                    if (b == nullptr) { std::printf("null"); continue; }
+                    std::vector<u32> bw;
+                    bomb_words(*b, bw);
+                    const u32* h = bw.data();
+                    std::printf("{\"class\":\"%s\",\"pos\":[%u,%u,%u],\"angular\":%u,\"angle\":%u,\"active\":%d,\"timer\":[%u,%u,%u,%u,%u],"
+                                "\"vm\":[%u,%u],\"in_spell\":%d,\"kind\":%d,\"level\":%d,\"bonus\":%u,\"bonus_shown\":%u,"
+                                "\"popup\":[%u,%u,%u,%u,%u],\"popup_level\":%d,\"popup_pos\":[%u,%u,%u],\"orbs\":[",
+                                h[0] < 9 ? kBombClassNames[h[0]] : "?", h[1], h[2], h[3], h[4], h[5], i32(h[6]), h[7], h[8], h[9],
+                                u32(b->timer.speed_slot), b->timer.flags, h[10], h[11], i32(h[12]), i32(h[13]), i32(h[14]), h[15], h[16],
+                                h[17], h[18], h[19], u32(b->popup_timer.speed_slot), b->popup_timer.flags, i32(h[20]), h[21], h[22], h[23]);
+                    const u32 orb_count = h[24];
+                    const ReimuBomb* reimu = b->as_reimu();
+                    for (u32 i = 0; i < orb_count; ++i) {
+                        const u32* o = &bw[25 + size_t(i) * 22];
+                        const Timer& ot = reimu->orbs[i].timer;
+                        std::printf("%s{\"vm\":%u,\"pos\":[%u,%u,%u],\"speed\":%u,\"angle\":%u,\"radius\":%u,\"center\":[%u,%u,%u],"
+                                    "\"mode\":%u,\"active\":%d,\"timer\":[%u,%u,%u,%u,%u],\"delta\":[%u,%u,%u],\"target\":%u,\"index\":%d,"
+                                    "\"source\":%d,\"burst\":%d}",
+                                    i ? "," : "", o[0], o[1], o[2], o[3], o[4], o[5], o[6], o[7], o[8], o[9], o[10], i32(o[11]),
+                                    o[12], o[13], o[14], u32(ot.speed_slot), ot.flags, o[15], o[16], o[17], o[18], i32(o[19]),
+                                    i32(o[20]), i32(o[21]));
+                    }
+                    std::printf("]}");
+                }
+                std::printf("}");
+            }
+            {
                 // 符卡快照（game-oracle.py spell_snapshot 同口径）
                 const Spellcard& sc = session.spellcard;
                 const EnemyManager& em = session.game.enemies;
@@ -1009,10 +1082,10 @@ int main(int argc, char** argv) {
             std::printf("}");
         }
         if (digest_only)
-            std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx enemies=%016llx bullets=%016llx enemy_vms=%016llx items=%016llx spell=%016llx lasers=%016llx\n",
+            std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx enemies=%016llx bullets=%016llx enemy_vms=%016llx items=%016llx spell=%016llx lasers=%016llx bombs=%016llx\n",
                         stage, shot, season, frames, (unsigned long long)digest, (unsigned long long)enm_digest,
                         (unsigned long long)bul_digest, (unsigned long long)vm_digest, (unsigned long long)item_digest,
-                        (unsigned long long)spell_digest, (unsigned long long)laser_digest);
+                        (unsigned long long)spell_digest, (unsigned long long)laser_digest, (unsigned long long)bomb_digest);
         else std::printf("]}\n");
         if (!session.game.enemies.unknown_ops.empty()) {
             std::fprintf(stderr, "unknown_ecl_ops=");
