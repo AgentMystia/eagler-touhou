@@ -488,6 +488,10 @@ int main(int argc, char** argv) {
         session.globals.shot = shot;
         session.globals.season = season;
         session.globals.set_mode(0);       // 0x449190：普通模式默认 replay_slot = -1
+        if (!enemy_script.empty()) {
+            session.sync_enemy_count = false;
+            session.globals.replay_slot = 0;  // 旧 player.json 桩在 replay_slot=0 下录制
+        }
         if (argc >= 11 && argv[10][0] != '\0') session.globals.difficulty = std::atoi(argv[10]);
         if (argc >= 12 && argv[11][0] != '\0') session.globals.replay_slot = std::atoi(argv[11]);
         if (!session.start_game_direct()) return fail(session.failure.c_str());

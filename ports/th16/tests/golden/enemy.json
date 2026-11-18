@@ -139,6 +139,98 @@
         39,
         40
       ]
+    },
+    {
+      "name": "cirno-hit-girl-st1",
+      "stage": 1,
+      "shot": 1,
+      "season": 2,
+      "difficulty": 1,
+      "replay_slot": -1,
+      "frames": 140,
+      "input": "25:0x80,40:0x1",
+      "enemy_digest": "7874a17f81ce13bf",
+      "player_digest": "b13061c42acffb3e",
+      "last_count": 14,
+      "last_ids": [
+        1,
+        3,
+        4,
+        6,
+        7,
+        10,
+        11,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19
+      ]
+    },
+    {
+      "name": "reimu-homing-hit-girl-st1",
+      "stage": 1,
+      "shot": 0,
+      "season": 0,
+      "difficulty": 1,
+      "replay_slot": -1,
+      "frames": 140,
+      "input": "30:0x1",
+      "enemy_digest": "e597c65d4eeb258e",
+      "player_digest": "7ab2b2d5aa7a2897",
+      "last_count": 14,
+      "last_ids": [
+        1,
+        3,
+        4,
+        6,
+        7,
+        9,
+        10,
+        12,
+        13,
+        15,
+        16,
+        17,
+        18,
+        19
+      ]
+    },
+    {
+      "name": "cirno-hit-boss-st1",
+      "stage": 1,
+      "shot": 1,
+      "season": 2,
+      "difficulty": 1,
+      "replay_slot": 0,
+      "frames": 150,
+      "input": "30:0x1",
+      "enemy_digest": "829bcfb75e9b332a",
+      "player_digest": "c59b79a41871b532",
+      "last_count": 2,
+      "last_ids": [
+        1,
+        2
+      ]
+    },
+    {
+      "name": "aya-focus-hit-boss-st1",
+      "stage": 1,
+      "shot": 2,
+      "season": 2,
+      "difficulty": 1,
+      "replay_slot": 0,
+      "frames": 150,
+      "input": "30:0x9",
+      "enemy_digest": "95a8d5a926bd96e6",
+      "player_digest": "ab8788d5f155c4e3",
+      "last_count": 2,
+      "last_ids": [
+        1,
+        2
+      ]
     }
   ]
 }

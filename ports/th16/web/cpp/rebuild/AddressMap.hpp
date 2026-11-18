@@ -141,9 +141,17 @@ constexpr AddressAnchor kAnchors[] = {
     {"player-fire-slot", 0x445360, "game/Player.cpp Player::fire_sets（类型 2 冷却表 +0x165f8[k+sub*8]、首个空弹位）"},
     {"player-bullet-create", 0x444E10, "game/Player.cpp Player::spawn_bullet（角度环绕 <995 / ≥995 子机角 / ≥1000 随机 ±π/12；VM 脚本 (+5 子机)；伤害源 + 生成回调）"},
     {"player-bullet-create-cb", 0x445ED0, "game/Player.cpp Player::spawn_bullet（回调 1：target=0；回调 4 0x447450：伤害源类型 2）"},
-    {"player-bullet-tick-cb", 0x445EE0, "game/Player.cpp Player::tick_bullets（回调 1 追踪：无敌时 speed=min(speed+0.1,16)；回调 5 0x447480：active==1 时 speed+=0.5）"},
+    {"player-bullet-tick-cb", 0x445EE0, "game/Player.cpp Player::tick_bullets（回调 1 追踪：0x425240 找 256 内最近敌机转向加减速；回调 5 0x447480：active==1 时 speed+=0.5）"},
+    {"player-homing-target", 0x425240, "game/Player.cpp Player::tick_bullets（在 (flags&0xc000021)==0 的敌机中找距离 <256 且最近者）"},
     {"player-bullets", 0x4456D0, "game/Player.cpp Player::tick_bullets（回调→运动→VM；in-bounds = 类型 2 || 计时<0xf || 四角任一严格在 (0,0)-(384,448) 内；否则 kill VM 并回收）"},
     {"damage-source-alloc", 0x444B20, "game/Player.cpp Player::alloc_damage_source（从上次下标后首个空位，1 起编号；类型 1、f7c=10000000、计时 9999999）"},
+    {"damage-source-apply", 0x445A30, "game/Player.cpp Player::apply_damage_sources（0x403d30 旋转矩形-圆相交、f84 防同帧重入、按 kind 分派命中回调、sht.damage_cap 封顶）"},
+    {"rect-circle-hit", 0x403D30, "game/Player.cpp Player::apply_damage_sources rect_circle"},
+    {"damage-hit-bullet", 0x445D40, "game/Player.cpp Player::apply_damage_sources（kind 1：按 .sht hit_callback 分派 → 0x445e20）"},
+    {"bullet-hit-default", 0x445E20, "game/Player.cpp Player::hit_bullet_default（z=0.1、VM interrupt 1、active=2、speed*=0.125、销毁伤害源）"},
+    {"bullet-hit-aya", 0x447270, "game/Player.cpp Player::apply_damage_sources（hit_callback 5：effect.anm 0x98 + 0x445e20）"},
+    {"damage-hit-aya-charge", 0x4474A0, "game/Player.cpp Player::apply_damage_sources（kind 2：返回原始伤害并将弹伤害置 1 持续穿透）"},
+    {"anm-spawn-effect", 0x40E5C0, "game/AnmManager.cpp AnmManager::spawn_effect（首帧 run 前设 entity_offset 与 rotation.z）"},
     {"motion-velocity", 0x402FF0, "game/Motion.cpp MotionState::update_velocity（模式 0 极坐标 / 2 半径角度；3/4 敌弹时补）"},
     {"motion-integrate", 0x403110, "game/Motion.cpp MotionState::integrate（坐标 floor 到 1/100）"},
     {"vm-corners", 0x468C00, "game/AnmRenderer.cpp AnmRenderer::vm_corners（模式 0/2/3 轴对齐 / 1 旋转 + world_position）"},
@@ -175,10 +183,14 @@ constexpr AddressAnchor kAnchors[] = {
     {"enemy-manager-create", 0x41B340, "game/Enemy.cpp EnemyManager::create + GameSession.cpp enter_game（0x41ae70 装 ECL + 登记更新链 0x1a）"},
     {"enemy-manager-update", 0x41B3D0, "game/Enemy.cpp EnemyManager::update（0x41b4f0 入口：遍历敌人链表、清 0x40000 重入位、同步 enemy_count）"},
     {"enemy-spawn", 0x41AA70, "game/Enemy.cpp EnemyManager::spawn_enemy / Enemy::init（分配 id、flags、invuln=2、life_timer=0x3c，立即执行首帧 0x41d1e0）"},
-    {"enemy-update", 0x41D2E0, "game/Enemy.cpp Enemy::update（0x41d1e0：0x40000 隔帧门控 → 运动 0x41bb50 → ECL 0x473bc0 → invuln 倒数）"},
+    {"enemy-update", 0x41D2E0, "game/Enemy.cpp Enemy::update（0x41d1e0：0x40000 隔帧门控 → 运动 0x41bb50 → ECL 0x473bc0 → 碰撞 0x41c330 → invuln/season_drop 倒数）"},
     {"enemy-motion", 0x41BB50, "game/Enemy.cpp Enemy::update（角度/速度/位置插值 → motion1/2 → 0x41c1f0 合成与 0x20000 边界钳制 → 精灵半宽高场地进出判定）"},
-    {"enemy-motion-combine", 0x41C1F0, "game/Enemy.cpp Enemy::update（motion1+motion2 floor 1/100 + 0x20000 边界框钳制）"},
-    {"enemy-ecl-dispatch", 0x41DCB0, "game/Enemy.cpp Enemy::execute（敌方操作码 ≥300：生成 300..305、ANM 302/303/306、运动 400/401/404..407/412、属性 500..505/511..515/520/535/536/548、掉落 1000）"},
+    {"enemy-motion-combine", 0x41C1F0, "game/Enemy.cpp Enemy::update（pos += (m1+m2-pos) floor 1/100 + 0x20000 边界框钳制）"},
+    {"enemy-collision", 0x41C330, "game/Enemy.cpp Enemy::update（0x445a30 伤害源结算、0x41a6d0 扣血、0x41d520 死亡与 0x41d700 季节掉落 RNG、受击闪烁与音效）"},
+    {"enemy-sub-life", 0x41A6D0, "game/Enemy.cpp Enemy::update（普通扣血与符卡 life_flags&1 下 7 倍减伤池折算）"},
+    {"enemy-death", 0x41D520, "game/Enemy.cpp Enemy::update（死亡音效 (id&1)+3、限时季节掉落数线性插值、0x41d700 掉落 RNG）"},
+    {"enemy-drop-items", 0x41D700, "game/Enemy.cpp Enemy::update（季节道具掉落消耗 visual_rng）"},
+    {"enemy-ecl-dispatch", 0x41DCB0, "game/Enemy.cpp Enemy::execute（敌方操作码 ≥300：生成 300..305、ANM 302/303/306、运动 400/401/404..407/412、属性 500..505/511..515/520/522/535..539/548/568、掉落 1000）"},
     {"enemy-spawn-op", 0x423050, "game/Enemy.cpp Enemy::execute case 300..305（相对/绝对/镜像生成子敌人）"},
     {"enemy-var-get", 0x423810, "game/Enemy.cpp Enemy::integer / Enemy::floating（-10000..-9902 变量读取）"},
     {"enemy-var-int-dst", 0x423F80, "game/Enemy.cpp Enemy::integer_destination"},
@@ -203,7 +215,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"stage-distortion", 0x40C4A0, nullptr}, // ins 17 畸变效果（+0x3314）
     {"stage-effect-fade", 0x43D140, nullptr}, // 绘制链 1：清后台缓冲、RT DAT_004c127c、场地矩形清色 DAT_004c1b0c
     {"rt-composite", 0x43D2F0, nullptr},     // 绘制链 0xf：RT 精灵 VM 0x4c128c 合成到后台缓冲（当前以视口裁剪 + x−96 代替）
-    {"enemy-collision", 0x41C330, nullptr},  // 敌人受击（0x445a30 伤害源结算）与体术碰撞（0x4439e0）
+    {"player-body-collide", 0x4439E0, nullptr}, // 敌机与自机身体体术碰撞（0x41c330 下半段）
     {"effect-attach", 0x418AF0, nullptr},    // ins_508：EffectManager（DAT_004a6db8）按效果种类表 DAT_004a2250 挂 update/draw 回调（effect.anm 155–196 依赖）
     {"effect-ring-update", 0x405700, nullptr}, // 效果种类 1 的 update 回调（DAT_004919e8[2]）：环形顶点缓冲 + 生成 effect.anm 0x99
     {"anm-load-file", 0x46D020, nullptr},    // AnmManager::load_file(slot, name)：从档案读 .anm 并进 bank（同步等待装载线程）
