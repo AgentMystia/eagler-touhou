@@ -9,17 +9,17 @@
 //   0x40a410  绘制（优先级 6）：以关卡相机绘制 ANM 层 0x20 / 0x21；尾部推进结束计时 +0x66c8（换关：0x40c0d0 给上一关
 //             置 bit1 + 0x1e 帧，0x40c210 给新关置 bit2 + 0x3c 帧），归零时 bit1 → bit3（0x42d7b0 据此析构上一关）
 //
-// 相机结构（0x12c 字节，与全局 0x4c168c 同布局）按 dword 下标：
-//   0 pos  3 facing  6 up  9 facing_norm  0xc right  0xf pos_offset  0x12 facing_offset  0x15 fov
-//   0x18 view[16]  0x28 proj[16]  0x38 viewport{x,y,w,h,minz,maxz}  0x3e kind  0x3f shift{x,y}
-//   0x41 pos_delta  0x44 fog_near  0x45 fog_far  0x46 fog_rgba_f[4]（B,G,R,A）  0x4a fog_color
+// 相机结构见 Camera.hpp（StageCamera = Camera，与全局 0x4c168c 同布局）。
 //
-// 原版把关卡画进 640×480 的场地渲染目标（3D 相机视口 (116,4,408,472)，中心 (320,240)），再由
-// front.anm 精灵复制到屏幕场地 (32,16,384,448)。后端尚无渲染目标：本实现先把投影结果整体左移 96
-// 像素并裁剪到场地矩形，几何与原版逐像素一致（抖动位移 DAT_004c1788 为 0 且无畸变特效时）。
+// 原版把关卡画进 640×480 的场地渲染目标（渲染目标相机视口 (116,4,408,472)，中心 (320,240)），再由
+// Supervisor 的合成 VM（ScreenCompositor）把渲染目标贴到屏幕场地 (32,16,384,448)。
 #pragma once
 #include "AnmManager.hpp"
+#include "AnmRenderer.hpp"
 #include "AnmVm.hpp"
+#include "Camera.hpp"
+#include "Chain.hpp"
+#include "ScreenEffect.hpp"
 #include "Std.hpp"
 #include "Types.hpp"
 
@@ -28,27 +28,6 @@
 #include <vector>
 
 namespace th16 {
-
-struct StageFog {
-    float near_ = 0, far_ = 0;
-    float c[4] = {0, 0, 0, 0};   // B,G,R,A 浮点
-    u32 color = 0;               // 0xAARRGGBB
-};
-
-struct StageCamera {
-    Vec3 pos;                    // 0
-    Vec3 facing;                 // 3
-    Vec3 up{0, 1, 0};            // 6
-    Vec3 facing_norm;            // 9
-    Vec3 right;                  // 0xc
-    Vec3 pos_offset;             // 0xf
-    Vec3 facing_offset;          // 0x12
-    float fov = 0.5235988f;      // 0x15
-    i32 viewport_x = 116, viewport_y = 4, viewport_w = 408, viewport_h = 472;  // 0x38（0x43cb10）
-    float shift_x = 0, shift_y = 0;   // 0x3f（DAT_004c1788/8c）
-    Vec3 pos_delta;              // 0x41
-    StageFog fog;                // 0x44..0x4a
-};
 
 class StageManager {
 public:
@@ -78,7 +57,7 @@ public:
     std::vector<AnmVm> face_vms;            // +0x669c（面 VM 数 × 0x5fc）
     AnmVm layer_vms[kLayerSprites];         // +0x31c
     i32 layer_ids[kLayerSprites] = {};      // +0x32fc
-    float distortion_radius_sq = 0;         // +0x331c（ins 20）
+    float cull_distance_sq = 0;             // +0x331c（ins 20 绘制距离的平方；0x40a7d0 先按实例中心到相机的距离剔除）
     i32 distortion_kind = 0;                // +0x3340（ins 17；特效对象本身待 EffectManager）
 
     u32 flags = 1;               // +0x66c4：bit0 绘制启用  bit1 结束中  bit2 结束淡出  bit3 隐藏
@@ -88,8 +67,14 @@ public:
     i32 drawn_instances = 0;     // +0x66b8
     i32 culled_instances = 0;    // +0x66bc
     i32 drawn_quads = 0;         // +0x66c0
-    u32 bg_color = 0xff000000;   // DAT_004c1b0c（ins 13）
+    u32 bg_color = 0xff000000;   // DAT_004c1b0c（ins 13）本关最后写入的值
+    u32* screen_clear_color = nullptr;   // DAT_004c1b0c 本体（ScreenCompositor::background_color），ins 13 同步写入
     std::string error;
+
+    // 0x4097c0 建（禁用）、0x40add0 启用：更新链 0x11、绘制链 3（0x409f90）/ 6（0x40a410）。GameSession 登记与摘除
+    ChainEntry* update_chain = nullptr;
+    ChainEntry* background_draw_chain = nullptr;
+    ChainEntry* foreground_draw_chain = nullptr;
 
     // 0x4097c0 + 0x40ac30：解析 STD；anm 由调用方装入槽 3 + (stage & 1) 后传入
     bool load(const u8* bytes, u32 size, i32 stage);
@@ -97,7 +82,18 @@ public:
     void start(AnmManager& manager);
     // 0x409e50
     void update(AnmManager& manager, float game_speed, const Rng* visual_rng = nullptr);
-    // 0x40a410 尾部（绘制链 6 中唯一改动逻辑状态的部分）：结束计时倒数（0x40d490），归零时 bit1 → bit3 并清 bit1 / bit2
+
+    // ---- 绘制链 ----
+    // 0x45d150(3, 0x1e, 0xffffffff)：新关淡入白闪（0x409f90 在结束计时 < 0x1e 时建；更新链 0x13 + 绘制链 10）
+    std::function<void(i32 kind, i32 duration, u32 color)> on_screen_fade;
+    // 0x409f90（优先级 3）：关卡相机 → 雾参数 → 清场地矩形 → 淡入逻辑 → 层 0..7。renderer 无设备时只执行逻辑部分
+    void draw_background(AnmManager& manager, AnmRenderer& renderer, Camera& global_camera, const ScreenShakeOffset& shake);
+    // 0x40a410（优先级 6）：关卡相机下的 ANM 层 0x20 / 0x21，层 8..11，结束计时倒数
+    void draw_foreground(AnmManager& manager, AnmRenderer& renderer, Camera& global_camera, const ScreenShakeOffset& shake,
+                         float game_speed);
+    // 不跑绘制链（无头对拍）时补上两条绘制链里改动逻辑状态的部分：
+    // 0x409f90 的淡入 / 启用位逻辑；0x40a410 尾部的结束计时倒数（0x40d490），归零时 bit1 → bit3 并清 bit1 / bit2
+    void transition_step();
     void end_timer_step(float game_speed);
     // 0x40c0d0 后半：上一关结束——bit1、计时 0x1e；0x40c210：新关淡入——bit2、计时 0x3c
     void begin_end(i32 frames, u32 flag);
@@ -110,13 +106,17 @@ public:
     Vec3 eye() const;
     Vec3 at() const;
 
-    // 0x40af70：按原版顺序遍历第 layer 层应绘制的 VM——先 0x40c280 的层精灵（layer_sprite = true，无雾、
-    // ZENABLE 关），再逐实例 × 四边形的面 VM（已写入 entity_offset / 尺寸缩放；同一面 VM 被多个实例复用，
-    // 必须在回调内立即绘制）。视锥剔除 0x40a7d0 待移植——不剔除只影响计数。
-    using DrawVisitor = std::function<void(AnmVm& vm, bool layer_sprite)>;
-    void draw_layer(int layer, const DrawVisitor& visit);
-
 private:
+    // 0x40af70：画第 layer 层——先 0x40c280 的层精灵（无雾、Z 关），再逐实例 × 四边形的面 VM
+    //（写入 entity_offset / 尺寸缩放后立即绘制：同一面 VM 被多个实例复用）；实例先过 0x40a7d0 视锥剔除
+    void draw_layer(int layer, AnmManager& manager, AnmRenderer& renderer, Camera& global_camera, const ScreenShakeOffset& shake);
+    void draw_layer_sprites(int layer, AnmManager& manager, AnmRenderer& renderer, Camera& global_camera, const ScreenShakeOffset& shake);
+    // 0x40a7d0：实例中心超过绘制距离，或包围盒 16 个采样点投影后与场地矩形 [0,384]×[0,448] 不相交 → 剔除
+    bool instance_visible(const StdObject& object, const Vec3& instance_pos, const Camera& camera) const;
+    // 0x409f90 / 0x40a410 开头共用：抖动偏移写进相机、整体抄到全局、0x43c940 建矩阵并切换
+    void look_through_stage_camera(AnmRenderer& renderer, Camera& global_camera, const ScreenShakeOffset& shake);
+    // 0x409f90 中段：bit2（新关淡入）下的启用位与白闪
+    void step_fade_in();
     void run_script(AnmManager& manager, float game_speed);   // 0x40b3b0 前半
     void apply_rocking(float game_speed);                       // 0x40b3b0 后半
     void step_faces(AnmManager& manager);                       // 0x40aed0
