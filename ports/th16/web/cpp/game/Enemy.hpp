@@ -233,11 +233,14 @@ public:
     bool release_active = false;// DAT_004a6da4+0x30 == 1（季节解放接入前恒 false）
     bool dialogue_active = false;  // Gui+0x1c8 != 0（对话中伤害为 0、不判体碰撞）
     std::vector<i32> sfx_queue; // Enemy 触发的 0x45e1f0 音效（受击 0x22/0x23、死亡 3/4）
+    float* global_game_speed = nullptr;  // DAT_004a5788（ECL 547 写入）
     BulletManager* bullets = nullptr;  // DAT_004a6dac（GameSession 在 BulletManager 创建后绑定）
     ItemManager* items = nullptr;      // DAT_004a6ddc（同上；道具掉落 0x41a720 / 0x41d700 / op 1001 直接生成）
     AnmManager* animations = nullptr;
     GameGlobals* globals = nullptr;
     Player* player = nullptr;
+    // EnemyManager+0x164 ANM 表：0 → bullet.anm（slot 7）、1 → effect.anm（slot 8）、i≥2 → ECL ANIM i-2（slot 8+i）
+    AnmFile* anm_file(i32 index) const noexcept;
     Rng* rng = nullptr;
     Archive* archive = nullptr;  // 前向：用函数注入读档
     std::string error;

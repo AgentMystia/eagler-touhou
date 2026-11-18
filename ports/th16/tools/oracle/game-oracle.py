@@ -5,7 +5,7 @@
 
 用法：
     game-oracle.py <th16.exe> <dat 解包目录> <frames> <out.json> [--stage N] [--shot N] [--season N] [--difficulty N]
-                   [--input "f:held,f:held,..."] [--seed N] [--every N] [--debug] [--draw]
+                   [--input "f:held,f:held,..."] [--seed N] [--every N] [--lives N] [--debug] [--draw]
     game-oracle.py --digest <out.json>...        → 已有快照的 Player 规范字段 FNV-1a 64（harness game-digest 同口径）
 
 快照（每帧）：frame / game_frame / stage_frame / input [held, pressed] / power / season_gauge / enemy_count / dialogue /
@@ -80,11 +80,13 @@ def f32(v):
 
 
 class GameOracle(Oracle):
-    def __init__(self, exe, dat_dir, stage=1, shot=0, season=0, difficulty=1, seed=0, debug=False, replay_slot=-1):
+    def __init__(self, exe, dat_dir, stage=1, shot=0, season=0, difficulty=1, seed=0, debug=False, replay_slot=-1,
+                 lives=None):
         dat_dir = pathlib.Path(dat_dir)
         super().__init__(exe, 'text.anm', (dat_dir / 'text.anm').read_bytes())
         self.dat_dir = dat_dir
         self.stage, self.shot, self.season, self.difficulty, self.seed = stage, shot, season, difficulty, seed
+        self.lives = lives
         self.replay_slot = replay_slot
         self.debug = debug
         self.enemy_snap = False  # --enemies：每帧敌人快照（不进 digest，Enemy 移植阶段的对照）
@@ -114,6 +116,8 @@ class GameOracle(Oracle):
         self.sfx_log = []
         self.replaced[0x4792A8] = (0, self.on_vsprintf)                                  # __stdio_common_vsprintf（CRT 需 FLS/线程数据）
         self.replaced[0x459240] = (0x20, lambda o: None)                                 # GDI 文字 → 纹理像素（无逻辑副作用）
+        self.replaced[0x43EF20] = (0, lambda o: None)                                    # 暂停/续关菜单背景截屏（D3DXLoadSurfaceFromSurface，无逻辑副作用）
+        self.replaced[0x471BD0] = (0, lambda o: None)                                    # BGM 播放位置回绕（DAT_004df470 在 oracle 中为空；0x43f350 续关画面）
         self.replaced[0x47BCEC] = (0, self.on_malloc)                                    # __malloc_base
         self.replaced[0x47BD3A] = (0, self.on_calloc)                                    # __calloc_base
         self.replaced[0x483CB9] = (0, self.on_realloc)                                   # __realloc_base
@@ -608,6 +612,8 @@ class GameOracle(Oracle):
         rc = self.call(GAME_LOAD)
         if rc != 0:
             raise RuntimeError('0x42cb60 failed rc=%#x errors=%s' % (rc, self.errors[-6:]))
+        if self.lives is not None:
+            uc.mem_write(0x4A57F4, struct.pack('<i', self.lives))  # DAT_004a57f4：残机覆盖（长程无输入对拍不被 Game Over 截断）
         # Supervisor 绘制链 0x43b3d0 每帧写的场地屏幕偏移 DAT_004d9d50/54 = 640/2、(480-448)/2：
         # 自机弹出界判定 0x4456d0 → 0x468c00 → 0x406c40 读它们；oracle 不跑绘制链，在此一次性写入
         uc.mem_write(0x4D9D50, struct.pack('<ii', 320, 16))
@@ -772,6 +778,24 @@ class GameOracle(Oracle):
             'collect_pos': self.words(0x4A5870, 3),
         }
 
+    def spell_snapshot(self):
+        """Spellcard（DAT_004a6db0，0x4178a0）：标志 / 计时 / 奖励 / 编号 / 状态，另附 Gui 对话指针与敌机 Boss 槽。"""
+        s = self.u32(0x4A6DB0)
+        if not s:
+            return None
+        gui = self.u32(0x4A6DCC)
+        em = self.u32(0x4A6DC0)
+        return {
+            'flags': self.u32(s + 0x78), 'timer': self.words(s + 0x20, 3), 'id': self.i32(s + 0x74),
+            'bonus': self.i32(s + 0x7C), 'bonus_initial': self.i32(s + 0x80), 'time_limit': self.i32(s + 0x84),
+            'count': self.i32(s + 0x88), 'state': self.i32(s + 0x8C),
+            'vm': [1 if self.u32(s + 0xC + i * 4) else 0 for i in range(5)],
+            'dialogue': self.i32(gui + 0x1C8) if gui else 0,
+            'boss_ids': self.words(em + 0x48, 3) if em else [0, 0, 0],
+            'enemy_bonus': [self.i32(0x4A5880), self.i32(0x4A5884)],
+            'spell_id': self.i32(0x4A5798),
+        }
+
     def player_snapshot(self):
         """Player（DAT_004a6ef8，0x2c828 字节）规范字段；与 harness `game-run` 输出一一对应。"""
         p = self.u32(DAT_PLAYER)
@@ -868,6 +892,8 @@ class GameOracle(Oracle):
         if self.item_snap:
             snap['items'] = self.item_snapshot()
             snap['resources'] = self.resource_snapshot()
+        if self.enemy_snap:
+            snap['spell'] = self.spell_snapshot()
         if sm:
             snap['stage'] = {'frame': self.i32(sm + 0x66E0), 'ins': self.i32(sm + 0x20), 'flags': self.u32(sm + 0x66C4)}
         return snap
@@ -1004,6 +1030,24 @@ def item_digest(frames):
     return digest
 
 
+def spell_digest(frames):
+    """Spellcard 的 FNV-1a 64（harness game-digest spell= 同口径）：
+    每帧 [frame, flags, timer×3, id, bonus, bonus_initial, time_limit, count, state, vm 有无×5, dialogue, boss_ids×3,
+    enemy_bonus×2, spell_id]。"""
+    digest = 0xCBF29CE484222325
+    mask = (1 << 64) - 1
+    for f in frames:
+        s = f.get('spell')
+        if s is None:
+            words = [f['frame']] + [0] * 20
+        else:
+            words = ([f['frame'], s['flags']] + s['timer'][:3] + [s['id'], s['bonus'], s['bonus_initial'], s['time_limit'],
+                     s['count'], s['state']] + s['vm'] + [s['dialogue']] + s['boss_ids'] + s['enemy_bonus'] + [s['spell_id']])
+        for b in b''.join(struct.pack('<I', w & 0xFFFFFFFF) for w in words):
+            digest = ((digest ^ b) * 0x100000001B3) & mask
+    return digest
+
+
 def parse_input(spec):
     events = {}
     if spec:
@@ -1018,8 +1062,9 @@ def main():
         for path in sys.argv[2:]:
             data = json.loads(pathlib.Path(path).read_text())
             fr = data['frames']
-            print('stage=%d shot=%d frames=%d digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x' % (
-                data['stage'], data['shot'], len(fr), frame_digest(fr), enemy_digest(fr), enemy_vm_digest(fr), bullet_digest(fr), item_digest(fr)))
+            print('stage=%d shot=%d frames=%d digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x' % (
+                data['stage'], data['shot'], len(fr), frame_digest(fr), enemy_digest(fr), enemy_vm_digest(fr), bullet_digest(fr),
+                item_digest(fr), spell_digest(fr)))
         return 0
     ap = argparse.ArgumentParser()
     ap.add_argument('exe')
@@ -1030,6 +1075,7 @@ def main():
     ap.add_argument('--shot', type=int, default=0)
     ap.add_argument('--season', type=int, default=0)
     ap.add_argument('--difficulty', type=int, default=1)
+    ap.add_argument('--lives', type=int, default=None, help='装载后覆盖 DAT_004a57f4 残机数（harness game-run 第 12 参同口径）')
     ap.add_argument('--input', default='')
     ap.add_argument('--seed', type=int, default=0)
     ap.add_argument('--every', type=int, default=1)
@@ -1042,7 +1088,8 @@ def main():
     ap.add_argument('--trace-ecl', default='', help='把每条执行的 ECL 指令 (frame, enemy, sub, pc, time, ins_time, op) 写到此文件')
     ap.add_argument('--trace-rng', default='', help='把回放同步 RNG（DAT_004a6d88）的每次调用 (frame, 步数, 返回地址, 包装外层调用方) 写到此文件')
     a = ap.parse_args()
-    o = GameOracle(pathlib.Path(a.exe), a.dat_dir, a.stage, a.shot, a.season, a.difficulty, a.seed, a.debug, a.replay_slot)
+    o = GameOracle(pathlib.Path(a.exe), a.dat_dir, a.stage, a.shot, a.season, a.difficulty, a.seed, a.debug, a.replay_slot,
+                   a.lives)
     o.run_draw = a.draw
     o.enemy_snap = a.enemies
     o.bullet_snap = a.bullets
@@ -1071,12 +1118,13 @@ def main():
         pathlib.Path(a.trace_ecl).write_text(json.dumps(o.ecl_trace, separators=(',', ':')))
     if a.trace_rng:
         pathlib.Path(a.trace_rng).write_text(json.dumps(o.rng_trace, separators=(',', ':')))
-    print('game-oracle: %d frames → %s digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x errors=%s' % (
+    print('game-oracle: %d frames → %s digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x errors=%s' % (
         a.frames, a.out, frame_digest(frames),
         enemy_digest(frames) if a.enemies else 0,
         enemy_vm_digest(frames) if a.enemies else 0,
         bullet_digest(frames) if a.bullets else 0,
         item_digest(frames) if a.items else 0,
+        spell_digest(frames) if a.enemies else 0,
         notes[:3]))
     return 0
 

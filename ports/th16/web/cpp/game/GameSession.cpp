@@ -355,6 +355,7 @@ bool GameSession::enter_game() {
         game.player.effects = &effects;
         game.player.bullet_manager = game.bullets.get();
         game.player.global_game_speed = &supervisor.game_speed;
+        game.enemies.global_game_speed = &supervisor.game_speed;
         enemy_update_chain_ = chains.create([this]() -> ChainResult {
             if (game.enemies_live) {
                 game.enemies.sfx_queue.clear();
@@ -378,6 +379,25 @@ bool GameSession::enter_game() {
             return ChainResult::Continue;
         }, 0x1a, true);
     }
+
+    // 0x4178a0 / 0x417700：Spellcard（ECL 之后、Bomb 之后创建）；更新链 0x1e（0x417ee0 → 0x417930）、绘制链 0xc
+    spellcard.reset();
+    spellcard.animations = &animations;
+    spellcard.enemies = &game.enemies;
+    spellcard.player = game.player_live ? &game.player : nullptr;
+    spellcard.globals = &globals;
+    spellcard.stage = &game.stage;
+    spellcard.entry = game.entry;
+    spellcard_update_chain_ = chains.create([this]() -> ChainResult {
+        spellcard.update(supervisor.game_speed);
+        sfx_events.insert(sfx_events.end(), spellcard.sfx_queue.begin(), spellcard.sfx_queue.end());
+        spellcard.sfx_queue.clear();
+        gui_events.insert(gui_events.end(), spellcard.gui_events.begin(), spellcard.gui_events.end());
+        spellcard.gui_events.clear();
+        spellcard.gui_timer_events.clear();  // Gui+0x94 / +0x98 计时 VM 中断：Gui 接入时补
+        return ChainResult::Continue;
+    }, 0x1e, true);
+    chains.enable(spellcard_update_chain_);
 
     // 0x4097c0：关卡更新链（优先级 0x11）；0x42cb60：GameManager 更新链（优先级 0xf）
     stage_update_chain_ = chains.create([this]() -> ChainResult {
@@ -413,6 +433,7 @@ void GameSession::leave_game() {
     if (item_update_chain_) { chains.remove(item_update_chain_); item_update_chain_ = nullptr; }
     if (item_draw_chain_) { chains.remove(item_draw_chain_); item_draw_chain_ = nullptr; }
     if (item_draw_season_chain_) { chains.remove(item_draw_season_chain_); item_draw_season_chain_ = nullptr; }
+    if (spellcard_update_chain_) { chains.remove(spellcard_update_chain_); spellcard_update_chain_ = nullptr; }
     if (replay_record_chain_) { chains.remove(replay_record_chain_); replay_record_chain_ = nullptr; }
     if (player_update_chain_) { chains.remove(player_update_chain_); player_update_chain_ = nullptr; }
     if (player_draw_chain_) { chains.remove(player_draw_chain_); player_draw_chain_ = nullptr; }
@@ -444,6 +465,7 @@ bool GameSession::logic_step() {
     sample_input();
     sfx_events.clear();
     player_sfx_events.clear();
+    gui_events.clear();
 
     SceneId leave = SceneId::Invalid, enter = SceneId::Invalid;
     if (supervisor.consume_switch(leave, enter)) {
