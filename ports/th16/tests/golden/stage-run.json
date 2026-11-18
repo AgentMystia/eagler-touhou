@@ -1,29 +1,616 @@
 {
-  "$comment": "tools/oracle/game-oracle.py 长程无输入整关跑分（--lives 8 避开未移植的 Game Over 流程）；六组 FNV-1a 64 摘要与逐帧检查点均取自原版 th16.exe v1.00a。",
-  "cases": [
-    {
-      "name": "st1-normal-reimu-spring-noinput-4200",
-      "stage": 1, "shot": 0, "season": 0, "difficulty": 1, "replay_slot": -1, "lives": 8,
-      "frames": 4200, "input": "",
-      "digest": "1fb7cc5e34c0cb39",
-      "enemies": "7cbad0f646a9cb24",
-      "enemy_vms": "25a7be00b43c07a8",
-      "bullets": "c15f74180f65c7cc",
-      "items": "37e1b358c7e56b59",
-      "spell": "a4aec250a653be96",
-      "checkpoints": {
-        "418": {"rng": [37614, 84], "game_rng": [41605, 850], "enemy_count": 2, "item_count": 9},
-        "419": {"rng": [37614, 84], "game_rng": [26071, 854]},
-        "1000": {"rng": [11117, 172], "game_rng": [39507, 1220]},
-        "2100": {"rng": [48907, 492], "game_rng": [26636, 15250]},
-        "2103": {"rng": [45010, 496], "enemy_count": 3, "item_count": 30, "season_gauge": 16, "lives": 4},
-        "2446": {"rng": [1552, 12499], "enemy_count": 2, "item_count": 8, "power": 102},
-        "3144": {"rng": [62456, 12516], "enemy_count": 3, "spell_id": 2, "enemy_bonus": [122, 24]},
-        "4061": {"rng": [61992, 12578], "enemy_count": 16, "enemy_bonus": [193, 25], "lives": 0},
-        "4200": {"rng": [36491, 12748], "enemy_count": 13, "item_count": 51, "enemy_bonus": [201, 36], "score": 2333, "graze": 55}
-      },
-      "last_ids": [1, 144, 145, 156, 157, 176, 177, 178, 179, 180, 181, 182, 183],
-      "phantom01": {"frame": 3144, "id": 124, "pos": [-120, 32, 0], "angle_bits": 1075235810}
+ "$comment": "tools/oracle/game-oracle.py 长程无输入整关跑分（--lives 8 避开未移植的 Game Over 流程）；六组 FNV-1a 64 摘要与逐帧检查点均取自原版 th16.exe v1.00a。",
+ "cases": [
+  {
+   "name": "st1-normal-reimu-spring-noinput-4200",
+   "stage": 1,
+   "shot": 0,
+   "season": 0,
+   "difficulty": 1,
+   "replay_slot": -1,
+   "lives": 8,
+   "frames": 4200,
+   "input": "",
+   "digest": "1fb7cc5e34c0cb39",
+   "enemies": "7cbad0f646a9cb24",
+   "enemy_vms": "25a7be00b43c07a8",
+   "bullets": "c15f74180f65c7cc",
+   "items": "37e1b358c7e56b59",
+   "spell": "a4aec250a653be96",
+   "checkpoints": {
+    "418": {
+     "rng": [
+      37614,
+      84
+     ],
+     "game_rng": [
+      41605,
+      850
+     ],
+     "enemy_count": 2,
+     "item_count": 9
+    },
+    "419": {
+     "rng": [
+      37614,
+      84
+     ],
+     "game_rng": [
+      26071,
+      854
+     ]
+    },
+    "1000": {
+     "rng": [
+      11117,
+      172
+     ],
+     "game_rng": [
+      39507,
+      1220
+     ]
+    },
+    "2100": {
+     "rng": [
+      48907,
+      492
+     ],
+     "game_rng": [
+      26636,
+      15250
+     ]
+    },
+    "2103": {
+     "rng": [
+      45010,
+      496
+     ],
+     "enemy_count": 3,
+     "item_count": 30,
+     "season_gauge": 16,
+     "lives": 4
+    },
+    "2446": {
+     "rng": [
+      1552,
+      12499
+     ],
+     "enemy_count": 2,
+     "item_count": 8,
+     "power": 102
+    },
+    "3144": {
+     "rng": [
+      62456,
+      12516
+     ],
+     "enemy_count": 3,
+     "spell_id": 2,
+     "enemy_bonus": [
+      122,
+      24
+     ]
+    },
+    "4061": {
+     "rng": [
+      61992,
+      12578
+     ],
+     "enemy_count": 16,
+     "enemy_bonus": [
+      193,
+      25
+     ],
+     "lives": 0
+    },
+    "4200": {
+     "rng": [
+      36491,
+      12748
+     ],
+     "enemy_count": 13,
+     "item_count": 51,
+     "enemy_bonus": [
+      201,
+      36
+     ],
+     "score": 2333,
+     "graze": 55
     }
-  ]
+   },
+   "last_ids": [
+    1,
+    144,
+    145,
+    156,
+    157,
+    176,
+    177,
+    178,
+    179,
+    180,
+    181,
+    182,
+    183
+   ],
+   "phantom01": {
+    "frame": 3144,
+    "id": 124,
+    "pos": [
+     -120,
+     32,
+     0
+    ],
+    "angle_bits": 1075235810
+   }
+  },
+  {
+   "name": "st1-normal-reimu-spring-noinput-refill8-15000",
+   "comment": "6312 帧 MainBoss ECL 518 对话（op 11 每句 600 帧自动推进）→ 7562 帧 op 12 放行 ECL（Boss 生成）→ 12001 帧前对话结束、非符开始 → 13501 帧符卡 1；--refill-lives 8 规避残机显示 8 槽上限",
+   "stage": 1,
+   "shot": 0,
+   "season": 0,
+   "difficulty": 1,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 15000,
+   "input": "",
+   "digest": "5c68dbb2d1555760",
+   "enemies": "6350e76d59df2dc8",
+   "enemy_vms": "ee746bd13aecced9",
+   "bullets": "0ffd125acaf21ff1",
+   "items": "051a54f451c7a8a4",
+   "spell": "c8cfb87f498926e5",
+   "checkpoints": {
+    "6311": {
+     "rng": [
+      1334,
+      13382
+     ],
+     "game_rng": [
+      17013,
+      91142
+     ],
+     "dialogue": 0,
+     "enemy_count": 1,
+     "bullet_count": 34,
+     "item_count": 17,
+     "lives": 8,
+     "score": 4687,
+     "graze": 94,
+     "spell_id": 2,
+     "spell_flags": 128,
+     "enemy_bonus": [
+      263,
+      65
+     ]
+    },
+    "6312": {
+     "rng": [
+      1334,
+      13382
+     ],
+     "game_rng": [
+      45011,
+      92098
+     ],
+     "dialogue": 1,
+     "enemy_count": 1,
+     "bullet_count": 34,
+     "item_count": 17,
+     "lives": 8,
+     "score": 4687,
+     "graze": 94,
+     "spell_id": 41,
+     "spell_flags": 128,
+     "enemy_bonus": [
+      263,
+      65
+     ]
+    },
+    "7561": {
+     "rng": [
+      2080,
+      13574
+     ],
+     "game_rng": [
+      27198,
+      95458
+     ],
+     "dialogue": 1,
+     "enemy_count": 2,
+     "bullet_count": 0,
+     "item_count": 0,
+     "lives": 8,
+     "score": 4767,
+     "graze": 94,
+     "spell_id": 43,
+     "spell_flags": 128,
+     "enemy_bonus": [
+      263,
+      65
+     ]
+    },
+    "7562": {
+     "rng": [
+      26333,
+      13766
+     ],
+     "game_rng": [
+      17121,
+      95490
+     ],
+     "dialogue": 1,
+     "enemy_count": 2,
+     "bullet_count": 0,
+     "item_count": 0,
+     "lives": 8,
+     "score": 4767,
+     "graze": 94,
+     "spell_id": 43,
+     "spell_flags": 128,
+     "enemy_bonus": [
+      263,
+      65
+     ]
+    },
+    "9000": {
+     "rng": [
+      14265,
+      29382
+     ],
+     "game_rng": [
+      38589,
+      97026
+     ],
+     "dialogue": 1,
+     "enemy_count": 2,
+     "bullet_count": 0,
+     "item_count": 0,
+     "lives": 8,
+     "score": 4767,
+     "graze": 94,
+     "spell_id": 43,
+     "spell_flags": 128,
+     "enemy_bonus": [
+      263,
+      65
+     ]
+    },
+    "11701": {
+     "rng": [
+      14265,
+      29382
+     ],
+     "game_rng": [
+      38589,
+      97026
+     ],
+     "dialogue": 1,
+     "enemy_count": 2,
+     "bullet_count": 0,
+     "item_count": 0,
+     "lives": 8,
+     "score": 4767,
+     "graze": 94,
+     "spell_id": 43,
+     "spell_flags": 128,
+     "enemy_bonus": [
+      263,
+      65
+     ]
+    },
+    "12001": {
+     "rng": [
+      14265,
+      29382
+     ],
+     "game_rng": [
+      8992,
+      98014
+     ],
+     "dialogue": 0,
+     "enemy_count": 2,
+     "bullet_count": 36,
+     "item_count": 0,
+     "lives": 8,
+     "score": 4767,
+     "graze": 94,
+     "spell_id": 43,
+     "spell_flags": 128,
+     "enemy_bonus": [
+      264,
+      65
+     ]
+    },
+    "13201": {
+     "rng": [
+      34397,
+      29494
+     ],
+     "game_rng": [
+      25761,
+      126132
+     ],
+     "dialogue": 0,
+     "enemy_count": 2,
+     "bullet_count": 1,
+     "item_count": 11,
+     "lives": 8,
+     "score": 4877,
+     "graze": 141,
+     "spell_id": 43,
+     "spell_flags": 128,
+     "enemy_bonus": [
+      264,
+      65
+     ]
+    },
+    "13501": {
+     "rng": [
+      14436,
+      29551
+     ],
+     "game_rng": [
+      33268,
+      129382
+     ],
+     "dialogue": 0,
+     "enemy_count": 2,
+     "bullet_count": 0,
+     "item_count": 20,
+     "lives": 8,
+     "score": 4898,
+     "graze": 151,
+     "spell_id": 43,
+     "spell_flags": 3,
+     "enemy_bonus": [
+      264,
+      65
+     ]
+    },
+    "15000": {
+     "rng": [
+      53454,
+      29937
+     ],
+     "game_rng": [
+      39811,
+      167922
+     ],
+     "dialogue": 0,
+     "enemy_count": 2,
+     "bullet_count": 0,
+     "item_count": 68,
+     "lives": 8,
+     "score": 5037,
+     "graze": 262,
+     "spell_id": 43,
+     "spell_flags": 128,
+     "enemy_bonus": [
+      264,
+      65
+     ]
+    }
+   },
+   "last_ids": [
+    1,
+    246
+   ]
+  },
+  {
+   "name": "st1-normal-reimu-spring-pulse-skip-9000",
+   "comment": "6320 帧起 Z 按 30 放 10 脉冲：对话按 op 10 可快进段以累计按住 ≥ 20 帧（DAT_004a5244）跳过（6347 帧 pc 104 → 112）、6521 帧对话结束后自机射击打 Boss（9000 帧符卡 1 已取得标志 1）",
+   "stage": 1,
+   "shot": 0,
+   "season": 0,
+   "difficulty": 1,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 9000,
+   "input": "6320:1,6350:0,6360:1,6390:0,6400:1,6430:0,6440:1,6470:0,6480:1,6510:0,6520:1,6550:0,6560:1,6590:0,6600:1,6630:0,6640:1,6670:0,6680:1,6710:0,6720:1,6750:0,6760:1,6790:0,6800:1,6830:0,6840:1,6870:0,6880:1,6910:0,6920:1,6950:0,6960:1,6990:0,7000:1,7030:0,7040:1,7070:0,7080:1,7110:0,7120:1,7150:0,7160:1,7190:0,7200:1,7230:0,7240:1,7270:0,7280:1,7310:0,7320:1,7350:0,7360:1,7390:0,7400:1,7430:0,7440:1,7470:0,7480:1,7510:0,7520:1,7550:0,7560:1,7590:0,7600:1,7630:0,7640:1,7670:0,7680:1,7710:0,7720:1,7750:0,7760:1,7790:0,7800:1,7830:0,7840:1,7870:0,7880:1,7910:0,7920:1,7950:0,7960:1,7990:0,8000:1,8030:0,8040:1,8070:0,8080:1,8110:0,8120:1,8150:0,8160:1,8190:0,8200:1,8230:0,8240:1,8270:0,8280:1,8310:0,8320:1,8350:0,8360:1,8390:0",
+   "digest": "1b02d18b5b1bad05",
+   "enemies": "7ae42ad5db53c0d1",
+   "enemy_vms": "69477c01cc9e8978",
+   "bullets": "63e51e7a7ae0f8f8",
+   "items": "5bec9df7c289d8d1",
+   "spell": "da7d02cccdd803b7",
+   "checkpoints": {
+    "6312": {
+     "rng": [
+      1334,
+      13382
+     ],
+     "game_rng": [
+      45011,
+      92098
+     ],
+     "dialogue": 1,
+     "enemy_count": 1,
+     "bullet_count": 34,
+     "item_count": 17,
+     "lives": 8,
+     "score": 4687,
+     "graze": 94,
+     "spell_id": 41,
+     "spell_flags": 128,
+     "enemy_bonus": [
+      263,
+      65
+     ],
+     "msg_pc": 36
+    },
+    "6346": {
+     "rng": [
+      1334,
+      13382
+     ],
+     "game_rng": [
+      16853,
+      95426
+     ],
+     "dialogue": 1,
+     "enemy_count": 1,
+     "bullet_count": 0,
+     "item_count": 3,
+     "lives": 8,
+     "score": 4764,
+     "graze": 94,
+     "spell_id": 41,
+     "spell_flags": 128,
+     "enemy_bonus": [
+      263,
+      65
+     ],
+     "msg_pc": 104
+    },
+    "6347": {
+     "rng": [
+      1334,
+      13382
+     ],
+     "game_rng": [
+      16853,
+      95426
+     ],
+     "dialogue": 1,
+     "enemy_count": 1,
+     "bullet_count": 0,
+     "item_count": 1,
+     "lives": 8,
+     "score": 4766,
+     "graze": 94,
+     "spell_id": 41,
+     "spell_flags": 128,
+     "enemy_bonus": [
+      263,
+      65
+     ],
+     "msg_pc": 112
+    },
+    "6400": {
+     "rng": [
+      2308,
+      22982
+     ],
+     "game_rng": [
+      38589,
+      97026
+     ],
+     "dialogue": 1,
+     "enemy_count": 2,
+     "bullet_count": 0,
+     "item_count": 0,
+     "lives": 8,
+     "score": 4767,
+     "graze": 94,
+     "spell_id": 43,
+     "spell_flags": 128,
+     "enemy_bonus": [
+      263,
+      65
+     ],
+     "msg_pc": 248
+    },
+    "6521": {
+     "rng": [
+      14265,
+      29382
+     ],
+     "game_rng": [
+      25694,
+      97212
+     ],
+     "dialogue": 0,
+     "enemy_count": 2,
+     "bullet_count": 0,
+     "item_count": 0,
+     "lives": 8,
+     "score": 4767,
+     "graze": 94,
+     "spell_id": 43,
+     "spell_flags": 128,
+     "enemy_bonus": [
+      264,
+      65
+     ]
+    },
+    "6601": {
+     "rng": [
+      16365,
+      29402
+     ],
+     "game_rng": [
+      27208,
+      98314
+     ],
+     "dialogue": 0,
+     "enemy_count": 2,
+     "bullet_count": 54,
+     "item_count": 5,
+     "lives": 8,
+     "score": 4799,
+     "graze": 94,
+     "spell_id": 43,
+     "spell_flags": 128,
+     "enemy_bonus": [
+      264,
+      65
+     ]
+    },
+    "7000": {
+     "rng": [
+      39117,
+      29488
+     ],
+     "game_rng": [
+      35090,
+      105272
+     ],
+     "dialogue": 0,
+     "enemy_count": 2,
+     "bullet_count": 37,
+     "item_count": 21,
+     "lives": 8,
+     "score": 4955,
+     "graze": 110,
+     "spell_id": 43,
+     "spell_flags": 128,
+     "enemy_bonus": [
+      264,
+      65
+     ]
+    },
+    "9000": {
+     "rng": [
+      29848,
+      29887
+     ],
+     "game_rng": [
+      20806,
+      143874
+     ],
+     "dialogue": 0,
+     "enemy_count": 2,
+     "bullet_count": 165,
+     "item_count": 7,
+     "lives": 8,
+     "score": 5664,
+     "graze": 228,
+     "spell_id": 43,
+     "spell_flags": 1,
+     "enemy_bonus": [
+      264,
+      66
+     ]
+    }
+   },
+   "last_ids": [
+    1,
+    246
+   ]
+  }
+ ]
 }
