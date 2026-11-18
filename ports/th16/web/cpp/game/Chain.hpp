@@ -23,6 +23,7 @@ enum class ChainResult : i32 {
     BreakOk = 4,
     BreakNeg = 5,
     Restart = 6,
+    Destroy = 7,  // 调用条目的删除回调（+0x10，如 ScreenEffect 0x45d130 自删两条链）后继续
 };
 
 using ChainCallback = std::function<ChainResult()>;
@@ -32,6 +33,7 @@ struct ChainEntry {
     u32 flags = 0;          // bit0 owned, bit1 enabled
     ChainCallback callback;
     ChainCallback init;     // 插入时跑一次
+    std::function<void()> on_destroy;  // +0x10：Destroy 返回时调用；为空则直接摘除本条
     void* context = nullptr;
     bool in_update = true;  // true=更新链，false=绘制链
 };
@@ -48,7 +50,8 @@ public:
     // 0x4017a0
     void remove(ChainEntry* entry);
 
-    // 0x401460：更新链。返回非 Continue 语义汇总（0=空转完, 1=有执行, -1/其它透传 Break）
+    // 0x401460：更新链。回调前先记下后继（+0x50），回调中在当前项之前插入的条目本帧不跑，
+    // 自删 / 删后继均安全。返回非 Continue 语义汇总（0=空转完, 1=有执行, -1/其它透传 Break）
     i32 run_update();
     // 0x4015a0：绘制链
     i32 run_draw();
