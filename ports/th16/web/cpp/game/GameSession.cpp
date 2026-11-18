@@ -212,8 +212,7 @@ bool GameSession::create_player() {
     // 0x440fb0：自机更新链 0x16（0x443720 → 0x442560）与绘制链 0x1d（0x443730）
     player_update_chain_ = chains.create([this]() -> ChainResult {
         game.player.update(animations, globals, game_input, game.world, animations.file(8), geometry, supervisor.game_speed);
-        sfx_events.insert(sfx_events.end(), game.player.sfx_queue.begin(), game.player.sfx_queue.end());
-        game.player.sfx_queue.clear();
+        harvest_player_sfx();
         game.player.sfx_stop_queue.clear();
         return ChainResult::Continue;
     }, 0x16, true);
@@ -251,6 +250,32 @@ bool GameSession::enter_game() {
     if (game.stage.anm == nullptr) { failure = "stage anm load failed"; return false; }
     game.stage_live = true;
 
+    // 0x411dd0：BulletManager（bullet.anm 槽 7、effect.anm 槽 8）；更新链 0x1c（0x411880）、绘制链 0x25（0x411a30）
+    {
+        AnmFile* bullet_anm = animations.file(BulletManager::kBulletAnmSlot);
+        if (bullet_anm == nullptr) { failure = "bullet.anm not loaded"; return false; }
+        game.bullets = std::make_unique<BulletManager>();
+        game.bullets->create(animations, *bullet_anm, animations.file(8), globals,
+                             game.player_live ? &game.player : nullptr, &game.world, animations.visual_rng);
+        game.bullets_live = true;
+        bullet_update_chain_ = chains.create([this]() -> ChainResult {
+            // 0x411880：GameManager 装载中（bit2）或结束位（bit0 经 >>2 映射）时跳过
+            if (game.bullets_live && ((game.flags | (game.flags >> 2)) & 1u) == 0) {
+                game.bullets->sfx_queue.clear();
+                game.bullets->update(supervisor.game_speed, (game.flags & 0x400u) != 0);
+                sfx_events.insert(sfx_events.end(), game.bullets->sfx_queue.begin(), game.bullets->sfx_queue.end());
+                game.bullets->sfx_queue.clear();
+                // 被弹（0x443f10）在弹幕链内登记的自机音效本帧即生效
+                if (game.player_live) harvest_player_sfx();
+            }
+            return ChainResult::Continue;
+        }, 0x1c, true);
+        bullet_draw_chain_ = chains.create([this]() -> ChainResult {
+            if (game.bullets_live && (game.flags & GameManager::kLoading) == 0) game.bullets->prepare_draw();
+            return ChainResult::Continue;
+        }, 0x25, false);
+    }
+
     // 0x41b340 / 0x41ae70：装 ECL，登记敌人更新链优先级 0x1a（0x41b4f0→0x41b3d0）
     {
         auto read_ecl = [](void* user, const std::string& name, std::vector<u8>& data) -> bool {
@@ -266,6 +291,7 @@ bool GameSession::enter_game() {
         game.enemies.read_fn = read_ecl;
         game.enemies.anm_user = this;
         game.enemies.anm_fn = load_enemy_anm;
+        game.enemies.bullets = game.bullets.get();
         if (!game.enemies.create(game.entry->ecl_name, globals, game.player_live ? &game.player : nullptr,
                                  animations.visual_rng, animations, u8(1u << (globals.difficulty & 31)))) {
             failure = game.enemies.error;
@@ -276,7 +302,16 @@ bool GameSession::enter_game() {
         enemy_update_chain_ = chains.create([this]() -> ChainResult {
             if (game.enemies_live) {
                 game.enemies.sfx_queue.clear();
+                if (game.bullets_live) {
+                    game.bullets->game_speed = supervisor.game_speed;
+                    game.bullets->sfx_queue.clear();
+                }
                 game.enemies.update(supervisor.game_speed);
+                if (game.bullets_live) {
+                    // ECL 601 等发射期间登记的音效（0x45e1f0 调用序在敌人链内）
+                    sfx_events.insert(sfx_events.end(), game.bullets->sfx_queue.begin(), game.bullets->sfx_queue.end());
+                    game.bullets->sfx_queue.clear();
+                }
                 if (sync_enemy_count) game.world.enemy_count = game.enemies.enemy_count;
                 if (!game.enemies.error.empty()) {
                     failure = game.enemies.error;
@@ -301,6 +336,8 @@ bool GameSession::enter_game() {
     game.timer.set(0);
     chains.enable(game_update_chain_);
     chains.enable(stage_update_chain_);
+    if (bullet_update_chain_) chains.enable(bullet_update_chain_);
+    if (bullet_draw_chain_) chains.enable(bullet_draw_chain_);
     if (enemy_update_chain_) chains.enable(enemy_update_chain_);
     game_live = true;
     return true;
@@ -311,6 +348,8 @@ void GameSession::leave_game() {
     if (game_update_chain_) { chains.remove(game_update_chain_); game_update_chain_ = nullptr; }
     if (stage_update_chain_) { chains.remove(stage_update_chain_); stage_update_chain_ = nullptr; }
     if (enemy_update_chain_) { chains.remove(enemy_update_chain_); enemy_update_chain_ = nullptr; }
+    if (bullet_update_chain_) { chains.remove(bullet_update_chain_); bullet_update_chain_ = nullptr; }
+    if (bullet_draw_chain_) { chains.remove(bullet_draw_chain_); bullet_draw_chain_ = nullptr; }
     if (replay_record_chain_) { chains.remove(replay_record_chain_); replay_record_chain_ = nullptr; }
     if (player_update_chain_) { chains.remove(player_update_chain_); player_update_chain_ = nullptr; }
     if (player_draw_chain_) { chains.remove(player_draw_chain_); player_draw_chain_ = nullptr; }
@@ -332,9 +371,16 @@ void GameSession::leave_game() {
     game_live = false;
 }
 
+void GameSession::harvest_player_sfx() {
+    sfx_events.insert(sfx_events.end(), game.player.sfx_queue.begin(), game.player.sfx_queue.end());
+    player_sfx_events.insert(player_sfx_events.end(), game.player.sfx_queue.begin(), game.player.sfx_queue.end());
+    game.player.sfx_queue.clear();
+}
+
 bool GameSession::logic_step() {
     sample_input();
     sfx_events.clear();
+    player_sfx_events.clear();
 
     SceneId leave = SceneId::Invalid, enter = SceneId::Invalid;
     if (supervisor.consume_switch(leave, enter)) {

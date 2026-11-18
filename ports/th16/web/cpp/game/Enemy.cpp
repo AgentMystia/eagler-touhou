@@ -48,7 +48,7 @@ bool Enemy::integer(i32 var, i32& value) {
         case -9968: value = truncate_int(motion2.angle); return true;
         case -9967: value = truncate_int(motion1.speed); return true;
         case -9966: value = truncate_int(motion2.speed); return true;
-        case -9960: value = 0; return true;  // DAT_004a57bc 秩/等级，后续接全局
+        case -9960: value = globals ? globals->rank : 0; return true;  // DAT_004a57bc
         case -9959: value = globals ? globals->difficulty : 0; return true;
         case -9954: value = life; return true;
         case -9953: value = globals && globals->difficulty == 0; return true;
@@ -164,7 +164,9 @@ float* Enemy::float_destination(i32 var) {
     }
 }
 
-bool Enemy::spawn(EclContext& source, i32 id, u32 /*skipped_arguments*/) {
+// 0x474430：新建上下文（0x41a400）、头插异步线程链（主上下文节点 +0x11fc 之后），
+// 再以 0x471db0 在新上下文上建立调用帧并传入 spawn 指令的参数
+bool Enemy::spawn(EclContext& source, i32 id, u32 skipped_arguments) {
     auto ctx = std::make_unique<EclContext>();
     ctx->variables = this;
     ctx->threads = this;
@@ -208,6 +210,10 @@ bool Enemy::init(EnemyManager& mgr, EclProgram& prog, const char* sub, const Ene
     globals = &g;
     player = pl;
     rng = &r;
+    bullets = mgr.bullets;
+    std::memset(static_cast<void*>(shooters), 0, sizeof shooters);
+    for (int i = 0; i < kShooterSlots; ++i) { shooter_offset[i] = Vec3{}; shooter_pos2[i] = Vec3{}; shooter_ex_counter[i] = 0; }
+    safe_radius_sq = 0;
     id = mgr.next_id;
     mgr.next_id = mgr.next_id + 1;
     if (mgr.next_id == 0) mgr.next_id = 1;
@@ -601,8 +607,264 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
         case 320: case 321: case 322: case 323: case 324: case 325:
             // ANM 绑定/偏移/层：渲染未接前空操作
             return 0;
-        case 600: case 601: case 602: case 603: case 604: case 605: case 606: case 607:
-        case 611: case 615: case 616: case 629: case 630: case 632:
+        // —— 弹幕发射器 600..641（0x42085b..0x4226d0）——
+        case 600: {  // 0x42085b
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            shooters[slot].reset();
+            shooter_offset[slot].x = 0;
+            shooter_offset[slot].y = 0;
+            shooter_pos2[slot] = Vec3{};
+            shooter_ex_counter[slot] = 0;
+            return 0;
+        }
+        case 601: {  // 0x4209cf
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots || !bullets) return 0;
+            EtShooter& s = shooters[slot];
+            const Vec3& off = shooter_offset[slot];
+            if (shooter_pos2[slot].z > 0.9f) {
+                s.pos = {shooter_pos2[slot].x + off.x, off.y + shooter_pos2[slot].y, 0.0f};
+            } else {
+                s.pos = {off.x + pos.x, off.y + pos.y, off.z + pos.z};
+            }
+            bullets->safe_radius_sq = safe_radius_sq;
+            bullets->shoot(s);
+            bullets->safe_radius_sq = 0;
+            return 0;
+        }
+        case 602: {  // 0x420ab6
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            shooters[slot].type = i16(iarg(1));
+            shooters[slot].color = i16(iarg(2));
+            return 0;
+        }
+        case 603: {  // 0x420af0
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            shooter_offset[slot].x = farg(1);
+            shooter_offset[slot].y = farg(2);
+            return 0;
+        }
+        case 604: {  // 0x420c34
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            shooters[slot].angle1 = farg(1);
+            shooters[slot].angle2 = farg(2);
+            return 0;
+        }
+        case 605: {  // 0x420c72
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            shooters[slot].speed1 = farg(1);
+            shooters[slot].speed2 = farg(2);
+            return 0;
+        }
+        case 606: {  // 0x420cb0
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            shooters[slot].way = i16(iarg(1));
+            shooters[slot].stack = i16(iarg(2));
+            return 0;
+        }
+        case 607: {  // 0x421152
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            shooters[slot].aim_mode = i16(iarg(1));
+            return 0;
+        }
+        case 608: {  // 0x42117f
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            shooters[slot].shoot_sfx = iarg(1);
+            shooters[slot].step_sfx = iarg(2);
+            return 0;
+        }
+        case 609: case 610: case 611: case 612: {  // 0x4211b9：写 Ex 步骤（609/610 指定下标，611/612 用递增计数）
+            i32 slot = iarg(0);
+            if (slot >= 18 || slot < 0) slot = 0;
+            if (slot >= kShooterSlots) return 0;
+            i32 idx;
+            u32 next;
+            if (opcode == 609 || opcode == 610) { idx = iarg(1); next = 2; }
+            else { idx = shooter_ex_counter[slot]; next = 1; }
+            if (idx < 0 || idx >= 18) return 0;
+            BulletExStep& step = shooters[slot].ex[idx];
+            const bool wide = (opcode == 610 || opcode == 612);
+            step.async = iarg(next);
+            step.type = u32(iarg(next + 1));
+            step.a = iarg(next + 2);
+            step.b = iarg(next + 3);
+            next += 4;
+            if (wide) { step.c = iarg(next); step.d = iarg(next + 1); next += 2; }
+            step.r = farg(next);
+            step.s = farg(next + 1);
+            next += 2;
+            if (wide) { step.m = farg(next); step.n = farg(next + 1); }
+            if (opcode == 609 || opcode == 610) shooter_ex_counter[slot] = idx + 1;
+            else shooter_ex_counter[slot] = shooter_ex_counter[slot] + 1;
+            return 0;
+        }
+        case 613:  // 0x421655：全屏消弹（0x416f40 的 fastcall 参数为残留的操作码 613，仅计数）+ 0x431af0(1) 道具吸引
+            if (bullets) bullets->cancel_all(613);
+            // 0x431af0(1)：ItemManager 接入时补
+            return 0;
+        case 614: {  // 0x420925：复制发射器（含偏移与绝对坐标，不含 Ex 计数）
+            const i32 dst = iarg(0), src = iarg(1);
+            if (dst < 0 || dst >= kShooterSlots || src < 0 || src >= kShooterSlots) return 0;
+            shooters[dst] = shooters[src];
+            shooter_offset[dst] = shooter_offset[src];
+            shooter_pos2[dst] = shooter_pos2[src];
+            return 0;
+        }
+        case 615: case 616: case 635: case 636: {  // 0x42219e / 0x42221d / 0x422253 / 0x422289：圆形消弹 + 道具吸引
+            const float radius = farg(0);
+            const bool items = (opcode == 615 || opcode == 635);
+            if (bullets) bullets->cancel_radius(pos, radius, items ? 1 : 0, opcode >= 635);
+            // 0x431a70(pos, items, 1)：ItemManager 接入时补
+            return 0;
+        }
+        case 617: {  // 0x420ded：按秩三档选速度
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            const i32 rank = globals ? globals->rank : 0;
+            u32 base = 3;
+            if (rank >= 0x200) base = 5;
+            else if (rank < -0x200) base = 1;
+            shooters[slot].speed1 = farg(base);
+            shooters[slot].speed2 = farg(base + 1);
+            return 0;
+        }
+        case 618: {  // 0x420e51：按秩五档选速度
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            const i32 rank = globals ? globals->rank : 0;
+            u32 base = 1;
+            if (rank >= 600) base = 9;
+            else if (rank >= 200) base = 7;
+            else if (rank >= -200) base = 5;
+            else if (rank >= -600) base = 3;
+            shooters[slot].speed1 = farg(base);
+            shooters[slot].speed2 = farg(base + 1);
+            return 0;
+        }
+        case 619: {  // 0x420ed4：按秩线性插值速度（rank+1024 / 2048）
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            const float f1 = farg(1), f2 = farg(2), f3 = farg(3), f4 = farg(4);
+            const float t = float(globals ? globals->rank : 0) + 1024.0f;
+            shooters[slot].speed1 = ((f3 - f1) * t) * 0.00048828125f + f1;
+            shooters[slot].speed2 = ((f4 - f2) * t) * 0.00048828125f + f2;
+            return 0;
+        }
+        case 620: {  // 0x420fa7：按秩三档选 way/stack
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            const i32 rank = globals ? globals->rank : 0;
+            u32 base = 3;
+            if (rank >= 0x200) base = 5;
+            else if (rank < -0x200) base = 1;
+            shooters[slot].way = i16(iarg(base));
+            shooters[slot].stack = i16(iarg(base + 1));
+            return 0;
+        }
+        case 621: {  // 0x421002：按秩五档选 way/stack
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            const i32 rank = globals ? globals->rank : 0;
+            u32 base = 1;
+            if (rank >= 600) base = 9;
+            else if (rank >= 200) base = 7;
+            else if (rank >= -200) base = 5;
+            else if (rank >= -600) base = 3;
+            shooters[slot].way = i16(iarg(base));
+            shooters[slot].stack = i16(iarg(base + 1));
+            return 0;
+        }
+        case 622: {  // 0x42107c：按秩线性插值 way/stack（有符号 /2048 向零截断）
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            const i32 a1 = iarg(1), a2 = iarg(2), a3 = iarg(3), a4 = iarg(4);
+            const i32 t = (globals ? globals->rank : 0) + 0x400;
+            auto lerp = [t](i32 lo, i32 hi) -> i16 {
+                const i32 p = t * (hi - lo);
+                return i16(((p + ((p >> 31) & 0x7ff)) >> 11) + lo);
+            };
+            shooters[slot].way = lerp(a1, a3);
+            shooters[slot].stack = lerp(a2, a4);
+            return 0;
+        }
+        case 623: {  // 0x4225d1：(x,y) → 自机方向角
+            const float px = player ? player->pos.x : 0.0f;
+            const float py = player ? player->pos.y : 0.0f;
+            const float dx = px - farg(1);
+            const float dy = py - farg(2);
+            const float a = float(std::atan2(double(dy), double(dx)));
+            float* dst = ctx.float_destination(0);
+            if (!dst) return -2;
+            *dst = a;
+            return 0;
+        }
+        case 624: {  // 0x420cec：按难度选速度
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            const i32 d = globals ? globals->difficulty : 0;
+            const u32 base = (d == 0) ? 1 : (d == 1) ? 2 : (d == 2) ? 3 : 4;
+            shooters[slot].speed1 = farg(base);
+            shooters[slot].speed2 = farg(base + 4);
+            return 0;
+        }
+        case 625: {  // 0x420d64：按难度选 way/stack
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            const i32 d = globals ? globals->difficulty : 0;
+            const u32 base = (d == 0) ? 1 : (d == 1) ? 2 : (d == 2) ? 3 : 4;
+            shooters[slot].way = i16(iarg(base));
+            shooters[slot].stack = i16(iarg(base + 4));
+            return 0;
+        }
+        case 626: {  // 0x420b25：极坐标偏移
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            const float a = farg(1), len = farg(2);
+            shooter_offset[slot].x = float(std::cos(double(a)) * double(len));
+            shooter_offset[slot].y = float(std::sin(double(a)) * double(len));
+            return 0;
+        }
+        case 627: {  // 0x420b95
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            shooters[slot].distance = farg(1);
+            return 0;
+        }
+        case 628: {  // 0x420bc3：绝对发射坐标（x < -990 关闭）
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            const float x = farg(1), y = farg(2);
+            shooter_pos2[slot] = {x, y, (x < -990.0f) ? 0.0f : 1.0f};
+            return 0;
+        }
+        case 640: {  // 0x4213e9：Ex 步骤的子程序名（Ex 0x1000000 用；字符串位于指令 +0x1c）
+            const i32 slot = iarg(0), idx = iarg(1);
+            if (slot < 0 || slot >= kShooterSlots || idx < 0 || idx >= 18 || !ctx.instruction) return 0;
+            shooters[slot].ex[idx].str = reinterpret_cast<const char*>(ctx.instruction) + 0x1c;
+            return 0;
+        }
+        case 641: {  // 0x4213c2：Ex 计数 -1（下限 0）
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            if (--shooter_ex_counter[slot] < 0) shooter_ex_counter[slot] = 0;
+            return 0;
+        }
+        case 526: {  // 0x41ff5d
+            const float r = farg(0);
+            safe_radius_sq = r * r;
+            return 0;
+        }
+        case 629: case 630: case 631: case 632: case 633: case 634: case 637: case 638: case 639:
+            // 629 消弹光环特效（0x418c70）、630 STD 标签跳转、631 EnemyManager 标志、632–634/637/639 敌机回调表、
+            // 638 得分飘字：分别随 Effect / Stage / Gui 子系统接入
             return 0;
         case 535: {
             i32 vals[4]{iarg(1), iarg(2), iarg(3), iarg(4)};

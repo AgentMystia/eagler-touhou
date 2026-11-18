@@ -234,6 +234,33 @@ void Player::setup_options(AnmManager& manager, GameGlobals& globals) {
     for (PlayerOption& o : sub_options) o.snap = 1;
 }
 
+void Player::graze(AnmManager& manager, AnmFile* effect_anm, GameGlobals& globals, const Vec3& bullet_pos) {
+    globals.graze = globals.graze + 1;
+    globals.graze_total = globals.graze_total + 1;
+    if (globals.graze > 99999999) globals.graze = 99999999;
+    if (globals.graze_total > 99999999) globals.graze_total = 99999999;
+    const Vec3 mid{(bullet_pos.x + pos.x) * 0.5f, (pos.y + bullet_pos.y) * 0.5f, 0.0f};
+    if (effect_anm != nullptr) manager.spawn_effect(*effect_anm, 0x18, -1, mid, 0.0f);
+    // 0x44a460：Gui 擦弹数字飘字（Gui 接入前无状态影响）
+    sfx_queue.push_back(0x2a);
+}
+
+void Player::hit(AnmManager& manager, AnmFile* effect_anm) {
+    if ((flags & kFlagSilentHit) == 0) sfx_queue.push_back(2);
+    if (effect_anm != nullptr) manager.spawn_effect(*effect_anm, 0x1d, -1, pos, 0.0f);
+    // DAT_004a6db0+0x78（Spellcard 管理器）：被弹时的符卡取得标志更新——Spellcard 接入时补
+    state_timer.reset();
+    state = kDying;
+    invincible.set(0);
+    invincible.current = 6;
+    invincible.current_f = 6.0f;
+    invincible.previous = 5;
+    manager.init_from_template(*anm, vm, 0);
+    vm.update_callback = 0;
+    vm.time_callback = 0;
+    manager.run(vm);
+}
+
 void Player::play_sprite(AnmManager& manager, int script) {
     // 0x407b20(anm, &vm, script) + 回调清零 + 0x45f980
     manager.init_from_template(*anm, vm, script);

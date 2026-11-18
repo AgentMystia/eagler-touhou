@@ -3,6 +3,7 @@
 //   0x41aa70 生成（含立即 0x41d1e0） / 0x41d1e0→0x41d2e0 每帧（运动 0x41bb50 → ECL 0x473bc0 → 碰撞 0x41c330）
 //   敌方 ECL 操作码 ≥300：0x41dcb0（本阶段覆盖生成/运动/判定/标志等 st01 前段所需）
 #pragma once
+#include "Bullet.hpp"
 #include "Ecl.hpp"
 #include "Motion.hpp"
 #include "Types.hpp"
@@ -74,6 +75,15 @@ public:
     Interp<Vec3> pos_interp{};     // EnemyInf+0x2f8（op 401）
     Interp<float> angle_interp{};  // EnemyInf+0x3c8（op 405/412）
     Interp<float> speed_interp{};  // EnemyInf+0x3f8（op 405/412）
+
+    // 弹幕发射器（ECL 600..641 / 526；0x41b580 整块清零）
+    static constexpr int kShooterSlots = 16;
+    EtShooter shooters[kShooterSlots];        // EnemyInf+0x598（0x380 × 16）
+    Vec3 shooter_offset[kShooterSlots];       // EnemyInf+0x3dd8（ECL 603 / 626 相对偏移）
+    Vec3 shooter_pos2[kShooterSlots];         // EnemyInf+0x3e98（ECL 628 绝对坐标；z > 0.9 表示启用）
+    i32 shooter_ex_counter[kShooterSlots]{};  // EnemyInf+0x3d98（ECL 611 / 612 递增下标）
+    float safe_radius_sq = 0;                 // EnemyInf+0x4074（ECL 526：发射时自机近身安全半径²）
+    BulletManager* bullets = nullptr;         // DAT_004a6dac
     std::string error;
     bool alive = true;
 
@@ -110,6 +120,7 @@ public:
     i32 counters[3]{};          // +0x3c..0x44（-9949..-9947）
     u32 boss_ids[3]{};          // +0x80..0x88
     std::vector<i32> sfx_queue; // Enemy 触发的 0x45e1f0 音效（受击 0x22/0x23、死亡 3/4）
+    BulletManager* bullets = nullptr;  // DAT_004a6dac（GameSession 在 BulletManager 创建后绑定）
     AnmManager* animations = nullptr;
     GameGlobals* globals = nullptr;
     Player* player = nullptr;

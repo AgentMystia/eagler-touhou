@@ -105,6 +105,7 @@ public:
     enum State : i32 { kEnter = 0, kNormal = 1, kRespawnWait = 2, kState3 = 3, kDying = 4 };
     enum : u32 {
         kFlagOptionsGathered = 0x2,   // +0x1664c bit1：子机收拢到自机（被弹后）
+        kFlagSilentHit = 0x8,         // bit3：被弹不播音效 2
         kFlagNoShot = 0x4,            // bit2
         kFlagScaled = 0x10,           // bit4：缩放模式（+0x2c7c8）
         kFlagBlinkMode = 0x20,        // bit5
@@ -185,6 +186,10 @@ public:
                 AnmFile* effect_anm, const AnmRenderer& geometry, float game_speed);
     // 0x443730：绘制链 0x1d 的逻辑部分（pos → VM entity_offset，flags 0x40000）
     void prepare_draw();
+    // 0x443f10：被弹——音效 2、effect.anm 脚本 0x1d、状态 4（决死猶予）、无敌 6 帧、主 VM 重播脚本 0
+    void hit(AnmManager& manager, AnmFile* effect_anm);
+    // 0x444cf0：擦弹——计数封顶 99999999、effect.anm 脚本 0x18 于中点、音效 0x2a（得点道具由调用方生成）
+    void graze(AnmManager& manager, AnmFile* effect_anm, GameGlobals& globals, const Vec3& bullet_pos);
     // 0x445a30：对位置 enemy_pos、圆形半径 radius 的敌人（enemy_id）结算全部活动伤害源，返回本帧总伤害
     i32 apply_damage_sources(AnmManager& manager, const Vec3& enemy_pos, float radius, u32 enemy_id);
 
