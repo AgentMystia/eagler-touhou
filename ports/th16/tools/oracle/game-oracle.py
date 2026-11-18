@@ -15,6 +15,7 @@
            sfx[Player 代码段登记的音效], vm(0x568 字节)} / stage{frame, ins, flags}
     --enemies → enemies{count, enemies[...]}；--bullets → bullets{count, bullets[...]}；
     --items → items{active, spawned, point_counter, scale, items[...]} + resources{score, lives, bombs, point_value, …}
+    --lasers → lasers{count, next_handle, lasers[...]}；--bombs → bombs{main, sub}（Bomb / 季节解放对象，含灵梦阴阳玉）
     digest 里 VM id 只取有无（池分配顺序取决于未移植的管理器）；enemy_count / dialogue 不进 digest，供 harness 的 PlayerWorld 桩。
 
 执行链（原版代码；桩同 anm-oracle.py，另加）：
@@ -95,6 +96,7 @@ class GameOracle(Oracle):
         self.bullet_snap = False # --bullets：每帧敌弹快照（BulletManager 链表）
         self.item_snap = False   # --items：每帧道具快照（ItemManager 池）与得分/残机等资源全局
         self.laser_snap = False  # --lasers：每帧激光快照（LaserManager 链表）
+        self.bomb_snap = False   # --bombs：每帧 Bomb / 季节解放对象快照（DAT_004a6da8 / DAT_004a6da4）
         self.ecl_trace = None
         self.frame = -1  # 装载阶段（GAME_LOAD 之前）的 RNG 调用记为 -1 帧
         self.run_draw = False   # --draw：也跑绘制链（需 D3DXVec3ProjectArray 等桩，待渲染/裁剪阶段接入）
@@ -862,6 +864,45 @@ class GameOracle(Oracle):
             l = self.u32(l + 8)
         return out
 
+    BOMB_VTABLES = {0x491E3C: 'ReimuA', 0x491DE8: 'CirnoA', 0x491E04: 'AyaA', 0x491E20: 'MarisaA',
+                    0x491DCC: 'ReimuSub', 0x491D5C: 'CirnoSub', 0x491D78: 'AyaSub', 0x491D94: 'MarisaSub', 0x491DB0: 'AllSub'}
+
+    def bomb_snapshot(self):
+        """Bomb 对象（0x108 字节，0x40d890 按机体 / 季节建两只：DAT_004a6da8 主炸弹、DAT_004a6da4 季节解放）：
+        +0x14 位置、+0x20 角速度、+0x2c 角度、+0x30 活动、+0x34 计时、+0x5c / +0x64 两枚 VM、+0x68 符卡中发动标志、
+        +0x70 灵梦阴阳玉数组（8 × 0xd8：VM、运动体 0x44、+0xa0 活动、+0xa4 计时、+0xb8 位移、+0xc4 目标敌机、
+        +0xcc 序号、+0xd0 伤害源、+0xd4 已引爆）、+0xd4 种类、+0xd8 发动时等级、+0xdc 累计奖励、+0xe0 显示奖励、
+        +0xe4 奖励飘字计时、+0xf8 飘字等级、+0xfc 飘字坐标。"""
+        out = {}
+        for key, slot in (('main', 0x4A6DA8), ('sub', 0x4A6DA4)):
+            b = self.u32(slot)
+            if not b:
+                out[key] = None
+                continue
+            has = lambda v: 1 if v else 0
+            entry = {
+                'class': self.BOMB_VTABLES.get(self.u32(b), hex(self.u32(b))),
+                'pos': self.words(b + 0x14, 3), 'angular': self.u32(b + 0x20), 'angle': self.u32(b + 0x2C),
+                'active': self.i32(b + 0x30), 'timer': self.timer(b + 0x34),
+                'vm': [has(self.u32(b + 0x5C)), has(self.u32(b + 0x64))], 'in_spell': self.i32(b + 0x68),
+                'kind': self.i32(b + 0xD4), 'level': self.i32(b + 0xD8), 'bonus': self.u32(b + 0xDC),
+                'bonus_shown': self.u32(b + 0xE0), 'popup': self.timer(b + 0xE4), 'popup_level': self.i32(b + 0xF8),
+                'popup_pos': self.words(b + 0xFC, 3), 'orbs': [],
+            }
+            orbs = self.u32(b + 0x70)
+            if orbs:
+                for i in range(8):
+                    o = orbs + i * 0xD8
+                    entry['orbs'].append({
+                        'vm': has(self.u32(o)), 'pos': self.words(o + 4, 3), 'speed': self.u32(o + 0x1C),
+                        'angle': self.u32(o + 0x20), 'radius': self.u32(o + 0x24), 'center': self.words(o + 0x38, 3),
+                        'mode': self.u32(o + 0x44), 'active': self.i32(o + 0xA0), 'timer': self.timer(o + 0xA4),
+                        'delta': self.words(o + 0xB8, 3), 'target': self.u32(o + 0xC4), 'index': self.i32(o + 0xCC),
+                        'source': self.i32(o + 0xD0), 'burst': self.i32(o + 0xD4),
+                    })
+            out[key] = entry
+        return out
+
     def item_snapshot(self):
         """ItemManager（DAT_004a6ddc，0x1c972ec 字节）：+0x14 起 0x1258 个道具（0xc78 字节；前 600 个为普通池，
         其后 0x1000 个为得点/季节池），+0x1c972dc 活动数、+0x1c972e0 生成计数、+0x1c972e4/+0x1c972e8 得点池计数。
@@ -1038,6 +1079,8 @@ class GameOracle(Oracle):
             snap['resources'] = self.resource_snapshot()
         if self.laser_snap:
             snap['lasers'] = self.laser_snapshot()
+        if self.bomb_snap:
+            snap['bombs'] = self.bomb_snapshot()
         if self.enemy_snap:
             snap['spell'] = self.spell_snapshot()
         if sm:
@@ -1256,6 +1299,7 @@ def main():
     ap.add_argument('--bullets', action='store_true', help='每帧附敌弹快照（BulletManager 链表）')
     ap.add_argument('--items', action='store_true', help='每帧附道具快照（ItemManager 池）与得分/残机/得点值等资源全局')
     ap.add_argument('--lasers', action='store_true', help='每帧附激光快照（LaserManager 链表；曲线激光含采样点）')
+    ap.add_argument('--bombs', action='store_true', help='每帧附 Bomb / 季节解放对象快照（DAT_004a6da8 / DAT_004a6da4）')
     ap.add_argument('--replay-slot', type=int, default=-1, help='DAT_004a57c8（默认 -1 走 MainFront；0 走 MainBossSpell）')
     ap.add_argument('--trace-ecl', default='', help='把每条执行的 ECL 指令 (frame, enemy, sub, pc, time, ins_time, op) 写到此文件')
     ap.add_argument('--trace-rng', default='', help='把回放同步 RNG（DAT_004a6d88）的每次调用 (frame, 步数, 返回地址, 包装外层调用方) 写到此文件')
@@ -1269,6 +1313,7 @@ def main():
     o.bullet_snap = a.bullets
     o.item_snap = a.items
     o.laser_snap = a.lasers
+    o.bomb_snap = a.bombs
     o.normalize_laser_graze_z()
     if a.trace_ecl:
         o.enable_ecl_trace()
