@@ -619,6 +619,26 @@ void BulletManager::spawn_item(i32 type, const Vec3& pos, float angle, float spe
     if (items != nullptr) items->spawn(type, pos, angle, speed, flag);
 }
 
+// 0x4252d0：沿活动链（0x1403b1c / 0x1403b20 游标）扫描；比较用 radius² 与 dx² + dy²（严格小于）
+void BulletManager::trigger_ex_param_near(const Vec3& center, float radius) {
+    iterate_current_ = active_head;
+    iterate_next_ = active_head ? active_head->active_next : nullptr;
+    for (Bullet* b = iterate_current_; b != nullptr;) {
+        if (b->ex_param == 1) {
+            const float dx = center.x - b->pos.x;
+            const float dy = center.y - b->pos.y;
+            if (dx * dx + dy * dy < radius * radius) {
+                b->ex_index = 8;
+                b->ex_param = 2;
+                b->ex_flags = 0;
+            }
+        }
+        iterate_current_ = iterate_next_;
+        iterate_next_ = iterate_next_ ? iterate_next_->active_next : nullptr;
+        b = iterate_current_;
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // 0x416840 / 0x416a00 / 0x416c20 / 0x416d20 / 0x416f40
 

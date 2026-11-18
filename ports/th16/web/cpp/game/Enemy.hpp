@@ -101,6 +101,15 @@ public:
     i32 score_bonus_spell = 0;  // +0x5734（生成时取 DAT_004a5798，op 524 改写：奖励归属的 spell_id）
     i32 bomb_script = 0;        // +0x4068（op 546 arg1：Bomb / 季节解放期间的主 VM 脚本）
     i32 bomb_script_restore = 0;// +0x406c（op 546 时的 main_script）
+    // op 632 / 639 登记、op 637 立即调用的每帧钩子（DAT_004917b8 函数表：0 空 / 1 0x4252d0 / 2 0x4253b0）。
+    // 0x41d2e0 在 ECL 执行后、碰撞判定前调用，返回非 0 则敌机移出列表（表内两项都返回 0）。
+    enum class FrameHook : u8 {
+        None = 0,
+        TriggerBulletsNearPlayer = 1,  // 0x4252d0：F0 半径内 Ex 0x8000 参数 == 1 的子弹跳到 Ex 第 8 步（st06bs BossCard4）
+        DrainPowerAndSeason = 2,       // 0x4253b0：火力与季节量表每帧归零 + 重建子机（st06bs BossCard6..9）
+    };
+    FrameHook frame_hook = FrameHook::None;  // +0x4518
+    i32 frame_hook_flag = 0;                 // +0x451c（632 置 0 / 639 置 1；原版无读取方）
     static constexpr int kInterruptSlots = 8;
     EnemyInterrupt interrupts[kInterruptSlots];  // Enemy+0x5284
     // —— ANM VM 绑定（0x41dcb0 op 302..340 / 0x4233a0 / 0x423260）——
@@ -198,6 +207,8 @@ public:
     void sync_vm_offsets();
     // 0x41c330 尾：主 VM 的受击 / 低血闪烁（color2 + flags_lo 0x20000 位）与受击音效
     void update_hit_flash();
+    // DAT_004917b8 函数表项；返回非 0 → 敌机移出列表
+    int run_frame_hook(FrameHook hook);
 
     // ECL 601 / 702 / 703 / 711 / 713 共用：发射器实际发射坐标（ECL 628 绝对坐标优先，否则敌机坐标 + 偏移）
     Vec3 shooter_origin(int slot) const noexcept;

@@ -299,6 +299,8 @@ public:
     void cancel_radius(const Vec3& center, float radius, i32 item_mode, bool check_immunity);
     // 0x444cf0：Player::graze（计数、特效、音效）后生成得点道具 0x10（敌机体擦弹 0x41c330 亦经此）
     void graze(const Vec3& pos);
+    // 0x4252d0（敌机每帧钩子 1）：center 半径 radius 内、Ex 0x8000 参数 == 1 的弹改参数为 2 并跳到 Ex 第 8 步
+    void trigger_ex_param_near(const Vec3& center, float radius);
     // 0x430960：经 items 生成道具（ItemManager 未绑定时忽略；0x430960 不消耗 RNG）
     void spawn_item(i32 type, const Vec3& pos, float angle, float speed, i32 flag);
     // 0x416f40：全屏消弹（状态非 0/3 的全部槽）
