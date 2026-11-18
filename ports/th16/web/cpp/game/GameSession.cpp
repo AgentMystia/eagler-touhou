@@ -534,6 +534,7 @@ bool GameSession::enter_game(i32 replay_mode) {
         game.gui.geometry = &geometry;
         game.gui.replay_playback = game.mode != 0;
         game.gui.spellcard_flags = &spellcard.flags;
+        game.gui.game_flags = &game.flags;
         game.gui.bomb = game.bombs.main();
         game.gui.scores = &scores;
         game.gui.on_continue_screen = [this]() { if (menu_live) menu.open_continue(); };

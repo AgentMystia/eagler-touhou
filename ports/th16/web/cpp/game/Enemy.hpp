@@ -248,6 +248,7 @@ public:
     float global_floats[8]{};   // +0x1c..0x38（-9922..-9915）
     i32 counters[3]{};          // +0x3c..0x44（-9949..-9947）
     u32 boss_ids[3]{};          // +0x48..0x50（0x41a910 写 / 0x417580 查）
+    bool hud_hidden = false;    // +0x88 bit0（ECL 642 / 0x41a950）：Gui 不显示 Boss 血条 / 计时
     Spellcard* spellcard = nullptr;    // DAT_004a6db0（GameSession 持有）
     EffectManager* effects = nullptr;  // DAT_004a6db8
     i32 damage_dealt = 0;       // +0xb0：自机对敌总伤害
@@ -309,6 +310,8 @@ public:
     Enemy* find_id(u32 id) noexcept;
     // 0x41b540：按 id 找敌机；原版遍历到表尾仍未命中时返回的是最后一只敌机而非空（灵梦阴阳玉追踪 0x410550 依赖此行为）
     Enemy* find_id_or_last(u32 id) noexcept;
+    // 0x417580：Boss 槽查找（id 为 0 → 空；未命中 → 链表最后一只，沿用原版口径）
+    Enemy* boss_slot(int slot) noexcept { return find_id_or_last(boss_ids[slot]); }
     // 0x425240：pos 周围 range 内、flags & 0xc000021 == 0 的最近敌机 id（没有则 0）——自机追踪弹 / 灵梦阴阳玉索敌
     u32 nearest_targetable_id(const Vec3& pos, float range) const noexcept;
     // 0x41d900 / 0x41da30 / 0x41db70（ECL 525 / 551 / 571）：清掉落表后让非 Boss 族敌机全部死亡（下一帧移出）
