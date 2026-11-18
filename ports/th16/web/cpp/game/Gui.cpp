@@ -5,7 +5,7 @@
 #include <cstring>
 
 #include "AnmManager.hpp"
-#include "AnmRenderer.hpp"
+#include "AnmGeometry.hpp"
 #include "Bomb.hpp"
 #include "Bullet.hpp"
 #include "Enemy.hpp"
@@ -198,11 +198,11 @@ void Gui::create_dialogue(i32 entry_index, const u8* script) {
     m.text_vms[0] = make_text_vm(0, false);
     m.text_vms[1] = make_text_vm(0, true);
     for (int i = 0; i < 2; ++i)
-        if (AnmVm* vm = find_or_clear(m.text_vms[i])) { vm->unknown_528[4] = 0x15; vm->unknown_528[5] = 0x15; }
+        if (AnmVm* vm = find_or_clear(m.text_vms[i])) { vm->unknown_52c[0] = 0x15; vm->unknown_52c[1] = 0x15; }
     m.text_vms[2] = make_text_vm(1, false);
     m.text_vms[3] = make_text_vm(1, true);
     for (int i = 2; i < 4; ++i)
-        if (AnmVm* vm = find_or_clear(m.text_vms[i])) { vm->unknown_528[4] = 0x15; vm->unknown_528[5] = 0x15; }
+        if (AnmVm* vm = find_or_clear(m.text_vms[i])) { vm->unknown_52c[0] = 0x15; vm->unknown_52c[1] = 0x15; }
     for (u32& id : m.text_vms)
         if (AnmVm* vm = find_or_clear(id)) vm->flags_hi |= 0x1000u;
     for (u32& id : m.text_vms)

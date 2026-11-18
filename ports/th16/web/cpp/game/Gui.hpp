@@ -28,7 +28,7 @@
 namespace th16 {
 
 class AnmManager;
-class AnmRenderer;
+struct AnmGeometry;
 class BulletManager;
 class EnemyManager;
 class LaserManager;
@@ -113,7 +113,7 @@ public:
 
     // 宿主绑定
     AnmManager* animations = nullptr;
-    const AnmRenderer* geometry = nullptr;   // 0x406a70 / 0x406c40（文字框子 VM 的屏幕位置）
+    const AnmGeometry* geometry = nullptr;   // 0x406a70 / 0x406c40（文字框子 VM 的屏幕位置）
     EnemyManager* enemies = nullptr;         // DAT_004a6dc0（ANM 表 / 全灭 / Boss 槽）
     BulletManager* bullets = nullptr;        // DAT_004a6dac（0x416f40 全屏消弹）
     LaserManager* lasers = nullptr;          // DAT_004a6ee0（0x431af0 对话开始时激光全灭）

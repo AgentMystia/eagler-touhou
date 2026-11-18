@@ -25,7 +25,7 @@
 namespace th16 {
 
 class AnmManager;
-class AnmRenderer;
+struct AnmGeometry;
 struct AnmFile;
 class BulletManager;
 class LaserManager;
@@ -209,7 +209,7 @@ public:
     void setup_options(AnmManager& manager, GameGlobals& globals);
     // 0x442560：更新链 0x16。geometry：0x468c00 出界判定用的屏幕几何（DAT_004d9d34/50/54）
     void update(AnmManager& manager, GameGlobals& globals, const InputState& game_input, const PlayerWorld& world,
-                AnmFile* effect_anm, const AnmRenderer& geometry, float game_speed);
+                AnmFile* effect_anm, const AnmGeometry& geometry, float game_speed);
     // 0x443730：绘制链 0x1d 的逻辑部分（pos → VM entity_offset，flags 0x40000）
     void prepare_draw();
     // 0x42ca80（0x42e150 过关）：flags bit1 子机收拢、全部子机 VM 中断 3、收拢计数清零
@@ -261,7 +261,7 @@ private:
     void spawn_afterimage(AnmManager& manager, const GameGlobals& globals, bool red);  // 0x442560 残影段
     void scatter_death_items(AnmManager& manager, GameGlobals& globals);  // 0x442560 case 2 第 3 帧：火力减半级、7 枚火力道具扇形散出
     void tick_bullets(AnmManager& manager, const GameGlobals& globals, const PlayerWorld& world,
-                      const AnmRenderer& geometry, float game_speed);       // 0x4456d0
+                      const AnmGeometry& geometry, float game_speed);       // 0x4456d0
     void release_bullet(PlayerBullet& b);                                 // 池项失活 + 伤害源 bit0 清零
     i32 hit_bullet_default(AnmManager& manager, PlayerBullet& b);         // 0x445e20
     // 魔理沙激光（.sht 类型 2：pl01 主射击与冬季子机）：生成 / 逐帧 / 命中回调

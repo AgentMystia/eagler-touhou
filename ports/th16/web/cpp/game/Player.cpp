@@ -1,7 +1,7 @@
 #include "Player.hpp"
 
 #include "AnmManager.hpp"
-#include "AnmRenderer.hpp"
+#include "AnmGeometry.hpp"
 #include "Bomb.hpp"
 #include "Bullet.hpp"
 #include "Effect.hpp"
@@ -522,7 +522,7 @@ void Player::move(AnmManager& manager, const InputState& game_input, const Playe
 }
 
 void Player::update(AnmManager& manager, GameGlobals& globals, const InputState& game_input, const PlayerWorld& world,
-                    AnmFile* effect_anm, const AnmRenderer& geometry, float game_speed) {
+                    AnmFile* effect_anm, const AnmGeometry& geometry, float game_speed) {
     // 0x442560
     game_speed_ = game_speed;
     switch (state) {
@@ -924,7 +924,7 @@ bool Player::spawn_bullet(AnmManager& manager, GameGlobals& globals, u32 shot_id
 }
 
 void Player::tick_bullets(AnmManager& manager, const GameGlobals& globals, const PlayerWorld& world,
-                          const AnmRenderer& geometry, float game_speed) {
+                          const AnmGeometry& geometry, float game_speed) {
     // 0x4456d0
     for (int i = 0; i < kBulletCount; ++i) {
         PlayerBullet& b = bullets[i];
