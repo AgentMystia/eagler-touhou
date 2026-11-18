@@ -90,6 +90,8 @@ public:
     static void kill_tree(AnmVm& vm);  // 0x46f220
     // 0x46f340 / 0x46f3b0：整棵子树清 flags_lo bit1（敌机 flags & 0x20 时绑定即隐藏）
     static void hide_tree(AnmVm& vm);
+    // 0x46f300 / 0x46f380：整棵子树置 flags_lo bit1（ECL 503 清掉 0x20 后对全部 VM 槽调用）
+    static void show_tree(AnmVm& vm);
     // 0x46e340：世界链表逐帧推进；0x46e490：UI 链表
     void tick_world();
     void tick_ui();
