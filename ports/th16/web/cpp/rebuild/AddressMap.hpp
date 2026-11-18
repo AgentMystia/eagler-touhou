@@ -418,10 +418,37 @@ constexpr AddressAnchor kAnchors[] = {
     {"stage-clear", 0x42E150, "game/Gui.cpp Gui::stage_clear（MSG op 21 / 0x429ff0(-2)：非练习 0x42c070 奖励、0x42ca80 子机收拢、普通模式 1..5 面场景请求 0xc + 关卡号 +1；练习 0x43f500 / 6·Extra 面结局 / 续关 0x43f350 待接入）"},
     {"stage-clear-bonus", 0x42C070, "game/Gui.cpp Gui::stage_clear（front.anm 0x78 奖励 VM、+0x2dc = 关卡 × 1,000,000 → 0x43e080、flags_1ac bit8、+0x1b0 计时复位）"},
     {"player-gather-options", 0x42CA80, "game/Player.cpp Player::gather_options（flags bit1、全部子机 VM 中断 3、收拢计数清零）"},
+    // —— Bomb / 季节解放（Bomb.cpp；tests/bomb.test.mjs 对 game-oracle.py --bombs）——
+    {"bomb-create", 0x40D890, "game/Bomb.cpp BombManager::create（shot+shot_aux → ReimuBomb / CirnoBomb / AyaBomb / MarisaBomb；season → SeasonRelease::profile_for_season；GameSession::create_bombs）"},
+    {"bomb-destroy", 0x40DA90, "game/Bomb.cpp BombManager::destroy（0x42d200 离开游戏 / 换关无条件）"},
+    {"bomb-init", 0x40D600, "game/Bomb.cpp Bomb::init（更新链 0x18 / 0x19、绘制链 0x28 / 0x29 由 GameSession 登记；计时复位、种类、飘字 -1）"},
+    {"bomb-usable", 0x40DDA0, "game/Bomb.cpp Bomb::usable（主：残弹 ≥ 1；解放：季节等级 ≥ 1 且冷却计时 ≥ 0；双方未发动、无对话、场上有敌机）"},
+    {"bomb-start", 0x40DB20, "game/Bomb.cpp Bomb::start（残弹 -1 / 季节量表结算：夏·土用只扣当前档、其它清零；符卡计时 > 0x3b 记 started_in_spell；音效 0x2c / 0x4d；0x4440e0 重建子机）"},
+    {"bomb-update", 0x40DD00, "game/Bomb.cpp Bomb::update（计时 < 0 先推进冷却；on_update 非零即失活）"},
+    {"bomb-draw", 0x40DA70, "game/Bomb.cpp Bomb::prepare_draw（→ 0x40de30 解放奖励飘字：计时 ≤ 0x3c 时定格显示值与位置，只在绘制链里回退）"},
+    {"bomb-release-finish", 0x40E040, "game/Bomb.cpp Bomb::finish_release（飘字 0xb4、计时 -45 冷却）"},
+    {"bomb-reimu", 0x410D10, "game/Bomb.cpp ReimuBomb::on_start（0x4109d0 八枚阴阳玉 45° 等分绕自机）/ 0x410de0 on_update（0x410550 轨道 → 直飞索敌、0x410ae0 引爆 128 消弹 + 64 圆伤害源）/ 0x411280 on_cancel（timer%8==i 的玉 64 消弹）/ 0x411320 过关 / 0x410bb0 释放数组"},
+    {"bomb-cirno", 0x40F070, "game/Bomb.cpp CirnoBomb::on_start（pl02 脚本 10 / 0xd、包络震动 (0,8,300,0x1e)、圆伤害源 (16,2.667,0x3c) 与 t=0x3c 时 (176,0.1103,0x122)）/ 0x40f240 on_update / 0x40f4c0 on_cancel（半径 t<0x3d ? t*160/60+16 : (t-60)*32/290+176）"},
+    {"bomb-aya", 0x40E780, "game/Bomb.cpp AyaBomb::on_start（y=224、角 = vx*2^-7*0.01745*0.5-π/2、横移 vx*2^-7*0.05、pl03 脚本 0xe / 0x13）/ 0x40e9d0 on_update（每帧 640×118 矩形伤害源 + 0x40e730 爆点）/ 0x40ec10 on_cancel（0x416e20 / 0x431950 旋转矩形消弹）"},
+    {"bomb-marisa", 0x40F930, "game/Bomb.cpp MarisaBomb::on_start（pl01 脚本 0x11 / 0x19、线性震动 (3,0x3c,0xf0)、kFlagNoShot、移动倍率 0.2）/ 0x40fb00 on_update（±0.0026 随左右摆、三段矩形伤害源每 3 帧）/ 0x40fe80 on_cancel（find_child 光束子 VM 0x18 按 scale 消弹）"},
+    {"bomb-release-spring", 0x411460, "game/Bomb.cpp SeasonRelease（ReimuSub：半径表 0x491fd4 / 0x491fb8、外环 +16、无敌续到 50、伤害 100、只前 16 帧消弹）/ 0x4116a0 / 0x411790"},
+    {"bomb-release-summer", 0x40F590, "game/Bomb.cpp SeasonRelease（CirnoSub：0x491f54 / 0x491f38、外环 +8、无敌 10、伤害 100）/ 0x40f7d0 / 0x40f860"},
+    {"bomb-release-autumn", 0x40EC70, "game/Bomb.cpp SeasonRelease（AyaSub：0x491f14 / 0x491ef0 / 0x491ed4、光环贴自机、移动倍率 1.5、无敌 0x1e、伤害 0x1e）/ 0x40eeb0 / 0x40efa0"},
+    {"bomb-release-winter", 0x410150, "game/Bomb.cpp SeasonRelease（MarisaSub：脚本 0x14 / 0x15、0x491f94 / 0x491f78、外环 ×1.2、scale2 1.5 伤害倍率、无敌 0x1e、伤害 9）/ 0x4103e0 / 0x410480"},
+    {"bomb-release-doyou", 0x40E0F0, "game/Bomb.cpp SeasonRelease（AllSub：0x491eb0 / 0x491e8c / 0x491e70、外环 +8、无敌 10、伤害 100、kFlagBlinkMode 红残影）/ 0x40e330 / 0x40e3c0"},
+    {"bomb-shake-envelope", 0x45CF10, "game/ScreenEffect.cpp screen_shake_envelope_step（kind 8：attack / sustain / decay 包络，visual_rng 决定符号；GameSession::create_screen_shake_envelope）"},
+    {"bomb-burst-particle", 0x406510, "game/Effect.cpp EffectManager::burst_init / 0x406930（橙）/ 0x406690 burst_update（种类 2 / 3 爆散粒子；Bomb::spawn_burst_particle 经 0x40e730 种类 3）"},
+    {"bomb-cancel-rect", 0x416E20, "game/Bullet.cpp BulletManager::cancel_rect（旋转矩形消弹；0x403d30 rect_hits_circle）"},
+    {"anm-world-position", 0x40E490, "game/AnmVm.cpp anm_world_position（VM 场上坐标：entity_offset + pos + 父链；魔理沙光束消弹中心）"},
+    {"enemy-find-or-last", 0x41B540, "game/Enemy.cpp EnemyManager::find_id_or_last（阴阳玉索敌目标丢失时退到最后一只）"},
+    {"player-deathbomb-recover", 0x444070, "game/Player.cpp Player::recover_from_deathbomb（决死猶予 ≤ 7 帧按 X：状态 1、计时 0x3c；解放判定嵌在炸弹成功之后）"},
+    {"player-afterimage", 0x442560, "game/Player.cpp Player::spawn_afterimage（speed_mult > 1.01 黄 / kFlagBlinkMode 红：pl0N 脚本 {10,9,0xd,0x10}、精灵取自机当前帧 0x45edb0）"},
+    // —— 魔理沙激光（.sht 类型 2）——
+    {"player-laser-create", 0x446200, "game/Player.cpp Player::start_laser（长度 0、音效 0x14、伤害源 f80=1 / size_x=0、清弹 flags bit0 → 伤害源由激光自己同步）"},
+    {"player-laser-tick", 0x446260, "game/Player.cpp Player::tick_laser（贴子机坐标、朝向 .sht 角 / 低速 -π/2、长度 +18 至 512、VM flags 8 / 0x10 写 sprite_size.x / uv_scale.x、中点矩形伤害源；持续条件失效 → active 2 + 中断 1 + 冷却清零）"},
+    {"player-laser-hit", 0x446870, "game/Player.cpp Player::hit_laser（敌机转到激光坐标系：|perp| ≤ 半宽+r、along ≥ -(半宽+r)、端部圆；截到表面 sqrt(1-(perp/r)²)·r 再 +8；每隔一帧 pl01 脚本 8 / pl01sub 脚本 2 火花沿激光飘 64；每 4 帧结算伤害）"},
     // —— 未定位 ——
     {"laser-manager", 0x4314A0, nullptr},
-    {"player-laser-create", 0x446200, nullptr},  // 魔理沙激光（回调 2：0x446260 / 0x446870）
-    {"season-system", 0, nullptr},  // th16 特有：季节槽/季节解放
 };
 
 }  // namespace th16::rebuild
