@@ -63,3 +63,7 @@ oracle 只桩掉堆分配、档案读取、D3D 纹理（按 THTX 头尺寸回报
 ## 页面壳
 
 `web/sdl-runtime/th16.html` 把 `assets/th16.dat` 整档 fetch 进 MEMFS `/assets/th16.dat`，C++ `Archive` 按名解密/LZSS 解码——与原版读档路径同构，不预解包。`python3 web/sdl-runtime/serve.py` 提供 no-store 服务。观测面：`mod._th16_frame()`、`mod._th16_phase()`、`mod._sdl_stats()`。
+
+## 代码质量与可读性标准
+
+见 [`docs/CODE_QUALITY.md`](./CODE_QUALITY.md)：命名规范（领域语言、禁止反编译偏移名）、文件与模块结构、函数控制流拆分、注释三要素以及精度/对拍/双处登记门禁。

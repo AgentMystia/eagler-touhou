@@ -6,7 +6,7 @@
 
 ## 工作方式
 
-- 先读仓库根 `AGENTS.md`，再读本目录 `docs/DEVELOPMENT.md`（工具链、构建、oracle）与 `docs/plans/roadmap.md`（当前里程碑）。
+- 先读仓库根 `AGENTS.md`，再读本目录 `docs/CODE_QUALITY.md`（代码质量与可读性标准）、`docs/DEVELOPMENT.md`（工具链、构建、oracle）与 `docs/plans/roadmap.md`（当前里程碑）。
 - 每个还原件都以 Ghidra 导出（`artifacts/th16/decomp/jp/functions/<addr>.c/.asm`）为依据，函数头注明原版地址，并在 `web/cpp/rebuild/AddressMap.hpp` 登记。
 - 浮点语义：原版为 SSE2 标量单精度（`MULSS/ADDSS/CVTPD2PS`），C++ 用 `float` 且全部构建加 `-ffp-contract=off`；只有 x87 超越函数（43 个函数）需要逐个核对。
 - 新子系统先补 oracle（Unicorn 直跑原版函数或原版录像回放对拍），再写实现，再加 `node --test`。
