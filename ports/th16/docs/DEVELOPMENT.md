@@ -74,6 +74,11 @@ tests/build/harness game-draw ../../games/th16/original/th16.dat 1 1 2 820 "" ""
 python3 tools/oracle/draw-compare.py /tmp/st1.draw.jsonl /tmp/st1.port.jsonl --frames 800-820
 ```
 
+定位差异时先看单侧的逐操作清单：`draw-compare.py … --dump oracle`（或 `--dump port`）按帧列出每个 Clear / 绘制的纹理槽、视口、
+前四个顶点；oracle 侧每项带 `[0x地址]`，即 DrawPrimitiveUP 发生时正在运行的绘制链回调（0x4015a0 链游标处的钩子记录），
+因为批量顶点是惰性出批，归因可能落到下一条链。移植版再配 `TH16_DUMP_LAYERS=<帧>` 把该帧各图层链上的 VM
+（槽 / 脚本 / 精灵及其来源槽 / 渲染模式 / 位置 / 颜色 / 标志）打印到 stderr，逐 VM 对账。
+
 `scene-boot` / `anm-draw` 也经 RecordingDevice 输出可读的 `quad` 行（屏幕四边形直接取顶点，世界四边形按 world·view·projection 投影并算线性顶点雾）。XYZRHW 顶点不经 TnL，原版从不关 TEXTURETRANSFORMFLAGS 而移植版对屏幕批显式关掉，draw-compare 对屏幕格式不比较该位。
 
 ## 页面壳
