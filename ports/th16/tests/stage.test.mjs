@@ -27,7 +27,8 @@ function parse(out) {
     game: find('game') && kv(find('game')),
     stage: find('stage') && kv(find('stage')),
     pass: find('stagepass') && kv(find('stagepass')),
-    sq: lines.filter(l => l.startsWith('sq ')).map(l => l.split(' ')),
+    // 关卡背景的世界四边形：quad w slot=<3+(stage&1)> entry=N x0 y0 … color z=… rhw=… fog=on,f0..f3 zt= zw= uv=…
+    sq: lines.filter(l => l.startsWith('quad w slot=4 ')).map(l => l.split(' ')),
   };
 }
 
@@ -35,7 +36,7 @@ const nums = s => s.split(',').map(Number);
 const close = (a, b, eps, msg) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} vs ${b}`);
 
 // 标题流程：主菜单 Z → 难度 Z → 机体 →/Z → 季节 →/Z（与 supervisor.test.mjs 的 game start flow 相同）
-const MAIN = 191, AFTER_MAIN = 29, AFTER_DIFF = 23, AFTER_SHOT = 23;
+const MAIN = 192, AFTER_MAIN = 29, AFTER_DIFF = 23, AFTER_SHOT = 23;
 const t = MAIN + 1, diff = t + AFTER_MAIN, shot = diff + AFTER_DIFF, season = shot + 2 + AFTER_SHOT;
 const script = [`${t}:0x1`, `${diff}:0x1`, `${shot}:0x80`, `${shot + 2}:0x1`, `${season}:0x80`, `${season + 2}:0x1`].join(',');
 const GAME_FRAME_1 = season + 2 + 0x28 + 2;   // 切到场景 7 后 GameManager 的第一次 update
@@ -153,21 +154,23 @@ test('stage script timeline: frame 61 eased camera, frame 801 past ins 9/10 (t=7
   assert.equal(pos[2], -250);
   assert.deepEqual(nums(f801.stage.facing), [60, 140, 150], 'facingTime finished at t=700');
   assert.equal(f801.stage.fog, '0040d0b0,400,1400', 'fogTime finished at t=720');
-  assert.equal(f801.pass.clear, '0040d0b0', 'field clear colour = fog colour (0x43d140)');
+  assert.equal(f801.pass.clear, '000000b0', 'compositor clears the field with DAT_004c1b0c (STD ins 13)');
+  assert.equal(f801.pass.fog_clear, '0040d0b0', '0x409f90 clears the field again with the fog colour');
 });
 
-test('stage draw (0x409f90/0x40af70): 8 tile quads, layer 1, fogged mode-8 faces with Z test/write, 2×4 tiling', needDat, () => {
+test('stage draw (0x409f90/0x40af70): 3 of 8 tiles pass the 0x40a7d0 frustum test, fogged mode-8 faces with Z test/write, 2×4 tiling', needDat, () => {
   const r = parse(run(['scene-boot', dat, String(GAME_FRAME_1 + 800), script]));
   assert.equal(r.pass.active, '1');
-  assert.equal(r.pass.quads, '8');
-  assert.equal(r.pass.drawn_instances, '8');
-  assert.equal(r.pass.drawn_quads, '8');
-  assert.equal(r.sq.length, 8);
-  const distinct = new Set(r.sq.map(q => q.slice(3, 11).join(' ')));
-  assert.equal(distinct.size, 8, 'each instance gets its own entity_offset (face VM shared)');
+  // 与 oracle --draw 第 800 帧一致：8 个实例里 3 个在视锥内（0x40a7d0 的 16 点投影测试），5 个剔除
+  assert.equal(r.pass.quads, '3');
+  assert.equal(r.pass.drawn_instances, '3');
+  assert.equal(r.pass.culled, '5');
+  assert.equal(r.pass.drawn_quads, '3');
+  assert.equal(r.sq.length, 3);
+  const distinct = new Set(r.sq.map(q => q.slice(4, 12).join(' ')));
+  assert.equal(distinct.size, 3, 'each instance gets its own entity_offset (face VM shared)');
   for (const q of r.sq) {
-    assert.equal(q[1], '1', 'object layer 1');
-    assert.equal(q[2], '0', 'st01wl script 0');
+    assert.equal(q[3], 'entry=0', 'st01wl.anm entry 0');
     assert.ok(q.includes('zt=1') && q.includes('zw=1'), 'mode 8: ZENABLE on, Z write on');
     const fog = q.find(p => p.startsWith('fog=')).slice(4).split(',').map(Number);
     assert.equal(fog[0], 1, 'FOGENABLE for mode 8');
@@ -179,8 +182,8 @@ test('stage draw (0x409f90/0x40af70): 8 tile quads, layer 1, fogged mode-8 faces
     }
     assert.ok(q.includes('uv=0,0,2,1'), 'quad 1024 wide over a 512 px sprite → u repeats twice');
   }
-  // 近处（-y 行，大 rhw）瓦片的雾因子接近 0，远处瓦片的接近 255
+  // 近处（大 rhw）瓦片的雾因子小，远处的接近 255
   const fogs = r.sq.map(q => q.find(p => p.startsWith('fog=')).slice(4).split(',').map(Number).slice(1));
-  assert.ok(fogs.some(f => f.every(v => v === 0)), 'nearest tiles are unfogged');
-  assert.ok(fogs.some(f => f.some(v => v > 100)), 'far tiles are fogged');
+  assert.ok(fogs.some(f => f.some(v => v < 40)), 'nearest tiles are barely fogged');
+  assert.ok(fogs.some(f => f.some(v => v > 200)), 'far tiles are fogged');
 });
