@@ -378,8 +378,9 @@ int main(int argc, char** argv) {
                     std::printf("\"}");
                     first = false;
                 }
+                // 世界表推进（0x46e340）只重建层 0..0x23；UI 层 0x24..0x2a 由 tick_ui 维护，不在此口径内
                 std::printf("],\"layers\":[");
-                for (int l = 0; l < AnmManager::kLayerCount; ++l) {
+                for (int l = 0; l < AnmManager::kWorldLayerCount; ++l) {
                     std::printf("%s[", l == 0 ? "" : ",");
                     bool first_id = true;
                     for (const AnmVm* vm = manager.layer_chain(l); vm != nullptr; vm = vm->layer_next) {
@@ -555,6 +556,30 @@ int main(int argc, char** argv) {
         u64 spell_digest = 0xcbf29ce484222325ull;
         u64 laser_digest = 0xcbf29ce484222325ull;
         u64 bomb_digest = 0xcbf29ce484222325ull;
+        u64 menu_digest = 0xcbf29ce484222325ull;
+        auto feed_menu_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { menu_digest ^= u8(v >> (8 * i)); menu_digest *= 0x100000001b3ull; } };
+        // GameMenu（game-oracle.py menu_digest 同口径）：[frame, game_flags, game_speed, continues, continues_left, 音效数, 音效…,
+        // 菜单有无] + [mode, prev_mode, state, timer×3, timer2×3, cursor×4, name_cursor×3, vm×2, name_len, practice, no_rank,
+        // kind, saved_sound, saved_speed, flags]
+        auto menu_words = [&](std::vector<u32>& w) {
+            const GameGlobals& g = session.globals;
+            w.push_back(session.game.flags);
+            w.push_back(bits(session.supervisor.game_speed));
+            w.push_back(u32(g.continues));
+            w.push_back(u32(g.continues_left));
+            w.push_back(u32(session.sfx_events.size()));
+            for (i32 id : session.sfx_events) w.push_back(u32(id));
+            w.push_back(session.menu_live ? 1u : 0u);
+            if (!session.menu_live) return;
+            const GameMenu& m = session.menu;
+            const u32 body[] = {u32(m.mode), u32(m.previous_mode), u32(m.state), u32(m.timer.previous), u32(m.timer.current),
+                                bits(m.timer.current_f), u32(m.timer2.previous), u32(m.timer2.current), bits(m.timer2.current_f),
+                                u32(m.cursor.index), u32(m.cursor_previous), u32(m.cursor.count), u32(m.cursor.disabled_count),
+                                u32(m.name_cursor.index), u32(m.name_cursor_previous), u32(m.name_cursor.count),
+                                m.menu_vm != 0 ? 1u : 0u, m.screenshot_vm != 0 ? 1u : 0u, u32(m.name_length), u32(m.practice),
+                                u32(m.no_rank), u32(m.kind), u32(m.saved_sound_state), bits(m.saved_game_speed), m.flags};
+            w.insert(w.end(), std::begin(body), std::end(body));
+        };
         auto feed_spell_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { spell_digest ^= u8(v >> (8 * i)); spell_digest *= 0x100000001b3ull; } };
         auto feed_laser_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { laser_digest ^= u8(v >> (8 * i)); laser_digest *= 0x100000001b3ull; } };
         auto feed_bomb_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { bomb_digest ^= u8(v >> (8 * i)); bomb_digest *= 0x100000001b3ull; } };
@@ -816,6 +841,12 @@ int main(int argc, char** argv) {
                     for (u32 v : lw) feed_laser_u32(v);
                 }
             }
+            {
+                feed_menu_u32(u32(f + 1));
+                std::vector<u32> mw;
+                menu_words(mw);
+                for (u32 v : mw) feed_menu_u32(v);
+            }
             // 炸弹 / 季节解放（game-oracle.py bomb_digest 同口径）：[frame] + 两只对象各 [有无] + 字段
             {
                 feed_bomb_u32(u32(f + 1));
@@ -1073,6 +1104,27 @@ int main(int argc, char** argv) {
             } else {
                 std::printf(",\"msg\":null");
             }
+            {
+                // GameMenu 快照（game-oracle.py menu_snapshot 同口径）
+                const GameGlobals& g = session.globals;
+                std::printf(",\"menu\":{\"game_flags\":%u,\"game_speed\":%u,\"continues_used\":%d,\"continues_left\":%d,\"sfx\":[",
+                            session.game.flags, bits(session.supervisor.game_speed), g.continues, g.continues_left);
+                for (size_t i = 0; i < session.sfx_events.size(); ++i) std::printf("%s%d", i ? "," : "", session.sfx_events[i]);
+                std::printf("],\"menu\":");
+                if (!session.menu_live) std::printf("null}");
+                else {
+                    const GameMenu& m = session.menu;
+                    std::printf("{\"mode\":%d,\"prev_mode\":%d,\"state\":%d,\"timer\":[%u,%u,%u,%u,%u],\"timer2\":[%u,%u,%u,%u,%u],"
+                                "\"cursor\":[%d,%d,%d,%d],\"name_cursor\":[%d,%d,%d],\"vm\":[%u,%u],\"name_len\":%d,\"practice\":%d,"
+                                "\"no_rank\":%d,\"kind\":%d,\"saved_sound\":%d,\"saved_speed\":%u,\"flags\":%u}}",
+                                i32(m.mode), i32(m.previous_mode), i32(m.state), u32(m.timer.previous), u32(m.timer.current),
+                                bits(m.timer.current_f), u32(m.timer.speed_slot), m.timer.flags, u32(m.timer2.previous),
+                                u32(m.timer2.current), bits(m.timer2.current_f), u32(m.timer2.speed_slot), m.timer2.flags,
+                                m.cursor.index, m.cursor_previous, m.cursor.count, m.cursor.disabled_count, m.name_cursor.index,
+                                m.name_cursor_previous, m.name_cursor.count, m.menu_vm != 0 ? 1u : 0u, m.screenshot_vm != 0 ? 1u : 0u,
+                                m.name_length, m.practice, m.no_rank, m.kind, m.saved_sound_state, bits(m.saved_game_speed), m.flags);
+                }
+            }
             if (const StageManager* sm = session.game.stage.get()) {
                 // 背景脚本位置（game-oracle.py stage_vm 同口径：ins 为字节偏移）
                 const i32 ins_offset = (sm->ins_index >= 0 && sm->ins_index < i32(sm->std.script.size()))
@@ -1082,10 +1134,11 @@ int main(int argc, char** argv) {
             std::printf("}");
         }
         if (digest_only)
-            std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx enemies=%016llx bullets=%016llx enemy_vms=%016llx items=%016llx spell=%016llx lasers=%016llx bombs=%016llx\n",
+            std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx enemies=%016llx bullets=%016llx enemy_vms=%016llx items=%016llx spell=%016llx lasers=%016llx bombs=%016llx menu=%016llx\n",
                         stage, shot, season, frames, (unsigned long long)digest, (unsigned long long)enm_digest,
                         (unsigned long long)bul_digest, (unsigned long long)vm_digest, (unsigned long long)item_digest,
-                        (unsigned long long)spell_digest, (unsigned long long)laser_digest, (unsigned long long)bomb_digest);
+                        (unsigned long long)spell_digest, (unsigned long long)laser_digest, (unsigned long long)bomb_digest,
+                        (unsigned long long)menu_digest);
         else std::printf("]}\n");
         if (!session.game.enemies.unknown_ops.empty()) {
             std::fprintf(stderr, "unknown_ecl_ops=");
