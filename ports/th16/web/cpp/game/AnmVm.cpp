@@ -271,6 +271,18 @@ Vec3 anm_world_rotation(AnmVm& v) {
     return v.world_rotation;
 }
 
+// 0x406d80
+void anm_set_layer(AnmVm& vm, i32 layer) noexcept {
+    vm.layer = layer;
+    if (layer < 3 || 0x13 < layer) {
+        if (layer < 0x14 || 0x17 < layer) vm.flags_hi &= 0xfff3ffffu;
+        else vm.flags_hi = (vm.flags_hi & 0xfffbffffu) | 0x80000u;
+    } else {
+        vm.flags_hi = (vm.flags_hi & 0xfff7ffffu) | 0x40000u;
+    }
+    if ((0x13 < layer && layer < 0x20) || (0x23 < layer && layer < 0x2b)) vm.flags_hi = (vm.flags_hi & 0xff9fffffu) | 0x100000u;
+}
+
 void Timer::tick(float game_speed) noexcept { tick_timer(previous, current, current_f, speed_slot, game_speed); }
 
 void Timer::untick(float game_speed) noexcept {
@@ -281,6 +293,18 @@ void Timer::untick(float game_speed) noexcept {
         current = i32(current_f);
     } else {
         current_f = current_f - 1.0f;
+        current = i32(current_f);
+    }
+}
+
+void Timer::advance(float n, float game_speed) noexcept {
+    if (speed_slot != 0) speed_slot = 0;
+    previous = current;
+    if (game_speed <= 0.99f || 1.01f <= game_speed) {
+        current_f = game_speed * n + current_f;
+        current = i32(current_f);
+    } else {
+        current_f = current_f + n;
         current = i32(current_f);
     }
 }
@@ -404,41 +428,21 @@ struct AnmInterpreter {
         return 0;
     }
 
-    // 0x406d80
-    void set_layer(i32 layer) {
-        vm.layer = layer;
-        if (layer < 3 || 0x13 < layer) {
-            if (layer < 0x14 || 0x17 < layer) vm.flags_hi &= 0xfff3ffffu;
-            else vm.flags_hi = (vm.flags_hi & 0xfffbffffu) | 0x80000u;
-        } else {
-            vm.flags_hi = (vm.flags_hi & 0xfff7ffffu) | 0x40000u;
-        }
-        if ((0x13 < layer && layer < 0x20) || (0x23 < layer && layer < 0x2b)) vm.flags_hi = (vm.flags_hi & 0xff9fffffu) | 0x100000u;
-    }
+    void set_layer(i32 layer) { anm_set_layer(vm, layer); }
 
     static void set_bit(u32& flags, u32 mask, int shift, u32 value) { flags ^= ((value << shift) ^ flags) & mask; }
 
     void begin_vec3_interp(Interp<Vec3>& it, i32 time, i32 mode, const Vec3& initial, const Vec3& goal) {
-        it.end_time = time;
-        it.bezier1 = {}; it.bezier2 = {};
-        it.mode = mode;
-        it.initial = initial;
-        it.goal = goal;
-        it.timer.reset();
+        anm_begin_vec3_interp(it, time, mode, initial, goal);
     }
     void begin_color_interp(Interp<IVec3>& it, i32 time, i32 mode, const u8* cur, u8 b, u8 g, u8 r) {
-        it.end_time = time;
-        it.bezier1 = {}; it.bezier2 = {};
-        it.mode = mode;
-        it.initial = {cur[0], cur[1], cur[2]};
-        it.goal = {b, g, r};
-        it.timer.reset();
+        anm_begin_color_interp(it, time, mode, cur, b, g, r);
     }
     void begin_scalar_interp(Interp<i32>& it, i32 time, i32 mode, i32 initial, i32 goal) {
-        it.end_time = time; it.mode = mode; it.initial = initial; it.goal = goal; it.bezier1 = 0; it.bezier2 = 0; it.timer.reset();
+        anm_begin_scalar_interp(it, time, mode, initial, goal);
     }
     void begin_vec2_interp(Interp<Vec2>& it, i32 time, i32 mode, const Vec2& initial, const Vec2& goal) {
-        it.end_time = time; it.mode = mode; it.initial = initial; it.goal = goal; it.timer.reset();
+        anm_begin_vec2_interp(it, time, mode, initial, goal);
     }
 
     // 子 VM 创建（ins_500 系列）
@@ -452,20 +456,17 @@ struct AnmInterpreter {
         const float saved_speed = m.game_speed;
         if (vm.flags_hi & AnmVm::kHiIgnoreSpeed) m.game_speed = 1.0f;
         // 0x406340：沿 root 链取慢放系数
-        float slow = vm.slowdown;
-        if (vm.root != nullptr && (vm.flags_hi & AnmVm::kHiDetached) == 0) {
-            AnmVm* cur = vm.root;
-            while (cur->root != nullptr && (cur->flags_hi & AnmVm::kHiDetached) == 0) cur = cur->root;
-            slow = cur->slowdown;
-        }
+        const float slow = AnmManager::root_slowdown(vm);
         if (0.0f < slow) {
             float speed = saved_speed - slow * saved_speed;
             if (speed < 0.0f) speed = 0.0f;
             m.game_speed = speed;
         }
         int result = 0;
-        if (vm.update_callback != 0) {
-            // DAT_004919e8 表（环形特效等 302 渲染模式 10 的专用更新）——尚未实现的模式视为无
+        if (vm.update_callback != 0 && m.hooks != nullptr && m.hooks->update(vm) != 0) {
+            // 0x462be6：回调返回非零 → 本帧到此为止并删除 VM
+            m.game_speed = saved_speed;
+            return 1;
         }
         if (vm.ins_offset >= 0 && (vm.flags_lo & AnmVm::kPaused) == 0) {
             vm.age.tick(m.game_speed);
@@ -863,7 +864,8 @@ struct AnmInterpreter {
             }
             case 507: set_bit(vm.flags_hi, 0x10000u, 16, u32(argi(ins, 0))); break;
             case 508:
-                // 0x418af0：EffectManager 生成，待特效子系统
+                // 0x418af0：把效果种类（充能环等）的 update/draw/delete/interrupt 回调挂到本 VM
+                if (m.hooks != nullptr) m.hooks->attach_effect(argi(ins, 0), vm);
                 break;
             case 509:
                 if (vm.parent != nullptr) {

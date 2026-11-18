@@ -14,6 +14,12 @@ float sin_f(float a) noexcept;
 float cos_f(float a) noexcept;
 // 0x405260：CVTSS2SD → CRT floor → CVTSD2SS
 float floor_f(float a) noexcept;
+// 0x4054d0 / 0x406470 / 0x417510 / 0x4173a0 / 0x426260：x87 fcos/fsin（扩展精度）× 长度后才舍入到单精度
+Vec3 polar(float angle, float length) noexcept;
+// 0x4052a0 → 0x487aaa：CRT atan2(double, double) → float
+float atan2_f(float y, float x) noexcept;
+// D3DXVec3Normalize（oracle 桩口径）：len = sqrt(f32(f32(x²+y²)+z²))，len == 0 时原样返回
+Vec3 normalize3(const Vec3& v) noexcept;
 
 struct MotionState {
     Vec3 pos;              // +0x00

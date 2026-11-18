@@ -42,6 +42,20 @@ struct AnmFile {
     std::vector<u32> texture_width, texture_height;// 每 entry 实际纹理尺寸（D3D GetLevelDesc）
 };
 
+// VM 回调表（update DAT_004919e8 / delete DAT_00491b58 / interrupt DAT_00491b0c）：原版按 VM 的回调下标
+// （0x5c4 / 0x5cc / 0x5d0）查全局函数表；移植版由宿主子系统（EffectManager）实现本接口并挂到 AnmManager::hooks。
+struct AnmVmHooks {
+    virtual ~AnmVmHooks() = default;
+    // 0x45f980 慢放处理之后、指令执行之前；返回非零 → 本帧结束并删除 VM
+    virtual int update(AnmVm& vm) = 0;
+    // 0x46eab0 回收前
+    virtual void deleted(AnmVm& vm) = 0;
+    // 0x46f0b0 / 0x46f130 置 pending_interrupt 之前（EDX = 中断值）
+    virtual void interrupted(AnmVm& vm, i32 value) = 0;
+    // ins_508 → 0x418af0(kind, vm)
+    virtual void attach_effect(i32 kind, AnmVm& vm) = 0;
+};
+
 class AnmManager {
 public:
     static constexpr u32 kPoolSize = 0x1fff;
@@ -66,9 +80,16 @@ public:
     u32 spawn_effect(AnmFile& file, int script, int layer, const Vec3& pos, float rotation_z = 0.0f);
     // 0x426160：同上但挂到世界链表头、creation_flags = 2（自机满火力附加 VM 等）
     u32 spawn_front(AnmFile& file, int script, int layer, AnmVm** out_vm = nullptr);
+    // 以上三者及 0x41dcb0 op 307/315/338、0x41bb50 朝向切换等内联展开的公共形：
+    // 池取 → 模板复制 → flags_hi |= 0x400 → layer（≥0 才设；<0x18 时 flags_hi=(hi&~0x80000)|0x40400）
+    // → entity_offset / rotation.z → 首帧 run → creation_flags → 插入世界链表（front/back）
+    u32 spawn_vm(AnmFile& file, int script, int layer, const Vec3& offset, float rotation_z, i32 creation_flags,
+                 bool front, AnmVm** out_vm = nullptr);
     // 0x46f1c0：按 id 标记 VM 待删（flags_hi = (flags_hi & ~0x40) | 0x20），并递归 0x46f220 其子树；0x4000000 位保护
     void kill(u32 id);
     static void kill_tree(AnmVm& vm);  // 0x46f220
+    // 0x46f340 / 0x46f3b0：整棵子树清 flags_lo bit1（敌机 flags & 0x20 时绑定即隐藏）
+    static void hide_tree(AnmVm& vm);
     // 0x46e340：世界链表逐帧推进；0x46e490：UI 链表
     void tick_world();
     void tick_ui();
@@ -85,6 +106,8 @@ public:
     int run(AnmVm& vm);
     // 0x4090f0：VM 复位（保留 entity_offset、池下标、layer；宿主内嵌 VM 重绑脚本前调用）
     static void reset_vm(AnmVm& vm);
+    // 0x406340：沿 root 链（遇 0x10000 分离位即止）取最顶层祖先的慢放系数
+    static float root_slowdown(const AnmVm& vm) noexcept;
     // 0x407b20：把脚本模板复制到调用方自备的 VM（StageManager 的面 VM / 层精灵不入池）
     void init_from_template(AnmFile& file, AnmVm& vm, int script);
     // 0x45f160：不经模板，把宿主自备的 VM（敌弹 / 激光，内嵌于宿主对象）绑到 file 的 script 并立即跑首帧
@@ -94,6 +117,7 @@ public:
     static constexpr u32 kSpriteMapperCount = 4;
     using SpriteMapper = i32 (*)(AnmVm& vm, i32 index);
     SpriteMapper sprite_mappers[kSpriteMapperCount] = {};
+    AnmVmHooks* hooks = nullptr;
 
     AnmListNode* world_head() const { return world_head_; }
     AnmListNode* ui_head() const { return ui_head_; }
