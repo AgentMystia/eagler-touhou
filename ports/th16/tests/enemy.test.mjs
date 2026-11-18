@@ -121,3 +121,12 @@ test('enemy combat (0x41c330 / 0x445a30 / 0x445ee0 / 0x41a6d0): 灵梦追踪索�
   assert.ok(chargeBul, '0x4474a0 充能弹命中后伤害降为 1 持续穿透');
 });
 
+
+test('enemy: ECL 630（0x40c040）把背景 STD 脚本跳到标签——st6 符卡练习 MainBossSpellSt6 首帧跳到 ins 16 label 5（@2308, t=4736）', needDat, () => {
+  const c = {stage: 6, shot: 0, season: 0, input: '', difficulty: 1, replay_slot: 102};
+  const frames = gameRun(c, 3).frames;
+  // 第 1 帧：STD 仍在开头（@132 是 t=350 的首条相机指令）；第 2 帧起已跳到标签 5 并按其 time 继续推进
+  assert.deepEqual(frames[0].stage_vm, {frame: 1, ins: 132, flags: 1});
+  assert.deepEqual(frames[1].stage_vm, {frame: 2, ins: 2308, flags: 1});
+  assert.deepEqual(frames[2].stage_vm, {frame: 3, ins: 2584, flags: 1});
+});

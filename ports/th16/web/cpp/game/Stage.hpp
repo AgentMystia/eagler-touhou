@@ -103,6 +103,9 @@ public:
     void begin_end(i32 frames, u32 flag);
     // 0x40b2f0 / ins 19：对全部面 VM 与层精灵 VM 挂中断并立即推进
     void interrupt(AnmManager& manager, i32 value);
+    // 0x40c040 / ECL 630：从脚本开头找第一条 ins 16（标签）且参数 == label 的指令，把脚本指针与计时跳到它
+    //（计时取该指令的 time，与 ins 1 跳转相同的初始化口径）；找不到则不动。st06bs Boss2..6 用它切换背景段落
+    void jump_to_label(i32 label);
     // 0x43c940 的 eye / at：eye = pos + pos_offset，at = eye + facing_norm
     Vec3 eye() const;
     Vec3 at() const;

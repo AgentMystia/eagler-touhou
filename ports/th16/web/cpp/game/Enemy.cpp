@@ -6,6 +6,7 @@
 #include "AnmManager.hpp"
 #include "Effect.hpp"
 #include "Gui.hpp"
+#include "Stage.hpp"
 #include "Item.hpp"
 #include "Laser.hpp"
 #include "Spellcard.hpp"
@@ -2164,9 +2165,15 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             if (index >= 1 && index <= 2) run_frame_hook(FrameHook(index));
             return 0;
         }
-        case 629: case 630: case 631: case 633: case 634: case 638:
-            // 629 消弹光环特效（0x418c70）、630 STD 标签跳转、631 EnemyManager 标志、633/634 伤害 / 判定回调表
-            //（全部 ECL 未使用）、638 得分飘字：分别随 Effect / Stage / Gui 子系统接入
+        case 630:  // case 0x8d：背景 STD 脚本跳到标签（0x40c040）
+            if (manager && manager->stage) manager->stage->jump_to_label(iarg(0));
+            return 0;
+        case 901: case 902:
+            // DebugSkipFunc / DebugSkipStopFunc 标记：0x422d70 表把 901 / 902 映到默认分支，原版即空操作
+            return 0;
+        case 629: case 631: case 633: case 634: case 638:
+            // 629 Boss 畸变光环（0x418c70，依赖场地渲染目标 DAT_004c127c，随渲染/RT 接入）、631 EnemyManager 标志、
+            // 633/634 伤害 / 判定回调表（全部 ECL 未使用）、638 得分飘字：随 Effect / Gui 子系统接入
             return 0;
         // —— 激光 700..714（0x41dcb0 case 0x99..0xa7）：复用发射器槽的弹种 / 颜色 / 角度 / 速度 / Ex，
         //    长度与时序参数放在发射器 +0x340 参数区与 pos 字段 ——

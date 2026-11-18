@@ -396,6 +396,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"geom-line-intersect", 0x404220, "game/Laser.cpp intersect_lines（点 + 朝向角两直线交点）"},
     {"geom-segment-intersect", 0x403EC0, "game/Laser.cpp intersect_segments（叉积判相交，共线时用包围盒）"},
     {"ecl-laser-ops", 0x41DCB0, "game/Enemy.cpp Enemy::execute case 700..714（case 0x99..0xa7：发射器槽的弹种 / 颜色 / 角度 / 速度 / Ex + ShooterLaserParams 参数区；702 直线 / 703 照射 / 711 曲线 / 713 占位、704..710 按句柄改参数、545 = 0x4319e0）"},
+    {"stage-jump-label", 0x40C040, "game/Stage.cpp StageManager::jump_to_label（ECL 630）"},
     {"ecl-enemy-hooks", 0x41DCB0, "game/Enemy.cpp Enemy::execute case 632 / 637 / 639（case 0x8f / 0x94 / 0x96：DAT_004917b8 每帧钩子表）+ case 502 / 503（0x2f / 0x30：隐藏位 0x20 变化时 0x46f340 / 0x46f300 整棵 VM 树）"},
     {"enemy-hook-trigger-bullets", 0x4252D0, "game/Bullet.cpp BulletManager::trigger_ex_param_near（Enemy::run_frame_hook 1：F0 半径内 Ex 0x8000 参数 1 的弹跳到 Ex 第 8 步）"},
     {"enemy-hook-drain-power", 0x4253B0, "game/Enemy.cpp Enemy::run_frame_hook 2（火力 / 季节量表 = min(上限, 0)，0x4440e0 重建子机，0x42c600 HUD）"},
