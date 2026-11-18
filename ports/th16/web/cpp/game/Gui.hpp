@@ -35,6 +35,7 @@ class LaserManager;
 struct GameGlobals;
 struct InputState;
 class Player;
+struct ScoreFile;
 struct PlayerWorld;
 struct StageEntry;
 struct AnmFile;
@@ -160,6 +161,9 @@ public:
     // 0x43f350（对话 -2 且符卡标志 bit7）/ 0x43f500（练习 / 符卡练习过关）：GameMenu 的续关 / 结算入口，GameSession 绑定
     std::function<void()> on_continue_screen;
     std::function<void()> on_practice_result;
+    std::function<void()> on_return_to_title;    // 0x43f240：回放中过关 / 第 6 面 / Extra 通关
+    std::function<void()> on_final_clear;        // 0x42e150 第 6 面 / Extra：GameManager flags |= 0x4000、+0xb0 = 0、0x42dbc0
+    ScoreFile* scores = nullptr;                 // DAT_004a6f0c：过关记录（通关次数 / 练习解锁位）
     // 0x42b610 / 0x42b820：暂停 / 续关菜单打开与关闭时隐藏 / 显示对话的全部 VM（flags_lo bit1 及其子树）
     void hide_dialogue();
     void show_dialogue();

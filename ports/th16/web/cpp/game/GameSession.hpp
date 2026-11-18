@@ -70,6 +70,8 @@ public:
     bool begin_boot();                 // 0x43adc0：ascii + sig，注册启动幕绘制链，请求 Title
     // 跳过启动幕/标题直接进入场景 7（harness）：装启动 bank 后按 globals（stage/shot/season/difficulty）装载关卡
     bool start_game_direct();
+    // 0x43ce10 case 0xa / 0xb / 0xe / 0x13：GameMenu 重开 / Extra 续关——销毁后以 stage_copy 新开局
+    bool restart_game(i32 replay_mode);
     bool logic_step();                 // 一个逻辑帧（输入 → 切换 → 链 → ANM tick）
     const Archive& archive() const { return archive_; }
     AnmResource* resource(const char* name);
@@ -113,7 +115,7 @@ private:
     bool enter_title_assets();
     bool activate_title_menu();
     void leave_title();
-    bool enter_game();     // 0x43ce10 case 7 → 0x42d700 + 0x42cb60（同步装载）
+    bool enter_game(i32 replay_mode = 0);  // 0x43ce10 case 7 → 0x42d700(回放标志) + 0x42cb60（同步装载）
     bool next_stage();     // 0x43ce10 case 0xc：0x42d780 → 0x42d200（bit1）；0x42d700 + 0x42cb60 换关装载
     void leave_game();     // 0x42d200
     // 0x42cb60 子步骤：0x409db0 Stage（STD + 背景 ANM 槽 3 + (stage & 1)，链 0x11）/ 0x41b340 ECL（链 0x1a）/

@@ -406,17 +406,18 @@ void GameSession::register_game_chains() {
     }, 0xf, true);
     game.game_input = &game_input;
     game.on_screen_fade = [this](i32 kind, i32 duration, u32 color) { create_screen_fade(kind, duration, color); };
+    game.on_return_to_title = [this]() { if (menu_live) menu.open_return_to_title(); };
     game.on_previous_stage_destroyed = [this](StageManager& stage) {
         if (previous_stage_update_chain_) { chains.remove(previous_stage_update_chain_); previous_stage_update_chain_ = nullptr; }
         unload_stage_anm(stage);
     };
 }
 
-bool GameSession::enter_game() {
-    // 0x42d700：flags |= 4、模式参数；0x42cb60 装载线程（此处同步）
+bool GameSession::enter_game(i32 replay_mode) {
+    // 0x42d700：flags |= 4、+0xac = 回放标志；0x42cb60 装载线程（此处同步）
     game = GameManager{};
     game.flags = GameManager::kLoading;
-    game.mode = 0;
+    game.mode = replay_mode;
     game.entry = &stage_entry(globals.stage);
     game_input = InputState{};
     // 各管理器链在 0x42cb60 中建为禁用，首帧 0x42d7b0 → 0x42dee0 统一启用；排在 GameManager（0xf）之前的 GameMenu 链 10
@@ -534,8 +535,15 @@ bool GameSession::enter_game() {
         game.gui.replay_playback = game.mode != 0;
         game.gui.spellcard_flags = &spellcard.flags;
         game.gui.bomb = game.bombs.main();
+        game.gui.scores = &scores;
         game.gui.on_continue_screen = [this]() { if (menu_live) menu.open_continue(); };
         game.gui.on_practice_result = [this]() { if (menu_live) menu.open_practice_result(); };
+        game.gui.on_return_to_title = [this]() { if (menu_live) menu.open_return_to_title(); };
+        game.gui.on_final_clear = [this]() {
+            game.flags |= GameManager::kStageClear;
+            game.end_counter = 0;
+            if (menu_live) menu.accumulate_play_time();
+        };
         game.gui.sfx_sink = &sfx_events;
         if (!game.gui.init(animations, animations.file(5), logo, *game.entry, std::move(msg_bytes))) {
             failure = game.gui.error;
@@ -577,6 +585,12 @@ bool GameSession::enter_game() {
     if (enemy_update_chain_) chains.enable(enemy_update_chain_);
     game_live = true;
     return true;
+}
+
+bool GameSession::restart_game(i32 replay_mode) {
+    leave_game();
+    globals.stage = globals.stage_copy;
+    return enter_game(replay_mode);
 }
 
 bool GameSession::next_stage() {
@@ -950,6 +964,11 @@ bool GameSession::logic_step() {
         if (enter == SceneId::NextStage) {
             // 0x43ce10 case 0xc：GameManager 销毁 / 重建后场景仍为 7
             if (!next_stage()) return false;
+            supervisor.current = supervisor.requested = SceneId::Game;
+        } else if (enter == SceneId::Restart || enter == SceneId::RestartPractice || enter == SceneId::RestartExtra ||
+                   enter == SceneId::RestartSpellPractice) {
+            // 0x43ce10 case 0xa / 0xb / 0xe / 0x13：0x42d780 整体销毁，关卡回到开局选择（DAT_004a5794），新开局重建
+            if (!restart_game(enter == SceneId::RestartPractice ? 1 : 0)) return false;
             supervisor.current = supervisor.requested = SceneId::Game;
         } else {
             if (leave == SceneId::Game) leave_game();

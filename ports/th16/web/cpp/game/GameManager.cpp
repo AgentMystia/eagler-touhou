@@ -69,7 +69,12 @@ bool GameManager::update(AnmManager& manager, GameGlobals& globals, float game_s
         if ((flags & kMenuOpen) != 0) return false;
         ++end_counter;
         if (end_counter == 0xb4 && on_screen_fade) on_screen_fade(5, 200, 0);
-        // end_counter > 0x17b：模式 0 → 场景 0xf / 0x10（结局 / Extra 结局），其他模式 0x43f240：结局场景接入时补
+        // 倒计时过 0x17b：非回放 → 结局场景 0xf（Extra 难度 → 0x10）；回放 → 0x43f240 回标题。
+        // 每帧都会重复登记，直到主循环消费场景请求
+        if (end_counter > 0x17b) {
+            if (mode == 0) globals.scene_request = globals.difficulty == 4 ? 0x10 : 0xf;
+            else if (on_return_to_title) on_return_to_title();
+        }
     }
     // 过关奖励展示期间（Gui bit8、计时 < 0x78）整帧跳过（含帧计数与计时）
     if (gui_live && gui.clear_bonus_pending() && (flags & kMenuOpen) == 0) return true;
