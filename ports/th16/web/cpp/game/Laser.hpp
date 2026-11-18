@@ -245,6 +245,7 @@ public:
     Vec3 last_cancel_center;                    // +0x5ec 最近一次圆形 / 矩形消弹的中心
     Vec3 last_cancel_size;                      // +0x5f8 最近一次矩形消弹的尺寸
     std::vector<i32> sfx_queue;                 // 本帧触发的音效（生成 / Ex 折返 / 反弹）
+    std::vector<i32>* sfx_sink = nullptr;
 
     // —— 依赖 ——
     AnmManager* animations = nullptr;           // DAT_004c0f48

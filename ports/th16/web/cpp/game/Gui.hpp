@@ -122,6 +122,8 @@ public:
     const u32* spellcard_flags = nullptr;    // DAT_004a6db0->0x78（0x429ff0(-2) 的续关判定 bit7）
     class Bomb* bomb = nullptr;              // DAT_004a6da8（0x42e150 过关时仍在发动 → 收尾 vtable+0x14）
     std::vector<i32> sfx_queue;              // 0x45e150：op 11 按键推进 0
+    std::vector<i32>* sfx_sink = nullptr;
+    void play_sfx(i32 id) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(id); }
     // 0x43c3f0(1, 曲目) / 0x43c470：op 19 切 Boss 曲、op 22 / 27 淡出（Sound 接入前供宿主取走）
     // kind：0 淡出（0x43c470）/ 1 Boss 曲（0x43c3f0）/ 2 直接切曲（0x45ed00(2, 序号)，ECL 518 -1 / -3）
     struct BgmEvent { i32 kind; i32 track; };

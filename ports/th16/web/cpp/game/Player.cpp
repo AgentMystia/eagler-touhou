@@ -262,11 +262,11 @@ void Player::graze(AnmManager& manager, AnmFile* effect_anm, GameGlobals& global
     const Vec3 mid{(bullet_pos.x + pos.x) * 0.5f, (pos.y + bullet_pos.y) * 0.5f, 0.0f};
     if (effect_anm != nullptr) manager.spawn_effect(*effect_anm, 0x18, -1, mid, 0.0f);
     // 0x44a460：Gui 擦弹数字飘字（Gui 接入前无状态影响）
-    sfx_queue.push_back(0x2a);
+    play_sfx(0x2a);
 }
 
 void Player::hit(AnmManager& manager, AnmFile* effect_anm) {
-    if ((flags & kFlagSilentHit) == 0) sfx_queue.push_back(2);
+    if ((flags & kFlagSilentHit) == 0) play_sfx(2);
     if (effect_anm != nullptr) manager.spawn_effect(*effect_anm, 0x1d, -1, pos, 0.0f);
     if (spellcard != nullptr && (spellcard->flags & Spellcard::kActive) != 0) {
         // 开始 60 帧内被弹不算失败（炸弹中则记 kBombUsed）；之后奖励清零、取得失败
@@ -918,7 +918,7 @@ bool Player::spawn_bullet(AnmManager& manager, GameGlobals& globals, u32 shot_id
     case 4: d.kind = 2; break;
     default: break;
     }
-    if (e->sfx() >= 0) sfx_queue.push_back(e->sfx());
+    if (e->sfx() >= 0) play_sfx(e->sfx());
     if (vmp != nullptr) vmp->entity_offset = b->motion.pos;
     return true;
 }
@@ -1048,7 +1048,7 @@ i32 Player::hit_bullet_default(AnmManager& manager, PlayerBullet& b) {
 // 0x446200
 void Player::start_laser(PlayerBullet& b) {
     b.hit_w = 0.0f;
-    sfx_queue.push_back(0x14);
+    play_sfx(0x14);
     if (DamageSource* d = damage_source(b.damage_source)) {
         d->f80 = 1;
         d->size_x = 0.0f;
@@ -1248,7 +1248,7 @@ i32 Player::apply_damage_sources(AnmManager& manager, GameGlobals& globals, cons
     if (total > sht.damage_cap) total = sht.damage_cap;
     if (!probe && total != 0) {
         const i32 extends = globals.add_score(total / 10 + 10);
-        for (i32 i = 0; i < extends; ++i) sfx_queue.push_back(0x11);
+        for (i32 i = 0; i < extends; ++i) play_sfx(0x11);
     }
     return total;
 }

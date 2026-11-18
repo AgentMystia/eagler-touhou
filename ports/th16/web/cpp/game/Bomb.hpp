@@ -69,6 +69,8 @@ struct BombContext {
     class Bomb* release = nullptr;       // DAT_004a6da4
 
     std::vector<i32> sfx_queue;                   // 0x45e150 / 0x45e1f0
+    std::vector<i32>* sfx_sink = nullptr;
+    void play_sfx(i32 id) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(id); }
     std::vector<BombShakeRequest> shake_requests;  // 0x45d150(1 / 8)
     std::vector<i32> gui_events;                   // 2 = 0x42c390 残弹显示，3 = 0x42c600 季节量表显示
 };
@@ -128,7 +130,7 @@ protected:
     void grant_invincibility(i32 frames);
     void request_linear_shake(i32 duration, i32 amp_from, i32 amp_to);
     void request_envelope_shake(i32 amplitude, i32 attack, i32 sustain, i32 decay);
-    void play_sfx(i32 id) { ctx.sfx_queue.push_back(id); }
+    void play_sfx(i32 id) { ctx.play_sfx(id); }
     // 0x40e730(3, pos) + flags_lo 改混合模式 0x20：琪露诺 / 文的随机爆点
     void spawn_burst_particle(const Vec3& at);
     AnmVm* find_vm(u32& id) const;   // 0x46efa0；找不到时把 id 清零

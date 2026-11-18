@@ -356,7 +356,7 @@ bool Gui::run_dialogue(float game_speed) {
                     if (!can_skip) { waiting = true; break; }
                     m.wait.set(0);
                 } else {
-                    sfx_queue.push_back(0);
+                    play_sfx(0);
                     m.wait.set(0);
                 }
                 m.lines_written = 0;
