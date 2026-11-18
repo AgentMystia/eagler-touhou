@@ -38,6 +38,8 @@ STUB2_SIZE = 0x4000
 PAUSE = 0x00730000
 
 GAME_CREATE, GAME_LOAD, CHAIN_RUN_UPDATE, SCORE_CTOR = 0x42D700, 0x42CB60, 0x401460, 0x4497E0
+GAME_DESTROY = 0x42D780  # 0x43ce10 case 0xc：销毁 GameManager（0x42d200）后按原模式重建进入下一关
+DAT_SCENE_CURRENT, DAT_SCENE_REQUEST = 0x4C17C0, 0x4C17C4  # Supervisor+0x6f0 / +0x6f4
 CHAIN_RUN_DRAW = 0x4015A0
 VM_CTOR = 0x4093F0
 ASCII_CTOR, ASCII_INIT, FRONT_INIT, CAMERA_INIT = 0x407C10, 0x407CB0, 0x43AD20, 0x43CB10
@@ -632,6 +634,7 @@ class GameOracle(Oracle):
         rc = self.call(GAME_LOAD)
         if rc != 0:
             raise RuntimeError('0x42cb60 failed rc=%#x errors=%s' % (rc, self.errors[-6:]))
+        uc.mem_write(DAT_SCENE_CURRENT, struct.pack('<II', 7, 7))  # 0x43ce10 case 7 之后：当前 / 请求场景均为 Game
         if self.lives is not None:
             uc.mem_write(0x4A57F4, struct.pack('<i', self.lives))  # DAT_004a57f4：残机覆盖（长程无输入对拍不被 Game Over 截断）
         # Supervisor 绘制链 0x43b3d0 每帧写的场地屏幕偏移 DAT_004d9d50/54 = 640/2、(480-448)/2：
@@ -649,13 +652,57 @@ class GameOracle(Oracle):
         prev = self.u32(DAT_INPUT_HELD)
         self.uc.mem_write(DAT_INPUT_HELD, struct.pack('<II', held, prev))
 
+    def switch_scene(self):
+        """0x43ce10 的场景切换（主循环每帧在链更新前执行）。目前只接 case 0xc（过关 → 下一关）：
+        Supervisor+0x700（DAT_004c17d0 新开局标志）= 0、0x42d780 销毁、0x42d700(GameManager+0xac) 重建并同步装载。"""
+        request = self.u32(DAT_SCENE_REQUEST)
+        if request == self.u32(DAT_SCENE_CURRENT):
+            return
+        if request != 0xC:
+            raise RuntimeError('scene request %#x not handled by oracle at frame %d' % (request, self.frame))
+        mode = self.u32(self.u32(DAT_GAME_MANAGER) + 0xAC)
+        self.uc.mem_write(DAT_UI_CAMERA + 0x700, struct.pack('<I', 0))
+        self.call(GAME_DESTROY)
+        self.uc.mem_write(DAT_SCENE_REQUEST, struct.pack('<I', 7))
+        self.game_manager = self.call(GAME_CREATE, ecx=mode)
+        rc = self.call(GAME_LOAD)
+        if rc != 0:
+            raise RuntimeError('0x42cb60 (next stage) failed rc=%#x errors=%s' % (rc, self.errors[-6:]))
+        self.uc.mem_write(DAT_SCENE_CURRENT, struct.pack('<I', 7))
+
+    def stage_draw_side_effects(self):
+        """不跑绘制链时补 0x40a410（Stage 绘制链）尾部唯一影响逻辑状态的部分：结束计时 +0x66c8 倒数（0x40d490），
+        归零时 bit1（结束中）→ bit3（可销毁，0x42d7b0 据此释放上一关），并清 bit1 / bit2。覆盖当前关 DAT_004a6da0 与
+        过关切换后仍在运行的上一关 DAT_004a6d9c。"""
+        for addr in (0x4A6DA0, 0x4A6D9C):
+            stage = self.u32(addr)
+            if not stage:
+                continue
+            flags = self.u32(stage + 0x66C4)
+            if (flags & 8) or ((flags & 4) and self.i32(stage + 0x66CC) >= 0x3C):
+                continue
+            if (flags & 4) and self.i32(stage + 0x66CC) > 0x1D:
+                self.uc.mem_write(stage + 0x3353, b'\x00')
+            if self.i32(stage + 0x66CC) > 0:
+                self.call(0x40D490, ecx=stage + 0x66C8)
+                if self.i32(stage + 0x66CC) < 1:
+                    self.uc.mem_write(stage + 0x3353, b'\xff')
+                    flags = self.u32(stage + 0x66C4)
+                    if flags & 2:
+                        flags |= 8
+                    self.uc.mem_write(stage + 0x66C4, struct.pack('<I', flags & ~6))
+                    self.uc.mem_write(stage + 0x3350, struct.pack('<I', 0xFFFFFF))
+
     def tick(self):
         self.sfx_log = []
+        self.switch_scene()
         # 更新链含 AnmManager 自身的世界 tick（优先级 9，0x46e740），无需另行调用 0x46e340
         self.call(CHAIN_RUN_UPDATE, ecx=self.chain_manager)
         # 绘制链（0x4015a0，读 DAT_004a6d94）：Player 0x443730 等在此把 pos 抄进 VM entity_offset；D3D 设备为空桩
         if self.run_draw:
             self.call(CHAIN_RUN_DRAW)
+        else:
+            self.stage_draw_side_effects()
         self.frame += 1
 
     def chain_list(self):
@@ -910,6 +957,7 @@ class GameOracle(Oracle):
         sm = self.u32(DAT_STAGE_MANAGER)
         snap = {
             'frame': self.frame,
+            'stage': self.i32(0x4A5790),
             'game_frame': self.i32(0x4A579C),
             'stage_frame': self.i32(0x4A57A0),
             'input': [self.u32(DAT_GAME_INPUT), self.u32(DAT_GAME_INPUT + 0xC)],
@@ -935,7 +983,7 @@ class GameOracle(Oracle):
         if self.enemy_snap:
             snap['spell'] = self.spell_snapshot()
         if sm:
-            snap['stage'] = {'frame': self.i32(sm + 0x66E0), 'ins': self.i32(sm + 0x20), 'flags': self.u32(sm + 0x66C4)}
+            snap['stage_vm'] = {'frame': self.i32(sm + 0x66E0), 'ins': self.i32(sm + 0x20), 'flags': self.u32(sm + 0x66C4)}
         return snap
 
 
