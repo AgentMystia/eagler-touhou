@@ -40,6 +40,7 @@
 #include "../../web/cpp/game/FrameClock.hpp"
 #include "../../web/cpp/game/GameSession.hpp"
 #include "../../web/cpp/game/Input.hpp"
+#include "../../web/cpp/game/Laser.hpp"
 #include "../../web/cpp/game/Rng.hpp"
 #include "../../web/cpp/game/Stage.hpp"
 #include "../../web/cpp/game/StageTable.hpp"
@@ -551,7 +552,28 @@ int main(int argc, char** argv) {
         u64 vm_digest = 0xcbf29ce484222325ull;
         u64 item_digest = 0xcbf29ce484222325ull;
         u64 spell_digest = 0xcbf29ce484222325ull;
+        u64 laser_digest = 0xcbf29ce484222325ull;
         auto feed_spell_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { spell_digest ^= u8(v >> (8 * i)); spell_digest *= 0x100000001b3ull; } };
+        auto feed_laser_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { laser_digest ^= u8(v >> (8 * i)); laser_digest *= 0x100000001b3ull; } };
+        // 激光（game-oracle.py laser_snapshot 同口径）：公共区 33 字 + 采样点数 + 每采样点 5 字
+        auto laser_words = [&](const Laser& l, std::vector<u32>& w) {
+            const u32 head[] = {u32(l.kind), l.lifecycle, u32(l.state), u32(l.id), u32(l.bullet_type), u32(l.bullet_color),
+                                bits(l.pos.x), bits(l.pos.y), bits(l.pos.z), bits(l.velocity.x), bits(l.velocity.y), bits(l.velocity.z),
+                                bits(l.angle), bits(l.length), bits(l.width), bits(l.speed), bits(l.start_drawn_len),
+                                u32(l.ex_index), l.ex_flags, u32(l.no_cancel),
+                                u32(l.age_timer.previous), u32(l.age_timer.current), bits(l.age_timer.current_f),
+                                u32(l.graze_timer.previous), u32(l.graze_timer.current), bits(l.graze_timer.current_f),
+                                u32(l.frame_timer.previous), u32(l.frame_timer.current), bits(l.frame_timer.current_f)};
+            for (u32 v : head) w.push_back(v);
+            const i32 node_count = l.kind == LaserKind::Curve ? std::max(0, std::min(l.curve.node_count, 0x40)) : 0;
+            w.push_back(u32(node_count));
+            for (i32 i = 0; i < node_count && i < i32(l.curve_nodes.size()); ++i) {
+                const CurveNode& nd = l.curve_nodes[u32(i)];
+                const u32 words[] = {bits(nd.pos.x), bits(nd.pos.y), bits(nd.pos.z), bits(nd.angle), bits(nd.speed)};
+                for (u32 v : words) w.push_back(v);
+            }
+        };
+        constexpr size_t kLaserHeadWords = 29;
         auto feed = [&](const u8* p, size_t n) { for (size_t i = 0; i < n; ++i) { digest ^= p[i]; digest *= 0x100000001b3ull; } };
         auto feed_vm_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { vm_digest ^= u8(v >> (8 * i)); vm_digest *= 0x100000001b3ull; } };
         // 敌人 ANM VM（oracle enemy_vm_snapshot 同口径）：[槽, 脚本, 精灵, entity_offset×3, pos×3, rotation.z, flags_lo, flags_hi, 年龄]
@@ -754,6 +776,18 @@ int main(int argc, char** argv) {
                     for (u32 v : words) feed_item_u32(v);
                 }
             }
+            // 激光（game-oracle.py laser_digest 同口径）：[frame, count, len] + 每激光公共区 + 采样点
+            {
+                const LaserManager* lm = session.game.lasers_live ? session.game.lasers.get() : nullptr;
+                feed_laser_u32(u32(f + 1));
+                feed_laser_u32(u32(lm ? lm->lasers.size() : 0));
+                feed_laser_u32(u32(lm ? lm->lasers.size() : 0));
+                if (lm) for (const auto& lp : lm->lasers) {
+                    std::vector<u32> lw;
+                    laser_words(*lp, lw);
+                    for (u32 v : lw) feed_laser_u32(v);
+                }
+            }
             // 符卡（game-oracle.py spell_digest 同口径）：[frame, flags, timer×3, id, bonus, bonus_initial, time_limit,
             // count, state, vm 有无×5, dialogue, boss_ids×3, enemy_bonus×2, spell_id]
             {
@@ -915,6 +949,32 @@ int main(int argc, char** argv) {
                             g.bomb_fragment_items, bits(g.collect_pos.x), bits(g.collect_pos.y), bits(g.collect_pos.z));
             }
             {
+                // 激光快照（game-oracle.py laser_snapshot 同口径）：按链表顺序
+                const LaserManager* lm = session.game.lasers_live ? session.game.lasers.get() : nullptr;
+                std::printf(",\"lasers\":{\"count\":%d,\"next_handle\":%d,\"lasers\":[", lm ? int(lm->lasers.size()) : 0,
+                            lm ? lm->next_handle : 0);
+                bool first_laser = true;
+                if (lm) for (const auto& lp : lm->lasers) {
+                    std::vector<u32> lw;
+                    laser_words(*lp, lw);
+                    const u32* h = lw.data();
+                    std::printf("%s{\"kind\":%d,\"lc\":%u,\"state\":%d,\"id\":%d,\"type\":%d,\"color\":%d,\"pos\":[%u,%u,%u],\"vel\":[%u,%u,%u],"
+                                "\"angle\":%u,\"length\":%u,\"width\":%u,\"speed\":%u,\"start_drawn\":%u,\"ex_index\":%d,\"ex_flags\":%u,"
+                                "\"no_cancel\":%d,\"age\":[%d,%d,%u],\"graze\":[%d,%d,%u],\"frame\":[%d,%d,%u],\"nodes\":[",
+                                first_laser ? "" : ",", i32(h[0]), h[1], i32(h[2]), i32(h[3]), i32(h[4]), i32(h[5]),
+                                h[6], h[7], h[8], h[9], h[10], h[11], h[12], h[13], h[14], h[15], h[16], i32(h[17]), h[18], i32(h[19]),
+                                i32(h[20]), i32(h[21]), h[22], i32(h[23]), i32(h[24]), h[25], i32(h[26]), i32(h[27]), h[28]);
+                    const u32 node_count = lw[kLaserHeadWords];
+                    for (u32 i = 0; i < node_count; ++i) {
+                        const u32* nd = &lw[kLaserHeadWords + 1 + size_t(i) * 5];
+                        std::printf("%s[%u,%u,%u,%u,%u]", i ? "," : "", nd[0], nd[1], nd[2], nd[3], nd[4]);
+                    }
+                    std::printf("]}");
+                    first_laser = false;
+                }
+                std::printf("]}");
+            }
+            {
                 // 符卡快照（game-oracle.py spell_snapshot 同口径）
                 const Spellcard& sc = session.spellcard;
                 const EnemyManager& em = session.game.enemies;
@@ -943,10 +1003,10 @@ int main(int argc, char** argv) {
             std::printf("}");
         }
         if (digest_only)
-            std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx enemies=%016llx bullets=%016llx enemy_vms=%016llx items=%016llx spell=%016llx\n",
+            std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx enemies=%016llx bullets=%016llx enemy_vms=%016llx items=%016llx spell=%016llx lasers=%016llx\n",
                         stage, shot, season, frames, (unsigned long long)digest, (unsigned long long)enm_digest,
                         (unsigned long long)bul_digest, (unsigned long long)vm_digest, (unsigned long long)item_digest,
-                        (unsigned long long)spell_digest);
+                        (unsigned long long)spell_digest, (unsigned long long)laser_digest);
         else std::printf("]}\n");
         if (!session.game.enemies.unknown_ops.empty()) {
             std::fprintf(stderr, "unknown_ecl_ops=");
