@@ -321,7 +321,7 @@ bool Enemy::init(EnemyManager& mgr, EclProgram& prog, const char* sub, const Ene
     delta = Vec3{};
     vm_rotation = 0;
     death_anm_slot = 0;
-    death_script = -1;
+    death_script = 0;  // 0x41b580：+0x51f4 = 0（首帧 ECL 后仍为 0 则按主脚本取默认爆散脚本）
     std::memset(static_cast<void*>(shooters), 0, sizeof shooters);
     for (int i = 0; i < kShooterSlots; ++i) { shooter_offset[i] = Vec3{}; shooter_pos2[i] = Vec3{}; shooter_ex_counter[i] = 0; }
     safe_radius_sq = 0;
@@ -349,7 +349,8 @@ bool Enemy::init(EnemyManager& mgr, EclProgram& prog, const char* sub, const Ene
     season_item_step = season_item_next = 0;
     hit_timer = Timer{};
     no_hit_timer = Timer{};
-    score_bonus = score_bonus_spell = 0;
+    score_bonus = 0;
+    score_bonus_spell = globals != nullptr ? globals->spell_id : 0;  // puVar6[0x15cd] = DAT_004a5798
     bomb_script = bomb_script_restore = 0;
     for (auto& it : interrupts) it = EnemyInterrupt{};
     int_regs[0] = 1;  // 0x41aa70：puVar6[0x1498] = 1
@@ -363,14 +364,34 @@ bool Enemy::init(EnemyManager& mgr, EclProgram& prog, const char* sub, const Ene
     std::memset(drop_counts, 0, sizeof drop_counts);
     drop_radius = {32.0f, 32.0f};
     death_sub.clear();
-    death_sfx = i32((id & 1u) + 3u);
     primary.difficulty = difficulty;
     const i32 routine = prog.find_index(sub);
     if (routine < 0) { error = std::string("missing sub ") + sub; return false; }
     reset_context(primary, routine);
     // 0x41aa70 → 0x41d1e0：立即跑一帧；0x40000 留给管理器清除（从而再隔一帧才第二次真正更新）
     update(1.0f);
+    death_sfx = i32((id & 1u) + 3u);
+    if (death_script == 0) apply_default_death_effect();
     return alive;
+}
+
+// 0x41aa70 尾段：ECL 未指定（op 323）死亡特效时，按 enemy.anm 主脚本号选 effect.anm 的爆散脚本
+// （44 白 / 40 红 / 48 蓝 / 52 绿 / 58 / 57 / 56），其它 anm 槽一律 44
+void Enemy::apply_default_death_effect() {
+    death_script = 44;
+    if (anm_slot_main == 2) {
+        switch (main_script) {
+        case 0: case 0x14: case 0x3b: case 0x3e: case 0x57: death_script = 44; break;
+        case 5: case 0x19: case 0x35: case 0x4f: death_script = 40; break;
+        case 10: case 0x38: case 0x53: death_script = 48; break;
+        case 0xf: case 0x5b: death_script = 52; break;
+        case 0x1e: death_script = 58; break;
+        case 0x23: death_script = 57; break;
+        case 0x28: death_script = 56; break;
+        default: break;
+        }
+    }
+    death_anm_slot = 1;
 }
 
 bool Enemy::update(float game_speed) {
@@ -759,16 +780,15 @@ int Enemy::resolve_hits(float game_speed) {
             // 符卡中用过炸弹（flags & 0x21 == 0x21）→ 伤害 /30
             if ((sflags & (Spellcard::kActive | Spellcard::kBombUsed)) == (Spellcard::kActive | Spellcard::kBombUsed))
                 applied /= 0x1e;
+            // 0x41a6d0：累计伤害（+0x3f88）无论是否无敌都加；符卡期间（life_flags & 1）按 7 倍血量池折算
+            damage_accum += applied;
             if ((flags & 0x10u) == 0 && invuln.current < 1) {
-                // 0x41a6d0：符卡期间（life_flags & 1）按 7 倍血量池折算
                 if ((life_flags & 1u) != 0) {
                     life_budget -= applied;
                     life = (life_budget - phase_life * 7) / 7 + phase_life;
                 } else {
                     life -= applied;
                 }
-            } else {
-                damage_accum += applied;
             }
             // op 1001：每累计 season_item_step 伤害放一个季节道具（visual_rng：unit + angle）
             if (season_item_step > 0 && season_item_next < damage_accum && rng != nullptr) {

@@ -84,7 +84,7 @@ public:
     i32 life_display = 0;       // +0x3f7c / +0x5188：距下一阶段阈值的血量（Boss 血条 / 低血闪烁阈值）
     i32 life_budget = 0;        // +0x3f80 / +0x518c（符卡 7 倍血量池）
     i32 phase_life = 0;         // +0x3f84 / +0x5190
-    i32 damage_accum = 0;       // +0x3f88 / +0x5194：无敌 / flags&0x10 时累计的伤害（op 1001 季节道具按此放出）
+    i32 damage_accum = 0;       // +0x3f88 / +0x5194：累计承受伤害（含无敌期；op 1001 季节道具按此放出）
     u32 life_flags = 0;         // +0x3f8c / +0x5198（bit0 = 符卡 7 倍减伤；bit1 = 立即死亡）
     float damage_rate = 1.0f;   // +0x4038 / +0x5244（op 565；Bomb 中按比例减伤，0 时音效 0x24）
     i32 season_item_step = 0;   // +0x4058（op 1001 arg0：每累计该伤害放一个季节道具）
@@ -92,7 +92,7 @@ public:
     Timer hit_timer;            // +0x4024：受击后置 30 帧并逐帧回退（0x41c330 尾）
     Timer no_hit_timer;         // +0x4010（op 541）：> 0 时不判体碰撞，逐帧回退
     i32 score_bonus = 0;        // +0x452c / +0x5738（op 569）
-    i32 score_bonus_spell = 0;  // +0x4528 / +0x5734（op 524：奖励归属的 spell_id）
+    i32 score_bonus_spell = 0;  // +0x5734（生成时取 DAT_004a5798，op 524 改写：奖励归属的 spell_id）
     i32 bomb_script = 0;        // +0x4068（op 546 arg1：Bomb / 季节解放期间的主 VM 脚本）
     i32 bomb_script_restore = 0;// +0x406c（op 546 时的 main_script）
     static constexpr int kInterruptSlots = 8;
@@ -113,8 +113,8 @@ public:
     Vec3 hit_pos;               // EnemyInf+0x280：最后一次命中的伤害源坐标（0x445a30 出参）
     Vec3 delta;                 // EnemyInf+0x78：0x41c1f0 本帧位移（朝向判定 / 0x80 位 VM 的朝向角）
     float vm_rotation = 0;      // EnemyInf+0x120：上次写给 0x80 位 VM 的 rotation.z
-    i32 death_anm_slot = 0;     // +0x3fec（op 323 arg0）
-    i32 death_script = -1;      // +0x3fe8（op 323 arg1；≥0 时 0x41dcb0 case 0x66 死亡特效）
+    i32 death_anm_slot = 0;     // +0x3fec（op 323 arg0；生成首帧后默认 1 = effect.anm）
+    i32 death_script = 0;       // +0x3fe8（op 323 arg1；≥0 时 0x41d520 生成死亡特效；0 → 0x41aa70 按主脚本取默认）
     EffectManager* effects = nullptr;          // DAT_004a6db8
     Timer season_drop_timer;    // EnemyInf+0x403c / Enemy+0x5248（op 1000 限时季节掉落计时）
     i32 season_drop_duration = 0x3c; // +0x4050 / +0x525c（op 1000 arg0）
@@ -187,6 +187,7 @@ public:
     void sync_sprite_direction();
     // 0x41c1f0：pos = motion1.pos + motion2.pos 的本帧位移积分（delta 记录、厘米取整、0x20000 场地夹紧）
     void apply_motion_position();
+    void apply_default_death_effect();
     // 0x41d2e0 后段：按 vm_offsets / 父槽同步各 VM 的 entity_offset（0x80 位 VM 带朝向角）
     void sync_vm_offsets();
     // 0x41c330 尾：主 VM 的受击 / 低血闪烁（color2 + flags_lo 0x20000 位）与受击音效
