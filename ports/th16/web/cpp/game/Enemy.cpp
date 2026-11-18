@@ -1155,8 +1155,9 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             if (manager) manager->shake_requests.push_back({duration, from, to});
             return 0;
         }
-        case 540: {  // case 0x51：Gui+0x188（Boss 血条分段数）——Gui 接入时补
-            (void)iarg(0);
+        case 540: {  // case 0x51：Gui+0x188 Boss 剩余符卡星数
+            const i32 count = iarg(0);
+            if (manager && manager->gui) manager->gui->spell_star_count = count;
             return 0;
         }
         case 547:  // case 0x58：全局游戏速度 DAT_004a5788
@@ -1185,8 +1186,11 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             return 0;
         }
         case 571: if (manager) manager->kill_all(2, nullptr); return 0;     // case 0x70：0x41db70（并清死亡子程序）
-        case 527: {  // case 0x48：Gui+0x1ec 阶段血条段（Gui 接入前只消费参数）
-            (void)iarg(0); (void)farg(1); (void)iarg(2);
+        case 527: {  // case 0x48：本 Boss 槽血条第 arg0 个刻度 = arg1 / 最大血量（Gui+0x1ec），arg2 原样存入
+            const i32 flag = iarg(2);
+            const float ratio = farg(1) / float(life_max);
+            const i32 index = iarg(0);
+            if (manager && manager->gui) manager->gui->set_boss_bar_marker(boss_slot, index, ratio, flag);
             return 0;
         }
         case 541: no_hit_timer.set(iarg(0)); return 0;  // case 0x52
