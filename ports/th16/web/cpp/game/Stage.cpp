@@ -484,11 +484,11 @@ void StageManager::look_through_stage_camera(AnmRenderer& renderer, Camera& glob
 }
 
 void StageManager::step_fade_in() {
-    // 0x409f90 中段：bit2（新关淡入）下，计时 < 0x1e 时开始白闪（0x1e 帧）、启用绘制并把计时改为 1 ——
-    // 下一帧 0x40a410 尾部就清掉 bit2；在此之前绘制位保持关闭
+    // 0x409f90 中段：bit2（新关淡入）下，计时 < 0x1e 时建从黑淡入的 ScreenEffect kind 3（0x1e 帧、色 0、alpha 从 0xff 递减）、
+    // 启用绘制并把计时改为 1 —— 下一帧 0x40a410 尾部就清掉 bit2；在此之前绘制位保持关闭
     if ((flags & 4u) == 0) return;
     if (end_timer.current < 0x1e) {
-        if (on_screen_fade) on_screen_fade(3, 0x1e, 0xffffffffu);
+        if (on_screen_fade) on_screen_fade(3, 0x1e, 0u);
         flags |= 1u;
         end_timer.set(1);
     } else {

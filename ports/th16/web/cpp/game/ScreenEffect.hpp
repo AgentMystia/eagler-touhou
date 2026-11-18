@@ -3,9 +3,11 @@
 //   kind 1（ECL 517 画面震动，绘制链 0x54）：0x45cd30 每帧计时后按 (to - from) × t / duration + from 取振幅，
 //   用 game_rng（DAT_004a6d80）各双步 0x402be0 一次、无符号 % 3 决定 x / y 的 0 / +amp / -amp，写 DAT_004c1788/178c（逻辑偏移）
 //   与 DAT_004c1530/1534（× 窗口缩放 DAT_004d9d34）；计时达 duration 返回 7 → 0x45d130 摘除两条链并释放。
-//   kind 0 / 2 / 3 / 5（淡入淡出，更新链 0x45c900、绘制链 0x45c990 全屏色块）：DAT_004c0f40 非零时直接返回 7 自删；
+//   kind 2 / 5（淡出到色块，更新链 0x45c900、绘制链 0x45c990 / 0x45c860）：DAT_004c0f40 非零时直接返回 7 自删；
 //   否则 alpha = t × 255 / duration（到时 0xff），t < duration + 2 期间在 GameManager 非装载 / 非结束时推进计时；
 //   换关 0x40c0d0 建 kind 2（0x1e 帧、色 0），过关结算 0x42d7b0 建 kind 5（200 帧）。
+//   kind 0 / 3（从色块淡入，更新链 0x45c630、绘制链 0x45c990）：alpha = 255 − t × 255 / duration（kind 3 初值 0xff），
+//   t ≥ duration 时自删，否则无条件推进计时；关卡切换淡入 0x409f90 建 kind 3（0x1e 帧、白）。
 //   kind 8（炸弹震动，0x45cf10）：振幅按 attack（线性升）/ sustain（满幅）/ decay（线性降）三段包络，
 //   用 visual_rng（DAT_004a6d88）各双步一次决定 x / y 方向；DAT_004c0f40 非零时自删，GameManager 装载 / 结束 /
 //   flags & 0x72 时跳过本帧；超过三段总长自删。
@@ -57,7 +59,9 @@ struct ScreenFade {
     Timer timer;          // +0x2c..+0x3c
 };
 
-// 0x45c900：推进一帧；game_frozen = GameManager 装载中或已结束（(flags >> 2 | flags) & 1）；返回 false 表示自删
+// 0x45c900（kind 2 / 5）：推进一帧；game_frozen = GameManager 装载中或已结束（(flags >> 2 | flags) & 1）；返回 false 表示自删
 bool screen_fade_step(ScreenFade& fade, i32 post_load_frames, bool game_frozen, float game_speed);
+// 0x45c630（kind 0 / 3）：alpha 由 255 递减；计时到 duration 返回 false
+bool screen_fade_in_step(ScreenFade& fade, i32 post_load_frames, float game_speed);
 
 }  // namespace th16

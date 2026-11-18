@@ -782,11 +782,30 @@ class GameOracle(Oracle):
         self.uc.mem_write(DAT_SCENE_CURRENT, struct.pack('<I', 7))
 
     def stage_draw_side_effects(self):
-        """不跑绘制链时补 0x40a410（Stage 绘制链）尾部唯一影响逻辑状态的部分：结束计时 +0x66c8 倒数（0x40d490），
-        归零时 bit1（结束中）→ bit3（可销毁，0x42d7b0 据此释放上一关），并清 bit1 / bit2。覆盖当前关 DAT_004a6da0 与
-        过关切换后仍在运行的上一关 DAT_004a6d9c。bit3 时整段跳过；"bit2 且计时 ≥ 0x3c" 只跳过绘制，计时照常倒数。"""
-        for addr in (0x4A6DA0, 0x4A6D9C):
-            stage = self.u32(addr)
+        """不跑绘制链时补 Stage 绘制链 3（0x409f90）/ 6（0x40a410）里影响逻辑状态的部分。两条链都按登记顺序
+        先上一关 DAT_004a6d9c 再当前关 DAT_004a6da0；bit3（可销毁）时整段跳过。
+        链 3：bit2（切关淡入）且结束计时 < 0x1e → 建 ScreenEffect kind 3（0x40 字节：flags |= 2、alpha 0xff、更新链
+        0x45c630 优先级 0x13、绘制链 0x45c990 优先级 10、析构 0x45d130、色 0、时长 0x1e），置 bit0 并把结束计时设为 1；
+        否则清 +0x3353 与 bit0。随后 +0x3353（闪白标志）被绘制取走清零。
+        链 6：bit2 且计时 > 0x1d 清 +0x3353；结束计时 +0x66c8 倒数（0x40d490），归零时 +0x3353 = 0xff、bit1 → bit3、
+        清 bit1 / bit2、+0x3350 = 0xffffff。"bit2 且计时 ≥ 0x3c" 只跳过绘制，这些逻辑照常。"""
+        stages = [self.u32(addr) for addr in (0x4A6D9C, 0x4A6DA0)]
+        for stage in stages:
+            if not stage:
+                continue
+            flags = self.u32(stage + 0x66C4)
+            if flags & 8:
+                continue
+            if flags & 4:
+                if self.i32(stage + 0x66CC) < 0x1E:
+                    self.create_stage_fade_in()
+                    self.uc.mem_write(stage + 0x66C4, struct.pack('<I', flags | 1))
+                    self.call(0x406490, ecx=stage + 0x66C8, args=(1,))   # Timer::set(1)
+                else:
+                    self.uc.mem_write(stage + 0x3353, b'\x00')
+                    self.uc.mem_write(stage + 0x66C4, struct.pack('<I', flags & ~1))
+            self.uc.mem_write(stage + 0x3353, b'\x00')
+        for stage in stages:
             if not stage:
                 continue
             flags = self.u32(stage + 0x66C4)
@@ -803,6 +822,28 @@ class GameOracle(Oracle):
                         flags |= 8
                     self.uc.mem_write(stage + 0x66C4, struct.pack('<I', flags & ~6))
                     self.uc.mem_write(stage + 0x3350, struct.pack('<I', 0xFFFFFF))
+
+    def create_stage_fade_in(self):
+        """0x409f90 内联的 ScreenEffect kind 3 创建（等价于 0x45d150(3) + 0x45d1a0(0x1e, 0, 10)）。"""
+        effect = self.alloc(0x40)
+        self.uc.mem_write(effect, b'\x00' * 0x40)
+        self.uc.mem_write(effect, struct.pack('<I', 2))             # flags
+        self.uc.mem_write(effect + 0x14, struct.pack('<I', 0xFF))   # alpha
+        update = self.call(0x401730, args=(0x45C630,))
+        self.uc.mem_write(update + 4, struct.pack('<I', self.u32(update + 4) | 2))
+        self.uc.mem_write(update + 0x24, struct.pack('<I', effect))
+        self.call(0x401300, args=(update, 0x13))
+        self.uc.mem_write(effect + 4, struct.pack('<I', update))
+        draw = self.call(0x401730, args=(0x45C990,))
+        self.uc.mem_write(draw + 4, struct.pack('<I', self.u32(draw + 4) | 2))
+        self.uc.mem_write(draw + 0x24, struct.pack('<I', effect))
+        self.call(0x4013B0, args=(draw, 10))
+        self.uc.mem_write(effect + 8, struct.pack('<I', draw))
+        self.uc.mem_write(update + 0x10, struct.pack('<I', 0x45D130))
+        # Timer（+0x2c..+0x3c）初始化：previous = -1、current = 0、flags bit0
+        self.uc.mem_write(effect + 0x2C, struct.pack('<iiiiI', -1, 0, 0, 0, 1))
+        self.uc.mem_write(effect + 0x0C, struct.pack('<I', 3))      # kind
+        self.uc.mem_write(effect + 0x18, struct.pack('<III', 0x1E, 0, 0))   # duration, color, +0x20
 
     def tick(self):
         self.sfx_log = []
