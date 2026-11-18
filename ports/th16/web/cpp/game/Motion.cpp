@@ -29,6 +29,32 @@ Vec3 normalize3(const Vec3& v) noexcept {
     return {v.x / len, v.y / len, v.z / len};
 }
 
+// 0x403d30：把圆心旋到矩形局部坐标后，先判两条"十字"带，再判四个角点到圆心的距离
+bool rect_hits_circle(float rect_x, float rect_y, float width, float height, float angle,
+                      float cx, float cy, float r) noexcept {
+    const float dx = cx - rect_x;
+    const float dy = cy - rect_y;
+    const float neg_a = -angle;
+    const float s = sin_f(neg_a);
+    const float c = cos_f(neg_a);
+    const float lx = dx * c - dy * s;
+    const float ly = dx * s + dy * c;
+    const float hw = width * 0.5f;
+    const float hh = height * 0.5f;
+    const float ax = std::fabs(lx);
+    const float ay = std::fabs(ly);
+    if (ax <= hw + r && ay <= hh) return true;
+    if (ax <= hw && ay <= hh + r) return true;
+    const float r2 = r * r;
+    const float x0 = lx - hw, y0 = ly - hh;
+    if (x0 * x0 + y0 * y0 < r2) return true;
+    const float x1 = lx + hw;
+    if (x1 * x1 + y0 * y0 < r2) return true;
+    const float y1 = ly + hh;
+    if (x0 * x0 + y1 * y1 < r2) return true;
+    return x1 * x1 + y1 * y1 < r2;
+}
+
 namespace {
 inline void polar_into(float angle, float length, float& x, float& y) noexcept {
     const Vec3 p = polar(angle, length);

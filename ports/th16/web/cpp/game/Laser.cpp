@@ -1331,11 +1331,11 @@ void LaserManager::spawn_cancel_effect(i32 bullet_type, i32 bullet_color, const 
     if (register_in_effects && effects != nullptr) effects->register_id(id);
 }
 
-i32 LaserManager::cancel_single(Laser& l, bool drop_items, bool respect_immunity) {
+i32 LaserManager::cancel_single(Laser& l, i32 item_mode, bool respect_immunity) {
     switch (l.kind) {
-        case LaserKind::Line: return cancel_line_single(l, drop_items, respect_immunity);
-        case LaserKind::Infinite: return cancel_infinite_single(l, drop_items, respect_immunity);
-        case LaserKind::Curve: return cancel_curve_single(l, drop_items, respect_immunity);
+        case LaserKind::Line: return cancel_line_single(l, item_mode, respect_immunity);
+        case LaserKind::Infinite: return cancel_infinite_single(l, item_mode, respect_immunity);
+        case LaserKind::Curve: return cancel_curve_single(l, item_mode, respect_immunity);
         case LaserKind::Beam:  // 0x43ac40
             if (!respect_immunity) mark_for_destroy(l);
             return 0;
@@ -1343,11 +1343,11 @@ i32 LaserManager::cancel_single(Laser& l, bool drop_items, bool respect_immunity
     return 0;
 }
 
-i32 LaserManager::cancel_circle(Laser& l, const Vec3& center, float radius, bool drop_items, bool respect_immunity) {
+i32 LaserManager::cancel_circle(Laser& l, const Vec3& center, float radius, i32 item_mode, bool respect_immunity) {
     switch (l.kind) {
-        case LaserKind::Line: return cancel_line_circle(l, center, radius, drop_items, respect_immunity);
-        case LaserKind::Infinite: return cancel_infinite_circle(l, center, radius, drop_items, respect_immunity);
-        case LaserKind::Curve: return cancel_curve_circle(l, center, radius, drop_items, respect_immunity);
+        case LaserKind::Line: return cancel_line_circle(l, center, radius, item_mode, respect_immunity);
+        case LaserKind::Infinite: return cancel_infinite_circle(l, center, radius, item_mode, respect_immunity);
+        case LaserKind::Curve: return cancel_curve_circle(l, center, radius, item_mode, respect_immunity);
         case LaserKind::Beam: return 0;
     }
     return 0;
@@ -1365,9 +1365,9 @@ i32 LaserManager::cancel_rect_single(Laser& l, const Vec3& center, const Vec3& s
 }
 
 // 0x431af0
-void LaserManager::cancel_all(bool drop_items) {
+void LaserManager::cancel_all(i32 item_mode) {
     visit_existing(lasers, [&](Laser& l) {
-        if (l.state != LaserState::Dead) cancel_single(l, drop_items, false);
+        if (l.state != LaserState::Dead) cancel_single(l, item_mode, false);
         return false;
     });
 }
@@ -1391,11 +1391,11 @@ void LaserManager::cancel_handle(i32 id) {
 }
 
 // 0x431a70
-i32 LaserManager::cancel_radius(const Vec3& center, float radius, bool drop_items, bool respect_immunity) {
+i32 LaserManager::cancel_radius(const Vec3& center, float radius, i32 item_mode, bool respect_immunity) {
     last_cancel_center = center;
     i32 total = 0;
     visit_existing(lasers, [&](Laser& l) {
-        if (l.state != LaserState::Dead) total += cancel_circle(l, center, radius, drop_items, respect_immunity);
+        if (l.state != LaserState::Dead) total += cancel_circle(l, center, radius, item_mode, respect_immunity);
         return false;
     });
     return total;
@@ -1418,7 +1418,7 @@ i32 LaserManager::cancel_rect(const Vec3& center, const Vec3& size, float rect_a
 // 直线激光消弹：沿激光每 16 像素取一个采样点（首点距起点 8 像素）
 
 // 0x434cd0：整条消弹——每个采样点出特效并转化道具
-i32 LaserManager::cancel_line_single(Laser& l, bool drop_items, bool respect_immunity) {
+i32 LaserManager::cancel_line_single(Laser& l, i32 item_mode, bool respect_immunity) {
     if (respect_immunity && l.no_cancel != 0) return 0;
     const Vec3 step8 = polar(l.angle, 8.0f);
     Vec3 sample{step8.x + l.pos.x, l.pos.y + step8.y, l.pos.z + 0.0f};
@@ -1429,7 +1429,7 @@ i32 LaserManager::cancel_line_single(Laser& l, bool drop_items, bool respect_imm
     for (;;) {
         ++count;
         spawn_cancel_effect(l.bullet_type, l.line.color, sample, false, false);
-        if (bullets) bullets->convert_cancel_item(sample, drop_items ? 1 : 0);
+        if (bullets) bullets->convert_cancel_item(sample, item_mode);
         cursor = cursor + 16.0f;
         sample.x = sample.x + step16.x;
         sample.y = step16.y + sample.y;
@@ -1489,7 +1489,7 @@ void LaserManager::split_line_after_hits(Laser& l, const bool* hit, int sample_c
 }
 
 // 0x434730
-i32 LaserManager::cancel_line_circle(Laser& l, const Vec3& center, float radius, bool drop_items, bool respect_immunity) {
+i32 LaserManager::cancel_line_circle(Laser& l, const Vec3& center, float radius, i32 item_mode, bool respect_immunity) {
     if (respect_immunity && l.no_cancel != 0) return 0;
     bool hit[256] = {};
     const Vec3 step8 = polar(l.angle, 8.0f);
@@ -1503,7 +1503,7 @@ i32 LaserManager::cancel_line_circle(Laser& l, const Vec3& center, float radius,
             const float dy = center.y - sample.y;
             if (dx * dx + dy * dy <= radius * radius && n < 256) {
                 hit[n] = true;
-                if (bullets) bullets->convert_cancel_item(sample, drop_items ? 1 : 0);
+                if (bullets) bullets->convert_cancel_item(sample, item_mode);
                 spawn_cancel_effect(l.bullet_type, l.line.color, sample, false, false);
             }
             ++n;
@@ -1561,7 +1561,7 @@ i32 LaserManager::cancel_line_rect(Laser& l, const Vec3& center, const Vec3& siz
 // 照射激光消弹
 
 // 0x436c70：整条消弹——场内（±16）的采样点出特效并转化道具
-i32 LaserManager::cancel_infinite_single(Laser& l, bool drop_items, bool respect_immunity) {
+i32 LaserManager::cancel_infinite_single(Laser& l, i32 item_mode, bool respect_immunity) {
     if (respect_immunity && l.no_cancel != 0) return 0;
     const Vec3 step8 = polar(l.angle, 8.0f);
     const Vec3 step16{step8.x + step8.x, step8.y + step8.y, 0.0f};
@@ -1573,7 +1573,7 @@ i32 LaserManager::cancel_infinite_single(Laser& l, bool drop_items, bool respect
             ++count;
             if (point_near_field(sample.x, sample.y, 16.0f)) {
                 spawn_cancel_effect(l.bullet_type, l.infinite.color, sample, false, false);
-                if (bullets) bullets->convert_cancel_item(sample, drop_items ? 1 : 0);
+                if (bullets) bullets->convert_cancel_item(sample, item_mode);
             }
             sample.x = sample.x + step16.x;
             cursor = cursor + 16.0f;
@@ -1639,7 +1639,7 @@ void LaserManager::spawn_infinite_fragments(Laser& l, const bool* hit, int sampl
 }
 
 // 0x436670
-i32 LaserManager::cancel_infinite_circle(Laser& l, const Vec3& center, float radius, bool drop_items,
+i32 LaserManager::cancel_infinite_circle(Laser& l, const Vec3& center, float radius, i32 item_mode,
                                          bool respect_immunity) {
     if (respect_immunity && l.no_cancel != 0) return 0;
     bool hit[256] = {};
@@ -1654,7 +1654,7 @@ i32 LaserManager::cancel_infinite_circle(Laser& l, const Vec3& center, float rad
             const float dy = center.y - sample.y;
             if (dx * dx + dy * dy <= radius * radius && n < 256) {
                 hit[n] = true;
-                if (bullets) bullets->convert_cancel_item(sample, drop_items ? 1 : 0);
+                if (bullets) bullets->convert_cancel_item(sample, item_mode);
                 if (point_near_field(sample.x, sample.y, 32.0f))
                     spawn_cancel_effect(l.bullet_type, l.infinite.color, sample, false, false);
             }
@@ -1713,8 +1713,8 @@ i32 LaserManager::cancel_infinite_rect(Laser& l, const Vec3& center, const Vec3&
 // 曲线激光消弹
 
 // 0x43a620：整条消弹——每隔 3 个节点出一个消散特效（不转化道具）
-i32 LaserManager::cancel_curve_single(Laser& l, bool drop_items, bool respect_immunity) {
-    (void)drop_items;
+i32 LaserManager::cancel_curve_single(Laser& l, i32 item_mode, bool respect_immunity) {
+    (void)item_mode;
     if (respect_immunity && l.no_cancel != 0) return 0;
     for (i32 i = 0; i < l.curve.node_count && i < i32(l.curve_nodes.size()); ++i) {
         if (i % 3 != 0) continue;
@@ -1739,7 +1739,7 @@ void LaserManager::shift_curve_nodes(Laser& l, int drop_count) {
 }
 
 // 0x43a2f0：圆形消弹——每 10 个节点取一个转化道具 / 出特效；只保留一段连续未命中节点
-i32 LaserManager::cancel_curve_circle(Laser& l, const Vec3& center, float radius, bool drop_items,
+i32 LaserManager::cancel_curve_circle(Laser& l, const Vec3& center, float radius, i32 item_mode,
                                       bool respect_immunity) {
     if (respect_immunity && l.no_cancel != 0) return 0;
     const i32 n = l.curve.node_count;
@@ -1754,7 +1754,7 @@ i32 LaserManager::cancel_curve_circle(Laser& l, const Vec3& center, float radius
             ++hits;
             hit[i] = true;
             if (i % 10 == 0) {
-                if (bullets) bullets->convert_cancel_item(p, drop_items ? 1 : 0);
+                if (bullets) bullets->convert_cancel_item(p, item_mode);
                 animations->spawn_effect(*bullet_anm, l.curve.color * 2 + 0xd1, -1, p, 0.0f);
             }
         }

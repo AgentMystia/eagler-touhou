@@ -41,6 +41,54 @@ bool screen_shake_step(ScreenShake& shake, Rng& game_rng, float window_scale, fl
     return true;
 }
 
+bool screen_shake_envelope_step(ScreenShakeEnvelope& shake, Rng& visual_rng, float window_scale, float game_speed,
+                                i32 post_load_frames, bool game_frozen, ScreenShakeOffset& out) {
+    if (post_load_frames != 0) return false;
+    if (game_frozen) return true;
+    shake.timer.tick(game_speed);
+    const i32 t = shake.timer.current;
+    float ratio;
+    if (t < shake.attack) {
+        ratio = shake.timer.current_f / float(shake.attack);
+    } else if (t < shake.attack + shake.sustain) {
+        ratio = 1.0f;
+    } else {
+        const i32 end = shake.decay + shake.sustain + shake.attack;
+        if (end <= t) return false;
+        ratio = (float(end) - shake.timer.current_f) / float(shake.decay);
+    }
+    const float amp = float(shake.amplitude) * ratio;
+    switch (visual_rng.next32() % 3u) {
+    case 0:
+        out.offset.x = 0.0f;
+        out.offset_scaled.x = 0.0f;
+        break;
+    case 1:
+        out.offset_scaled.x = window_scale * amp;
+        out.offset.x = amp;
+        break;
+    default:
+        out.offset_scaled.x = -(window_scale * amp);
+        out.offset.x = -amp;
+        break;
+    }
+    switch (visual_rng.next32() % 3u) {
+    case 0:
+        out.offset.y = 0.0f;
+        out.offset_scaled.y = 0.0f;
+        break;
+    case 1:
+        out.offset.y = amp;
+        out.offset_scaled.y = window_scale * amp;
+        break;
+    default:
+        out.offset.y = -amp;
+        out.offset_scaled.y = -(window_scale * amp);
+        break;
+    }
+    return true;
+}
+
 bool screen_fade_step(ScreenFade& fade, i32 post_load_frames, bool game_frozen, float game_speed) {
     if (post_load_frames != 0) return false;
     const i32 d = fade.duration;
