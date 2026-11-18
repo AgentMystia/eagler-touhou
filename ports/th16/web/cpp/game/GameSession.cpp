@@ -293,6 +293,7 @@ bool GameSession::create_enemies() {
     game.enemies.anm_fn = load_enemy_anm;
     game.enemies.bullets = game.bullets.get();
     game.enemies.items = game.items.get();
+    game.enemies.lasers = game.lasers.get();
     game.enemies.effects = &effects;
     game.enemies.spellcard = &spellcard;
     game.player.spellcard = &spellcard;
@@ -417,6 +418,14 @@ bool GameSession::enter_game() {
             if (game.bullets_live && !game.chains_suspended && ((game.flags | (game.flags >> 2)) & 1u) == 0) {
                 game.bullets->sfx_queue.clear();
                 game.bullets->update(supervisor.game_speed, (game.flags & 0x400u) != 0);
+                // Ex 0x8000000 在 0x413860 内直接建激光（同帧挂入激光链尾，下一帧起推进）
+                if (game.lasers_live) {
+                    game.lasers->consume_bullet_requests();
+                    sfx_events.insert(sfx_events.end(), game.lasers->sfx_queue.begin(), game.lasers->sfx_queue.end());
+                    game.lasers->sfx_queue.clear();
+                } else {
+                    game.bullets->laser_requests.clear();
+                }
                 sfx_events.insert(sfx_events.end(), game.bullets->sfx_queue.begin(), game.bullets->sfx_queue.end());
                 game.bullets->sfx_queue.clear();
                 // 被弹（0x443f10）在弹幕链内登记的自机音效本帧即生效
@@ -462,6 +471,32 @@ bool GameSession::enter_game() {
         }, 0x13, false);
     }
 
+    // 0x4314a0：LaserManager（bullet.anm 槽 7、effect.anm 槽 8；sprite_mapper 2 / 3）；更新链 0x1b（0x4316b0）、绘制链 0x23（0x431720）
+    {
+        game.lasers = std::make_unique<LaserManager>();
+        game.lasers->create(animations, *animations.file(BulletManager::kBulletAnmSlot), animations.file(8), *game.bullets,
+                            game.player_live ? &game.player : nullptr, &game.enemies, &effects, &game.world);
+        game.lasers_live = true;
+        game.player.laser_manager = game.lasers.get();
+        laser_update_chain_ = chains.create([this]() -> ChainResult {
+            // 0x4316b0：GameManager 装载中（bit2）/ 结束位（bit0 经 >>2 映射）/ 0x400 冻结时跳过；bit1 时以速度 0 推进
+            if (game.lasers_live && !game.chains_suspended && ((game.flags | (game.flags >> 2)) & 1u) == 0 &&
+                (game.flags & 0x400u) == 0) {
+                game.lasers->sfx_queue.clear();
+                game.lasers->update((game.flags & 0x2u) != 0 ? 0.0f : supervisor.game_speed);
+                sfx_events.insert(sfx_events.end(), game.lasers->sfx_queue.begin(), game.lasers->sfx_queue.end());
+                game.lasers->sfx_queue.clear();
+                // 被弹（0x443f10）在激光链内登记的自机音效本帧即生效
+                if (game.player_live) harvest_player_sfx();
+            }
+            return ChainResult::Continue;
+        }, 0x1b, true);
+        laser_draw_chain_ = chains.create([this]() -> ChainResult {
+            if (game.lasers_live && !game.chains_suspended && (game.flags & GameManager::kLoading) == 0) game.lasers->prepare_draw();
+            return ChainResult::Continue;
+        }, 0x23, false);
+    }
+
     if (!create_enemies()) return false;
 
     // 0x427ca0 / 0x426b00 / 0x426c10：Gui——front.anm（槽 5）、关卡 logo ANM → 槽 6、按机体的 msg 文件；
@@ -472,6 +507,7 @@ bool GameSession::enter_game() {
         if (!load_gui_stage_assets(logo, msg_bytes)) return false;
         game.gui.enemies = &game.enemies;
         game.gui.bullets = game.bullets.get();
+        game.gui.lasers = game.lasers.get();
         game.gui.player = game.player_live ? &game.player : nullptr;
         game.gui.world = &game.world;
         game.gui.globals = &globals;
@@ -515,6 +551,8 @@ bool GameSession::enter_game() {
     if (item_update_chain_) chains.enable(item_update_chain_);
     if (item_draw_chain_) chains.enable(item_draw_chain_);
     if (item_draw_season_chain_) chains.enable(item_draw_season_chain_);
+    if (laser_update_chain_) chains.enable(laser_update_chain_);
+    if (laser_draw_chain_) chains.enable(laser_draw_chain_);
     if (enemy_update_chain_) chains.enable(enemy_update_chain_);
     game_live = true;
     return true;
@@ -658,6 +696,8 @@ void GameSession::leave_game() {
     if (item_update_chain_) { chains.remove(item_update_chain_); item_update_chain_ = nullptr; }
     if (item_draw_chain_) { chains.remove(item_draw_chain_); item_draw_chain_ = nullptr; }
     if (item_draw_season_chain_) { chains.remove(item_draw_season_chain_); item_draw_season_chain_ = nullptr; }
+    if (laser_update_chain_) { chains.remove(laser_update_chain_); laser_update_chain_ = nullptr; }
+    if (laser_draw_chain_) { chains.remove(laser_draw_chain_); laser_draw_chain_ = nullptr; }
     if (spellcard_update_chain_) { chains.remove(spellcard_update_chain_); spellcard_update_chain_ = nullptr; }
     if (gui_update_chain_) { chains.remove(gui_update_chain_); gui_update_chain_ = nullptr; }
     if (game.gui_live) {

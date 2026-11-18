@@ -69,7 +69,7 @@ enum BulletEx : u32 {
     kExSpawnEnemy = 0x1000000u,  // 0x41aa70 生成敌机（名字取 str）
     kExLayer = 0x2000000u,       // 绘制桶 = a
     kExHide = 0x4000000u,        // 隐身暂停 a 帧
-    kExLaser = 0x8000000u,       // 生成激光（a==0 直线 0x431130 / a==1 曲线 0x431860）
+    kExLaser = 0x8000000u,       // 生成激光（a==0 直线 0x431130 / a==1 照射 0x431860）
     kExHitbox = 0x20000000u,     // 判定 = r（<0 取弹种表）
     kExWait = 0x80000000u,       // 等待 a 帧
 };
@@ -232,10 +232,10 @@ struct Bullet {
     i16 color = 0;              // +0x1476
 };
 
-// Ex 0x8000000 激光生成请求（a==0 直线 0x431130 / a==1 曲线 0x431860）。LaserManager（0x42f440）接入前
-// 记录解析后的参数；原版在 LaserManager 槽满（0x200）时同样跳过生成，只推进 Ex 下标。
+// Ex 0x8000000 激光生成请求（a==0 直线 0x431130 / a==1 照射 0x431860）。弹幕更新链 0x1c 内记录解析后的
+// 参数，同帧由 LaserManager::consume_bullet_requests 消费；原版在槽满（0x200）时同样跳过生成，只推进 Ex 下标。
 struct BulletLaserRequest {
-    i32 kind = 0;              // 0 直线 / 1 曲线
+    i32 kind = 0;              // 0 直线 / 1 照射
     Vec3 pos;                  // 弹当前坐标
     float angle = 0;           // 已解析角度（r ≥ 999990 自机狙）
     float speed = 0;           // 已解析速度（m ≤ -999990 取弹速）
@@ -304,6 +304,8 @@ public:
     // 0x416f40：全屏消弹（状态非 0/3 的全部槽）
     void cancel_all(i32 item_mode);
 
+    // 0x416a00：消弹点的道具转化（item_mode：0 无 / 1 得点 / 4 季节 / 5 炸弹每 3 颗一个……）；激光消弹亦经此
+    void convert_cancel_item(const Vec3& pos, i32 item_mode);
     // 0x443840：from → 自机的角度（重合时 π/2）
     float angle_to_player(const Vec3& from) const noexcept;
     // 0x417140：sprite_mapper 1（ins_300 钩子；vm.owner 为 Bullet*）
@@ -318,7 +320,6 @@ private:
     void run_ex(Bullet& b, float game_speed);           // 0x413860
     int check_player_collision(Bullet& b, bool force_graze, float game_speed); // 0x4124b0
     void start_hit_dissolve(Bullet& b, float game_speed);                     // 0x4124b0 / 0x411e70 状态 5 共用：中断 1 + 消弹特效飞散
-    void convert_cancel_item(const Vec3& pos, i32 item_mode);                 // 0x416a00
     void bind_appearance(Bullet& b, i32 type, i32 color);  // 0x412cb0 / Ex 0x200 共用：VM 重建 + 消弹脚本 + 判定/桶
     const AnmRuntimeSprite* main_sprite(const Bullet& b) const;  // vm_main 当前精灵（出界 / 反弹 / 穿墙尺寸）
     void push_front_active(Bullet& b);

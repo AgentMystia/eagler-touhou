@@ -26,6 +26,7 @@ class AnmManager;
 class AnmRenderer;
 struct AnmFile;
 class BulletManager;
+class LaserManager;
 class EffectManager;
 class EnemyManager;
 class ItemManager;
@@ -184,6 +185,7 @@ public:
     ItemManager* items = nullptr;                      // DAT_004a6ddc（被弹后 0x430960 散出火力 / 得点道具）
     EffectManager* effects = nullptr;                  // DAT_004a6db8（被弹特效 0x1c 登记入 id 表）
     BulletManager* bullet_manager = nullptr;           // DAT_004a6dac（入场态 0x416d20 半径 640 消弹）
+    LaserManager* laser_manager = nullptr;             // DAT_004a6ee0（入场态 0x431a70 切断 / 决死态 0x431af0 全灭）
     float* global_game_speed = nullptr;                // DAT_004a5788（复活时置回 1.0）
 
     // 0x441c60 + 0x440fb0：资源已由调用方装入；返回 false 表示 .sht 缺失

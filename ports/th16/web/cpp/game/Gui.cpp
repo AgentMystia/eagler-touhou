@@ -9,6 +9,7 @@
 #include "Enemy.hpp"
 #include "GameGlobals.hpp"
 #include "Input.hpp"
+#include "Laser.hpp"
 #include "Player.hpp"
 #include "StageTable.hpp"
 
@@ -204,8 +205,9 @@ void Gui::create_dialogue(i32 entry_index, const u8* script) {
         if (AnmVm* vm = find_or_clear(id)) vm->flags_hi |= 0x1000u;
     for (u32& id : m.text_vms)
         if (AnmVm* vm = find_or_clear(id)) vm->draw_callback = 5;
-    // 0x416f40 全屏消弹（不转道具）、激光全灭（LaserManager 接入时补）、0x41d900 敌机全灭
+    // 0x416f40 全屏消弹（不转道具）、0x431af0 激光全灭、0x41d900 敌机全灭
     if (bullets != nullptr) bullets->cancel_all(0);
+    if (lasers != nullptr) lasers->cancel_all(false);
     if (enemies != nullptr) enemies->kill_all(0, nullptr);
     m.flags &= ~Msg::kShotPressed;
     m.text_pos = Vec3{384.0f, 640.0f, 0.0f};

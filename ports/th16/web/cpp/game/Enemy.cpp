@@ -7,6 +7,7 @@
 #include "Effect.hpp"
 #include "Gui.hpp"
 #include "Item.hpp"
+#include "Laser.hpp"
 #include "Spellcard.hpp"
 #include "GameGlobals.hpp"
 #include "Player.hpp"
@@ -89,7 +90,33 @@ inline void sync_motion_center(MotionState& m, float game_speed) noexcept {
     if ((m.mode & 0xf) == 4) m.pos2 = m.pos;
     m.integrate(game_speed);
 }
+
+// EtShooter+0x340 激光参数区（ECL 700 / 701 写入；702 / 703 / 711 / 713 读取）
+struct ShooterLaserParams {
+    float width = 0;       // +0x340（ECL 700 第 4 浮点）
+    float unused[3]{};     // +0x344..0x34c
+    i32 telegraph = 0;     // +0x350（ECL 701：预警帧 / 曲线激光采样点数）
+    i32 expand = 0;        // +0x354
+    i32 active = 0;        // +0x358
+    i32 shrink = 0;        // +0x35c
+    u32 flags = 0;         // +0x360（并入激光 flags）
+};
+static_assert(sizeof(ShooterLaserParams) == sizeof(EtShooter::extra), "激光参数区为 0x24 字节");
+
+ShooterLaserParams laser_params(const EtShooter& s) noexcept {
+    ShooterLaserParams p;
+    std::memcpy(&p, s.extra, sizeof p);
+    return p;
+}
+void store_laser_params(EtShooter& s, const ShooterLaserParams& p) noexcept { std::memcpy(s.extra, &p, sizeof p); }
 }  // namespace
+
+// ECL 601 / 702 / 703 / 711 / 713 共用：发射器的实际发射坐标（ECL 628 绝对坐标优先，否则敌机坐标 + 偏移）
+Vec3 Enemy::shooter_origin(int slot) const noexcept {
+    const Vec3& off = shooter_offset[slot];
+    if (shooter_pos2[slot].z > 0.9f) return {shooter_pos2[slot].x + off.x, off.y + shooter_pos2[slot].y, 0.0f};
+    return {off.x + pos.x, off.y + pos.y, off.z + pos.z};
+}
 
 const char* Enemy::routine_name() const noexcept {
     if (!program || primary.routine < 0 || u32(primary.routine) >= program->definitions.size()) return nullptr;
@@ -1190,6 +1217,7 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             if (manager && manager->gui) {
                 if (!manager->gui->start_dialogue(entry)) { error = manager->gui->error; return -2; }
                 if (manager->bullets) manager->bullets->cancel_all(0);
+                if (manager->lasers) manager->lasers->cancel_all(false);
                 manager->kill_all(0, nullptr);
             }
             return 0;
@@ -1856,12 +1884,7 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             const i32 slot = iarg(0);
             if (slot < 0 || slot >= kShooterSlots || !bullets) return 0;
             EtShooter& s = shooters[slot];
-            const Vec3& off = shooter_offset[slot];
-            if (shooter_pos2[slot].z > 0.9f) {
-                s.pos = {shooter_pos2[slot].x + off.x, off.y + shooter_pos2[slot].y, 0.0f};
-            } else {
-                s.pos = {off.x + pos.x, off.y + pos.y, off.z + pos.z};
-            }
+            s.pos = shooter_origin(slot);
             bullets->safe_radius_sq = safe_radius_sq;
             bullets->shoot(s);
             bullets->safe_radius_sq = 0;
@@ -1942,7 +1965,7 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
         }
         case 613:  // 0x421655：全屏消弹（0x416f40 的 fastcall 参数为残留的操作码 613，仅计数）+ 0x431af0(1) 道具吸引
             if (bullets) bullets->cancel_all(613);
-            // 0x431af0(1)：ItemManager 接入时补
+            if (manager && manager->lasers) manager->lasers->cancel_all(true);  // 0x431af0(1)
             return 0;
         case 614: {  // 0x420925：复制发射器（含偏移与绝对坐标，不含 Ex 计数）
             const i32 dst = iarg(0), src = iarg(1);
@@ -1956,7 +1979,7 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             const float radius = farg(0);
             const bool items = (opcode == 615 || opcode == 635);
             if (bullets) bullets->cancel_radius(pos, radius, items ? 1 : 0, opcode >= 635);
-            // 0x431a70(pos, items, 1)：ItemManager 接入时补
+            if (manager && manager->lasers) manager->lasers->cancel_radius(pos, radius, items, true);  // 0x431a70
             return 0;
         }
         case 617: {  // 0x420ded：按秩三档选速度
@@ -2100,6 +2123,172 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             // 629 消弹光环特效（0x418c70）、630 STD 标签跳转、631 EnemyManager 标志、632–634/637/639 敌机回调表、
             // 638 得分飘字：分别随 Effect / Stage / Gui 子系统接入
             return 0;
+        // —— 激光 700..714（0x41dcb0 case 0x99..0xa7）：复用发射器槽的弹种 / 颜色 / 角度 / 速度 / Ex，
+        //    长度与时序参数放在发射器 +0x340 参数区与 pos 字段 ——
+        case 700: {  // case 0x99：激光长度参数（初始长 / 目标长 / 最大行程 / 宽度）
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            EtShooter& s = shooters[slot];
+            s.pos = {farg(1), farg(2), farg(3)};
+            ShooterLaserParams p = laser_params(s);
+            p.width = farg(4);
+            store_laser_params(s, p);
+            return 0;
+        }
+        case 701: {  // case 0x9a：照射激光时序（预警 / 展开 / 维持 / 收束）与标志；曲线激光借 telegraph 作采样点数
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots) return 0;
+            ShooterLaserParams p = laser_params(shooters[slot]);
+            p.telegraph = iarg(1);
+            p.expand = iarg(2);
+            p.active = iarg(3);
+            p.shrink = iarg(4);
+            p.flags = u32(iarg(5));
+            store_laser_params(shooters[slot], p);
+            return 0;
+        }
+        case 702: {  // case 0x9b：发射直线激光（0x431130）
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots || !manager || !manager->lasers) return 0;
+            const EtShooter& s = shooters[slot];
+            const ShooterLaserParams p = laser_params(s);
+            LineLaserArgs args;
+            std::memcpy(args.ex, s.ex, sizeof args.ex);
+            args.origin = shooter_origin(slot);
+            args.type = s.type;
+            args.color = s.color;
+            args.angle = wrap_angle(s.angle1);
+            args.flags = p.flags | 0x1u;
+            args.speed = s.speed1;
+            args.initial_length = s.pos.x;
+            args.target_length = s.pos.y;
+            args.max_extent = s.pos.z;
+            args.width = p.width;
+            args.spawn_sfx = s.shoot_sfx;
+            args.step_sfx = s.step_sfx;
+            args.start_offset = s.distance;
+            args.start_ex = 0;
+            manager->lasers->spawn_line(args);
+            return 0;
+        }
+        case 703: {  // case 0x9c：发射照射激光（0x431860），第 2 参数为 ECL 侧句柄
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots || !manager || !manager->lasers) return 0;
+            const EtShooter& s = shooters[slot];
+            const ShooterLaserParams p = laser_params(s);
+            InfiniteLaserArgs args;
+            std::memcpy(args.ex, s.ex, sizeof args.ex);
+            args.origin = shooter_origin(slot);
+            args.type = s.type;
+            args.color = s.color;
+            args.angle = wrap_angle(s.angle1);
+            args.telegraph_time = p.telegraph;
+            args.expand_time = p.expand;
+            args.active_time = p.active;
+            args.shrink_time = p.shrink;
+            args.speed = s.speed1;
+            args.initial_length = s.pos.x;
+            args.target_length = s.pos.y;
+            args.width = p.width;
+            args.flags = p.flags | 0x2u;
+            args.spawn_sfx = s.shoot_sfx;
+            args.step_sfx = s.step_sfx;
+            args.start_offset = s.distance;
+            args.handle = iarg(1);
+            manager->lasers->spawn_infinite(args);
+            return 0;
+        }
+        case 704: {  // case 0x9d：按句柄改激光起点
+            if (!manager || !manager->lasers) return 0;
+            if (Laser* l = manager->lasers->find_by_id(iarg(0))) l->pos = {farg(1), farg(2), 0.0f};
+            return 0;
+        }
+        case 705: {  // case 0x9e：写参数包 +0x0c 起 3 个 float——照射激光为起点平移速度
+            if (!manager || !manager->lasers) return 0;
+            Laser* l = manager->lasers->find_by_id(iarg(0));
+            if (l == nullptr) return 0;
+            switch (l->kind) {
+                case LaserKind::Infinite: l->infinite.velocity = {farg(1), farg(2), 0.0f}; break;
+                // 其它子类同偏移落在无关字段上（直线：角度 / 目标长 / 初始长；曲线：角度 / 宽 / 速）；本作 ECL 只对照射激光使用
+                case LaserKind::Line:
+                    l->line.angle = farg(1); l->line.target_length = farg(2); l->line.initial_length = 0.0f; break;
+                case LaserKind::Curve:
+                    l->curve.angle = farg(1); l->curve.width = farg(2); l->curve.speed = 0.0f; break;
+                case LaserKind::Beam: break;
+            }
+            return 0;
+        }
+        case 706: {  // case 0x9f：按句柄改速度
+            if (!manager || !manager->lasers) return 0;
+            if (Laser* l = manager->lasers->find_by_id(iarg(0))) l->speed = farg(1);
+            return 0;
+        }
+        case 707: {  // case 0xa0：按句柄改宽度
+            if (!manager || !manager->lasers) return 0;
+            if (Laser* l = manager->lasers->find_by_id(iarg(0))) l->width = farg(1);
+            return 0;
+        }
+        case 708: {  // case 0xa1：按句柄改朝向角
+            if (!manager || !manager->lasers) return 0;
+            if (Laser* l = manager->lasers->find_by_id(iarg(0))) l->angle = farg(1);
+            return 0;
+        }
+        case 709: {  // case 0xa2：写参数包 +0x1c——照射激光为角速度（直线激光同偏移为宽度）
+            if (!manager || !manager->lasers) return 0;
+            Laser* l = manager->lasers->find_by_id(iarg(0));
+            if (l == nullptr) return 0;
+            if (l->kind == LaserKind::Infinite) l->infinite.angular_vel = farg(1);
+            else if (l->kind == LaserKind::Line) l->line.width = farg(1);
+            return 0;
+        }
+        case 710:  // case 0xa3：按句柄终止全部同句柄激光（不转道具）并清句柄
+            if (manager && manager->lasers) manager->lasers->cancel_handle(iarg(0));
+            return 0;
+        case 711: {  // case 0xa4：发射曲线激光（0x431900）；采样点数借用 701 的预警参数
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots || !manager || !manager->lasers) return 0;
+            const EtShooter& s = shooters[slot];
+            const ShooterLaserParams p = laser_params(s);
+            CurveLaserArgs args;
+            std::memcpy(args.ex, s.ex, sizeof args.ex);
+            args.origin = shooter_origin(slot);
+            args.type = s.type;
+            args.color = s.color;
+            args.angle = wrap_angle(s.angle1);
+            args.node_count = p.telegraph;
+            args.flags |= 0x1u;
+            args.spawn_sfx = s.shoot_sfx;
+            args.step_sfx = s.step_sfx;
+            args.speed = s.speed1;
+            args.width = p.width;
+            args.start_offset = s.distance;
+            manager->lasers->spawn_curve(args);
+            return 0;
+        }
+        case 713: {  // case 0xa6：发射占位激光（0x4318c0；本作 ECL 未使用）
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kShooterSlots || !manager || !manager->lasers) return 0;
+            const EtShooter& s = shooters[slot];
+            const ShooterLaserParams p = laser_params(s);
+            BeamLaserArgs args;
+            std::memcpy(args.ex, s.ex, sizeof args.ex);
+            args.origin = shooter_origin(slot);
+            args.color = s.color;
+            args.handle = iarg(1);
+            args.angle = wrap_angle(s.angle1);
+            args.node_count = p.telegraph;
+            args.width = p.width;
+            args.length = s.pos.z;
+            args.start_offset = s.distance;
+            manager->lasers->spawn_beam(args);
+            return 0;
+        }
+        case 714: {  // case 0xa7：0x431310 写 +0x60c bit0（占位激光参数包 flags；对非占位激光落在 Ex 区，本作未使用）
+            if (!manager || !manager->lasers) return 0;
+            Laser* l = manager->lasers->find_by_id(iarg(0));
+            if (l != nullptr && l->kind == LaserKind::Beam) l->beam.flags = (l->beam.flags & ~0x1u) | (u32(iarg(1)) & 0x1u);
+            return 0;
+        }
         case 535: {
             i32 vals[4]{iarg(1), iarg(2), iarg(3), iarg(4)};
             i32* dst = ctx.integer_destination(0);
@@ -2171,7 +2360,8 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             if (file && manager->animations) manager->animations->spawn_effect(*file, death_script, 3, pos, angle);
             return 0;
         }
-        case 545:
+        case 545:  // case 0x56：0x4319e0 全部激光清出界豁免与免疫后带道具消弹
+            if (manager && manager->lasers) manager->lasers->cancel_all_ignoring_immunity();
             return 0;
         default:
             // 未识别操作码：先空操作以免整条 ECL 链因后续关卡指令中断；oracle 对拍时再逐个补全
