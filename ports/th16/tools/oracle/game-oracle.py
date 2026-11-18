@@ -130,6 +130,7 @@ class GameOracle(Oracle):
         self.replaced[0x471BD0] = (0, lambda o: None)                                    # BGM 播放位置回绕（DAT_004df470 在 oracle 中为空；0x43f350 续关画面）
         self.replaced[0x471C90] = (0, lambda o: None)                                    # BGM 缓冲重填（同上为空；0x42d7b0 换关 / 0x43f980 续关恢复）
         self.replaced[0x449A00] = (0, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0))    # 成绩文件写盘（0x42d200 换关 / 退出；只改成绩缓冲与校验和，无游戏状态副作用）
+        self.replaced[0x47A09E] = (0, self.on_time64)                                    # CRT __time64（0x43e250 入榜记录时刻；CRT 内部经 DecodePointer 取时钟，oracle 无此环境）
         self.replaced[0x47BCEC] = (0, self.on_malloc)                                    # __malloc_base
         self.replaced[0x47BD3A] = (0, self.on_calloc)                                    # __calloc_base
         self.replaced[0x483CB9] = (0, self.on_realloc)                                   # __realloc_base
@@ -186,6 +187,14 @@ class GameOracle(Oracle):
             if self.debug:
                 print('trace: ' + ' '.join('%#x' % a for a in self.trace[-24:]), file=sys.stderr)
             raise RuntimeError('call %#x did not return: eip=%#x errors=%s' % (fn, eip, self.errors))
+
+    def on_time64(self, o):
+        # __time64(time_t* out) cdecl：固定返回 0（移植版 insert_rank 也传 0；宿主时钟在会话层注入），结果写入 out 与 EDX:EAX
+        out = self.arg(0)
+        if out != 0:
+            self.uc.mem_write(out, b'\0' * 8)
+        self.uc.reg_write(UC_X86_REG_EAX, 0)
+        self.uc.reg_write(UC_X86_REG_EDX, 0)
 
     def on_vsprintf(self, o):
         # __stdio_common_vsprintf(options u64, buf, count, fmt, locale, va_list) cdecl → 写入 buf，返回长度
