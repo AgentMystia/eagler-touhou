@@ -407,6 +407,10 @@ void StageManager::update(AnmManager& manager, float game_speed, const Rng*) {
         if (up_interp.end_time != 0) camera.up = step_interp_vec3(up_interp, game_speed);
         if (rocking_mode != 0) apply_rocking(game_speed);
     }
+    camera_global = camera;  // DAT_004c168c ← this+0x1ec（0x4b dword）
+    // 该副本的 dword 0x41 即 DAT_004c1790：AnmVm 末尾（flags & 0x8000）把它累加到 entity_offset，
+    // 使关卡脚本瞬移相机（如背景循环）时跟随相机的 VM 同步位移
+    manager.entity_offset_delta = camera.pos_delta;
     for (AnmVm& vm : layer_vms) manager.run(vm);
     ++frame;
 }

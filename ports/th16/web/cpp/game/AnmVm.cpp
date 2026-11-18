@@ -359,8 +359,13 @@ struct AnmInterpreter {
         case 10013: return vm.pos.x;
         case 10014: return vm.pos.y;
         case 10015: return vm.pos.z;
-        case 10016: case 10017: case 10018: return 0.0f;  // DAT_004c16c8+DAT_004c168c 等相机量（待相机子系统）
-        case 10019: case 10020: case 10021: return 0.0f;  // DAT_004c16b0..b8
+        case 10016: case 10017: case 10018: {  // DAT_004c16c8 + DAT_004c168c：相机 pos_offset + pos
+            if (m.camera_pos == nullptr || m.camera_pos_offset == nullptr) return 0.0f;
+            const int k = i32(raw) - 10016;
+            return (&m.camera_pos_offset->x)[k] + (&m.camera_pos->x)[k];
+        }
+        case 10019: case 10020: case 10021:  // DAT_004c16b0..b8：相机 facing_norm
+            return m.camera_facing_norm != nullptr ? (&m.camera_facing_norm->x)[i32(raw) - 10019] : 0.0f;
         case 10022: return m.game_rng.next_unsigned_float();
         case 10023: return vm.rotation.x;
         case 10024: return vm.rotation.y;

@@ -269,6 +269,9 @@ bool GameSession::enter_game() {
     game.stage.anm = animations.load(slot, *stage_anm);
     if (game.stage.anm == nullptr) { failure = "stage anm load failed"; return false; }
     game.stage_live = true;
+    animations.camera_pos = &game.stage.camera_global.pos;
+    animations.camera_pos_offset = &game.stage.camera_global.pos_offset;
+    animations.camera_facing_norm = &game.stage.camera_global.facing_norm;
 
     // 0x411dd0：BulletManager（bullet.anm 槽 7、effect.anm 槽 8）；更新链 0x1c（0x411880）、绘制链 0x25（0x411a30）
     {
@@ -463,6 +466,7 @@ void GameSession::leave_game() {
     for (ChainEntry* shake : shake_chains_) chains.remove(shake);
     shake_chains_.clear();
     screen_shake = ScreenShakeOffset{};
+    animations.camera_pos = animations.camera_pos_offset = animations.camera_facing_norm = nullptr;
     if (replay_record_chain_) { chains.remove(replay_record_chain_); replay_record_chain_ = nullptr; }
     if (player_update_chain_) { chains.remove(player_update_chain_); player_update_chain_ = nullptr; }
     if (player_draw_chain_) { chains.remove(player_draw_chain_); player_draw_chain_ = nullptr; }
