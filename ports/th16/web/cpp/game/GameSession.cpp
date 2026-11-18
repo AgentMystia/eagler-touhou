@@ -7,6 +7,14 @@
 
 namespace th16 {
 
+GameSession::GameSession() {
+    // 0x43ba40：Supervisor 十条合成绘制链；0x46a3a0：AnmManager 各层绘制链。都在进程启动时登记、常驻
+    compositor.screen_shake = &screen_shake;
+    compositor.init_cameras(geometry.window_scale);
+    compositor.register_draw_chains(chains, renderer);
+    register_layer_draw_chains();
+}
+
 bool GameSession::open(const u8* bytes, u32 size) {
     if (!archive_.open(bytes, size)) { failure = archive_.error; return false; }
     return true;
@@ -57,6 +65,8 @@ bool GameSession::load_boot_banks() {
         if (!load_anm(bank.name, res)) return false;
         if (animations.load(bank.slot, *res) == nullptr) { failure = std::string(bank.name) + " load failed"; return false; }
     }
+    // 0x43d970：text.anm 装好后取两张 '@R' 渲染目标，并建四个画面合成 VM
+    compositor.create(animations, *animations.file(ScreenCompositor::kTextSlot));
     // 0x418a30：EffectManager 持 effect.anm / bullet.anm，并把 VM 回调（充能环等）挂到 AnmManager
     effects.create(animations, animations.file(8), animations.file(7));
     effect_update_chain_ = chains.create([this]() -> ChainResult {
@@ -287,17 +297,46 @@ bool GameSession::create_stage() {
     stage->anm = (loaded != nullptr && loaded->resource == stage_anm) ? loaded : animations.load(slot, *stage_anm);
     if (stage->anm == nullptr) { failure = "stage anm load failed"; return false; }
     stage->camera_global = &stage_camera;
+    stage->screen_clear_color = &compositor.background_color;
+    stage->on_screen_fade = [this](i32 kind, i32 duration, u32 color) { create_screen_fade(kind, duration, color); };
     game.stage = std::move(stage);
     game.stage_live = true;
     game.enemies.stage = game.stage.get();
     animations.camera_pos = &stage_camera.pos;
     animations.camera_pos_offset = &stage_camera.pos_offset;
     animations.camera_facing_norm = &stage_camera.facing_norm;
-    stage_update_chain_ = chains.create([this]() -> ChainResult {
-        if (game.stage) game.stage->update(animations, supervisor.game_speed);
+    register_stage_chains(*game.stage);
+    return true;
+}
+
+void GameSession::register_stage_chains(StageManager& stage) {
+    // 0x4097c0：更新链 0x11 与绘制链 3 / 6 建为禁用，0x40add0（on_stage_started）启用。关卡对象由 unique_ptr 持有，
+    // 摘链总在析构之前（remove_stage_chains），回调持裸指针即可
+    StageManager* target = &stage;
+    stage.update_chain = chains.create([this, target]() -> ChainResult {
+        target->update(animations, supervisor.game_speed);
         return ChainResult::Continue;
     }, 0x11, true);
-    return true;
+    stage.background_draw_chain = chains.create([this, target]() -> ChainResult {
+        target->draw_background(animations, renderer, stage_camera, screen_shake);
+        return ChainResult::Continue;
+    }, 3, false);
+    stage.foreground_draw_chain = chains.create([this, target]() -> ChainResult {
+        target->draw_foreground(animations, renderer, stage_camera, screen_shake, supervisor.game_speed);
+        return ChainResult::Continue;
+    }, 6, false);
+}
+
+void GameSession::remove_stage_chains(StageManager& stage) {
+    for (ChainEntry** entry : {&stage.update_chain, &stage.background_draw_chain, &stage.foreground_draw_chain}) {
+        if (*entry != nullptr) chains.remove(*entry);
+        *entry = nullptr;
+    }
+}
+
+void GameSession::enable_stage_chains(StageManager& stage) {
+    for (ChainEntry* entry : {stage.update_chain, stage.background_draw_chain, stage.foreground_draw_chain})
+        if (entry != nullptr) chains.enable(entry);
 }
 
 void GameSession::unload_stage_anm(StageManager& stage) {
@@ -418,9 +457,10 @@ void GameSession::register_game_chains() {
     game.game_input = &game_input;
     game.on_screen_fade = [this](i32 kind, i32 duration, u32 color) { create_screen_fade(kind, duration, color); };
     game.on_return_to_title = [this]() { if (menu_live) menu.open_return_to_title(); };
-    game.on_stage_started = [this]() { if (stage_update_chain_) chains.enable(stage_update_chain_); };
+    game.on_frame_advanced = [this]() { compositor.tick(animations); };
+    game.on_stage_started = [this]() { if (game.stage) enable_stage_chains(*game.stage); };
     game.on_previous_stage_destroyed = [this](StageManager& stage) {
-        if (previous_stage_update_chain_) { chains.remove(previous_stage_update_chain_); previous_stage_update_chain_ = nullptr; }
+        remove_stage_chains(stage);
         unload_stage_anm(stage);
     };
 }
@@ -651,19 +691,11 @@ bool GameSession::next_stage() {
     }
     // 上一关若仍存活（连续两次换关）先析构；当前关转入 DAT_004a6d9c，链 0x11 继续运行
     if (game.previous_stage) {
-        if (previous_stage_update_chain_) { chains.remove(previous_stage_update_chain_); previous_stage_update_chain_ = nullptr; }
+        remove_stage_chains(*game.previous_stage);
         unload_stage_anm(*game.previous_stage);
         game.previous_stage.reset();
     }
     game.previous_stage = std::move(game.stage);
-    previous_stage_update_chain_ = stage_update_chain_;
-    stage_update_chain_ = nullptr;
-    if (previous_stage_update_chain_) {
-        previous_stage_update_chain_->callback = [this]() -> ChainResult {
-            if (game.previous_stage) game.previous_stage->update(animations, supervisor.game_speed);
-            return ChainResult::Continue;
-        };
-    }
     // 暂停 / Bullet / Replay 链禁用（0x42dee0 再启用）；0x4184a0 Item 复位
     game.chains_suspended = true;
     if (game.items_live) game.items->reset();
@@ -872,8 +904,8 @@ void GameSession::create_screen_fade(i32 kind, i32 duration, u32 color) {
 void GameSession::leave_game() {
     // 0x42d200：摘链、释放管理器；关卡背景 ANM 槽回收
     if (game_update_chain_) { chains.remove(game_update_chain_); game_update_chain_ = nullptr; }
-    if (stage_update_chain_) { chains.remove(stage_update_chain_); stage_update_chain_ = nullptr; }
-    if (previous_stage_update_chain_) { chains.remove(previous_stage_update_chain_); previous_stage_update_chain_ = nullptr; }
+    for (StageManager* stage : {game.stage.get(), game.previous_stage.get()})
+        if (stage != nullptr) remove_stage_chains(*stage);
     if (enemy_update_chain_) { chains.remove(enemy_update_chain_); enemy_update_chain_ = nullptr; }
     if (bullet_update_chain_) { chains.remove(bullet_update_chain_); bullet_update_chain_ = nullptr; }
     if (bullet_draw_chain_) { chains.remove(bullet_draw_chain_); bullet_draw_chain_ = nullptr; }
@@ -939,6 +971,8 @@ void GameSession::leave_game() {
     }
     game.loading_vm = loading_vm;
     game_live = false;
+    // 0x42d200 末：场地清屏色回到黑；同一关快速重开（bit0）时清成全透明黑，让上一帧画面留到重开完成
+    compositor.background_color = (globals.flags & 1u) != 0 ? 0u : 0xff000000u;
 }
 
 // 0x43e5a0（0x4314a0 之后、0x41b340 之前）：新开局建 GameMenu 并登记更新链 10；换关（next_stage）沿用同一对象
@@ -1026,20 +1060,98 @@ bool GameSession::logic_step() {
     }
 
     // 启动幕：绘制链推进 boot_frames；标题线程等待条件（0x44abea / 0x44ac00）
-    if (!supervisor.title_menu_live) {
-        if (run_draw_chains) chains.run_draw();
-        if (supervisor.title_assets_ready && supervisor.boot_hold_elapsed()) {
-            if (!activate_title_menu()) return false;
-        }
-    }
-
     chains.run_update();
-    // 0x40a410（绘制链 6）尾部的结束计时倒数影响逻辑状态，不跑绘制链时也要执行：上一关（先登记）在前
-    if (game_live) {
-        if (game.previous_stage) game.previous_stage->end_timer_step(supervisor.game_speed);
-        if (game.stage) game.stage->end_timer_step(supervisor.game_speed);
+    // 0x45a8a0：更新链之后 BeginScene → 绘制链 → EndScene
+    if (run_draw_chains) draw_frame();
+    // 标题线程（0x44abea / 0x44ac00）在帧间醒来：启动幕绘制链把 +0x638 数到 0xb4 后装 title*.anm 并登记更新链，
+    // 该链从下一帧的更新起运行
+    if (!supervisor.title_menu_live && !game_live && supervisor.title_assets_ready && supervisor.boot_hold_elapsed()) {
+        if (!activate_title_menu()) return false;
+    }
+    // 不跑绘制链时补上关卡绘制链（3：0x409f90 淡入逻辑；6：0x40a410 结束计时）里改动逻辑状态的部分。
+    // 顺序同绘制链：两关的 3 号（上一关先登记）在前，再两关的 6 号；链未启用（0x40add0 之前）的关卡跳过
+    if (game_live && !run_draw_chains) {
+        StageManager* stages[2] = {game.previous_stage.get(), game.stage.get()};
+        for (StageManager* stage : stages)
+            if (stage != nullptr && stage->background_draw_chain != nullptr &&
+                (stage->background_draw_chain->flags & ChainManager::kFlagEnabled) != 0)
+                stage->transition_step();
+        for (StageManager* stage : stages)
+            if (stage != nullptr && stage->foreground_draw_chain != nullptr &&
+                (stage->foreground_draw_chain->flags & ChainManager::kFlagEnabled) != 0)
+                stage->end_timer_step(supervisor.game_speed);
     }
     return failure.empty();
+}
+
+void GameSession::draw_frame() {
+    // 0x45a8a0：更新链之前出批并切 UI 相机；绘制前丢弃残批、雾缓存置未知后关雾；绘制后出批、解绑纹理
+    renderer.use_camera(compositor.ui_camera);
+    renderer.begin_frame();
+    chains.run_draw();
+    renderer.end_frame();
+}
+
+void GameSession::register_layer_draw_chains() {
+    // 0x46a3a0：AnmManager 构造时按优先级登记的层绘制链。多数只是 0x46e750(层)；带相机的几条见 ScreenCompositor。
+    struct LayerNode { i32 priority; i32 layer; };
+    static constexpr LayerNode kPlainLayers[] = {
+        {0x05, 0x00}, {0x07, 0x01}, {0x09, 0x02}, {0x0b, 0x04}, {0x0d, 0x05}, {0x10, 0x06}, {0x12, 0x07},
+        {0x14, 0x08}, {0x15, 0x09}, {0x16, 0x0a}, {0x18, 0x0b}, {0x1b, 0x0c}, {0x1c, 0x0d}, {0x1f, 0x0e},
+        {0x20, 0x0f}, {0x22, 0x10}, {0x24, 0x11}, {0x27, 0x12}, {0x2a, 0x13}, {0x2e, 0x15}, {0x34, 0x16},
+        {0x36, 0x17}, {0x3b, 0x19}, {0x3c, 0x25}, {0x3d, 0x1a}, {0x3e, 0x1b}, {0x3f, 0x26}, {0x4d, 0x1d},
+        {0x4e, 0x28}, {0x4f, 0x1e}, {0x50, 0x29}, {0x52, 0x1f}, {0x53, 0x2a},
+    };
+    for (const LayerNode& node : kPlainLayers) {
+        chains.enable(chains.create([this, layer = node.layer]() {
+            renderer.draw_layer(layer);   // 0x46dd90 族
+            return ChainResult::Continue;
+        }, node.priority, false));
+    }
+    // 0x46ddd0（优先级 10）：渲染目标相机复位到正对视口中心并切换、关雾，画层 3
+    chains.enable(chains.create([this]() {
+        stage_camera.reset_to_viewport_center();
+        renderer.use_camera(stage_camera);
+        renderer.set_fog(false);
+        renderer.draw_layer(3);
+        return ChainResult::Continue;
+    }, 0x0a, false));
+    // 0x46e030（优先级 0x2d）：宽场地相机（抖动偏移 DAT_004c1530）、关 Z 写、ZFUNC ALWAYS，画层 0x14
+    chains.enable(chains.create([this]() {
+        compositor.wide_field_camera.shift_x = screen_shake.offset_scaled.x;
+        compositor.wide_field_camera.shift_y = screen_shake.offset_scaled.y;
+        renderer.use_camera(compositor.wide_field_camera);
+        renderer.set_depth_write(false);
+        renderer.set_depth_compare(touhou::graphics::Compare::Always);
+        renderer.draw_layer(0x14);
+        return ChainResult::Continue;
+    }, 0x2d, false));
+    // 0x46e0d0（优先级 0x3a）：UI 相机、关 Z 写、ZFUNC ALWAYS、绘制偏移清零，画层 0x18
+    chains.enable(chains.create([this]() {
+        renderer.use_camera(compositor.ui_camera);
+        renderer.set_depth_write(false);
+        renderer.set_depth_compare(touhou::graphics::Compare::Always);
+        renderer.set_draw_offset(0.0f, 0.0f);
+        renderer.draw_layer(0x18);
+        return ChainResult::Continue;
+    }, 0x3a, false));
+    // 0x46e210（优先级 0x37）：UI 相机、关 Z 写、ZFUNC ALWAYS，画层 0x24
+    chains.enable(chains.create([this]() {
+        renderer.use_camera(compositor.ui_camera);
+        renderer.set_depth_write(false);
+        renderer.set_depth_compare(touhou::graphics::Compare::Always);
+        renderer.draw_layer(0x24);
+        return ChainResult::Continue;
+    }, 0x37, false));
+    // 0x46e180（0x40）/ 0x46e2b0（0x41）：场地相机画层 0x1c / 0x27，再切回 UI 相机
+    for (const LayerNode& node : {LayerNode{0x40, 0x1c}, LayerNode{0x41, 0x27}}) {
+        chains.enable(chains.create([this, layer = node.layer]() {
+            renderer.use_camera(compositor.field_camera);
+            renderer.draw_layer(layer);
+            renderer.use_camera(compositor.ui_camera);
+            return ChainResult::Continue;
+        }, node.priority, false));
+    }
 }
 
 }  // namespace th16

@@ -107,7 +107,7 @@ bool GameManager::update(AnmManager& manager, GameGlobals& globals, float game_s
             transition_frame = 0;
         }
     }
-    // 0x45f980 ×4：Supervisor 的 4 个 text.anm VM（DAT_004c128c..98）推进：渲染阶段补
+    if (on_frame_advanced) on_frame_advanced();   // 0x45f980 ×4：画面合成 VM
     ++globals.game_frame;
     ++globals.stage_frame;
     if (globals.post_load_frames != 0) --globals.post_load_frames;
