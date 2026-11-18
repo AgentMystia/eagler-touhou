@@ -58,7 +58,7 @@ bool StageManager::load(const u8* bytes, u32 size, i32 stage) {
     camera.pos = {0, 0, -600.0f};
     camera.facing = {0, 300.0f, 600.0f};
     camera.up = {0, 1.0f, 0};
-    distortion_radius_sq = 9610000.0f;  // +0x331c = 0x4b12a310（3100²）
+    cull_distance_sq = 9610000.0f;  // +0x331c = 0x4b12a310（3100²）
     flags = 1;
     timer.reset();
     ins_index = 0;
@@ -255,6 +255,7 @@ void StageManager::run_script(AnmManager& manager, float game_speed) {
             break;
         case 13:
             bg_color = u32(ins.arg_i(0));
+            if (screen_clear_color != nullptr) *screen_clear_color = bg_color;
             break;
         case 14: {
             const i32 idx = ins.arg_i(0);
@@ -289,7 +290,7 @@ void StageManager::run_script(AnmManager& manager, float game_speed) {
             interrupt(manager, ins.arg_i(0) + 7);
             break;
         case 20:
-            distortion_radius_sq = float(ins.arg_i(0)) * float(ins.arg_i(0));
+            cull_distance_sq = float(ins.arg_i(0)) * float(ins.arg_i(0));   // 绘制距离：0x40a7d0 据此剔除远处实例
             break;
         default:
             break;
@@ -416,20 +417,6 @@ void StageManager::update(AnmManager& manager, float game_speed, const Rng*) {
     ++frame;
 }
 
-void StageManager::end_timer_step(float game_speed) {
-    // 0x40a410 尾部
-    if ((flags & 8) != 0) return;
-    if ((flags & 4) != 0 && end_timer.current > 0x1d) tint &= 0x00ffffffu;
-    if (end_timer.current > 0) {
-        end_timer.untick(game_speed);
-        if (end_timer.current < 1) {
-            if ((flags & 2) != 0) flags |= 8;
-            flags &= ~6u;
-            tint = 0x00ffffffu;  // 先写 +0x3353 = 0xff，再整字写 0xffffff
-        }
-    }
-}
-
 void StageManager::begin_end(i32 frames, u32 flag) {
     // 0x40c0d0 / 0x40c210：Timer::set(frames)（previous = frames - 1）后置位
     end_timer.set(frames);
@@ -462,20 +449,214 @@ void StageManager::interrupt(AnmManager& manager, i32 value) {
     }
 }
 
-void StageManager::draw_layer(int layer, const DrawVisitor& visit) {
-    // 0x40c280：有精灵且层号匹配的层精灵 VM
+// ---------------------------------------------------------------------------------------------
+// 绘制链
+// ---------------------------------------------------------------------------------------------
+
+namespace {
+
+using touhou::graphics::Compare;
+
+constexpr int kFieldWidth = 384;    // 0x40a7d0：场地矩形 DAT_004d9d38/3c（恒 0）起 384×448
+constexpr int kFieldHeight = 448;
+
+bool draw_enabled_this_frame(u32 flags, i32 end_timer) {
+    // 0x409f90 / 0x40a410 共同入口：bit3 隐藏；bit2（新关淡入）且计时 ≥ 0x3c 时跳过
+    if ((flags & 8u) != 0) return false;
+    return (flags & 4u) == 0 || end_timer < 0x3c;
+}
+
+ScreenRect viewport_rect(const Camera& camera) {
+    const Viewport& vp = camera.viewport;
+    return {vp.x, vp.y, vp.x + vp.width, vp.y + vp.height};
+}
+
+}  // namespace
+
+void StageManager::look_through_stage_camera(AnmRenderer& renderer, Camera& global_camera, const ScreenShakeOffset& shake) {
+    // 抖动偏移 DAT_004c1788/8c → 相机 +0xfc；整个 0x12c 相机抄到 DAT_004c168c；0x43c940 + SetViewport，kind = 3
+    camera.shift_x = shake.offset.x;
+    camera.shift_y = shake.offset.y;
+    global_camera = camera;
+    global_camera.kind = Camera::kRenderTarget;
+    global_camera.look_along_facing();
+    renderer.use_camera(global_camera);
+}
+
+void StageManager::step_fade_in() {
+    // 0x409f90 中段：bit2（新关淡入）下，计时 < 0x1e 时开始白闪（0x1e 帧）、启用绘制并把计时改为 1 ——
+    // 下一帧 0x40a410 尾部就清掉 bit2；在此之前绘制位保持关闭
+    if ((flags & 4u) == 0) return;
+    if (end_timer.current < 0x1e) {
+        if (on_screen_fade) on_screen_fade(3, 0x1e, 0xffffffffu);
+        flags |= 1u;
+        end_timer.set(1);
+    } else {
+        tint &= 0x00ffffffu;
+        flags &= ~1u;
+    }
+}
+
+void StageManager::transition_step() {
+    if ((flags & 8u) != 0) return;
+    step_fade_in();
+    tint &= 0x00ffffffu;   // +0x3353（闪白标志）每帧在绘制时取走
+    drawn_instances = culled_instances = drawn_quads = 0;
+}
+
+void StageManager::end_timer_step(float game_speed) {
+    // 0x40a410 尾部：结束计时倒数（0x40d490），归零时 bit1 → bit3 并清 bit1 / bit2
+    if ((flags & 8u) != 0) return;
+    if ((flags & 4u) != 0 && end_timer.current > 0x1d) tint &= 0x00ffffffu;
+    if (end_timer.current > 0) {
+        end_timer.untick(game_speed);
+        if (end_timer.current < 1) {
+            if ((flags & 2u) != 0) flags |= 8u;
+            flags &= ~6u;
+            tint = 0x00ffffffu;   // 先写 +0x3353 = 0xff，再整字写 0xffffff
+        }
+    }
+}
+
+void StageManager::draw_background(AnmManager& manager, AnmRenderer& renderer, Camera& global_camera, const ScreenShakeOffset& shake) {
+    // 0x409f90
+    if ((flags & 8u) != 0) return;
+    if (renderer.device == nullptr) { transition_step(); return; }
+    if (draw_enabled_this_frame(flags, end_timer.current)) {
+        renderer.flush();
+        look_through_stage_camera(renderer, global_camera, shake);
+        renderer.set_depth_write(true);
+        renderer.set_depth_compare(Compare::LessEqual);
+        renderer.set_fog_parameters(camera.fog.color, camera.fog.near_, camera.fog.far_);
+        // 清场地矩形（渲染目标相机视口）：颜色取雾色；新关淡入且计时 ≤ 0x21 的几帧清成全黑
+        const bool fading_in_black = (flags & 4u) != 0 && end_timer.current <= 0x21;
+        const ScreenRect field = viewport_rect(global_camera);
+        renderer.device->clear(kClearColor | kClearDepth, fading_in_black ? 0u : camera.fog.color, &field);
+    }
+    step_fade_in();
+    if ((tint & 0xff000000u) != 0) {
+        renderer.set_tint(true, tint);   // ECL 闪白：本帧背景顶点色乘以 +0x3350
+        tint &= 0x00ffffffu;
+    }
+    drawn_instances = culled_instances = drawn_quads = 0;
+    if ((flags & 1u) != 0) {
+        renderer.set_fog(true);
+        for (int layer = 0; layer < 8; ++layer) draw_layer(layer, manager, renderer, global_camera, shake);
+        renderer.flush();
+    }
+    renderer.set_tint(false, 0x80808080u);
+    renderer.set_depth_write(false);
+    renderer.flush();
+    renderer.set_depth_compare(Compare::Always);
+}
+
+void StageManager::draw_foreground(AnmManager& manager, AnmRenderer& renderer, Camera& global_camera,
+                                   const ScreenShakeOffset& shake, float game_speed) {
+    // 0x40a410
+    if ((flags & 8u) != 0) return;
+    if (renderer.device == nullptr) { end_timer_step(game_speed); return; }
+    if (draw_enabled_this_frame(flags, end_timer.current)) {
+        renderer.flush();
+        look_through_stage_camera(renderer, global_camera, shake);
+        renderer.set_fog(false);
+        renderer.set_depth_write(false);
+        renderer.set_depth_compare(Compare::Always);
+        renderer.draw_layer(0x20);
+        renderer.set_depth_compare(Compare::LessEqual);
+        renderer.draw_layer(0x21);
+        renderer.set_depth_compare(Compare::LessEqual);
+        renderer.set_fog_parameters(camera.fog.color, camera.fog.near_, camera.fog.far_);
+    }
+    if ((flags & 4u) != 0 && end_timer.current > 0x1d) tint &= 0x00ffffffu;
+    if ((flags & 1u) != 0) {
+        renderer.set_depth_write(false);
+        renderer.set_fog(true);
+        for (int layer = 8; layer < 12; ++layer) draw_layer(layer, manager, renderer, global_camera, shake);
+        renderer.flush();
+    }
+    renderer.set_tint(false, 0x80808080u);
+    end_timer_step(game_speed);
+    renderer.set_depth_write(false);
+    renderer.flush();
+    renderer.set_depth_compare(Compare::Always);
+    renderer.set_fog(false);
+}
+
+void StageManager::draw_layer_sprites(int layer, AnmManager& manager, AnmRenderer& renderer, Camera& global_camera, const ScreenShakeOffset& shake) {
+    // 0x40c280：精灵表可用且层号匹配的层精灵 VM，以全局相机现有矩阵、无雾、Z 关直接画
     for (int i = 0; i < kLayerSprites; ++i) {
         AnmVm& vm = layer_vms[i];
-        if (vm.sprite_index < 0 || layer_ids[i] != layer) continue;
-        visit(vm, true);
+        if (manager.file(vm.file_slot) == nullptr || layer_ids[i] != layer) continue;
+        renderer.flush();
+        global_camera.shift_x = shake.offset.x;
+        global_camera.shift_y = shake.offset.y;
+        renderer.use_camera(global_camera);
+        renderer.set_fog(false);
+        renderer.flush();
+        renderer.set_depth_write(false);
+        renderer.draw_vm(vm);
+        renderer.set_depth_write(true);
+        global_camera.look_along_facing();
+        renderer.use_camera(global_camera);
     }
-    // 0x40af70：逐实例，对象层号匹配者按四边形顺序绘制其面 VM
+}
+
+bool StageManager::instance_visible(const StdObject& object, const Vec3& instance_pos, const Camera& cam) const {
+    const Vec3 eye = cam.eye();
+    const float dx = (object.pos.x + instance_pos.x) - eye.x;
+    const float dy = (object.pos.y + instance_pos.y) - eye.y;
+    const float dz = (object.pos.z + instance_pos.z) - eye.z;
+    if (dy * dy + dx * dx + dz * dz > cull_distance_sq) return false;
+
+    // 包围盒 8 个角 + 中轴线上 8 个点（原版采样顺序）
+    const float cx = object.pos.x, cy = object.pos.y, cz = object.pos.z;
+    const float hx = object.size.x * 0.5f, hy = object.size.y * 0.5f, hz = object.size.z * 0.5f;
+    const float points[16][3] = {
+        {cx + hx, cy + hy, cz + hz}, {cx + hx, cy + hy, cz - hz}, {cx + hx, cy - hy, cz + hz}, {cx + hx, cy - hy, cz - hz},
+        {cx - hx, cy + hy, cz + hz}, {cx - hx, cy + hy, cz - hz}, {cx - hx, cy - hy, cz + hz}, {cx - hx, cy - hy, cz - hz},
+        {cx, cy - hy, cz - hz},      {cx, cy + hy, cz - hz},      {cx, cy - hy, cz + hz},      {cx, cy + hy, cz + hz},
+        {cx, cy - hy, cz},           {cx, cy + hy, cz},           {cx, cy - hy, cz - hz * 0.5f}, {cx, cy + hy, cz + hz * 0.5f},
+    };
+    // D3DXVec3ProjectArray(world = 平移(instance_pos))：只统计视口深度在 [0,1] 内的点
+    float world[16], world_view[16], full[16];
+    matrix::translation(world, instance_pos.x, instance_pos.y, instance_pos.z);
+    matrix::multiply(world_view, world, cam.view);
+    matrix::multiply(full, world_view, cam.projection);
+    const float field_x = 0.0f, field_y = 0.0f;
+    float max_x = field_x - 8.0f, min_x = field_x + float(kFieldWidth) + 8.0f;
+    float max_y = field_y - 8.0f, min_y = field_y + float(kFieldHeight) + 8.0f;
+    for (const float* p : points) {
+        float clip[4];
+        matrix::transform_point(p, full, clip);
+        const float inv = 1.0f / clip[3];
+        const float sx = (1.0f + clip[0] * inv) * float(cam.viewport.width) * 0.5f + float(cam.viewport.x);
+        const float sy = (1.0f - clip[1] * inv) * float(cam.viewport.height) * 0.5f + float(cam.viewport.y);
+        const float sz = clip[2] * inv;
+        if (sz < 0.0f || sz > 1.0f) continue;
+        if (sx > max_x) max_x = sx;
+        if (sx < min_x) min_x = sx;
+        if (sy < min_y) min_y = sy;
+        if (sy > max_y) max_y = sy;
+    }
+    return max_x >= field_x && min_x <= field_x + float(kFieldWidth) && max_y >= field_y && min_y <= field_y + float(kFieldHeight);
+}
+
+void StageManager::draw_layer(int layer, AnmManager& manager, AnmRenderer& renderer, Camera& global_camera, const ScreenShakeOffset& shake) {
+    // 0x40af70
+    draw_layer_sprites(layer, manager, renderer, global_camera, shake);
+    renderer.flush();
+    renderer.set_fog(true);
+    global_camera.look_along_facing();
+    renderer.use_camera(global_camera);
     for (StdInstance& inst : std.instances) {
         StdObject& obj = std.objects[inst.object];
         if (i32(obj.layer) != layer) continue;
+        if (!instance_visible(obj, inst.pos, global_camera)) {
+            ++culled_instances;
+            inst.flags &= ~1u;
+            continue;
+        }
         obj.flags |= 2;
-        inst.flags |= 1;
-        ++drawn_instances;
         for (const StdQuad& q : obj.quads) {
             if (q.type != 0) continue;
             AnmVm& vm = face_vms[size_t(q.vm_index)];
@@ -487,10 +668,17 @@ void StageManager::draw_layer(int layer, const DrawVisitor& visit) {
                     if (q.height != 0.0f) { vm.flags_lo |= AnmVm::kScaleDirty; vm.scale.y = q.height / sp.height; }
                 }
             }
-            visit(vm, false);
+            // 世界四边形（mode 8 / 0xf）带雾，其余不带；Z 写由 VM 的 0x2000 位决定
+            const u32 mode = vm.render_mode();
+            renderer.set_fog(mode == u32(AnmRenderMode::World) || mode == u32(AnmRenderMode::WorldFogToggle));
+            renderer.set_depth_write((vm.flags_lo & AnmVm::kZWriteDisable) == 0);
+            renderer.draw_vm(vm);
             ++drawn_quads;
         }
+        inst.flags |= 1u;
+        ++drawn_instances;
     }
+    renderer.set_depth_write(false);
 }
 
 }  // namespace th16
