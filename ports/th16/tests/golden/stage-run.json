@@ -1,0 +1,29 @@
+{
+  "$comment": "tools/oracle/game-oracle.py 长程无输入整关跑分（--lives 8 避开未移植的 Game Over 流程）；六组 FNV-1a 64 摘要与逐帧检查点均取自原版 th16.exe v1.00a。",
+  "cases": [
+    {
+      "name": "st1-normal-reimu-spring-noinput-4200",
+      "stage": 1, "shot": 0, "season": 0, "difficulty": 1, "replay_slot": -1, "lives": 8,
+      "frames": 4200, "input": "",
+      "digest": "1fb7cc5e34c0cb39",
+      "enemies": "7cbad0f646a9cb24",
+      "enemy_vms": "25a7be00b43c07a8",
+      "bullets": "c15f74180f65c7cc",
+      "items": "37e1b358c7e56b59",
+      "spell": "a4aec250a653be96",
+      "checkpoints": {
+        "418": {"rng": [37614, 84], "game_rng": [41605, 850], "enemy_count": 2, "item_count": 9},
+        "419": {"rng": [37614, 84], "game_rng": [26071, 854]},
+        "1000": {"rng": [11117, 172], "game_rng": [39507, 1220]},
+        "2100": {"rng": [48907, 492], "game_rng": [26636, 15250]},
+        "2103": {"rng": [45010, 496], "enemy_count": 3, "item_count": 30, "season_gauge": 16, "lives": 4},
+        "2446": {"rng": [1552, 12499], "enemy_count": 2, "item_count": 8, "power": 102},
+        "3144": {"rng": [62456, 12516], "enemy_count": 3, "spell_id": 2, "enemy_bonus": [122, 24]},
+        "4061": {"rng": [61992, 12578], "enemy_count": 16, "enemy_bonus": [193, 25], "lives": 0},
+        "4200": {"rng": [36491, 12748], "enemy_count": 13, "item_count": 51, "enemy_bonus": [201, 36], "score": 2333, "graze": 55}
+      },
+      "last_ids": [1, 144, 145, 156, 157, 176, 177, 178, 179, 180, 181, 182, 183],
+      "phantom01": {"frame": 3144, "id": 124, "pos": [-120, 32, 0], "angle_bits": 1075235810}
+    }
+  ]
+}
