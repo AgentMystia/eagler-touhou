@@ -5,6 +5,7 @@
 // 启动幕 0x43adc0/0x43b300/0x43b290；标题 0x44aee0/0x44abc0/0x44ac70/0x44b5f0；
 // 过关换关 0x43ce10 case 0xc → 0x42d780（0x42d200 bit1 路径）→ 0x42d700 + 0x42cb60（DAT_004c17d0 == 0）。
 #pragma once
+#include "AnmGeometry.hpp"
 #include "AnmManager.hpp"
 #include "AnmRenderer.hpp"
 #include "AnmResource.hpp"
@@ -19,6 +20,7 @@
 #include "GameManager.hpp"
 #include "GameMenu.hpp"
 #include "ScoreFile.hpp"
+#include "ScreenCompositor.hpp"
 #include "TitleScene.hpp"
 
 #include <functional>
@@ -58,14 +60,22 @@ public:
     InputState game_input;    // DAT_004a52c8：Replay 记录链（优先级 0x10，0x447fd0）每帧抄 held 低 16 位并做边沿
     // 逻辑侧屏幕几何（DAT_004d9d34 窗口缩放 / DAT_004d9d50,54 场地偏移 / DAT_004d9d48,4c）：自机弹出界判定 0x468c00 用；
     // 原版由 Supervisor 绘制链 0x43b3d0 每帧写为 640/2、(480-448)/2，这里取同值常量
-    AnmRenderer geometry;
+    AnmGeometry geometry;
+    // 绘制侧：AnmManager 绘制族（0x468490）与 Supervisor 画面合成；renderer.device 为空时绘制链只推进状态不出图
+    AnmRenderer renderer{animations, geometry};
+    ScreenCompositor compositor;
+    // 挂上设备后绘制链才真正出图（Application / harness game-draw）；可为空
+    void attach_device(RenderDevice* device) { renderer.device = device; }
     std::vector<i32> sfx_events;       // 本帧 0x45e1f0 音效登记（全部管理器；Sound 接入前供 harness 对拍）
     std::vector<i32> player_sfx_events; // 其中由 Player 代码段（0x440000..0x449000：更新/被弹/擦弹）登记的子集
     bool run_draw_chains = true;  // harness 对拍 oracle（不跑 0x4015a0）时关掉
+    // 0x45a8a0 一帧：更新链 → BeginScene → 绘制链 → 出批 → EndScene；run_draw_chains 为假时跳过绘制链
+    void draw_frame();
     // harness 提供 enemies 时间表时置 false，由桩保持 PlayerWorld.enemy_count（对齐旧桩语义）
     bool sync_enemy_count = true;
     OnResourceLoaded on_loaded;
 
+    GameSession();   // 0x43ba40 / 0x46a3a0：登记常驻绘制链
     bool open(const u8* archive_bytes, u32 size);
     bool begin_boot();                 // 0x43adc0：ascii + sig，注册启动幕绘制链，请求 Title
     // 跳过启动幕/标题直接进入场景 7（harness）：装启动 bank 后按 globals（stage/shot/season/difficulty）装载关卡
@@ -85,8 +95,6 @@ private:
     ChainEntry* effect_update_chain_ = nullptr;
     ChainEntry* title_update_chain_ = nullptr;
     ChainEntry* game_update_chain_ = nullptr;
-    ChainEntry* stage_update_chain_ = nullptr;
-    ChainEntry* previous_stage_update_chain_ = nullptr;  // 换关后上一关（DAT_004a6d9c）仍在跑的链 0x11
     ChainEntry* replay_record_chain_ = nullptr;
     ChainEntry* player_update_chain_ = nullptr;
     ChainEntry* player_draw_chain_ = nullptr;
@@ -141,12 +149,17 @@ private:
     void harvest_menu_events();
     void register_game_chains();   // 0x42cb60 末：GameManager 链 0xf
     void unload_stage_anm(StageManager& stage);  // 0x4099a0：背景 ANM 槽回收（无 tick）
+    // 0x4097c0 建链 / 0x40add0 启用 / 0x4099a0 摘链：更新链 0x11 与绘制链 3、6（换关后上一关 DAT_004a6d9c 的链继续运行）
+    void register_stage_chains(StageManager& stage);
+    void enable_stage_chains(StageManager& stage);
+    void remove_stage_chains(StageManager& stage);
     void harvest_player_sfx();
     // 0x45d150(1, …)：登记一条链 0x13 的画面震动（ECL 517 在敌机链内请求，下一帧起消耗 game_rng）
     void create_screen_shake(const EnemyManager::ShakeRequest& request);
     // 0x45d150(kind, duration, color, …)：登记一条链 0x13 的淡入淡出（0x45c900），DAT_004c0f40 非零时自删
     void create_screen_fade(i32 kind, i32 duration, u32 color);
     void sample_input();
+    void register_layer_draw_chains();   // 0x46a3a0：AnmManager 各层绘制链（含带相机切换的 0x46ddd0 / 0x46e030 族）
 };
 
 }  // namespace th16
