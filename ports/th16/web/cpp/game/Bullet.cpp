@@ -3,6 +3,7 @@
 #include "Bullet.hpp"
 
 #include "AnmManager.hpp"
+#include "AnmRenderer.hpp"
 #include "GameGlobals.hpp"
 #include "Item.hpp"
 #include "Motion.hpp"
@@ -386,10 +387,10 @@ void BulletManager::update(float gs, bool frozen) {
 }
 
 // 0x412a60：按桶链同步 VM 坐标 / 朝向 / 缩放（绘制本体由 AnmRenderer 完成）
-void BulletManager::prepare_draw() {
+void BulletManager::draw(AnmRenderer& renderer) {
     for (int bucket = 0; bucket < kLayerBuckets; ++bucket) {
         for (Bullet* b = layer_heads[bucket]; b != nullptr; b = b->layer_next) {
-            auto sync = [&](AnmVm& vm) {
+            auto draw_synced = [&](AnmVm& vm) {
                 vm.entity_offset = b->pos;
                 if ((vm.flags_hi & 0x80u) != 0) {
                     vm.rotation.z = wrap_angle(b->angle + kHalfPi);
@@ -399,9 +400,10 @@ void BulletManager::prepare_draw() {
                     vm.flags_lo |= AnmVm::kScaleDirty;
                     vm.scale = {b->scale, b->scale};
                 }
+                renderer.draw_vm(vm);
             };
-            if ((b->extra_vm_flags & 1u) != 0) sync(b->vm_extra);
-            sync(b->vm_main);
+            if ((b->extra_vm_flags & 1u) != 0) draw_synced(b->vm_extra);
+            draw_synced(b->vm_main);
         }
     }
 }

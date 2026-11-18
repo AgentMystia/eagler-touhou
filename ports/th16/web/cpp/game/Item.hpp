@@ -21,6 +21,7 @@
 namespace th16 {
 
 class AnmManager;
+class AnmRenderer;
 struct AnmFile;
 struct GameGlobals;
 class Player;
@@ -120,9 +121,9 @@ public:
     Item* spawn(i32 type, const Vec3& pos, float angle, float speed, i32 flag);
     // 0x42f4e0：更新链 0x1d（0x4308f0：GameManager 装载 / 结束 / 0x400 冻结时跳过——由宿主判断）
     void update(float game_speed);
-    // 0x4307a0：绘制链 0x21（season_pass = false：除 0x10 外）/ 0x13（season_pass = true：仅 0x10）的逻辑部分：
-    //   entity_offset 同步、屏幕上方指示（副 VM y 钳到 8、按距离淡入）
-    void prepare_draw(bool season_pass);
+    // 0x4307a0：绘制链 0x21（season_pass = false：除 0x10 外）/ 0x13（season_pass = true：仅 0x10）。道具 VM 不挂图层：
+    //   entity_offset 同步后直接画主 VM；飘在场地上方时改画屏幕上沿的指示副 VM（y 钳到 8、按距离淡入）
+    void draw(AnmRenderer& renderer, bool season_pass);
 
 private:
     // 0x430d10：类型 4/5/6/7（含 0xf）出现特效 0x65 + 音效 0x4a（4/5）/ 0x30

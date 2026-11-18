@@ -274,7 +274,7 @@ bool GameSession::create_player() {
         return ChainResult::Continue;
     }, 0x16, true);
     player_draw_chain_ = chains.create([this]() -> ChainResult {
-        game.player.prepare_draw();
+        game.player.draw(renderer);
         return ChainResult::Continue;
     }, 0x1d, false);
     chains.enable(replay_record_chain_);
@@ -502,7 +502,7 @@ bool GameSession::enter_game(i32 replay_mode) {
             return ChainResult::Continue;
         }, 0x1c, true);
         bullet_draw_chain_ = chains.create([this]() -> ChainResult {
-            if (game.bullets_live && !game.chains_suspended && (game.flags & GameManager::kLoading) == 0) game.bullets->prepare_draw();
+            if (game.bullets_live && !game.chains_suspended && (game.flags & GameManager::kLoading) == 0) game.bullets->draw(renderer);
             return ChainResult::Continue;
         }, 0x25, false);
     }
@@ -530,11 +530,11 @@ bool GameSession::enter_game(i32 replay_mode) {
             return ChainResult::Continue;
         }, 0x1d, true);
         item_draw_chain_ = chains.create([this]() -> ChainResult {
-            if (game.items_live && !game.chains_suspended && (game.flags & GameManager::kLoading) == 0) game.items->prepare_draw(false);
+            if (game.items_live && !game.chains_suspended && (game.flags & GameManager::kLoading) == 0) game.items->draw(renderer, false);
             return ChainResult::Continue;
         }, 0x21, false);
         item_draw_season_chain_ = chains.create([this]() -> ChainResult {
-            if (game.items_live && !game.chains_suspended && (game.flags & GameManager::kLoading) == 0) game.items->prepare_draw(true);
+            if (game.items_live && !game.chains_suspended && (game.flags & GameManager::kLoading) == 0) game.items->draw(renderer, true);
             return ChainResult::Continue;
         }, 0x13, false);
     }

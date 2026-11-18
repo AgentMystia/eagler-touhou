@@ -2,6 +2,7 @@
 
 #include "AnmManager.hpp"
 #include "AnmGeometry.hpp"
+#include "AnmRenderer.hpp"
 #include "Bomb.hpp"
 #include "Bullet.hpp"
 #include "Effect.hpp"
@@ -1253,11 +1254,13 @@ i32 Player::apply_damage_sources(AnmManager& manager, GameGlobals& globals, cons
     return total;
 }
 
-void Player::prepare_draw() {
-    // 0x443730（绘制链 0x1d）：state != 2 时把 pos 抄进 VM entity_offset，flags_hi = (hi & ~0x80000) | 0x40000，再 0x468490 绘制
+void Player::draw(AnmRenderer& renderer) {
+    // 0x443730（绘制链 0x1d）：决死待机（state 2）不画；其余把 pos 抄进 VM entity_offset，flags_hi = (hi & ~0x80000) | 0x40000，
+    // 再 0x468490 绘制。子机 / 自弹 / 判定点 VM 都挂在图层链上，由层绘制链负责
     if (state == kRespawnWait) return;
     vm.entity_offset = pos;
     vm.flags_hi = (vm.flags_hi & 0xfff7ffffu) | 0x40000u;
+    renderer.draw_vm(vm);
 }
 
 }  // namespace th16

@@ -20,6 +20,7 @@
 namespace th16 {
 
 class AnmManager;
+class AnmRenderer;
 struct AnmFile;
 struct AnmRuntimeSprite;
 struct GameGlobals;
@@ -294,8 +295,8 @@ public:
 
     // 0x412860：更新链 0x1c；frozen = GameManager+0x88 & 0x400（对话/过场冻结，只重挂图层）
     void update(float game_speed, bool frozen);
-    // 0x412a60：绘制链 0x25 的逻辑部分（同步 VM 坐标 / 朝向 / 缩放）
-    void prepare_draw();
+    // 0x412a60：绘制链 0x25。弹 VM 不挂图层：按 6 个图层桶顺序，先画附加 VM 再画主 VM（同步坐标 / 朝向 / 缩放后 0x468490）
+    void draw(AnmRenderer& renderer);
 
     // 0x416840：单弹消弹（item_mode 见 0x416a00）
     void cancel_bullet(Bullet& b, i32 item_mode);
