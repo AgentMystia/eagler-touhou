@@ -119,9 +119,9 @@ void Application::draw_frame() {
     graphics.clear(0xff000000);
 
     // 0x409f90（绘制链优先级 3）：关卡背景——原版画进场地 RT 再合成；此处直接画到屏幕场地矩形
-    if (session.game_live) {
+    if (session.game_live && session.game.stage) {
         StagePass pass;
-        if (!renderer.emit_stage(session.animations, session.game.stage, pass)) { failure = renderer.error; return; }
+        if (!renderer.emit_stage(session.animations, *session.game.stage, pass)) { failure = renderer.error; return; }
         if (pass.active) {
             graphics.clear_rect(pass.clear_color, pass.clear_rect);
             graphics.backend.state.viewport = {u32(pass.clear_rect[0]), u32(pass.clear_rect[1]),
