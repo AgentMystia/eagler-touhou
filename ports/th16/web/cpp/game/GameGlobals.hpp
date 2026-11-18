@@ -99,6 +99,24 @@ struct GameGlobals {
         const int i = extend_index < 0 ? 0 : extend_index > 11 ? 11 : extend_index;
         return difficulty == 4 ? kExtra[i] : kNormal[i];
     }
+    // 0x42e590：新开局（0x42cb60 DAT_004c17d0 段）清本局资源——得点道具数、火力、炸弹 3 / 碎片 0、残机碎片、
+    // extend 下标、自动收点统计、炸弹碎片道具数、被弹次数。同一关重开（DAT_004a5bec bit0）沿用全局区，故必须显式归零。
+    // （Gui 存在时另调 0x42c390 刷新炸弹显示；新开局时 Gui 尚未创建，由 Gui::init 自行取值）
+    void reset_run_resources() {
+        point_items = 0;
+        power = 0;
+        power_per_level = 1;
+        bombs = 3;
+        bomb_fragments = 0;
+        life_fragments = 0;
+        extend_index = 0;
+        collect_sum = 0;
+        collect_count = 0;
+        collect_indicator = 0;
+        bomb_fragment_items = 0;
+        miss_count = 0;
+    }
+
     // 0x43e080：score += value / 10，逐级越过阈值时残机 +1（上限 8；每级都推进阈值下标）；返回 extend 次数
     // （调用方补 Gui 0x42c280 残机显示、音效 0x11、0x42bcf0 弹出）
     i32 add_score(i32 value) {

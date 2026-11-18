@@ -298,6 +298,9 @@ public:
     // 0x41b340 / 0x41ae70
     bool create(const char* ecl_name, GameGlobals& globals, Player* player, Rng& rng,
                 AnmManager& animations, u8 difficulty);
+    // 0x42ca00：同一关重开时 0x42cb60 代替 0x41b340 调用——只把管理器计时（+0x98）重置为开局态；
+    // id 计数 / ECL 全局变量 / HUD 隐藏位 / 敌机控制值都沿用
+    void restart_timer() { timer.reset(); }
     // 0x4185b0：ECL ANIM 槽（10..15）的 VM 全部标删、敌机全部析构（0x41ba10）、Boss 槽清零
     void reset();
     // 0x41b1a0：reset 后卸载 ECL ANIM 槽的 ANM 文件（0x46d770）；换关时 0x42d200 走此路，随后 0x41b340 重建

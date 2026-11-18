@@ -70,8 +70,9 @@ public:
     bool begin_boot();                 // 0x43adc0：ascii + sig，注册启动幕绘制链，请求 Title
     // 跳过启动幕/标题直接进入场景 7（harness）：装启动 bank 后按 globals（stage/shot/season/difficulty）装载关卡
     bool start_game_direct();
-    // 0x43ce10 case 0xa / 0xb / 0xe / 0x13：GameMenu 重开 / Extra 续关——销毁后以 stage_copy 新开局
-    bool restart_game(i32 replay_mode);
+    // 0x43ce10 case 0xa / 0xb / 0xe / 0x13：GameMenu 重开 / Extra 续关——0x42d200 按请求决定快速重开（bit0）或整体销毁，
+    // 再以 stage_copy 新开局
+    bool restart_game(SceneId reason, i32 replay_mode);
     bool logic_step();                 // 一个逻辑帧（输入 → 切换 → 链 → ANM tick）
     const Archive& archive() const { return archive_; }
     AnmResource* resource(const char* name);
@@ -122,6 +123,7 @@ private:
     // 0x426c10 Gui 关卡部分（logo 槽 6 + 机体 msg）/ 0x4178a0 Spellcard 绑定
     bool create_stage();
     bool create_enemies();
+    void spawn_loading_vm(const Vec3& pos);   // 0x41a390 / 0x42d200："Loading" VM（不存在时才建）
     // 0x40d890：ECL 之后、Spellcard 之前建主炸弹 + 季节解放，挂更新链 0x18 / 0x19 与绘制链 0x28 / 0x29
     void create_bombs();
     // 0x40da90（0x42d200 无条件调用）

@@ -188,8 +188,11 @@ bool GameSession::create_player() {
     static constexpr i32 kPointInitial[6] = {10000, 10000, 10000, 10000, 10000, 100000};
     static constexpr i32 kPointMax[6] = {500000, 500000, 500000, 500000, 500000, 1000000};
     const int diff = globals.difficulty < 0 ? 0 : globals.difficulty > 5 ? 5 : globals.difficulty;
+    // 续关次数只在非 Extra 续关（DAT_004a5bec bit3 未置）时清零；0x42e590 清本局资源
+    if ((globals.flags & 8u) == 0) globals.continues = 0;
     globals.graze = 0;
     globals.score = 0;
+    globals.reset_run_resources();
     globals.point_value_initial = kPointInitial[diff] * 100;
     globals.point_value_max = kPointMax[diff] * 100;
     globals.point_value = i32((double(float(globals.point_value_initial)) / 100.0) * 100.0);
@@ -199,7 +202,6 @@ bool GameSession::create_player() {
     // 剩余续关数（DAT_00492278 按难度：Extra 无续关）
     static constexpr i32 kContinues[6] = {5, 5, 5, 5, 0, 0};
     globals.continues_left = kContinues[diff];
-    globals.continues = 0;
 
     // 0x440fb0：pl0N.anm → 槽 9（DAT_00492ccc[shot+aux]）、pl0Nsub.anm → 槽 0x1e（DAT_00492cdc[season]）、.sht 两份
     static constexpr const char* kPlayerAnm[4] = {"pl00.anm", "pl02.anm", "pl03.anm", "pl01.anm"};
@@ -280,7 +282,9 @@ bool GameSession::create_stage() {
     AnmResource* stage_anm = nullptr;
     if (!load_anm(stage->std.anm_name.c_str(), stage_anm)) return false;
     const int slot = 3 + (globals.stage & 1);
-    stage->anm = animations.load(slot, *stage_anm);
+    // 0x46d020：槽已装着同一文件（快速重开未释放）时直接沿用
+    AnmFile* loaded = animations.file(slot);
+    stage->anm = (loaded != nullptr && loaded->resource == stage_anm) ? loaded : animations.load(slot, *stage_anm);
     if (stage->anm == nullptr) { failure = "stage anm load failed"; return false; }
     stage->camera_global = &stage_camera;
     game.stage = std::move(stage);
@@ -326,12 +330,19 @@ bool GameSession::create_enemies() {
     game.enemies.spellcard = &spellcard;
     game.enemies.stage = game.stage.get();
     game.player.spellcard = &spellcard;
-    if (!game.enemies.create(game.entry->ecl_name, globals, game.player_live ? &game.player : nullptr,
-                             animations.visual_rng, animations, u8(1u << (globals.difficulty & 31)))) {
-        failure = game.enemies.error;
-        return false;
+    if (game.enemies_live) {
+        // 同一关重开（DAT_004a5bec bit0 / bit3）：0x42cb60 不重建 EnemyManager，只走 0x42ca00 复位管理器计时；
+        // 敌机 id 计数、ECL 全局变量、HUD 隐藏位等沿用上一局
+        game.enemies.player = game.player_live ? &game.player : nullptr;
+        game.enemies.restart_timer();
+    } else {
+        if (!game.enemies.create(game.entry->ecl_name, globals, game.player_live ? &game.player : nullptr,
+                                 animations.visual_rng, animations, u8(1u << (globals.difficulty & 31)))) {
+            failure = game.enemies.error;
+            return false;
+        }
+        game.enemies_live = true;
     }
-    game.enemies_live = true;
     game.player.enemies = &game.enemies;
     game.player.items = game.items.get();
     game.player.effects = &effects;
@@ -414,8 +425,8 @@ void GameSession::register_game_chains() {
 }
 
 bool GameSession::enter_game(i32 replay_mode) {
-    // 0x42d700：flags |= 4、+0xac = 回放标志；0x42cb60 装载线程（此处同步）
-    game = GameManager{};
+    // 0x42d700：flags |= 4、+0xac = 回放标志；0x42cb60 装载线程（此处同步）。GameManager 对象已由 leave_game 复位
+    //（快速重开时其中保留 EnemyManager 与 Loading VM）
     game.flags = GameManager::kLoading;
     game.mode = replay_mode;
     game.entry = &stage_entry(globals.stage);
@@ -570,9 +581,10 @@ bool GameSession::enter_game(i32 replay_mode) {
     bind_spellcard();
     chains.enable(spellcard_update_chain_);
     register_game_chains();
-    // 0x42cb60 末：+0x90 = 0x3c、清 flags&4、0x418420 启用链
+    // 0x42cb60 末：+0x90 = 0x3c、清 flags&4、DAT_004a5bec 清 bit0 / bit1 / bit3、0x418420 启用链
     game.transition_length = 0x3c;
     game.flags &= ~GameManager::kLoading;
+    globals.flags &= ~0xbu;
     game.timer.set(0);
     chains.enable(game_update_chain_);
     chains.enable(stage_update_chain_);
@@ -588,10 +600,34 @@ bool GameSession::enter_game(i32 replay_mode) {
     return true;
 }
 
-bool GameSession::restart_game(i32 replay_mode) {
+bool GameSession::restart_game(SceneId reason, i32 replay_mode) {
+    // 0x42d200 开头按场景请求决定重开方式：
+    //   0xa / 0xb（暂停菜单重开）：Loading VM（ascii.anm 0x11）放到 (960, 784)；与开局同一关 → bit0 快速重开
+    //   0xe（Extra 续关）：0x41a390 Loading VM；关卡不同 → 续关次数 +1（上限 9）并置 bit3；无论如何置 bit0
+    //   0x13（符卡练习重开）：整体销毁重建
+    // bit0 / bit3 之下 EnemyManager 只复位不析构、关卡背景 ANM 槽不释放（0x4099a0 末）
+    const bool same_stage = globals.stage_copy == globals.stage;
+    if (reason == SceneId::Restart || reason == SceneId::RestartPractice) {
+        spawn_loading_vm(Vec3{960.0f, 784.0f, 0.0f});
+        if (same_stage) globals.flags |= 1u;
+    } else if (reason == SceneId::RestartExtra) {
+        spawn_loading_vm(Vec3{});
+        if (!same_stage) {
+            if (++globals.continues > 9) globals.continues = 9;
+            globals.flags |= 8u;
+        }
+        globals.flags |= 1u;
+    }
     leave_game();
     globals.stage = globals.stage_copy;
     return enter_game(replay_mode);
+}
+
+void GameSession::spawn_loading_vm(const Vec3& pos) {
+    // 0x41a390 / 0x42d200：AsciiManager 的 "Loading" VM（ascii.anm 0x11，层 -1）只在不存在时创建
+    if (game.loading_vm != 0) return;
+    if (AnmFile* ascii = animations.file(AnmManager::kAsciiSlot))
+        game.loading_vm = animations.spawn_effect(*ascii, 0x11, -1, pos, 0.0f);
 }
 
 bool GameSession::next_stage() {
@@ -600,11 +636,8 @@ bool GameSession::next_stage() {
     // 0x449a00 成绩文件写盘：ScoreFile 接入时补
     globals.flags &= ~3u;
     supervisor.game_speed = 1.0f;
-    // 0x41a390：AsciiManager "Loading" VM（ascii.anm 0x11，层 -1；原版位置取自未初始化的 XMM 寄存器，逻辑上无影响）
-    if (game.loading_vm == 0) {
-        if (AnmFile* ascii = animations.file(AnmManager::kAsciiSlot))
-            game.loading_vm = animations.spawn_effect(*ascii, 0x11, -1, Vec3{}, 0.0f);
-    }
+    // 0x41a390：AsciiManager "Loading" VM（原版位置取自未初始化的 XMM 寄存器，逻辑上无影响）
+    spawn_loading_vm(Vec3{});
     globals.flags |= 2u;
     // 0x427970：Gui 删 Msg、释放 msg；(bec & 9) == 0 → 卸 logo 槽 6
     if (game.gui_live) {
@@ -861,7 +894,6 @@ void GameSession::leave_game() {
         // 0x427a20：对话 VM 标删；关卡 logo ANM 槽 6 回收
         game.gui.shutdown();
         animations.kill_file(Gui::kLogoSlot);
-        animations.tick_world();
         animations.unload(Gui::kLogoSlot);
     }
     for (ChainEntry* shake : shake_chains_) chains.remove(shake);
@@ -874,23 +906,36 @@ void GameSession::leave_game() {
     if (replay_record_chain_) { chains.remove(replay_record_chain_); replay_record_chain_ = nullptr; }
     if (player_update_chain_) { chains.remove(player_update_chain_); player_update_chain_ = nullptr; }
     if (player_draw_chain_) { chains.remove(player_draw_chain_); player_draw_chain_ = nullptr; }
+    // 0x4099a0 末：背景 ANM 槽只在非快速重开（DAT_004a5bec bit0 清）时释放
     for (StageManager* stage : {game.stage.get(), game.previous_stage.get()}) {
-        if (stage == nullptr) continue;
+        if (stage == nullptr || (globals.flags & 1u) != 0) continue;
         const int slot = 3 + (stage->stage_number & 1);
         animations.kill_file(slot);
-        animations.tick_world();
         animations.unload(slot);
     }
     stage_camera = StageCamera{};
     if (game.player_live) {
         // 0x441a50 析构：pl0N.anm / pl0Nsub.anm 的 VM 全部标删（0x46f270）并释放槽 9 / 0x1e
+        // 标删的 VM 与原版一样等到下一次世界 tick 才回收：这里不能额外 tick，否则刚建的 Loading VM 会多跑几帧
         animations.kill_file(9);
         animations.kill_file(0x1e);
-        animations.tick_world();
         animations.unload(9);
         animations.unload(0x1e);
     }
-    game = GameManager{};
+    // (DAT_004a5bec & 9) != 0 —— 同一关快速重开 / Extra 续关：EnemyManager 走 0x4185b0 复位而非 0x41b1a0 析构，
+    // 留给下一局沿用（0x42cb60 以 0x42ca00 接手）；Loading VM 属 AsciiManager，不随 GameManager 消失
+    const bool keep_enemies = (globals.flags & 9u) != 0 && game.enemies_live;
+    const u32 loading_vm = game.loading_vm;
+    if (keep_enemies) {
+        game.enemies.reset();
+        EnemyManager retained = std::move(game.enemies);
+        game = GameManager{};
+        game.enemies = std::move(retained);
+        game.enemies_live = true;
+    } else {
+        game = GameManager{};
+    }
+    game.loading_vm = loading_vm;
     game_live = false;
 }
 
@@ -969,7 +1014,7 @@ bool GameSession::logic_step() {
         } else if (enter == SceneId::Restart || enter == SceneId::RestartPractice || enter == SceneId::RestartExtra ||
                    enter == SceneId::RestartSpellPractice) {
             // 0x43ce10 case 0xa / 0xb / 0xe / 0x13：0x42d780 整体销毁，关卡回到开局选择（DAT_004a5794），新开局重建
-            if (!restart_game(enter == SceneId::RestartPractice ? 1 : 0)) return false;
+            if (!restart_game(enter, enter == SceneId::RestartPractice ? 1 : 0)) return false;
             supervisor.current = supervisor.requested = SceneId::Game;
         } else {
             if (leave == SceneId::Game) leave_game();
