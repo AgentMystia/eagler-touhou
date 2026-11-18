@@ -87,6 +87,9 @@ public:
     InputState* game_input = nullptr;
     // 0x45d150(kind, duration, color)：GameSession 登记 ScreenEffect 链 0x13
     std::function<void(i32, i32, u32)> on_screen_fade;
+    // 0x40add0 开头：关卡的更新 / 绘制链在这里才置启用位（0x4097c0 建链时 `& ~2`）。
+    // 换关过关奖励展示的 120 帧里 GameManager 整帧跳过，首帧尚未到来，背景 VM 与 std 脚本都不得推进
+    std::function<void()> on_stage_started;
     // 0x4099a0 之后：GameSession 卸载上一关背景 ANM 槽
     std::function<void(StageManager&)> on_previous_stage_destroyed;
     // 0x43f240：回放中通关倒计时结束 → GameMenu 的“回标题”流程

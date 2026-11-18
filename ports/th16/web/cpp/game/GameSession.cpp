@@ -418,6 +418,7 @@ void GameSession::register_game_chains() {
     game.game_input = &game_input;
     game.on_screen_fade = [this](i32 kind, i32 duration, u32 color) { create_screen_fade(kind, duration, color); };
     game.on_return_to_title = [this]() { if (menu_live) menu.open_return_to_title(); };
+    game.on_stage_started = [this]() { if (stage_update_chain_) chains.enable(stage_update_chain_); };
     game.on_previous_stage_destroyed = [this](StageManager& stage) {
         if (previous_stage_update_chain_) { chains.remove(previous_stage_update_chain_); previous_stage_update_chain_ = nullptr; }
         unload_stage_anm(stage);
@@ -588,7 +589,7 @@ bool GameSession::enter_game(i32 replay_mode) {
     globals.flags &= ~0xbu;
     game.timer.set(0);
     chains.enable(game_update_chain_);
-    chains.enable(stage_update_chain_);
+    // 关卡链（0x11）要等首帧 0x42dc50 → 0x40add0 才启用（on_stage_started）
     if (bullet_update_chain_) chains.enable(bullet_update_chain_);
     if (bullet_draw_chain_) chains.enable(bullet_draw_chain_);
     if (item_update_chain_) chains.enable(item_update_chain_);
@@ -713,7 +714,7 @@ bool GameSession::next_stage() {
     globals.post_load_frames = 0;
     game.timer.set(0);
     chains.enable(game_update_chain_);
-    chains.enable(stage_update_chain_);
+    // 关卡链在过关奖励展示结束后的首帧（0x42dc50 → 0x40add0）才启用：这 120 帧里新关背景静止
     return true;
 }
 

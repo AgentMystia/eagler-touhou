@@ -12,7 +12,11 @@ bool GameManager::first_frame(AnmManager& manager, GameGlobals& globals) {
         globals.scene_request = 2;
         return false;
     }
-    if (stage_live && stage) stage->start(manager);  // 0x40add0：建面 VM、启用关卡链
+    if (stage_live && stage) {
+        // 0x40add0：启用关卡链、建面 VM
+        if (on_stage_started) on_stage_started();
+        stage->start(manager);
+    }
     if (previous_stage) {
         // 0x40c0d0：ScreenEffect kind 2（0x1e 帧、色 0）+ 上一关进入结束（bit1）；0x40c210：新关淡入（bit2，0x3c 帧）
         if (on_screen_fade) on_screen_fade(2, 0x1e, 0);
