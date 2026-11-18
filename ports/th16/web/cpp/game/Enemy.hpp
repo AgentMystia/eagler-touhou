@@ -303,6 +303,10 @@ public:
     void update(float game_speed);
     Enemy* spawn_enemy(const char* sub, const EnemySpawnArgs& args);
     Enemy* find_id(u32 id) noexcept;
+    // 0x41b540：按 id 找敌机；原版遍历到表尾仍未命中时返回的是最后一只敌机而非空（灵梦阴阳玉追踪 0x410550 依赖此行为）
+    Enemy* find_id_or_last(u32 id) noexcept;
+    // 0x425240：pos 周围 range 内、flags & 0xc000021 == 0 的最近敌机 id（没有则 0）——自机追踪弹 / 灵梦阴阳玉索敌
+    u32 nearest_targetable_id(const Vec3& pos, float range) const noexcept;
     // 0x41d900 / 0x41da30 / 0x41db70（ECL 525 / 551 / 571）：清掉落表后让非 Boss 族敌机全部死亡（下一帧移出）
     // mode 1 只杀 anm_layer == *filter 的敌机；mode 2 另清死亡子程序
     void kill_all(int mode, const i32* filter);

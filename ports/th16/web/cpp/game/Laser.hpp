@@ -277,14 +277,14 @@ public:
     // 0x41aa40：按句柄查找活动激光（id == 0 或未命中返回 nullptr）
     Laser* find_by_id(i32 id) noexcept;
 
-    // 0x431af0(drop_items)：全屏激光消弹（对话开始 / ECL 613 / 决死第 15 帧）
-    void cancel_all(bool drop_items);
+    // 0x431af0(item_mode)：全屏激光消弹（对话开始 / ECL 613 / 决死第 15 帧）
+    void cancel_all(i32 item_mode);
     // 0x4319e0：ECL 545——全部激光出界豁免计时清零、免疫清零后带道具消弹
     void cancel_all_ignoring_immunity();
     // ECL 710（0x41dcb0 case 0xa3）：终止全部同句柄激光（不转道具）并清句柄
     void cancel_handle(i32 id);
-    // 0x431a70(center, radius, drop_items, respect_immunity)：圆形范围激光消弹，返回消去的采样段数
-    i32 cancel_radius(const Vec3& center, float radius, bool drop_items, bool respect_immunity);
+    // 0x431a70(center, radius, item_mode, respect_immunity)：圆形范围激光消弹，返回消去的采样段数
+    i32 cancel_radius(const Vec3& center, float radius, i32 item_mode, bool respect_immunity);
     // 0x431950(center, size, angle)：炸弹矩形消弹（只作用于已跑过首帧的激光；mode 5、尊重免疫）
     i32 cancel_rect(const Vec3& center, const Vec3& size, float rect_angle);
 
@@ -330,20 +330,20 @@ private:
                             bool force_graze);  // 0x443af0
 
     // vtable 槽 10 / 9 / 8：整条消弹 / 圆形切分 / 矩形切分
-    i32 cancel_single(Laser& l, bool drop_items, bool respect_immunity);
-    i32 cancel_circle(Laser& l, const Vec3& center, float radius, bool drop_items, bool respect_immunity);
+    i32 cancel_single(Laser& l, i32 item_mode, bool respect_immunity);
+    i32 cancel_circle(Laser& l, const Vec3& center, float radius, i32 item_mode, bool respect_immunity);
     i32 cancel_rect_single(Laser& l, const Vec3& center, const Vec3& size, float rect_angle, i32 item_mode,
                            bool respect_immunity);
-    i32 cancel_line_single(Laser& l, bool drop_items, bool respect_immunity);      // 0x434cd0
-    i32 cancel_line_circle(Laser& l, const Vec3& center, float radius, bool drop_items, bool respect_immunity); // 0x434730
+    i32 cancel_line_single(Laser& l, i32 item_mode, bool respect_immunity);      // 0x434cd0
+    i32 cancel_line_circle(Laser& l, const Vec3& center, float radius, i32 item_mode, bool respect_immunity); // 0x434730
     i32 cancel_line_rect(Laser& l, const Vec3& center, const Vec3& size, float rect_angle, i32 item_mode,
                          bool respect_immunity);                                   // 0x433860
-    i32 cancel_infinite_single(Laser& l, bool drop_items, bool respect_immunity);  // 0x436c70
-    i32 cancel_infinite_circle(Laser& l, const Vec3& center, float radius, bool drop_items, bool respect_immunity); // 0x436670
+    i32 cancel_infinite_single(Laser& l, i32 item_mode, bool respect_immunity);  // 0x436c70
+    i32 cancel_infinite_circle(Laser& l, const Vec3& center, float radius, i32 item_mode, bool respect_immunity); // 0x436670
     i32 cancel_infinite_rect(Laser& l, const Vec3& center, const Vec3& size, float rect_angle, i32 item_mode,
                              bool respect_immunity);                               // 0x435880
-    i32 cancel_curve_single(Laser& l, bool drop_items, bool respect_immunity);     // 0x43a620
-    i32 cancel_curve_circle(Laser& l, const Vec3& center, float radius, bool drop_items, bool respect_immunity); // 0x43a2f0
+    i32 cancel_curve_single(Laser& l, i32 item_mode, bool respect_immunity);     // 0x43a620
+    i32 cancel_curve_circle(Laser& l, const Vec3& center, float radius, i32 item_mode, bool respect_immunity); // 0x43a2f0
     i32 cancel_curve_rect(Laser& l, const Vec3& center, const Vec3& size, float rect_angle, i32 item_mode,
                           bool respect_immunity);                                  // 0x4397d0
     void split_line_after_hits(Laser& l, const bool* hit, int sample_count, const Vec3& step16);  // 0x434730 / 0x433860 共用

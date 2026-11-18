@@ -710,6 +710,18 @@ void BulletManager::cancel_radius(const Vec3& center, float radius, i32 item_mod
     }
 }
 
+void BulletManager::cancel_rect(const Vec3& center, const Vec2& size, float angle, i32 item_mode) {
+    // 原版按池下标顺扫全部 2000 槽（不走活动链表），判定半径 = 弹缩放 × 判定宽
+    for (int i = 0; i < kMaxBullets; ++i) {
+        Bullet& b = bullets[u32(i)];
+        if ((b.state != 2 && b.state != 1) || b.cancel_immunity != 0) continue;
+        const float r = b.scale * b.hitbox.x;
+        if (!rect_hits_circle(center.x, center.y, size.x, size.y, angle, b.pos.x, b.pos.y, r)) continue;
+        if (!rect_hits_circle(0.0f, 224.0f, 384.0f, 448.0f, 0.0f, b.pos.x, b.pos.y, r)) continue;
+        cancel_bullet(b, item_mode);
+    }
+}
+
 void BulletManager::cancel_all(i32 item_mode) {
     for (int i = 0; i < kMaxBullets; ++i) {
         Bullet& b = bullets[u32(i)];

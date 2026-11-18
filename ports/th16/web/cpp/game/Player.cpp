@@ -534,12 +534,12 @@ void Player::update(AnmManager& manager, GameGlobals& globals, const InputState&
             // 前 30 帧：以 pos_copy 为中心、半径从 64 线性扩到 576 切断激光（先尊重免疫，再按 1/4 半径无视免疫）
             const float radius = (float(state_timer.current) * 512.0f) / 30.0f + 64.0f;
             if (laser_manager != nullptr) {
-                laser_manager->cancel_radius(pos_copy, radius, false, true);          // 0x431a70
-                laser_manager->cancel_radius(pos_copy, radius * 0.25f, false, false);
+                laser_manager->cancel_radius(pos_copy, radius, 0, true);          // 0x431a70
+                laser_manager->cancel_radius(pos_copy, radius * 0.25f, 0, false);
             }
         } else {
             if (bullet_manager != nullptr) bullet_manager->cancel_radius(pos, 640.0f, 0, true);   // 0x416d20
-            if (laser_manager != nullptr) laser_manager->cancel_radius(pos, 640.0f, false, false); // 0x431a70
+            if (laser_manager != nullptr) laser_manager->cancel_radius(pos, 640.0f, 0, false); // 0x431a70
         }
         if (state_timer.current > 0x3b) {
             state = kNormal;
@@ -571,7 +571,7 @@ void Player::update(AnmManager& manager, GameGlobals& globals, const InputState&
         break;
     case kState3:
         // 第 0xf 帧：激光全部终止并转得点道具
-        if (state_timer.current == 0xf && laser_manager != nullptr) laser_manager->cancel_all(true);  // 0x431af0(1)
+        if (state_timer.current == 0xf && laser_manager != nullptr) laser_manager->cancel_all(1);  // 0x431af0(1)
         break;
     default:
         break;
@@ -887,17 +887,7 @@ void Player::tick_bullets(AnmManager& manager, const AnmRenderer& geometry, floa
                 if (enemies == nullptr) {
                     b.target = 0;
                 } else if (b.target == 0) {
-                    // 0x425240：在 (flags & 0xc000021) == 0 的敌人中找距离 < 256 且最近者
-                    float best_d2 = 256.0f * 256.0f;
-                    u32 best_id = 0;
-                    for (const auto& ep : enemies->enemies) {
-                        if (!ep || (ep->flags & 0xc000021u) != 0) continue;
-                        const float dx = b.motion.pos.x - ep->pos.x;
-                        const float dy = b.motion.pos.y - ep->pos.y;
-                        const float d2 = dy * dy + dx * dx;
-                        if (d2 < best_d2) { best_d2 = d2; best_id = ep->id; }
-                    }
-                    b.target = i32(best_id);
+                    b.target = i32(enemies->nearest_targetable_id(b.motion.pos, 256.0f));  // 0x425240
                 }
                 Enemy* target_enemy = (b.target != 0 && enemies != nullptr) ? enemies->find_id(u32(b.target)) : nullptr;
                 if (target_enemy == nullptr) {
@@ -1002,30 +992,6 @@ i32 Player::apply_damage_sources(AnmManager& manager, GameGlobals& globals, cons
     if (timer3.current == timer3.previous) return 0;
     // Bomb（DAT_004a6da8）vtable+0xc 的炸弹伤害回调：Bomb 接入前为 0
     if (bomb_hit != nullptr) *bomb_hit = false;
-    auto rect_circle = [](float rx, float ry, float rw, float rh, float angle, float cx, float cy, float r) -> bool {
-        // 0x403d30
-        const float dx = cx - rx;
-        const float dy = cy - ry;
-        const float neg_a = -angle;
-        const float s = sin_f(neg_a);
-        const float c = cos_f(neg_a);
-        const float lx = dx * c - dy * s;
-        const float ly = dx * s + dy * c;
-        const float hw = rw * 0.5f;
-        const float hh = rh * 0.5f;
-        const float ax = std::fabs(lx);
-        const float ay = std::fabs(ly);
-        if (ax <= hw + r && ay <= hh) return true;
-        if (ax <= hw && ay <= hh + r) return true;
-        const float r2 = r * r;
-        const float x0 = lx - hw, y0 = ly - hh;
-        if (x0 * x0 + y0 * y0 < r2) return true;
-        const float x1 = lx + hw;
-        if (x1 * x1 + y0 * y0 < r2) return true;
-        const float y1 = ly + hh;
-        if (x0 * x0 + y1 * y1 < r2) return true;
-        return x1 * x1 + y1 * y1 < r2;
-    };
 
     i32 total = 0;
     for (int i = 0; i < kDamageSourceCount; ++i) {
@@ -1034,8 +1000,8 @@ i32 Player::apply_damage_sources(AnmManager& manager, GameGlobals& globals, cons
         if (d.f80 == 0 || (d.timer.current % d.f80) != 0) continue;
         bool hit = false;
         if ((d.flags & 2u) == 0) {
-            hit = rect_circle(d.motion.pos.x, d.motion.pos.y, d.size_x, d.size_y, d.angle,
-                              enemy_pos.x, enemy_pos.y, radius);
+            hit = rect_hits_circle(d.motion.pos.x, d.motion.pos.y, d.size_x, d.size_y, d.angle,
+                                   enemy_pos.x, enemy_pos.y, radius);
         } else {
             const float sum_r = d.f04 + radius;
             const float dx = d.motion.pos.x - enemy_pos.x;

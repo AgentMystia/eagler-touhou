@@ -1252,7 +1252,7 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             if (manager && manager->gui) {
                 if (!manager->gui->start_dialogue(entry)) { error = manager->gui->error; return -2; }
                 if (manager->bullets) manager->bullets->cancel_all(0);
-                if (manager->lasers) manager->lasers->cancel_all(false);
+                if (manager->lasers) manager->lasers->cancel_all(0);
                 manager->kill_all(0, nullptr);
             }
             return 0;
@@ -2000,7 +2000,7 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
         }
         case 613:  // 0x421655：全屏消弹（0x416f40 的 fastcall 参数为残留的操作码 613，仅计数）+ 0x431af0(1) 道具吸引
             if (bullets) bullets->cancel_all(613);
-            if (manager && manager->lasers) manager->lasers->cancel_all(true);  // 0x431af0(1)
+            if (manager && manager->lasers) manager->lasers->cancel_all(1);  // 0x431af0(1)
             return 0;
         case 614: {  // 0x420925：复制发射器（含偏移与绝对坐标，不含 Ex 计数）
             const i32 dst = iarg(0), src = iarg(1);
@@ -2012,9 +2012,9 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
         }
         case 615: case 616: case 635: case 636: {  // 0x42219e / 0x42221d / 0x422253 / 0x422289：圆形消弹 + 道具吸引
             const float radius = farg(0);
-            const bool items = (opcode == 615 || opcode == 635);
-            if (bullets) bullets->cancel_radius(pos, radius, items ? 1 : 0, opcode >= 635);
-            if (manager && manager->lasers) manager->lasers->cancel_radius(pos, radius, items, true);  // 0x431a70
+            const i32 item_mode = (opcode == 615 || opcode == 635) ? 1 : 0;
+            if (bullets) bullets->cancel_radius(pos, radius, item_mode, opcode >= 635);
+            if (manager && manager->lasers) manager->lasers->cancel_radius(pos, radius, item_mode, true);  // 0x431a70
             return 0;
         }
         case 617: {  // 0x420ded：按秩三档选速度
@@ -2486,6 +2486,30 @@ Enemy* EnemyManager::spawn_enemy(const char* sub, const EnemySpawnArgs& args) {
 Enemy* EnemyManager::find_id(u32 id) noexcept {
     for (auto& e : enemies) if (e && e->id == id) return e.get();
     return nullptr;
+}
+
+Enemy* EnemyManager::find_id_or_last(u32 id) noexcept {
+    if (id == 0) return nullptr;
+    Enemy* last = nullptr;
+    for (auto& e : enemies) {
+        if (!e) continue;
+        last = e.get();
+        if (last->id == id) return last;
+    }
+    return last;
+}
+
+u32 EnemyManager::nearest_targetable_id(const Vec3& pos, float range) const noexcept {
+    float best_d2 = range * range;
+    u32 best_id = 0;
+    for (const auto& e : enemies) {
+        if (!e || (e->flags & 0xc000021u) != 0) continue;
+        const float dy = pos.y - e->pos.y;
+        const float dx = pos.x - e->pos.x;
+        const float d2 = dy * dy + dx * dx;
+        if (d2 < best_d2) { best_d2 = d2; best_id = e->id; }
+    }
+    return best_id;
 }
 
 void EnemyManager::update(float game_speed) {

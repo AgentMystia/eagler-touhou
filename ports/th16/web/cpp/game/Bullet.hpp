@@ -297,6 +297,9 @@ public:
     void cancel_bullet(Bullet& b, i32 item_mode);
     // 0x416c20 / 0x416d20：圆形范围消弹（check_immunity = 0x416d20 变体，跳过 +0x24 非零的弹）
     void cancel_radius(const Vec3& center, float radius, i32 item_mode, bool check_immunity);
+    // 0x416e20：旋转矩形（中心 center、宽高 size、绕中心转 angle）范围消弹——还要求弹同时落在场地矩形
+    //   (0, 224) ± (384, 448)/2 内；跳过 +0x24 禁消弹的弹。炸弹（琪露诺 / 文的横扫、魔理沙的光束）用
+    void cancel_rect(const Vec3& center, const Vec2& size, float angle, i32 item_mode);
     // 0x444cf0：Player::graze（计数、特效、音效）后生成得点道具 0x10（敌机体擦弹 0x41c330 亦经此）
     void graze(const Vec3& pos);
     // 0x4252d0（敌机每帧钩子 1）：center 半径 radius 内、Ex 0x8000 参数 == 1 的弹改参数为 2 并跳到 Ex 第 8 步

@@ -276,6 +276,48 @@ Vec3 anm_world_rotation(AnmVm& v) {
     return v.world_rotation;
 }
 
+// 0x45edb0
+int anm_set_sprite(AnmFile& f, AnmVm& vm, i32 index) {
+    if (f.resource == nullptr) return -1;
+    vm.sprite_index = index;
+    vm.sprite_source_slot = f.slot;
+    const AnmRuntimeSprite& s = f.sprites[index];
+    vm.uv[0] = {s.u0, s.v0};
+    vm.uv[1] = {s.u1, s.v0};
+    vm.uv[2] = {s.u0, s.v1};
+    vm.uv[3] = {s.u1, s.v1};
+    vm.sprite_size = {s.width, s.height};
+    for (float* mtx : {vm.texture_matrix, vm.sprite_matrix}) {
+        for (int k = 0; k < 16; ++k) mtx[k] = (k % 5 == 0) ? 1.0f : 0.0f;
+    }
+    vm.texture_matrix[0] = vm.sprite_size.x * 0.00390625f;
+    vm.texture_matrix[5] = vm.sprite_size.y * 0.00390625f;
+    vm.sprite_matrix[0] = (vm.sprite_size.x / s.tex_w) * s.ratio_x;
+    vm.sprite_matrix[5] = (vm.sprite_size.y / s.tex_h) * s.ratio_y;
+    std::memcpy(vm.texture_matrix_copy, vm.texture_matrix, sizeof vm.texture_matrix);
+    return 0;
+}
+
+Vec3 anm_world_position(AnmVm& v) {
+    // 三个分量的加法顺序照原版（y / z 先加 pos2），避免单精度舍入差异
+    Vec3 p{v.pos.x + v.entity_offset.x + v.pos2.x,
+           v.pos2.y + v.pos.y + v.entity_offset.y,
+           v.pos2.z + v.pos.z + v.entity_offset.z};
+    if (v.root == nullptr || (v.flags_hi & AnmVm::kHiDetached) != 0) return p;
+    if ((v.flags_hi & AnmVm::kHi314) != 0) {
+        const float s = float(std::sin(double(v.root->rotation.z)));
+        const float c = float(std::cos(double(v.root->rotation.z)));
+        const float x = p.x;
+        p.x = x * c - p.y * s;
+        p.y = p.y * c + x * s;
+    }
+    const Vec3 parent = anm_world_position(*v.root);
+    p.x += parent.x;
+    p.y += parent.y;
+    p.z += parent.z;
+    return p;
+}
+
 // 0x406d80
 void anm_set_layer(AnmVm& vm, i32 layer) noexcept {
     vm.layer = layer;
@@ -416,27 +458,7 @@ struct AnmInterpreter {
 
     const u8* script_base() { return file.scripts[vm.script_index]->bytes.data(); }
 
-    // 0x45edb0
-    int set_sprite(AnmFile& f, i32 index) {
-        if (f.resource == nullptr) return -1;
-        vm.sprite_index = index;
-        vm.sprite_source_slot = f.slot;
-        const AnmRuntimeSprite& s = f.sprites[index];
-        vm.uv[0] = {s.u0, s.v0};
-        vm.uv[1] = {s.u1, s.v0};
-        vm.uv[2] = {s.u0, s.v1};
-        vm.uv[3] = {s.u1, s.v1};
-        vm.sprite_size = {s.width, s.height};
-        for (float* mtx : {vm.texture_matrix, vm.sprite_matrix}) {
-            for (int k = 0; k < 16; ++k) mtx[k] = (k % 5 == 0) ? 1.0f : 0.0f;
-        }
-        vm.texture_matrix[0] = vm.sprite_size.x * 0.00390625f;
-        vm.texture_matrix[5] = vm.sprite_size.y * 0.00390625f;
-        vm.sprite_matrix[0] = (vm.sprite_size.x / s.tex_w) * s.ratio_x;
-        vm.sprite_matrix[5] = (vm.sprite_size.y / s.tex_h) * s.ratio_y;
-        std::memcpy(vm.texture_matrix_copy, vm.texture_matrix, sizeof vm.texture_matrix);
-        return 0;
-    }
+    int set_sprite(AnmFile& f, i32 index) { return anm_set_sprite(f, vm, index); }
 
     void set_layer(i32 layer) { anm_set_layer(vm, layer); }
 

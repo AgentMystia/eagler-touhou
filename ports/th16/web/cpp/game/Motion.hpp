@@ -20,6 +20,10 @@ Vec3 polar(float angle, float length) noexcept;
 float atan2_f(float y, float x) noexcept;
 // D3DXVec3Normalize（oracle 桩口径）：len = sqrt(f32(f32(x²+y²)+z²))，len == 0 时原样返回
 Vec3 normalize3(const Vec3& v) noexcept;
+// 0x403d30：以 (rect_x, rect_y) 为中心、宽高 (width, height)、绕中心转 angle 的矩形是否与圆 (cx, cy, r) 相交。
+// 自机伤害源对敌机（0x445a30）与炸弹矩形消弹（0x416e20）共用
+bool rect_hits_circle(float rect_x, float rect_y, float width, float height, float angle,
+                      float cx, float cy, float r) noexcept;
 
 struct MotionState {
     Vec3 pos;              // +0x00

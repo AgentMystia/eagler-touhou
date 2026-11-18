@@ -6,6 +6,9 @@
 //   kind 0 / 2 / 3 / 5（淡入淡出，更新链 0x45c900、绘制链 0x45c990 全屏色块）：DAT_004c0f40 非零时直接返回 7 自删；
 //   否则 alpha = t × 255 / duration（到时 0xff），t < duration + 2 期间在 GameManager 非装载 / 非结束时推进计时；
 //   换关 0x40c0d0 建 kind 2（0x1e 帧、色 0），过关结算 0x42d7b0 建 kind 5（200 帧）。
+//   kind 8（炸弹震动，0x45cf10）：振幅按 attack（线性升）/ sustain（满幅）/ decay（线性降）三段包络，
+//   用 visual_rng（DAT_004a6d88）各双步一次决定 x / y 方向；DAT_004c0f40 非零时自删，GameManager 装载 / 结束 /
+//   flags & 0x72 时跳过本帧；超过三段总长自删。
 //   其余 kind（4/6/7/9 等纯绘制）渲染侧接入时补。
 //
 // 震动消耗 game_rng 与敌弹共用一条随机序列，因此必须与原版同帧同序执行（链 0x13 在敌机链 0x1a 之前）。
@@ -32,6 +35,19 @@ struct ScreenShakeOffset {
 // 0x45cd30：推进一帧；返回 false 表示计时结束（原版返回 7 自删）
 bool screen_shake_step(ScreenShake& shake, Rng& game_rng, float window_scale, float game_speed,
                        ScreenShakeOffset& out);
+
+// kind 8：炸弹震动包络（0x45d150(8) 由 0x40e780 / 0x40f070 / 0x40f930 创建；0x45cf10 推进）
+struct ScreenShakeEnvelope {
+    i32 amplitude = 0;    // +0x18
+    i32 attack = 0;       // +0x1c：振幅 0 → amplitude 的帧数
+    i32 sustain = 0;      // +0x20：满幅帧数
+    i32 decay = 0;        // +0x24：amplitude → 0 的帧数
+    Timer timer;          // +0x2c..+0x3c
+};
+
+// 0x45cf10：推进一帧；返回 false 表示应自删（原版返回 7）。game_frozen = GameManager 装载 / 结束 / flags & 0x72
+bool screen_shake_envelope_step(ScreenShakeEnvelope& shake, Rng& visual_rng, float window_scale, float game_speed,
+                                i32 post_load_frames, bool game_frozen, ScreenShakeOffset& out);
 
 struct ScreenFade {
     i32 kind = 0;         // +0x0c

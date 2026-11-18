@@ -6,6 +6,8 @@
 //   自由 VM 与 ECL 334 的特效都经此登记，供关卡结束统一回收）。
 //   效果种类表 DAT_004a2250（0x20 字节一行：i16 anm 槽、i16 脚本、init fn、update/draw/delete/interrupt 回调下标、+0x5d4/+0x5d8）：
 //     0 过场（0x4071a0 / 0x407330）  1 充能环（0x405670 / 0x405700）  2、3 爆散粒子（0x406510 / 0x406930 / 0x406690）
+//   爆散粒子：64 个光点逐帧从中心沿随机扰动的方向飞出（game_rng DAT_004a6d80，每帧两步），第 64 帧后 VM 自删；
+//   种类 2 以 (320, 16) 为中心偏移、橙色、层 0xf 并带 64 帧淡出，种类 3（炸弹 / 季节解放的爆点）灰白、层 0x13。
 //   0x418af0：ins_508(kind) 把回调挂到调用 VM；ECL 334（0x40e730）/ 过场 0x418ba0 则先按表生成新 VM。
 //   回调经 AnmVmHooks 由 AnmManager 在 0x45f980（update）/ 0x46eab0（delete）/ 0x46f0b0（interrupt）处回调。
 #pragma once
@@ -30,16 +32,20 @@ public:
     i32 allocate_slot();
     // 0x41aa00：登记 VM id，返回 slot | 0x80000000（0 = 表满）
     u32 register_id(u32 id);
-    // 0x418af0：kind 种类；host 非空（ins_508）时挂到该 VM，否则按表生成新 VM；返回 VM id
-    u32 attach(i32 kind, AnmVm* host);
-    // 0x40e730（ECL 334）：生成 kind 并登记
+    // 0x418af0：kind 种类；host 非空（ins_508）时挂到该 VM，否则按表生成新 VM；pos 交给种类 init；返回 VM id
+    u32 attach(i32 kind, AnmVm* host, const Vec3& pos);
+    // 0x40e730（ECL 334 / 炸弹爆点）：生成 kind 并登记；返回 槽 | 0x80000000（0 = 表满）
     u32 spawn(i32 kind, const Vec3& pos);
+    // 0x40e730 返回值 → 该槽记录的 VM id（0x40e9d0 / 0x40f240 据此改爆点 VM 的混合模式）
+    u32 spawned_vm_id(u32 handle) const { return (i32(handle) < 0) ? ids[handle & 0xffffu] : 0u; }
 
     // AnmVmHooks
     int update(AnmVm& vm) override;
     void deleted(AnmVm& vm) override;
     void interrupted(AnmVm& vm, i32 value) override;
-    void attach_effect(i32 kind, AnmVm& vm) override { attach(kind, &vm); }
+    // ins_508 把调用 VM 自身的地址当 pos 传入（原版 0x45f980 的第 4 实参即 VM 指针），种类 0 / 1 不读它；
+    // 种类 2 / 3 经此路径时按原版读到 VM 头部三个字——没有脚本这样做，这里按零向量处理
+    void attach_effect(i32 kind, AnmVm& vm) override { attach(kind, &vm, Vec3{}); }
 
     AnmFile* effect_anm = nullptr;   // +0x0c
     AnmFile* bullet_anm = nullptr;   // +0x10
@@ -62,6 +68,17 @@ private:
     int ring_update(AnmVm& vm);               // 0x405700
     void ring_deleted(AnmVm& vm);              // 0x405ed0
     void ring_interrupted(AnmVm& vm, i32 v);   // 0x405f20
+
+    // 0x406510 / 0x406930 分配的 0x318 字节缓冲：64 个光点（位置 + 颜色）、当前发射角与计时
+    struct Burst {
+        static constexpr int kDots = 64;
+        Vec2 pos[kDots];             // +0x000
+        u8 color[kDots][4] = {};     // +0x200 b,g,r,a
+        float angle = 0;             // +0x300
+        Timer timer;                 // +0x304
+    };
+    void burst_init(AnmVm& vm, const Vec3& pos, bool orange);  // 0x406510（orange）/ 0x406930
+    int burst_update(AnmVm& vm);                                // 0x406690
 
     AnmManager* animations_ = nullptr;
 };

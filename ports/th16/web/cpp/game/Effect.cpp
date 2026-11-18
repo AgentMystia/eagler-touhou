@@ -28,6 +28,7 @@ constexpr EffectKind kKindTable[EffectManager::kKinds] = {
 
 // 回调下标 → 种类（update 表 DAT_004919e8：1 → 0x407330，2 → 0x405700，3 → 0x406690，4 → 0x46a0b0 ANM 模式 10）
 constexpr int kRingCallback = 2;
+constexpr int kBurstCallback = 3;   // delete / interrupt 回调 0x406910 / 0x406920 为空函数
 
 inline float mul_pi(float r) noexcept { return float(double(r) * double(kPi)); }
 inline float scale_f(float r, float k) noexcept { return float(double(r) * double(k)); }
@@ -76,7 +77,7 @@ u32 EffectManager::register_id(u32 id) {
 }
 
 // 0x418af0
-u32 EffectManager::attach(i32 kind, AnmVm* host) {
+u32 EffectManager::attach(i32 kind, AnmVm* host, const Vec3& pos) {
     if (kind < 0 || kind >= kKinds || kKindTable[kind].script < 0) return 0;
     const EffectKind& k = kKindTable[kind];
     u32 id = 0;
@@ -90,7 +91,9 @@ u32 EffectManager::attach(i32 kind, AnmVm* host) {
     if (vm == nullptr) return 0;
     switch (kind) {
         case 1: ring_init(*vm); break;
-        default: break;  // 种类 0 / 2 / 3 的 init（0x4071a0 / 0x406510 / 0x406930）随其使用场景接入
+        case 2: burst_init(*vm, pos, true); break;
+        case 3: burst_init(*vm, pos, false); break;
+        default: break;  // 种类 0 的 init（0x4071a0 过场）随其使用场景接入
     }
     vm->update_callback = k.callbacks[0];
     vm->draw_callback = k.callbacks[1];
@@ -102,16 +105,17 @@ u32 EffectManager::attach(i32 kind, AnmVm* host) {
 }
 
 // 0x40e730
-u32 EffectManager::spawn(i32 kind, const Vec3& /*pos*/) {
+u32 EffectManager::spawn(i32 kind, const Vec3& pos) {
     const i32 slot = allocate_slot();
     if (slot < 0) return 0;
-    ids[slot] = attach(kind, nullptr);
+    ids[slot] = attach(kind, nullptr, pos);
     return u32(slot) | 0x80000000u;
 }
 
 int EffectManager::update(AnmVm& vm) {
     switch (vm.update_callback) {
         case kRingCallback: return ring_update(vm);
+        case kBurstCallback: return burst_update(vm);
         default: return 0;
     }
 }
@@ -235,6 +239,70 @@ void EffectManager::ring_interrupted(AnmVm& vm, i32 value) {
     auto* ring = static_cast<Ring*>(vm.vertex_buffer);
     if (ring == nullptr) return;
     ring->timer.advance(300.0f, animations_->game_speed);
+}
+
+// ---------------------------------------------------------------------------------------------
+// 种类 2 / 3：爆散粒子
+
+// 0x406510（orange：以 (320, 16) 为中心偏移、层 0xf、64 帧淡出）/ 0x406930（层 0x13）
+void EffectManager::burst_init(AnmVm& vm, const Vec3& pos, bool orange) {
+    auto* burst = new Burst();
+    vm.vertex_buffer = burst;
+    vm.vertex_buffer_size = 0x318;
+    vm.vertex_buffer_free = [](void* p) { delete static_cast<Burst*>(p); };
+    burst->pos[0] = orange ? Vec2{pos.x + 320.0f, pos.y + 16.0f} : Vec2{0.0f, 0.0f};
+    burst->angle = mul_pi(animations_->game_rng.signed_unit());
+    burst->timer.set(1);
+    // 前 8 个光点按下标调亮一个通道，后 32 个按下标递减透明度
+    u8 fade = 0;
+    for (int i = 0; i < Burst::kDots; ++i) {
+        u8* c = burst->color[i];
+        if (orange) { c[0] = 0xff; c[1] = 0x80; c[2] = 0x00; c[3] = 0xff; }
+        else { c[0] = 0x50; c[1] = 0x50; c[2] = 0x50; c[3] = 0xff; }
+        if (i < 8) c[orange ? 2 : 0] = u8(~(i << 5));
+        if (i >= 0x20) c[3] = u8(~(fade++ << 4));
+    }
+    vm.entity_offset = pos;
+    vm.flags_hi = (vm.flags_hi & ~0x80000u) | 0x40000u;
+    if (orange) {
+        vm.layer = 0xf;
+        vm.flags_lo = (vm.flags_lo & ~0x1c0u) | 0x20u;
+        // 0x406ce0(0x40, 0, 0xff, 0)：alpha 0xff → 0 线性 64 帧
+        vm.alpha_interp.end_time = 0x40;
+        vm.alpha_interp.mode = 0;
+        vm.alpha_interp.initial = 0xff;
+        vm.alpha_interp.goal = 0;
+        vm.alpha_interp.bezier1 = 0;
+        vm.alpha_interp.bezier2 = 0;
+        vm.alpha_interp.timer.reset();
+    } else {
+        vm.flags_lo &= ~0x1e0u;
+        vm.layer = 0x13;
+    }
+}
+
+// 0x406690：每帧放出第 n 个光点（速度 4 + [0,5)，方向 = 上一方向 + [-π,π)/5），同时把已放出的光点透明度 -0x10；
+// 第 64 帧返回 1 → VM 删除
+int EffectManager::burst_update(AnmVm& vm) {
+    auto* burst = static_cast<Burst*>(vm.vertex_buffer);
+    if (burst == nullptr) return 1;
+    const i32 n = burst->timer.current;
+    if (n > 0x3f) return 1;
+    if (n != burst->timer.previous) {
+        for (int i = 0; i < n; ++i) {
+            u8& alpha = burst->color[i][3];
+            alpha = alpha < 0x10 ? u8(0) : u8(alpha - 0x10);
+        }
+        Rng& rng = animations_->game_rng;
+        const float speed = rng.unit() * 5.0f + 4.0f;
+        const Vec3 step = polar(burst->angle, speed);
+        burst->pos[n].x = burst->pos[n - 1].x + step.x;
+        burst->pos[n].y = burst->pos[n - 1].y + step.y;
+        burst->angle = wrap_angle(mul_pi(rng.signed_unit()) / 5.0f + burst->angle);
+    }
+    burst->timer.speed_slot = 0;
+    burst->timer.tick(animations_->game_speed);
+    return 0;
 }
 
 }  // namespace th16
