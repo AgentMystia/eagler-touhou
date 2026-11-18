@@ -198,6 +198,8 @@ public:
                 AnmFile* effect_anm, const AnmRenderer& geometry, float game_speed);
     // 0x443730：绘制链 0x1d 的逻辑部分（pos → VM entity_offset，flags 0x40000）
     void prepare_draw();
+    // 0x42ca80（0x42e150 过关）：flags bit1 子机收拢、全部子机 VM 中断 3、收拢计数清零
+    void gather_options(AnmManager& manager);
     // 0x443f10：被弹——音效 2、effect.anm 脚本 0x1d、符卡取得标志、状态 4（决死猶予）、无敌 6 帧、主 VM 重播脚本 0
     void hit(AnmManager& manager, AnmFile* effect_anm);
     // 0x443cd0：决死猶予结束——effect.anm 脚本 0x1c 登记入 EffectManager、残机 -1、Bomb 回 3、状态 2、无敌 0xb4、

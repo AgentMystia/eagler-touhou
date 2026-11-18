@@ -92,8 +92,11 @@ public:
     u32 boss_name_vm = 0;            // +0xd8（0x42c480）
     u32 vm_110 = 0;                  // +0x110：op 35（0x426780）front.anm 0x3c
     u32 boss_title_vm = 0;           // 0x42c240：logo 脚本 0（原版不保存 id）
-    u32 flags_1ac = 0;               // +0x1ac
+    u32 clear_bonus_vm = 0;          // +0x120：0x42c070 过关奖励 VM（front.anm 0x78）
+    i32 clear_bonus = 0;             // +0x2dc：过关奖励分（关卡 × 1,000,000，0x42e150 再加残机 / 碎片项）
+    u32 flags_1ac = 0;               // +0x1ac（bit4 过关结算中、bit8 过关奖励显示中）
     Timer timer_154;                 // +0x154
+    Timer clear_timer;               // +0x1b0：过关奖励显示计时（0x42c070 复位；0x42d7b0 < 0x78 时暂停游戏推进）
     i32 boss_timer_display = -1;     // +0x1d0
     i32 boss_timer_shown = -1;       // +0x1d8
 
@@ -108,6 +111,7 @@ public:
     const InputState* input = nullptr;       // DAT_004a52c8 / DAT_004a52d4 / DAT_004a5244[]
     const StageEntry* entry = nullptr;       // DAT_004a6f18
     bool replay_playback = false;            // GameManager+0xac != 0
+    const u32* spellcard_flags = nullptr;    // DAT_004a6db0->0x78（0x429ff0(-2) 的续关判定 bit7）
     std::vector<i32> sfx_queue;              // 0x45e150：op 11 按键推进 0
     // 0x43c3f0(1, 曲目) / 0x43c470：op 19 切 Boss 曲、op 22 / 27 淡出（Sound 接入前供宿主取走）
     // kind：0 淡出（0x43c470）/ 1 Boss 曲（0x43c3f0）/ 2 直接切曲（0x45ed00(2, 序号)，ECL 518 -1 / -3）
@@ -118,7 +122,7 @@ public:
 
     // 0x426c10（msg 部分）：按机体选 msg 文件；logo ANM 由 GameSession 装入槽 6 后传入
     bool init(AnmManager& anm, AnmFile* front_anm, AnmFile* logo_anm, const StageEntry& stage, std::vector<u8> msg_bytes);
-    // 0x429ff0：entry ≥ 0 开始对话；-1 / -3 切曲 + logo 标题；-2（过关 / 续关）当前记错误返回 false
+    // 0x429ff0：entry ≥ 0 开始对话；-1 / -3 切曲 + logo 标题；-2 过关（符卡 bit7 续关流程未接入时记错误）
     bool start_dialogue(i32 entry_index);
     // ECL 519（0x41dcb0 case 0x40）：对话存在且 ecl_release == 0 时需等待
     bool ecl_waits() const noexcept { return dialogue != nullptr && dialogue->ecl_release == 0; }
@@ -126,6 +130,8 @@ public:
     void show_boss_title();
     // 0x42c480
     void ensure_boss_name();
+    // 0x42e150：过关（MSG op 21 / 0x429ff0(-2)）——普通模式 1..5 面：奖励、子机收拢、场景请求 0xc 并推进关卡号
+    void stage_clear();
     // 0x427cf0（Msg 部分）
     void update(float game_speed);
     // 0x427a20 / 0x4264a0：离开游戏时删掉全部对话 VM

@@ -112,9 +112,13 @@ bool Gui::start_dialogue(i32 entry_index) {
         return true;
     }
     if (entry_index == -2) {
-        // 符卡标志 bit7（续关中）→ 0x43f350 续关流程，否则 0x42e150 过关：Stage clear 流程接入时补
-        error = "dialogue entry -2 (stage clear / continue) not ported";
-        return false;
+        // 符卡标志 bit7（续关中）→ 0x43f350 续关流程；否则 0x42e150 过关
+        if (spellcard_flags != nullptr && (*spellcard_flags & 0x80u) != 0) {
+            error = "dialogue entry -2 (continue flow 0x43f350) not ported";
+            return false;
+        }
+        stage_clear();
+        return error.empty();
     }
     if (entry_index < 0) { error = "dialogue entry out of range"; return false; }
     u32 count;
@@ -200,6 +204,35 @@ void Gui::ensure_boss_name() {
     const i32 spell_id = globals != nullptr ? globals->spell_id : 0;
     const i32 index = spell_id < 0x29 ? entry->boss_anm[1].index : entry->boss_anm[0].index;
     if (index >= 0 && index + 0xa4 >= 0) boss_name_vm = animations->spawn(*front, index + 0xa4, -1);
+}
+
+// 0x42e150
+void Gui::stage_clear() {
+    if (globals == nullptr) return;
+    const i32 mode = globals->mode();
+    if (mode != 2) {
+        // 0x42c070：过关奖励 VM（front.anm 0x78）、奖励 = 关卡 × 1,000,000（0x43e080 加分）、bit8 显示中、计时复位
+        if (front != nullptr && animations != nullptr) clear_bonus_vm = animations->spawn(*front, 0x78, -1);
+        clear_bonus = globals->stage * 1000000;
+        globals->add_score(clear_bonus);
+        flags_1ac |= 0x100u;
+        clear_timer.reset();
+    }
+    if (player != nullptr && animations != nullptr) player->gather_options(*animations);
+    // DAT_004a6da8[0xc] != 0 → Bomb 虚函数 +0x14（Bomb 接入时补）
+    if (mode != 0) {
+        // 练习 / 符卡练习：成绩文件记录 + 0x43f500 返回菜单
+        error = "stage clear in practice mode (0x43f500) not ported";
+        return;
+    }
+    if (globals->stage == 6 || globals->stage == 7) {
+        // 6 / Extra 面：游戏 flags |= 0x4000（结局 / 结算倒计时 0x42d7b0）、残机 ×5 + 碎片 奖励：结局流程接入时补
+        error = "final stage clear (ending flow) not ported";
+        return;
+    }
+    // 成绩文件 +0x519c 过关位（非回放）在 ScoreFile 接入时补；场景请求 0xc：GameManager 重建进入下一关
+    globals->scene_request = 0xc;
+    if (globals->stage < 7) globals->stage = globals->stage + 1;
 }
 
 // 0x42ba30：front.anm 0xe4 + index 文字框（entity_offset = 文字位置），子 VM 0xb4 + index / 0xd4 + index 的 $F0 = 宽
@@ -472,8 +505,8 @@ void Gui::execute(Msg& m, const MsgInstruction& ins) {
         ensure_boss_name();
         break;
     }
-    case 21:  // 0x42e150 过关结算：Stage clear 流程接入时补
-        error = "msg op 21 (stage clear) not ported";
+    case 21:
+        stage_clear();
         break;
     case 22:
     case 27:

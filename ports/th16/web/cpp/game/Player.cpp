@@ -129,6 +129,14 @@ void Player::interrupt_options(AnmManager& manager) {
     gather_counter = 0;
 }
 
+void Player::gather_options(AnmManager& manager) {
+    // 0x42ca80
+    flags |= kFlagOptionsGathered;
+    for (PlayerOption& o : options) { manager.interrupt(o.vm, 3); manager.interrupt(o.vm_front, 3); }
+    for (PlayerOption& o : sub_options) { manager.interrupt(o.vm, 3); manager.interrupt(o.vm_front, 3); }
+    gather_counter = 0;
+}
+
 void Player::reset(AnmManager& manager, GameGlobals& globals) {
     // 0x441740
     state = kNormal;
