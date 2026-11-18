@@ -532,7 +532,7 @@ void Player::update(AnmManager& manager, GameGlobals& globals, const InputState&
         for (PlayerOption& o : options) o.snap = 1;
         if (state_timer.current < 0x1e) {
             // 前 30 帧：以 pos_copy 为中心、半径从 64 线性扩到 576 切断激光（先尊重免疫，再按 1/4 半径无视免疫）
-            const float radius = float(state_timer.current * 512 / 30 + 64);
+            const float radius = (float(state_timer.current) * 512.0f) / 30.0f + 64.0f;
             if (laser_manager != nullptr) {
                 laser_manager->cancel_radius(pos_copy, radius, false, true);          // 0x431a70
                 laser_manager->cancel_radius(pos_copy, radius * 0.25f, false, false);
