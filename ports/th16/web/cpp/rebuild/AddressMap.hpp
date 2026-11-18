@@ -218,7 +218,16 @@ constexpr AddressAnchor kAnchors[] = {
     {"damage-source-rect-rect", 0x4049C0, nullptr},     // 同上（0x445a30 param_2）
     {"score-add", 0x43E080, "game/GameGlobals.hpp GameGlobals::add_score（含 0x43ddd0 分数 extend 阈值）"},
     {"score-extend-threshold", 0x43DDD0, "game/GameGlobals.hpp GameGlobals::extend_threshold"},
-    {"spellcard-data", 0x4178A0, "game/Spellcard.hpp Spellcard（数据布局与标志位；0x417f00 / 0x417930 / 0x4182f0 待还原）"},
+    // —— Spellcard（DAT_004a6db0，0xbc 字节；更新链 0x1e、绘制链 0xc）——
+    {"spellcard-create", 0x4178A0, "game/Spellcard.cpp Spellcard::reset（memset 0 后 flags |= 2）+ GameSession.cpp enter_game（0x417700 登记链 0x1e / 0xc）"},
+    {"spellcard-start", 0x417F00, "game/Spellcard.cpp Spellcard::start（计时归零、名字、flags (f&~0x98)|3 再 &~0x60、名牌 VM ×3、音效 0x21、effect.anm 0xd 倒计时（子 VM 0xb/0xc $I2 = 时限）、奖励 {50,100,150,200,100}万 × 关卡、effect 0x14、关卡表 Boss 块背景 / 切入 VM）"},
+    {"spellcard-update", 0x417930, "game/Spellcard.cpp Spellcard::update（0x417ee0 thunk；state++、>0x3b 关 Stage 绘制位、>299 奖励递减、名牌随自机 y 翻转（kFlipped 352/320）、倒计时 VM 0.05 跟随 Boss、Bomb 结束清 kBombUsed）"},
+    {"spellcard-end", 0x4182F0, "game/Spellcard.cpp Spellcard::end（Stage 绘制位、名牌中断 1、背景 / 倒计时 VM 删、Gui 计时中断 3、取得 → 0x43e080 加分 + 0x42bcf0(bonus,0) + 音效 0x2e；失败 → 0x42bcf0(0,1)；超时音效 0x45）"},
+    {"spellcard-ecl-start-op", 0x41DCB0, "game/Enemy.cpp Enemy::execute case 522/528/537..539（case 0x43：指令偏移 32 处 XOR 解密符卡名（key 0x77 步 7 / +0x10）、537..539 加难度偏移、life_flags |= 1 与 7 倍血量池）"},
+    {"spellcard-gui-timer-start", 0x4175D0, nullptr},  // Gui+0x94 / +0x98 计时 VM 中断 2：Gui 接入时补（Spellcard::gui_timer_events）
+    {"spellcard-gui-timer-end", 0x417650, nullptr},    // 同上中断 3
+    {"spellcard-timing", 0x417BC0, nullptr},           // 成绩文件符卡练习计次：ScoreFile 接入时补
+    {"spellcard-draw", 0x417D70, nullptr},             // 绘制链 0xc：名牌 / 倒计时文字（渲染侧）
     {"enemy-spawn-op", 0x423050, "game/Enemy.cpp Enemy::execute case 300..305（相对/绝对/镜像生成子敌人）"},
     {"enemy-var-get", 0x423810, "game/Enemy.cpp Enemy::integer / Enemy::floating（-10000..-9902 变量读取）"},
     {"enemy-var-int-dst", 0x423F80, "game/Enemy.cpp Enemy::integer_destination"},

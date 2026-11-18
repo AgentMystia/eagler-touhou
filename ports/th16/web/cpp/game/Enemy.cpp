@@ -450,11 +450,15 @@ bool Enemy::update(float game_speed) {
     return true;
 }
 
+AnmFile* EnemyManager::anm_file(i32 index) const noexcept {
+    if (animations == nullptr) return nullptr;
+    if (index == 0) return animations->file(7);
+    if (index == 1) return animations->file(8);
+    return index >= 2 ? animations->file(8 + index) : nullptr;
+}
+
 AnmFile* Enemy::anm_file(i32 index) const noexcept {
-    if (manager == nullptr || manager->animations == nullptr) return nullptr;
-    if (index == 0) return manager->animations->file(7);
-    if (index == 1) return manager->animations->file(8);
-    return index >= 2 ? manager->animations->file(8 + index) : nullptr;
+    return manager ? manager->anm_file(index) : nullptr;
 }
 
 AnmVm* Enemy::vm_at(int slot) noexcept {
@@ -752,8 +756,8 @@ int Enemy::resolve_hits(float game_speed) {
             applied = i32(float(applied) * damage_rate);
         }
         if (applied != 0) {
-            if ((sflags & (Spellcard::kActive | Spellcard::kDamageSuppressed)) ==
-                (Spellcard::kActive | Spellcard::kDamageSuppressed))
+            // 符卡中用过炸弹（flags & 0x21 == 0x21）→ 伤害 /30
+            if ((sflags & (Spellcard::kActive | Spellcard::kBombUsed)) == (Spellcard::kActive | Spellcard::kBombUsed))
                 applied /= 0x1e;
             if ((flags & 0x10u) == 0 && invuln.current < 1) {
                 // 0x41a6d0：符卡期间（life_flags & 1）按 7 倍血量池折算
@@ -2027,14 +2031,37 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             return 0;
         }
         case 522: case 528: case 537: case 538: case 539: {
-            // case 0x43：0x417f00 开始符卡（Spellcard 接入时补 ANM / Gui 部分），置 7 倍减伤位并重算血量池，
+            // case 0x43：解密指令偏移 32 处的符卡名（长度在 28；密钥 0x77 起、步长 7、步长每字节 +0x10），
+            // 537/538/539 的编号加难度偏移 d / d-1 / d-2；0x417f00 开始符卡后置 7 倍减伤位并重算血量池，
             // life_timer 归零（switchD_0041dd51_caseD_3a）
+            char spell_name[0x41]{};
+            if (ctx.instruction) {
+                const auto* bytes = reinterpret_cast<const u8*>(ctx.instruction);
+                i32 length = 0;
+                if (ctx.instruction->length >= 32) std::memcpy(&length, bytes + 28, 4);
+                u8 key = 0x77, step = 7;
+                for (i32 i = 0; i < length && 32 + i < i32(ctx.instruction->length); ++i) {
+                    const u8 c = u8(bytes[32 + i] ^ key);
+                    key = u8(key + step);
+                    step = u8(step + 0x10);
+                    if (i < i32(sizeof(spell_name)) - 1) spell_name[i] = char(c);
+                }
+            }
+            i32 spell_id = iarg(0);
+            const i32 difficulty = globals ? globals->difficulty : 0;
+            if (opcode == 537) spell_id += difficulty;
+            else if (opcode == 538) spell_id += difficulty - 1;
+            else if (opcode == 539) spell_id += difficulty - 2;
+            const i32 anm_index = iarg(2);
+            const i32 limit = iarg(1);
+            if (manager && manager->spellcard) manager->spellcard->start(spell_id, spell_name, limit, anm_index);
             life_flags |= 1u;
             life_budget = life * 7;
             life_timer.set(0);
             return 0;
         }
-        case 523:  // case 0x44：0x4182f0 结束符卡（Spellcard 接入时补），清 7 倍减伤位
+        case 523:  // case 0x44：0x4182f0 结束符卡，清 7 倍减伤位
+            if (manager && manager->spellcard) manager->spellcard->end();
             life_flags &= ~1u;
             return 0;
         case 568:

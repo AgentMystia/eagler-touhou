@@ -31,6 +31,7 @@ public:
     AnmManager animations;
     EffectManager effects;        // DAT_004a6db8（0x418a30：启动期创建，更新链 0x1f）
     Spellcard spellcard;          // DAT_004a6db0（0x4178a0：进游戏时创建；敌机 / 自机被弹共用其标志）
+    std::vector<Spellcard::GuiNotice> gui_events;  // 本帧 0x42bcf0 Gui 通知（Gui 接入前供 harness 对拍）
     Supervisor supervisor;
     ChainManager chains;
     GameGlobals globals;
@@ -79,6 +80,7 @@ private:
     ChainEntry* item_update_chain_ = nullptr;
     ChainEntry* item_draw_chain_ = nullptr;
     ChainEntry* item_draw_season_chain_ = nullptr;
+    ChainEntry* spellcard_update_chain_ = nullptr;
 
     bool load_anm(const char* name, AnmResource*& out);
     bool load_boot_banks();            // 0x43adc0 / 0x407cb0 / 0x43ad20 / 0x418790 的同步装载部分

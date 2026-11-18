@@ -25,7 +25,7 @@
 //   harness std <th16.dat> <stNN.std>          → STD 头 / 对象 / 四边形 / 实例 / 脚本（0x40ac30）
 //   harness stage-run <th16.dat> <stage> <frames>    → StageManager 单独驱动（0x409db0→0x40add0→每帧 0x409e50），逐帧 JSON
 //   harness stage-digest <th16.dat> <stage> <frames> → 同一状态流的 FNV-1a 64（tests/golden/stage.json，tools/oracle/stage-oracle.py 同口径）
-//   harness game-run <th16.dat> <stage> <shot> <season> <frames> <input "f:held,..."> [enemies "f:n,..."] [dialogue "f:v,..."]
+//   harness game-run <th16.dat> <stage> <shot> <season> <frames> <input "f:held,..."> [enemies "f:n,..."] [dialogue "f:v,..."] [difficulty] [replay_slot] [lives]
 //                                              → 直接进入场景 7（GameSession::start_game_direct），逐帧 JSON：Player 规范字段（含射击计时、冷却表、
 //                                                自机弹 ×live、伤害源 ×live、本帧 sfx）+ 自机 VM 0x568 字节
 //                                                （与 tools/oracle/game-oracle.py 快照同结构；enemies/dialogue 为未移植管理器的 PlayerWorld 桩输入）
@@ -495,6 +495,8 @@ int main(int argc, char** argv) {
         if (argc >= 11 && argv[10][0] != '\0') session.globals.difficulty = std::atoi(argv[10]);
         if (argc >= 12 && argv[11][0] != '\0') session.globals.replay_slot = std::atoi(argv[11]);
         if (!session.start_game_direct()) return fail(session.failure.c_str());
+        // 可选残机覆盖（game-oracle.py --lives 同口径：装载完成后写 DAT_004a57f4），用于无输入长程对拍不被 Game Over 截断
+        if (argc >= 13 && argv[12][0] != '\0') session.globals.lives = std::atoi(argv[12]);
 
         constexpr size_t kSnapshotBytes = 0x568;
         u64 digest = 0xcbf29ce484222325ull;
@@ -502,6 +504,8 @@ int main(int argc, char** argv) {
         u64 bul_digest = 0xcbf29ce484222325ull;
         u64 vm_digest = 0xcbf29ce484222325ull;
         u64 item_digest = 0xcbf29ce484222325ull;
+        u64 spell_digest = 0xcbf29ce484222325ull;
+        auto feed_spell_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { spell_digest ^= u8(v >> (8 * i)); spell_digest *= 0x100000001b3ull; } };
         auto feed = [&](const u8* p, size_t n) { for (size_t i = 0; i < n; ++i) { digest ^= p[i]; digest *= 0x100000001b3ull; } };
         auto feed_vm_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { vm_digest ^= u8(v >> (8 * i)); vm_digest *= 0x100000001b3ull; } };
         // 敌人 ANM VM（oracle enemy_vm_snapshot 同口径）：[槽, 脚本, 精灵, entity_offset×3, pos×3, rotation.z, flags_lo, flags_hi, 年龄]
@@ -699,6 +703,19 @@ int main(int argc, char** argv) {
                     for (u32 v : words) feed_item_u32(v);
                 }
             }
+            // 符卡（game-oracle.py spell_digest 同口径）：[frame, flags, timer×3, id, bonus, bonus_initial, time_limit,
+            // count, state, vm 有无×5, dialogue, boss_ids×3, enemy_bonus×2, spell_id]
+            {
+                const Spellcard& sc = session.spellcard;
+                const EnemyManager& em = session.game.enemies;
+                const u32 words[] = {u32(f + 1), sc.flags, u32(sc.timer.previous), u32(sc.timer.current), bits(sc.timer.current_f),
+                                     u32(sc.id), u32(sc.bonus), u32(sc.bonus_initial), u32(sc.time_limit), u32(sc.capture_count),
+                                     u32(sc.state), has(sc.vm_ids[0]), has(sc.vm_ids[1]), has(sc.vm_ids[2]), has(sc.vm_ids[3]),
+                                     has(sc.vm_ids[4]), u32(session.game.world.dialogue ? 1 : 0),
+                                     em.boss_ids[0], em.boss_ids[1], em.boss_ids[2],
+                                     u32(g.enemy_bonus_pending), u32(g.enemy_bonus), u32(g.spell_id)};
+                for (u32 v : words) feed_spell_u32(v);
+            }
             if (digest_only) continue;
 
             std::printf("%s{\"frame\":%d,\"game_frame\":%d,\"stage_frame\":%d,\"input\":[%u,%u],\"power\":%d,\"season_gauge\":%d,"
@@ -847,9 +864,10 @@ int main(int argc, char** argv) {
             std::printf("}");
         }
         if (digest_only)
-            std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx enemies=%016llx bullets=%016llx enemy_vms=%016llx items=%016llx\n",
+            std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx enemies=%016llx bullets=%016llx enemy_vms=%016llx items=%016llx spell=%016llx\n",
                         stage, shot, season, frames, (unsigned long long)digest, (unsigned long long)enm_digest,
-                        (unsigned long long)bul_digest, (unsigned long long)vm_digest, (unsigned long long)item_digest);
+                        (unsigned long long)bul_digest, (unsigned long long)vm_digest, (unsigned long long)item_digest,
+                        (unsigned long long)spell_digest);
         else std::printf("]}\n");
         return 0;
     }
