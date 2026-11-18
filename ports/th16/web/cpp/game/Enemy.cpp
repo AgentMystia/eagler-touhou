@@ -493,6 +493,7 @@ bool Enemy::update(float game_speed) {
         it = next;
     }
 
+    if (frame_hook != FrameHook::None && run_frame_hook(frame_hook) != 0) { alive = false; return false; }
     if (resolve_hits(game_speed) != 0) { alive = false; return false; }
     sync_vm_offsets();
 
@@ -621,6 +622,26 @@ void Enemy::sync_vm_offsets() {
             vm_rotation = angle;
         }
     }
+}
+
+// DAT_004917b8 函数表（op 632 / 637 / 639）
+int Enemy::run_frame_hook(FrameHook hook) {
+    switch (hook) {
+        case FrameHook::TriggerBulletsNearPlayer:  // 0x4252d0：半径取 F0（EnemyInf+0x29c）
+            if (manager != nullptr && manager->bullets != nullptr && player != nullptr)
+                manager->bullets->trigger_ex_param_near(player->pos, float_regs[0]);
+            return 0;
+        case FrameHook::DrainPowerAndSeason:  // 0x4253b0：min(上限, 0)——上限非负时即归零；随后 0x4440e0 重建子机、0x42c600 刷 HUD
+            if (globals != nullptr) {
+                globals->season_gauge = globals->season_gauge_max < 0 ? globals->season_gauge_max : 0;
+                globals->power = globals->power_max < 0 ? globals->power_max : 0;
+                if (player != nullptr && manager != nullptr && manager->animations != nullptr)
+                    player->setup_options(*manager->animations, *globals);
+            }
+            return 0;
+        case FrameHook::None: break;
+    }
+    return 0;
 }
 
 // 0x41c330 尾段（主 VM 闪烁 / 受击音效）
@@ -2119,9 +2140,20 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             safe_radius_sq = r * r;
             return 0;
         }
-        case 629: case 630: case 631: case 632: case 633: case 634: case 637: case 638: case 639:
-            // 629 消弹光环特效（0x418c70）、630 STD 标签跳转、631 EnemyManager 标志、632–634/637/639 敌机回调表、
-            // 638 得分飘字：分别随 Effect / Stage / Gui 子系统接入
+        case 632: case 639: {  // case 0x8f / 0x96：登记每帧钩子（639 另置 +0x451c = 1）
+            const i32 index = iarg(0);
+            frame_hook = (index >= 1 && index <= 2) ? FrameHook(index) : FrameHook::None;
+            frame_hook_flag = opcode == 639 ? 1 : 0;
+            return 0;
+        }
+        case 637: {  // case 0x94：立即调用一次钩子（不登记）
+            const i32 index = iarg(0);
+            if (index >= 1 && index <= 2) run_frame_hook(FrameHook(index));
+            return 0;
+        }
+        case 629: case 630: case 631: case 633: case 634: case 638:
+            // 629 消弹光环特效（0x418c70）、630 STD 标签跳转、631 EnemyManager 标志、633/634 伤害 / 判定回调表
+            //（全部 ECL 未使用）、638 得分飘字：分别随 Effect / Stage / Gui 子系统接入
             return 0;
         // —— 激光 700..714（0x41dcb0 case 0x99..0xa7）：复用发射器槽的弹种 / 颜色 / 角度 / 速度 / Ex，
         //    长度与时序参数放在发射器 +0x340 参数区与 pos 字段 ——
