@@ -98,3 +98,26 @@ test('enemy: BossSpell 路径（replay_slot=0）— MainBossSpell 生成 Boss、
   assert.deepEqual(boss.hp.slice(0, 2), [1700, 1700]);
   assert.ok((boss.flags & 0x20000) !== 0);
 });
+
+test('enemy combat (0x41c330 / 0x445a30 / 0x445ee0 / 0x41a6d0): 灵梦追踪索敌击杀妖精、文充能穿透与 BossCard1 7 倍减伤', needDat, () => {
+  const reimu = golden.cases.find(x => x.name === 'reimu-homing-hit-girl-st1');
+  const rFrames = gameRun(reimu, 105).frames;
+  // 第 84 帧：追踪弹锁定 id=2 (target=2)，命中后 active 置 2、damage_source 清 0、z=0.1
+  const f84 = rFrames[83];
+  const hitBul = f84.player.bullets.find(b => b.active === 2 && b.target === 2);
+  assert.ok(hitBul, '追踪弹命中 id=2 后置 active=2');
+  assert.equal(hitBul.damage_source, 0);
+  // 第 96 帧 id=2 仍在场（hp=8），后续帧被击杀移除并消耗季节掉落 RNG
+  assert.ok(rFrames[95].enemies.enemies.some(e => e.id === 2));
+  assert.ok(!rFrames[100].enemies.enemies.some(e => e.id === 2));
+
+  const aya = golden.cases.find(x => x.name === 'aya-focus-hit-boss-st1');
+  const aFrames = gameRun(aya, 136).frames;
+  // 第 133 帧 Boss 无敌刚结束前血量 1700；第 134 帧受 31 点伤害，按符卡 7 倍减伤 (11900-31)/7 = 1695
+  assert.equal(aFrames[132].enemies.enemies[1].hp[0], 1700);
+  assert.equal(aFrames[133].enemies.enemies[1].hp[0], 1695);
+  // 文低速充能弹（kind=2，0x4474a0）首次命中后不销毁（active=1）但伤害降为 1
+  const chargeBul = aFrames[133].player.bullets.find(b => b.damage === 1 && b.active === 1);
+  assert.ok(chargeBul, '0x4474a0 充能弹命中后伤害降为 1 持续穿透');
+});
+
