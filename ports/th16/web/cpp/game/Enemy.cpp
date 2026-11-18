@@ -1,6 +1,8 @@
 // th16 Enemy / EnemyManager 还原——见 Enemy.hpp 锚点。
 #include "Enemy.hpp"
 #include "AnmManager.hpp"
+#include "Effect.hpp"
+#include "Spellcard.hpp"
 #include "GameGlobals.hpp"
 #include "Player.hpp"
 #include <cmath>
@@ -211,6 +213,15 @@ bool Enemy::init(EnemyManager& mgr, EclProgram& prog, const char* sub, const Ene
     player = pl;
     rng = &r;
     bullets = mgr.bullets;
+    effects = mgr.effects;
+    std::memset(vm_ids, 0, sizeof vm_ids);
+    for (int i = 0; i < kVmSyncSlots; ++i) { vm_offsets[i] = Vec3{}; vm_parent_slot[i] = -1; }
+    anm_slot = anm_slot_main = main_script = main_script_base = sprite_direction = 0;
+    anm_layer = anm_layer_offset = 0;
+    delta = Vec3{};
+    vm_rotation = 0;
+    death_anm_slot = 0;
+    death_script = -1;
     std::memset(static_cast<void*>(shooters), 0, sizeof shooters);
     for (int i = 0; i < kShooterSlots; ++i) { shooter_offset[i] = Vec3{}; shooter_pos2[i] = Vec3{}; shooter_ex_counter[i] = 0; }
     safe_radius_sq = 0;
@@ -228,16 +239,29 @@ bool Enemy::init(EnemyManager& mgr, EclProgram& prog, const char* sub, const Ene
     hurtbox = {24.0f, 24.0f, 0.0f};
     life = truncate_int(args.life);
     life_max = life;
+    life_display = 0;
     phase_life = 0;
-    life_budget = life * 7;
+    life_budget = 0;  // 0x41aa70 不预置血量池（op 511 / 522 族才写 life × 7）
     life_flags = 0;
+    damage_accum = 0;
+    damage_rate = 1.0f;
+    season_item_step = season_item_next = 0;
+    hit_timer = Timer{};
+    no_hit_timer = Timer{};
+    score_bonus = score_bonus_spell = 0;
+    bomb_script = bomb_script_restore = 0;
+    for (auto& it : interrupts) it = EnemyInterrupt{};
     int_regs[0] = 1;  // 0x41aa70：puVar6[0x1498] = 1
     invuln.set(2);
     life_timer.set(0x3c);
     season_drop_timer.set(0x3c);
     season_drop_duration = 0x3c;
-    season_drop_max = 0;
+    season_drop_max = 10;        // 0x41aa70：puVar6[0x1477] = 10
     season_drop_min = 1;
+    drop_item_type = args.item;  // 0x41aa70：+0x519c = 生成参数 +0x10
+    std::memset(drop_counts, 0, sizeof drop_counts);
+    drop_radius = {32.0f, 32.0f};
+    death_sub.clear();
     death_sfx = i32((id & 1u) + 3u);
     primary.difficulty = difficulty;
     const i32 routine = prog.find_index(sub);
@@ -271,12 +295,13 @@ bool Enemy::update(float game_speed) {
     motion1.integrate(game_speed);
     motion2.update_velocity(game_speed);
     motion2.integrate(game_speed);
-    const float vx = (motion1.pos.x + motion2.pos.x) - pos.x;
-    const float vy = (motion1.pos.y + motion2.pos.y) - pos.y;
-    const float vz = (motion1.pos.z + motion2.pos.z) - pos.z;
-    pos.x = floor_f((pos.x + vx) * 100.0f) / 100.0f;
-    pos.y = floor_f((pos.y + vy) * 100.0f) / 100.0f;
-    pos.z = pos.z + vz;
+    // 0x41c1f0：本帧位移存 EnemyInf+0x78（朝向切换与 0x80 位 VM 的朝向角用）
+    delta.x = (motion1.pos.x + motion2.pos.x) - pos.x;
+    delta.y = (motion1.pos.y + motion2.pos.y) - pos.y;
+    delta.z = (motion1.pos.z + motion2.pos.z) - pos.z;
+    pos.x = floor_f((pos.x + delta.x) * 100.0f) / 100.0f;
+    pos.y = floor_f((pos.y + delta.y) * 100.0f) / 100.0f;
+    pos.z = pos.z + delta.z;
     if ((flags & 0x20000u) != 0) {
         const float hx = bound_size.x * 0.5f, hy = bound_size.y * 0.5f;
         if (pos.x < bound_center.x - hx) pos.x = bound_center.x - hx;
@@ -288,7 +313,8 @@ bool Enemy::update(float game_speed) {
         motion1.pos.z = pos.z - motion2.pos.z;
     }
 
-    // 0x41bb50 尾：按主 VM 精灵宽高（+0x3f58/+0x3f5c，op 306 前为 0）判定进入场地与出界销毁
+    // 0x41bb50 尾：朝向切换 + 从主 VM 回读精灵宽高（+0x3f58/+0x3f5c，绑定前为 0），再判进入场地与出界销毁
+    sync_sprite_direction();
     const float half_w = sprite_size.x * 0.5f, half_h = sprite_size.y * 0.5f;
     if (pos.x + half_w < -192.0f || 192.0f < pos.x - half_w) {
         if ((flags & 0x10004u) == 0x10000u) { alive = false; return false; }
@@ -315,65 +341,434 @@ bool Enemy::update(float game_speed) {
         it = next;
     }
 
-    // 0x41c330：受击结算（0x445a30 伤害源碰撞）与死亡判定（0x41d520）
-    flags &= ~0x200000u;
-    if ((flags & 0x21u) == 0 && player != nullptr && manager != nullptr && manager->animations != nullptr) {
-        i32 dmg = 0;
-        if (hitbox.x > 0.0f) {
-            dmg = player->apply_damage_sources(*manager->animations, pos, hitbox.x * 0.5f, id);
-            dmg = i32(float(dmg) * player->scale2);
-        }
-        if (player->state == 2 || player->state == 0) dmg /= 5;
-        if (dmg > 0) {
-            if ((flags & 0x10u) == 0 && invuln.current < 1) {
-                // 0x41a6d0：符卡期间（life_flags & 1）按 7 倍血量池折算
-                if ((life_flags & 1u) != 0) {
-                    life_budget -= dmg;
-                    life = (life_budget - phase_life * 7) / 7 + phase_life;
-                } else {
-                    life -= dmg;
-                }
-            }
-            if (life < 1 && ((flags >> 7) & 1u) == 0) {
-                // 0x41d520：死亡音效 + 0x41d700 季节道具掉落（消耗 visual_rng）
-                if (death_sfx >= 0 && manager != nullptr) manager->sfx_queue.push_back(death_sfx);
-                i32 drop_count = season_drop_min;
-                if (season_drop_timer.current >= 1 && season_drop_duration > 0) {
-                    drop_count = ((season_drop_max - season_drop_min) * season_drop_timer.current) /
-                                     season_drop_duration +
-                                 season_drop_min;
-                }
-                season_drop_max = drop_count;
-                if (rng != nullptr) {
-                    (void)rng->signed_unit();
-                    for (i32 k = 0; k < drop_count; ++k) {
-                        (void)rng->unit();
-                        (void)rng->angle();
-                    }
-                }
-                alive = false;
-                return false;
-            }
-            flags |= 0x200000u;
-        }
-    }
-    if (has_main_vm) {
-        if (hit_flash_timer == 0) {
-            if ((flags & 0x200000u) != 0 && (flags & 0x2000u) == 0) {
-                hit_flash_timer = 4;
-                if (manager != nullptr)
-                    manager->sfx_queue.push_back(hit_sfx < 0 ? 0x22 : hit_sfx);
-            }
-        } else {
-            --hit_flash_timer;
-        }
-    }
+    if (resolve_hits(game_speed) != 0) { alive = false; return false; }
+    sync_vm_offsets();
 
     if (invuln.current > 0) invuln.untick(game_speed);
+    if (no_hit_timer.current > 0) no_hit_timer.untick(game_speed);
     life_timer.tick(game_speed);
     if (season_drop_timer.current > 0) season_drop_timer.untick(game_speed);
     // 注意：不在这里清除 kFlagReentry——由 EnemyManager::update 清除（对齐 0x41b3d0）
     return true;
+}
+
+AnmFile* Enemy::anm_file(i32 index) const noexcept {
+    if (manager == nullptr || manager->animations == nullptr) return nullptr;
+    if (index == 0) return manager->animations->file(7);
+    if (index == 1) return manager->animations->file(8);
+    return index >= 2 ? manager->animations->file(8 + index) : nullptr;
+}
+
+AnmVm* Enemy::vm_at(int slot) noexcept {
+    if (slot < 0 || slot >= kVmSlots || manager == nullptr || manager->animations == nullptr) return nullptr;
+    AnmVm* vm = manager->animations->find(vm_ids[slot]);
+    if (vm == nullptr) vm_ids[slot] = 0;
+    return vm;
+}
+
+AnmVm* Enemy::rebind_vm(int slot, i32 source, i32 script, bool full) {
+    if (slot < 0 || slot >= kVmSlots || manager == nullptr || manager->animations == nullptr) return nullptr;
+    AnmManager& anm = *manager->animations;
+    anm.kill(vm_ids[slot]);
+    vm_ids[slot] = 0;
+    AnmFile* file = anm_file(source);
+    if (file == nullptr) return nullptr;
+    vm_ids[slot] = anm.spawn_front(*file, script, anm_layer_offset + 7);
+    AnmVm* vm = vm_at(slot);
+    if (vm == nullptr) return nullptr;
+    if (!full) return vm;
+    if (slot == 0) {
+        sprite_size.x = vm->sprite_size.y * vm->scale.y;
+        sprite_size.y = vm->sprite_size.x * vm->scale.x;
+    }
+    if ((flags & 0x20u) != 0) AnmManager::hide_tree(*vm);
+    return vm;
+}
+
+// 0x41bb50 尾段
+void Enemy::sync_sprite_direction() {
+    if (manager == nullptr || manager->animations == nullptr) return;
+    AnmManager& anm = *manager->animations;
+    if ((flags & 0x100000u) != 0) {
+        const i32 dir = delta.x < -0.03f ? -1 : (0.03f < delta.x ? 1 : 0);
+        if (sprite_direction != dir) {
+            i32 step = 0;
+            if (sprite_direction == -1) step = dir != 0 ? 2 : 3;
+            else if (sprite_direction == 0) step = dir != -1 ? 2 : 1;
+            else if (sprite_direction == 1) step = dir == 0 ? 4 : 1;
+            AnmVm* old = vm_at(0);
+            Vec3 offset{};
+            if (old != nullptr) {
+                offset = old->pos;
+                anm.kill(vm_ids[0]);
+                vm_ids[0] = 0;
+            }
+            if (AnmFile* file = anm_file(anm_slot_main)) {
+                vm_ids[0] = anm.spawn_vm(*file, main_script_base + step, anm_layer_offset + 7, offset, 0.0f, 8, false);
+            }
+            sprite_direction = dir;
+        }
+    }
+    if (AnmVm* vm = vm_at(0)) {
+        sprite_size.x = std::fabs(vm->sprite_size.y * vm->scale.y);
+        sprite_size.y = std::fabs(vm->sprite_size.x * vm->scale.x);
+    }
+}
+
+// 0x41d2e0 后段
+void Enemy::sync_vm_offsets() {
+    if (manager == nullptr || manager->animations == nullptr) return;
+    if ((flags & 0x4000000u) != 0) {
+        for (int i = 0; i < kVmSyncSlots; ++i) {
+            if (AnmVm* vm = manager->animations->find(vm_ids[i])) vm->entity_offset = pos;
+        }
+        return;
+    }
+    for (int i = 0; i < kVmSyncSlots; ++i) {
+        AnmVm* vm = vm_at(i);
+        if (vm == nullptr) continue;
+        Vec3 offset{vm_offsets[i].x + pos.x, vm_offsets[i].y + pos.y, pos.z + vm_offsets[i].z};
+        if (vm_parent_slot[i] >= 0) {
+            if (AnmVm* parent = vm_at(vm_parent_slot[i])) {
+                offset.x = parent->pos.x + offset.x;
+                offset.y = parent->pos.y + offset.y;
+                offset.z = parent->pos.z + offset.z;
+            }
+        }
+        vm->entity_offset = offset;
+        if ((vm->flags_hi & 0x80u) != 0) {
+            const float angle = atan2_f(delta.y, delta.x);
+            vm->flags_lo |= AnmVm::kRotationDirty;
+            vm->rotation.z = angle;
+            vm_rotation = angle;
+        }
+    }
+}
+
+// 0x41c330 尾段（主 VM 闪烁 / 受击音效）
+void Enemy::update_hit_flash() {
+    AnmVm* vm = vm_at(0);
+    if (vm == nullptr) return;
+    auto flash = [&](u32 bgra) {
+        std::memcpy(vm->color2, &bgra, 4);
+        vm->flags_lo = (vm->flags_lo & ~0x40000u) | 0x20000u;
+    };
+    if (hit_flash_timer != 0) {
+        vm->flags_lo &= ~0x60000u;
+        --hit_flash_timer;
+        return;
+    }
+    const u32 spell = manager != nullptr && manager->spellcard != nullptr ? manager->spellcard->flags : 0u;
+    // 0x40800000 位（Boss 家族）在非符卡取得阶段按血量池阈值闪蓝
+    auto low_life_flash = [&](i32 spell_limit, i32 normal_limit) {
+        if ((flags & 0x40800000u) == 0 || (spell & 9u) == 9u) return false;
+        return (spell & 1u) != 0 ? life_display < spell_limit : life_display < normal_limit;
+    };
+    if ((flags & 0x80000000u) != 0) {
+        if (life_timer.current % 4 == 0) flash(0xffff00ffu);
+        else vm->flags_lo &= ~0x60000u;
+    }
+    if ((flags & 0x200000u) == 0 || (flags & 0x2000u) != 0) {
+        if (life_timer.current % 4 == 0) {
+            if (low_life_flash(100, 500)) flash(0xff0000ffu);
+        } else {
+            vm->flags_lo &= ~0x60000u;
+        }
+        return;
+    }
+    flash(0xff0000ffu);
+    hit_flash_timer = 4;
+    if (manager == nullptr) return;
+    if (hit_sfx >= 0) manager->sfx_queue.push_back(hit_sfx);
+    else manager->sfx_queue.push_back(low_life_flash(200, 900) ? 0x23 : 0x22);
+}
+
+// 0x424e40
+void Enemy::set_interrupt(int slot, i32 life_threshold, i32 time_threshold, const char* sub) {
+    if (slot < 0 || slot >= kInterruptSlots) return;
+    EnemyInterrupt& it = interrupts[slot];
+    it.life_threshold = life_threshold;
+    it.time_threshold = time_threshold;
+    if (sub != nullptr) { it.sub = sub; it.timeout_sub = sub; }
+    else { it.sub.clear(); it.timeout_sub.clear(); }
+}
+
+// 0x424f00
+const std::string* Enemy::life_interrupt() {
+    const i32 current = life;
+    life_display = current;
+    phase_life = 0;
+    for (int i = 0; i < kInterruptSlots; ++i) {
+        EnemyInterrupt& it = interrupts[i];
+        if (it.life_threshold < 0) continue;
+        life_display = current - it.life_threshold;
+        phase_life = it.life_threshold;
+        if (it.life_threshold < current) return nullptr;
+        if (score_bonus != 0 && globals != nullptr && score_bonus_spell == globals->spell_id) {
+            globals->enemy_bonus += score_bonus;
+            score_bonus = 0;
+        }
+        life = it.life_threshold;
+        it.life_threshold = -1;
+        life_timer.reset();
+        flags &= ~0x1000000u;
+        return &it.sub;
+    }
+    return nullptr;
+}
+
+// 0x425010
+const std::string* Enemy::time_interrupt() {
+    int slot = 0;
+    for (;; ++slot) {
+        if (slot >= kInterruptSlots) return nullptr;
+        if (interrupts[slot].life_threshold >= 0 && interrupts[slot].time_threshold >= 1) break;
+    }
+    EnemyInterrupt& it = interrupts[slot];
+    // Boss 位（0x800000）：Gui+0x1d0/+0x1d4 的剩余秒数显示由 Gui 接入时补（纯显示）
+    if (life_timer.current < it.time_threshold) return nullptr;
+    life = it.life_threshold;
+    it.life_threshold = -1;
+    life_timer.reset();
+    flags |= 0x1000000u;
+    Spellcard* spell = manager != nullptr ? manager->spellcard : nullptr;
+    const u32 sflags = spell != nullptr ? spell->flags : 0u;
+    if ((sflags & Spellcard::kSurvival) == 0) {
+        flags &= ~0x1000000u;
+        if (spell != nullptr) {
+            spell->flags |= Spellcard::kTimedOut;
+            if ((spell->flags & Spellcard::kActive) != 0) {
+                if (spell->timer.current > 0x3b) {
+                    spell->bonus = 0;
+                    spell->flags &= ~(Spellcard::kBonusAvailable | Spellcard::kBombUsed);
+                    manager->counters[2] = 0;
+                    score_bonus = 0;
+                    return &it.timeout_sub;
+                }
+                if (manager->bomb_active) spell->flags |= Spellcard::kBombUsed;
+            }
+        }
+        if (manager != nullptr) manager->counters[2] = 0;
+    } else if ((sflags & (Spellcard::kSurvival | Spellcard::kActive)) == (Spellcard::kSurvival | Spellcard::kActive)) {
+        if (globals != nullptr) globals->enemy_bonus += score_bonus;
+    }
+    score_bonus = 0;
+    return &it.timeout_sub;
+}
+
+// 0x41a4f0 + 0x41a5a0 + 0x474740/0x474890 + 0x473bc0
+bool Enemy::switch_routine(const std::string& sub, float game_speed) {
+    if (program == nullptr) return true;
+    const i32 routine = program->find_index(sub.c_str());
+    async_threads.clear();
+    if (routine < 0) { error = "missing interrupt sub " + sub; return false; }
+    reset_context(primary, routine);
+    primary.interpolation_rate = game_speed;
+    const int r = primary.step(game_speed);
+    if (r == -2) { error = primary.error; return false; }
+    return r == 0;
+}
+
+// 0x41c330
+int Enemy::resolve_hits(float game_speed) {
+    if (manager == nullptr) return 0;
+    Spellcard* spell = manager->spellcard;
+    const u32 sflags = spell != nullptr ? spell->flags : 0u;
+    AnmManager* anm = manager->animations;
+
+    // Bomb / 季节解放期间把主 VM 换成 bomb_script（op 546），结束后换回
+    const bool burst = manager->bomb_active || manager->release_active;
+    auto replace_main = [&](i32 script) {
+        // 0x46f440：旧 VM 停止（flags_lo bit0 清、ins_offset = -1），同文件 script 在层 -1 新建
+        main_script_base = script;
+        AnmVm* vm = vm_at(0);
+        if (vm == nullptr || anm == nullptr) return;
+        AnmFile* file = anm->file(vm->file_slot);
+        vm->flags_lo &= ~1u;
+        vm->ins_offset = -1;
+        if (file != nullptr) vm_ids[0] = anm->spawn(*file, script, -1);
+    };
+    if ((flags & 0x10000000u) != 0 && burst && (flags & 0x20000000u) == 0) {
+        replace_main(bomb_script);
+        flags |= 0x20000001u;
+    } else if (!burst && (flags & 0x20000000u) != 0) {
+        replace_main(bomb_script_restore);
+        flags &= ~0x20000001u;
+    }
+
+    // flags & 0x800：被炸弹类伤害源碰到即死（只判定不结算）
+    if ((flags & 0x800u) != 0 && player != nullptr && anm != nullptr && globals != nullptr) {
+        bool bomb_hit = false;
+        const i32 probe = player->apply_damage_sources(*anm, *globals, pos, hitbox.x * 0.5f, id, &hit_pos, &bomb_hit, true);
+        if (probe != 0 && bomb_hit) { die(game_speed); return 1; }
+    }
+
+    // 0x425010：时间阶段中断
+    if (const std::string* sub = time_interrupt()) {
+        if (!switch_routine(*sub, game_speed)) return -1;
+    }
+
+    const u32 before = flags;
+    flags &= ~0x200000u;
+    bool bomb_hit = false;
+    if ((before & 0x21u) == 0) {
+        i32 dmg = 0;
+        if (hitbox.x > 0.0f && player != nullptr && anm != nullptr && globals != nullptr) {
+            dmg = player->apply_damage_sources(*anm, *globals, pos, hitbox.x * 0.5f, id, &hit_pos, &bomb_hit);
+            dmg = i32(float(dmg) * player->scale2);
+        }
+        // +0x4520 伤害回调 / +0x3fe0 待加伤害：无 ECL 写入路径，恒 0
+        if (player != nullptr && (player->state == 2 || player->state == 0)) dmg /= 5;
+        i32 applied = manager->dialogue_active ? 0 : dmg;
+        if (applied > 0) {
+            if (!bomb_hit) {
+                manager->damage_dealt += applied;
+            } else if (applied < life) {
+                manager->damage_dealt_bomb += applied;
+            } else {
+                manager->damage_dealt_bomb += ((applied - life) >> 2) + life;
+            }
+        }
+        if (manager->bomb_active && damage_rate < 1.0f) {
+            if (applied != 0 && damage_rate <= 0.0f) manager->sfx_queue.push_back(0x24);
+            applied = i32(float(applied) * damage_rate);
+        }
+        if (applied != 0) {
+            if ((sflags & (Spellcard::kActive | Spellcard::kDamageSuppressed)) ==
+                (Spellcard::kActive | Spellcard::kDamageSuppressed))
+                applied /= 0x1e;
+            if ((flags & 0x10u) == 0 && invuln.current < 1) {
+                // 0x41a6d0：符卡期间（life_flags & 1）按 7 倍血量池折算
+                if ((life_flags & 1u) != 0) {
+                    life_budget -= applied;
+                    life = (life_budget - phase_life * 7) / 7 + phase_life;
+                } else {
+                    life -= applied;
+                }
+            } else {
+                damage_accum += applied;
+            }
+            // op 1001：每累计 season_item_step 伤害放一个季节道具（visual_rng：unit + angle）
+            if (season_item_step > 0 && season_item_next < damage_accum && rng != nullptr) {
+                do {
+                    season_item_next += season_item_step;
+                    const float speed = float(double(rng->unit()) + 1.2);
+                    const float angle = rng->angle();
+                    if (bullets != nullptr) bullets->item_requests.push_back({0x10, pos, angle, speed, 0});
+                } while (season_item_next < damage_accum);
+            }
+            hit_timer.set(0x1e);
+            if (const std::string* sub = life_interrupt()) {
+                if (!switch_routine(*sub, game_speed)) return -1;
+            }
+            if (life < 1 && ((flags >> 7) & 1u) == 0) { die(game_speed); return 1; }
+            flags |= 0x200000u;
+        }
+    }
+    if ((life_flags & 2u) != 0) { die(game_speed); return 1; }
+
+    // 体碰撞（0x4439e0；flags & 0x1000 的矩形体碰撞 0x443af0 无 ECL 设置路径）与擦弹（flags & 0x200）
+    if ((flags & 0x22u) == 0 && no_hit_timer.current < 1 && (flags & 0x4000000u) == 0 && player != nullptr) {
+        int hit = 0;
+        if (anm != nullptr)
+            hit = player->collide_body(*anm, anm_file(1), pos, hurtbox.x * 0.5f, manager->dialogue_active, false);
+        if ((flags & 0x200u) != 0 && hit == 2 && life_timer.current % 6 == 0 && bullets != nullptr)
+            bullets->graze(player->pos);
+    }
+
+    update_hit_flash();
+    if (hit_timer.current > 0) hit_timer.untick(game_speed);
+    return 0;
+}
+
+// 0x41d700
+void Enemy::scatter_items() {
+    if (rng == nullptr) return;
+    auto request = [&](i32 type, const Vec3& at, float angle, float speed) {
+        if (bullets != nullptr) bullets->item_requests.push_back({type, at, angle, speed, 0});
+    };
+    float angle = float(double(rng->signed_unit()) * double(kPi));
+    for (int index = 0; index < 16; ++index) {
+        if (index == 15) {
+            for (i32 i = 0; i < season_drop_max; ++i) {
+                const float speed = float(double(rng->unit()) * 1.9 + 0.2);
+                const float a = rng->angle();
+                request(0x10, pos, a, speed);
+            }
+            continue;
+        }
+        for (i32 i = 0; i < drop_counts[index]; ++i) {
+            // 0x426240：椭圆半径上的点 × [0.5, 1) 随机缩放
+            const float lx = float(std::cos(double(angle)) * double(drop_radius.x));
+            const float ly = float(std::sin(double(angle)) * double(drop_radius.y));
+            const float t = float(0.5 + double(rng->unit()) * 0.5);
+            const Vec3 at{pos.x + t * lx, pos.y + ly * t, pos.z + 0.0f};
+            request(index + 1, at, -1.5707964f, 2.2f);
+            const float jitter = rng->signed_unit();
+            angle = (angle + 1.5707964f) + (jitter * kPi) * 0.25f;
+            for (int k = 0; angle > kPi && k <= 0x21; ++k) angle -= 6.2831855f;
+            for (int k = 0; angle < -kPi && k <= 0x21; ++k) angle += 6.2831855f;
+        }
+    }
+    std::memset(drop_counts, 0, sizeof drop_counts);
+    season_drop_max = 0;
+}
+
+// 0x41a720
+void Enemy::release_items() {
+    if (drop_item_type != 0 && bullets != nullptr)
+        bullets->item_requests.push_back({drop_item_type, pos, -1.5707964f, 2.2f, 0});
+    scatter_items();
+    drop_item_type = 0;
+}
+
+void Enemy::settle_season_drop() {
+    i32 count = season_drop_min;
+    if (season_drop_timer.current >= 1 && season_drop_duration != 0) {
+        count = ((season_drop_max - season_drop_min) * season_drop_timer.current) / season_drop_duration +
+                season_drop_min;
+    }
+    season_drop_max = count;
+}
+
+// 0x41d520
+void Enemy::die(float game_speed) {
+    if (death_sfx >= 0 && manager != nullptr) manager->sfx_queue.push_back(death_sfx);
+    if (death_script >= 0) {
+        const float dx = hit_pos.x - pos.x, dy = hit_pos.y - pos.y;
+        float angle = -1.5707964f;
+        if (dx * dx + dy * dy >= 0.040000003f) angle = atan2_f(pos.y - hit_pos.y, pos.x - hit_pos.x);
+        AnmFile* file = anm_file(death_anm_slot);
+        if (file != nullptr && manager->animations != nullptr) {
+            const u32 vid = manager->animations->spawn_effect(*file, death_script, 3, pos, angle);
+            if (effects != nullptr) effects->register_id(vid);
+        }
+    }
+    settle_season_drop();
+    release_items();
+    if (score_bonus > 0 && globals != nullptr && score_bonus_spell == globals->spell_id) {
+        globals->enemy_bonus += score_bonus;
+        score_bonus = 0;
+    }
+    if (!death_sub.empty() && program != nullptr) {
+        const i32 routine = program->find_index(death_sub.c_str());
+        async_threads.clear();
+        if (routine >= 0) {
+            reset_context(primary, routine);
+            primary.interpolation_rate = game_speed;
+            primary.step(game_speed);
+        }
+        death_sub.clear();
+    }
+}
+
+// 0x41ba10：移出列表时（flags2 & 4 未置）杀掉全部绑定 VM 及其子树
+void Enemy::destroy() {
+    if (manager == nullptr || manager->animations == nullptr) return;
+    for (u32& vid : vm_ids) {
+        if (AnmVm* vm = manager->animations->find(vid)) AnmManager::kill_tree(*vm);
+        vid = 0;
+    }
 }
 
 int Enemy::execute(EclContext& ctx, u16 opcode) {
@@ -390,7 +785,13 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
     auto fail = [&](const char* m) { error = m; ctx.error = m; return -2; };
 
     switch (opcode) {
-        case 300: case 301: case 304: case 305: {
+        case 309: case 310: case 311: case 312:
+            // 0x41dcb0 case 6：Boss 槽 0（0x417580(0)）仍在时不生成
+            if (manager != nullptr && manager->boss_ids[0] != 0 && manager->find_id(manager->boss_ids[0]) != nullptr)
+                return 0;
+            [[fallthrough]];
+        case 300: case 301: case 304: case 305: case 321: {
+            // 0x423050
             if (!ctx.instruction || !manager) return fail("spawn: no manager");
             const u32 name_size = ctx.instruction->argument<u32>(0);
             const auto* bytes = reinterpret_cast<const u8*>(ctx.instruction);
@@ -417,14 +818,19 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             };
             EnemySpawnArgs args;
             float x = read_f(0), y = read_f(1);
-            if (opcode == 300 || opcode == 304) {
+            const bool relative = opcode == 300 || opcode == 309 || opcode == 321 || opcode == 311 || opcode == 304;
+            if (relative) {
                 args.pos.x = pos.x + x;
                 args.pos.y = pos.y + y;
             } else {
                 args.pos.x = x;
                 args.pos.y = y;
             }
-            if (opcode == 304 || opcode == 305) args.mirror = 1;
+            if (opcode == 311 || opcode == 304 || opcode == 312 || opcode == 305) args.mirror = 1;
+            if ((flags & kFlagMirror) != 0) {
+                args.pos.x = args.pos.x * -1.0f;
+                args.mirror ^= 1u;
+            }
             args.life = float(read_i(2));
             args.score = read_i(3);
             args.item = read_i(4);
@@ -432,7 +838,14 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             return 0;
         }
         case 302: anm_slot = iarg(0); return 0;
-        case 500: hitbox.x = farg(0); hitbox.y = farg(1); return 0;
+        case 500: {  // case 0x2d：首次设定判定时登记为“可计奖励”敌机
+            hitbox.x = farg(0); hitbox.y = farg(1);
+            if (score_bonus == 0) {
+                score_bonus = 1;
+                if (globals != nullptr) globals->enemy_bonus_pending += 1;
+            }
+            return 0;
+        }
         case 501: hurtbox.x = farg(0); hurtbox.y = farg(1); return 0;
         case 502: flags |= u32(iarg(0)); return 0;
         case 503: flags &= ~u32(iarg(0)); return 0;
@@ -444,17 +857,132 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             return 0;
         }
         case 505: flags &= ~0x20000u; return 0;
-        case 510: /* 受击/死亡特效颜色（+0x4054） */ return 0;
-        case 511: {
-            life = life_max = iarg(0);
-            phase_life = 0;
-            life_budget = life * 7;
-            if ((flags & 0x800000u) != 0) flags |= kFlagBossLife;
+        case 506: {  // case 0x33：清掉落表（保留季节道具数）
+            std::memset(drop_counts, 0, sizeof drop_counts);
             return 0;
         }
-        case 514: {
-            const i32 threshold = iarg(1);
-            if (threshold >= 0) phase_life = threshold;
+        case 507: case 509: {  // case 0x34 / 0x36：符卡练习模式外立即掉落
+            if (globals != nullptr && (globals->flags & GameGlobals::kModeMask) == 0x20u) return 0;
+            settle_season_drop();
+            release_items();
+            return 0;
+        }
+        case 508: {  // case 0x35
+            const float rx = farg(0), ry = farg(1);
+            drop_radius = {rx, ry};
+            return 0;
+        }
+        case 510: drop_item_type = iarg(0); return 0;  // case 0x37
+        case 556: {  // case 0x61：死亡子程序名
+            if (!ctx.instruction) return 0;
+            const auto* bytes = reinterpret_cast<const u8*>(ctx.instruction);
+            const u32 limit = ctx.instruction->length;
+            std::string name;
+            for (u32 k = 20; k < limit && bytes[k] != 0; ++k) name.push_back(char(bytes[k]));
+            death_sub = std::move(name);
+            return 0;
+        }
+        case 562: release_items(); return 0;  // case 0x67
+        case 511: {  // case 0x38
+            life = life_max = life_display = iarg(0);
+            if ((flags & 0x800000u) != 0) flags |= kFlagBossLife;
+            life_budget = life * 7;
+            return 0;
+        }
+        case 514: {  // case 0x3b：阶段中断登记（符卡练习里 Boss 槽 0 的中断一律改为 BossDead / BossEscape）
+            if (!ctx.instruction) return 0;
+            const auto* bytes = reinterpret_cast<const u8*>(ctx.instruction);
+            const i32 slot = iarg(0), life_threshold = iarg(1), time_threshold = iarg(2);
+            if (slot < 0 || slot >= kInterruptSlots) return 0;
+            if (globals != nullptr && (globals->flags & GameGlobals::kModeMask) == 0x20u && (flags & 0x800000u) != 0) {
+                const bool stage7_early = globals->stage == 7 && globals->spell_id < 0x29;
+                const char* dead = boss_slot == 0 ? (stage7_early ? "MBossDead" : "BossDead")
+                                                  : (stage7_early ? "MBossBDead" : "BossDead");
+                set_interrupt(slot, 0, time_threshold, dead);
+                interrupts[slot].timeout_sub = "BossEscape";
+                return 0;
+            }
+            interrupts[slot].life_threshold = life_threshold;
+            if (life_threshold >= 0) {
+                std::string name;
+                for (u32 k = 32; k < ctx.instruction->length && bytes[k] != 0; ++k) name.push_back(char(bytes[k]));
+                set_interrupt(slot, life_threshold, time_threshold, name.c_str());
+            }
+            return 0;
+        }
+        case 521: {  // case 0x42：单独改超时子程序
+            if (!ctx.instruction) return 0;
+            const auto* bytes = reinterpret_cast<const u8*>(ctx.instruction);
+            const i32 slot = iarg(0);
+            if (slot < 0 || slot >= kInterruptSlots) return 0;
+            std::string name;
+            for (u32 k = 24; k < ctx.instruction->length && bytes[k] != 0; ++k) name.push_back(char(bytes[k]));
+            interrupts[slot].timeout_sub = std::move(name);
+            return 0;
+        }
+        case 516: if (manager) manager->sfx_queue.push_back(iarg(0)); return 0;  // case 0x3d
+        case 517:  // case 0x3e：0x45d150(1, …) 画面震动（ScreenEffect，仅视觉且用 game_rng）——渲染侧接入时补
+            (void)iarg(0); (void)iarg(1); (void)iarg(2);
+            return 0;
+        case 524: {  // case 0x45：阶段编号（DAT_004a5798 / Gui+0xa8），奖励归属重置
+            const i32 v = iarg(0);
+            if (globals) globals->spell_id = v;
+            score_bonus_spell = v;
+            score_bonus = 0;
+            return 0;
+        }
+        case 525: if (manager) manager->kill_all(0, nullptr); return 0;     // case 0x46：0x41d900
+        case 551: {  // case 0x5c：0x41da30（仅 anm_layer == arg0 的敌机）
+            const i32 layer = iarg(0);
+            if (manager) manager->kill_all(1, &layer);
+            return 0;
+        }
+        case 571: if (manager) manager->kill_all(2, nullptr); return 0;     // case 0x70：0x41db70（并清死亡子程序）
+        case 527: {  // case 0x48：Gui+0x1ec 阶段血条段（Gui 接入前只消费参数）
+            (void)iarg(0); (void)farg(1); (void)iarg(2);
+            return 0;
+        }
+        case 541: no_hit_timer.set(iarg(0)); return 0;  // case 0x52
+        case 542: if (manager && manager->spellcard) manager->spellcard->flags |= Spellcard::kSurvival; return 0;
+        case 543: {  // case 0x54
+            if (manager && manager->spellcard) {
+                manager->spellcard->flags |= Spellcard::kNoTimeout;
+                if (manager->animations) manager->animations->kill(manager->spellcard->vm_ids[4]);
+                manager->spellcard->vm_ids[4] = 0;
+            }
+            return 0;
+        }
+        case 546: {  // case 0x57：Bomb / 季节解放期间换用的主 VM 脚本
+            flags = (flags & ~0x10000000u) | ((u32(iarg(0)) << 28) & 0x10000000u);
+            flags &= ~0x20000001u;
+            bomb_script = iarg(1);
+            bomb_script_restore = main_script;
+            return 0;
+        }
+        case 549: flags = (flags & 0x7fffffffu) | (u32(iarg(0)) << 31); return 0;  // case 0x5a
+        case 565: damage_rate = farg(0); return 0;  // case 0x6a
+        case 569: {  // case 0x6e：击破奖励登记（score_bonus 为 0 时登记，为 1（op 500 占位）时覆盖）
+            if (score_bonus == 0) {
+                const i32 v = iarg(0);
+                score_bonus = v;
+                if (v > 0 && globals) globals->enemy_bonus_pending += v;
+            } else if (score_bonus == 1) {
+                const i32 v = iarg(0);
+                score_bonus = v;
+                if (globals) globals->enemy_bonus_pending += v - 1;
+            }
+            return 0;
+        }
+        case 570: {  // case 0x6f：奖励结算到 enemy_bonus
+            if (score_bonus != 0 && globals && score_bonus_spell == globals->spell_id) {
+                globals->enemy_bonus += score_bonus;
+                score_bonus = 0;
+            }
+            return 0;
+        }
+        case 572: {  // case 0x71
+            life = iarg(0);
+            life_budget = life * 7;
             return 0;
         }
         case 512: {
@@ -480,7 +1008,8 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             }
             return 0;
         }
-        case 516: case 518: case 519: case 523: case 524: case 525:
+        case 518: case 519:
+            // case 0x3f / 0x40：对话开始（Gui 0x429ff0 + 0x416f40 全屏消弹 + 0x431af0 道具吸引）与等待对话结束——Gui 接入时补
             return 0;
         case 400: {
             const float x = farg(0), y = farg(1);
@@ -584,29 +1113,218 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             season_drop_min = iarg(2);
             return 0;
         }
-        case 1001: return 0;
-        case 306: {
-            // 0x41dcb0 case 3：slot == 0 时设精灵宽高（妖精 32×32）并置 flags |= 0x100000
+        case 1001:  // case 0xac：按累计伤害放季节道具
+            season_item_step = iarg(0);
+            season_item_next = damage_accum;
+            return 0;
+        // —— ANM 绑定 302..340（0x41dcb0 case 1..0x15 / 0x423260 / 0x4233a0）——
+        case 303: {  // 0x423260
             const i32 slot = iarg(0);
+            const i32 script = iarg(1);
+            if (slot < 0 || slot >= kVmSlots) return 0;
+            if (manager && manager->animations) manager->animations->kill(vm_ids[slot]);
+            vm_ids[slot] = 0;
+            if (script < 0) return 0;
+            if (slot == 0) { main_script = script; anm_slot_main = anm_slot; }
+            rebind_vm(slot, anm_slot, script, true);
+            return 0;
+        }
+        case 306: {  // case 3：主体精灵 + 朝向脚本族
+            const i32 slot = iarg(0);
+            const i32 script = iarg(1);
+            if (slot < 0 || slot >= kVmSlots) return 0;
+            rebind_vm(slot, anm_slot, script, true);
             if (slot == 0) {
-                has_main_vm = true;
-                sprite_size = {32.0f, 32.0f};
                 flags |= 0x100000u;
+                main_script_base = main_script = script;
+                sprite_direction = 0;
+                anm_slot_main = anm_slot;
             }
             return 0;
         }
-        case 303: {
+        case 307: {  // case 4：以敌机坐标为 entity_offset 的独立 VM（链表头，creation_flags 2）
+            const i32 anm = iarg(0), script = iarg(1);
+            AnmFile* file = anm_file(anm);
+            if (file == nullptr || !manager->animations) return 0;
+            const u32 vid = manager->animations->spawn_vm(*file, script, -1, pos, 0.0f, 2, true);
+            if (effects) effects->register_id(vid);
+            return 0;
+        }
+        case 308: {  // case 5
+            const i32 anm = iarg(0), script = iarg(1);
+            AnmFile* file = anm_file(anm);
+            if (file == nullptr || !manager->animations) return 0;
+            const u32 vid = manager->animations->spawn_front(*file, script, -1);
+            if (effects) effects->register_id(vid);
+            return 0;
+        }
+        case 313: {  // case 7：朝向族 +5 脚本
             const i32 slot = iarg(0);
-            if (slot == 0) {
-                has_main_vm = true;
-                sprite_size = {32.0f, 32.0f};
+            if (slot < 0 || slot >= kVmSlots) return 0;
+            rebind_vm(slot, anm_slot, main_script_base + 5, true);
+            return 0;
+        }
+        case 314: {  // case 8：0x40e5c0 特效 VM（entity_offset = pos）
+            const i32 script = iarg(1), anm = iarg(0);
+            AnmFile* file = anm_file(anm);
+            if (file == nullptr || !manager->animations) return 0;
+            const u32 vid = manager->animations->spawn_effect(*file, script, -1, pos, 0.0f);
+            if (effects) effects->register_id(vid);
+            return 0;
+        }
+        case 315: {  // case 9：同 307 但带 rotation.z
+            const i32 anm = iarg(0), script = iarg(1);
+            const float rot = farg(2);
+            AnmFile* file = anm_file(anm);
+            if (file == nullptr || !manager->animations) return 0;
+            const u32 vid = manager->animations->spawn_vm(*file, script, -1, pos, 0.0f, 2, true);
+            if (AnmVm* vm = manager->animations->find(vid)) {
+                vm->entity_offset = pos;
+                vm->flags_lo |= AnmVm::kRotationDirty;
+                vm->rotation.z = rot;
+            }
+            if (effects) effects->register_id(vid);
+            return 0;
+        }
+        case 316: {  // case 0xa：朝向族 +5+n（n < 0 → 基号）
+            const i32 slot = iarg(0), n = iarg(1);
+            if (slot < 0 || slot >= kVmSlots) return 0;
+            rebind_vm(slot, anm_slot, n < 0 ? main_script_base : main_script_base + 5 + n, true);
+            return 0;
+        }
+        case 317: {  // case 0xb：0x46f0b0 中断
+            const i32 slot = iarg(0), value = iarg(1);
+            if (slot < 0 || slot >= kVmSlots || !manager->animations) return 0;
+            manager->animations->interrupt(vm_ids[slot], value);
+            return 0;
+        }
+        case 318: {  // case 0xc：回到基号脚本并关闭朝向切换
+            rebind_vm(0, anm_slot, main_script_base, false);
+            flags &= ~0x100000u;
+            main_script = main_script_base;
+            sprite_direction = 0;
+            anm_slot_main = anm_slot;
+            return 0;
+        }
+        case 319: case 325: case 326: case 327: case 328: case 329: case 330: case 331: case 332: case 333:
+        case 335: case 336: case 337: {  // 0x4233a0
+            const i32 slot = iarg(0);
+            if (u32(slot) >= 0x10u) return 0;
+            AnmVm* vm = vm_at(slot);
+            if (vm == nullptr) return 0;
+            switch (opcode) {
+                case 319: vm->flags_lo |= AnmVm::kRotationDirty; vm->rotation.z = farg(1); break;
+                case 325: {
+                    const i32 b = iarg(3), g = iarg(2), r = iarg(1);
+                    vm->color[2] = u8(r); vm->color[1] = u8(g); vm->color[0] = u8(b);
+                    break;
+                }
+                case 326: {
+                    const u8 r = u8(iarg(3)), g = u8(iarg(4)), b = u8(iarg(5));
+                    const i32 mode = iarg(2), time = iarg(1);
+                    anm_begin_color_interp(vm->color_interp, time, mode, vm->color, b, g, r);
+                    break;
+                }
+                case 327: vm->color[3] = u8(iarg(1)); break;
+                case 328: {
+                    const i32 goal = iarg(3), mode = iarg(2), time = iarg(1);
+                    anm_begin_scalar_interp(vm->alpha_interp, time, mode, vm->color[3], goal & 0xff);
+                    break;
+                }
+                case 329: {
+                    const float y = farg(2), x = farg(1);
+                    vm->flags_lo |= AnmVm::kScaleDirty;
+                    vm->scale = {x, y};
+                    break;
+                }
+                case 330: {
+                    const float y = farg(4), x = farg(3);
+                    const i32 mode = iarg(2), time = iarg(1);
+                    anm_begin_vec2_interp(vm->scale_interp, time, mode, vm->scale, {x, y});
+                    break;
+                }
+                case 331: vm->color2[3] = u8(iarg(1)); break;
+                case 332: {
+                    const i32 goal = iarg(3), mode = iarg(2), time = iarg(1);
+                    anm_begin_scalar_interp(vm->alpha2_interp, time, mode, vm->color2[3], goal & 0xff);
+                    vm->flags_lo = (vm->flags_lo & ~0x40000u) | 0x20000u;
+                    break;
+                }
+                case 333: {
+                    const float y = farg(4), x = farg(3);
+                    (void)iarg(0);
+                    const i32 mode = iarg(2), time = iarg(1);
+                    anm_begin_vec3_interp(vm->pos_interp, time, mode, vm->entity_offset, {x, y, 0.0f});
+                    break;
+                }
+                case 335: {
+                    const float y = farg(2), x = farg(1);
+                    vm->flags_lo |= AnmVm::kScaleDirty;
+                    vm->scale2 = {x, y};
+                    break;
+                }
+                case 336: anm_set_layer(*vm, iarg(1)); break;
+                case 337: {
+                    const u32 blend = u32(iarg(1)) & 0xffu;
+                    vm->flags_lo ^= ((blend << 5) ^ vm->flags_lo) & 0x1e0u;
+                    break;
+                }
+                default: break;
             }
             return 0;
         }
-        case 307: case 308: case 309: case 313: case 316: case 319:
-        case 320: case 321: case 322: case 323: case 324: case 325:
-            // ANM 绑定/偏移/层：渲染未接前空操作
+        case 320: {  // case 0xe
+            const i32 slot = iarg(0);
+            const float x = farg(1), y = farg(2);
+            if (slot < 0 || slot >= kVmSyncSlots) return 0;
+            vm_offsets[slot] = {x, y, 0.0f};
             return 0;
+        }
+        case 322: {  // case 0xf
+            const i32 parent = iarg(1), slot = iarg(0);
+            if (slot < 0 || slot >= kVmSyncSlots) return 0;
+            vm_parent_slot[slot] = parent;
+            return 0;
+        }
+        case 323: death_anm_slot = iarg(0); death_script = iarg(1); return 0;  // case 0x10
+        case 324: {  // case 0x11：取指定敌机坐标（找不到 → 自身）
+            const Enemy* target = manager ? manager->find_id(u32(iarg(2))) : nullptr;
+            float* dx = ctx.float_destination(0);
+            if (!dx) return -2;
+            *dx = target ? target->pos.x : pos.x;
+            float* dy = ctx.float_destination(1);
+            if (!dy) return -2;
+            *dy = target ? target->pos.y : pos.y;
+            return 0;
+        }
+        case 334: if (effects) effects->spawn(iarg(0), pos); return 0;  // case 0x12：0x40e730
+        case 338: {  // case 0x13：偏移 + rotation.z 的独立 VM
+            const float dy = farg(3), dx = farg(2);
+            const Vec3 offset{dx + pos.x, pos.y + dy, pos.z + 0.0f};
+            const float rot = farg(4);
+            const i32 script = iarg(1), anm = iarg(0);
+            AnmFile* file = anm_file(anm);
+            if (file == nullptr || !manager->animations) return 0;
+            const u32 vid = manager->animations->spawn_vm(*file, script, -1, offset, rot, 2, true);
+            if (effects) effects->register_id(vid);
+            return 0;
+        }
+        case 339: {  // case 0x14：生成后再预跑 arg2 帧
+            const i32 anm = iarg(0), script = iarg(1);
+            AnmFile* file = anm_file(anm);
+            if (file == nullptr || !manager->animations) return 0;
+            const u32 vid = manager->animations->spawn_front(*file, script, -1);
+            if (effects) effects->register_id(vid);
+            AnmVm* vm = manager->animations->find(vid);
+            for (i32 i = 0; i < iarg(2); ++i) {
+                if (vm) manager->animations->run(*vm);
+            }
+            return 0;
+        }
+        case 340: {  // case 0x15
+            if (Enemy* target = manager ? manager->find_id(u32(iarg(0))) : nullptr) target->flags |= 0x2000000u;
+            return 0;
+        }
         // —— 弹幕发射器 600..641（0x42085b..0x4226d0）——
         case 600: {  // 0x42085b
             const i32 slot = iarg(0);
@@ -888,14 +1606,33 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             ctx.time = float(ctx.time - float(delays[d]));
             return 0;
         }
-        case 522: case 537: case 538: case 539:
-            // 开启符卡：置符卡 7 倍减伤位（0x41a6d0）
+        case 522: case 528: case 537: case 538: case 539: {
+            // case 0x43：0x417f00 开始符卡（Spellcard 接入时补 ANM / Gui 部分），置 7 倍减伤位并重算血量池，
+            // life_timer 归零（switchD_0041dd51_caseD_3a）
             life_flags |= 1u;
+            life_budget = life * 7;
+            life_timer.set(0);
+            return 0;
+        }
+        case 523:  // case 0x44：0x4182f0 结束符卡（Spellcard 接入时补），清 7 倍减伤位
+            life_flags &= ~1u;
             return 0;
         case 568:
             life_flags = (life_flags & ~1u) | (u32(iarg(0)) & 1u);
             return 0;
-        case 545: case 550: case 552:
+        case 550: anm_layer = iarg(0); return 0;         // case 0x5b
+        case 552: anm_layer_offset = iarg(0); return 0;  // case 0x5d
+        case 561: {  // case 0x66：死亡音效 + 死亡特效（朝向 = 最后受击点 → 敌机）
+            if (death_sfx >= 0 && manager) manager->sfx_queue.push_back(death_sfx);
+            if (death_script < 0) return 0;
+            const float ddx = hit_pos.x - pos.x, ddy = hit_pos.y - pos.y;
+            float angle = -1.5707964f;
+            if (!(0.04f > ddx * ddx + ddy * ddy)) angle = atan2_f(pos.y - hit_pos.y, pos.x - hit_pos.x);
+            AnmFile* file = anm_file(death_anm_slot);
+            if (file && manager->animations) manager->animations->spawn_effect(*file, death_script, 3, pos, angle);
+            return 0;
+        }
+        case 545:
             return 0;
         default:
             // 未识别操作码：先空操作以免整条 ECL 链因后续关卡指令中断；oracle 对拍时再逐个补全
@@ -945,12 +1682,15 @@ Enemy* EnemyManager::find_id(u32 id) noexcept {
 }
 
 void EnemyManager::update(float game_speed) {
-    // 0x41b3d0：先保存 next，生成中 push_back 的新敌人本帧不再走完整更新
+    // 0x41b3d0：先保存 next，生成中 push_back 的新敌人本帧不再走完整更新；kill_all 标过 0x2000000 的直接移出
+    damage_dealt_bomb = 0;
+    damage_dealt = 0;
     for (auto it = enemies.begin(); it != enemies.end();) {
         auto next = std::next(it);
         auto& e = *it;
         if (!e) { it = enemies.erase(it); continue; }
-        if (!e->update(game_speed)) {
+        if ((e->flags & 0x2000000u) != 0 || !e->update(game_speed)) {
+            e->destroy();
             it = enemies.erase(it);
             if (enemy_count > 0) --enemy_count;
             continue;
@@ -958,7 +1698,32 @@ void EnemyManager::update(float game_speed) {
         e->flags &= ~kFlagReentry;
         it = next;
     }
+    // 自机伤害倍率（0x2c7cc）每帧复位为 1；> 1.01 时置 Player flags & 0x20
+    if (player != nullptr) {
+        if (player->scale2 <= 1.01f) player->flags &= ~0x20u;
+        else player->flags |= 0x20u;
+        player->scale2 = 1.0f;
+    }
     timer.tick(game_speed);
+}
+
+// 0x41d900（mode 0）/ 0x41da30（mode 1：仅 anm_slot == *filter）/ 0x41db70（mode 2：并清死亡子程序）
+void EnemyManager::kill_all(int mode, const i32* filter) {
+    for (auto& e : enemies) {
+        if (!e) continue;
+        if ((e->flags & 0xc004a0u) != 0 && (e->flags & 0x100u) == 0) continue;
+        if (mode == 1 && (filter == nullptr || e->anm_layer != *filter)) continue;
+        e->drop_item_type = 0;
+        std::memset(e->drop_counts, 0, sizeof e->drop_counts);
+        e->season_drop_max = 0;
+        e->drop_radius = {32.0f, 32.0f};
+        e->hit_pos = {0.0f, 192.0f, e->hit_pos.z};
+        e->score_bonus = 0;
+        if (mode == 2) e->death_sub.clear();
+        e->die(1.0f);
+        e->flags |= 0x2000000u;
+    }
+    timer.tick(1.0f);
 }
 
 }  // namespace th16

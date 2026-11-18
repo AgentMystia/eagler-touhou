@@ -19,14 +19,6 @@ constexpr float kPi = 3.1415927410125732f;      // 0x494588
 constexpr float kTwoPi = 6.2831854820251465f;   // 0x4945b8
 constexpr float kHalfPi = 1.5707963705062866f;  // 0x494534
 
-// 0x417510 / 0x4173a0 / 0x426260：CVTSS2SD → CRT cos/sin → 乘 double 半径 → CVTSD2SS
-Vec3 polar(float angle, float radius) noexcept {
-    return {float(std::cos(double(angle)) * double(radius)), float(std::sin(double(angle)) * double(radius)), 0.0f};
-}
-
-// 0x487aaa：CRT atan2(double, double) → float
-float atan2_f(float y, float x) noexcept { return float(std::atan2(double(y), double(x))); }
-
 // 0x490ec0：消弹方式 1 的颜色 → 脚本号表
 constexpr i32 kCancelScriptByColor[16] = {4, 8, 12, 16, 20, 24, 28, 34, 0, 1, 2, 3, -1, 4, 5, 6};
 

@@ -186,11 +186,30 @@ constexpr AddressAnchor kAnchors[] = {
     {"enemy-update", 0x41D2E0, "game/Enemy.cpp Enemy::update（0x41d1e0：0x40000 隔帧门控 → 运动 0x41bb50 → ECL 0x473bc0 → 碰撞 0x41c330 → invuln/season_drop 倒数）"},
     {"enemy-motion", 0x41BB50, "game/Enemy.cpp Enemy::update（角度/速度/位置插值 → motion1/2 → 0x41c1f0 合成与 0x20000 边界钳制 → 精灵半宽高场地进出判定）"},
     {"enemy-motion-combine", 0x41C1F0, "game/Enemy.cpp Enemy::update（pos += (m1+m2-pos) floor 1/100 + 0x20000 边界框钳制）"},
-    {"enemy-collision", 0x41C330, "game/Enemy.cpp Enemy::update（0x445a30 伤害源结算、0x41a6d0 扣血、0x41d520 死亡与 0x41d700 季节掉落 RNG、受击闪烁与音效）"},
-    {"enemy-sub-life", 0x41A6D0, "game/Enemy.cpp Enemy::update（普通扣血与符卡 life_flags&1 下 7 倍减伤池折算）"},
-    {"enemy-death", 0x41D520, "game/Enemy.cpp Enemy::update（死亡音效 (id&1)+3、限时季节掉落数线性插值、0x41d700 掉落 RNG）"},
-    {"enemy-drop-items", 0x41D700, "game/Enemy.cpp Enemy::update（季节道具掉落消耗 visual_rng）"},
-    {"enemy-ecl-dispatch", 0x41DCB0, "game/Enemy.cpp Enemy::execute（敌方操作码 ≥300：生成 300..305、ANM 302/303/306、运动 400/401/404..407/412、属性 500..505/511..515/520/522/535..539/548/568、掉落 1000）"},
+    {"enemy-collision", 0x41C330, "game/Enemy.cpp Enemy::resolve_hits（Bomb 换图、0x800 炸弹即死探测、0x425010 时间中断、0x445a30 伤害结算与统计、0x41a6d0 扣血、op 1001 季节道具、0x424f00 血量中断、0x41d520 死亡、0x4439e0 体碰撞 / 0x444cf0 体擦弹、受击闪烁）"},
+    {"enemy-sub-life", 0x41A6D0, "game/Enemy.cpp Enemy::resolve_hits（普通扣血与符卡 life_flags&1 下 7 倍减伤池折算）"},
+    {"enemy-death", 0x41D520, "game/Enemy.cpp Enemy::die（死亡音效、死亡特效登记 EffectManager、限时季节掉落折算、0x41a720 掉落、奖励结算、死亡子程序）"},
+    {"enemy-release-items", 0x41A720, "game/Enemy.cpp Enemy::release_items（先掉 drop_item_type 再 0x41d700）"},
+    {"enemy-drop-items", 0x41D700, "game/Enemy.cpp Enemy::scatter_items（掉落表 1..15 椭圆散布 + 季节道具；visual_rng 调用序 signed_unit / unit / angle）"},
+    {"enemy-drop-vector", 0x426240, "game/Enemy.cpp Enemy::scatter_items（cos/sin × 半径）"},
+    {"enemy-interrupt-set", 0x424E40, "game/Enemy.cpp Enemy::set_interrupt（op 514）"},
+    {"enemy-interrupt-timeout-sub", 0x424EB0, "game/Enemy.cpp Enemy::execute case 521"},
+    {"enemy-interrupt-life", 0x424F00, "game/Enemy.cpp Enemy::life_interrupt（life_display / phase_life 刷新、阈值触发切子程序）"},
+    {"enemy-interrupt-time", 0x425010, "game/Enemy.cpp Enemy::time_interrupt（超时切子程序 + Spellcard 超时标志 / 奖励）"},
+    {"enemy-kill-all", 0x41D900, "game/Enemy.cpp EnemyManager::kill_all（op 525；0x41da30 op 551 按 anm_layer；0x41db70 op 571）"},
+    {"enemy-destroy", 0x41BA10, "game/Enemy.cpp Enemy::destroy（移出时杀全部绑定 VM 子树）"},
+    {"enemy-ecl-dispatch", 0x41DCB0, "game/Enemy.cpp Enemy::execute（敌方操作码 ≥300：生成 300..305/309..312/321、ANM 302..340、运动 400/401/404..407/412、属性 500..517/520..527/535..543/546..552/556/561..572、弹幕 600..641、掉落 1000/1001）"},
+    {"enemy-anm-op-303", 0x423260, "game/Enemy.cpp Enemy::execute case 303（按槽重绑 VM）"},
+    {"enemy-anm-op-319", 0x4233A0, "game/Enemy.cpp Enemy::execute case 319/325..337（主 VM 脚本族 / 朝向）"},
+    {"enemy-anm-direction", 0x41BB50, "game/Enemy.cpp Enemy::sync_sprite_direction（flags&0x100000 按 delta.x 切朝向脚本）"},
+    {"enemy-anm-sync", 0x41D2E0, "game/Enemy.cpp Enemy::sync_vm_offsets（14 槽 entity_offset / 父槽 / 0x80 位朝向角）"},
+    {"enemy-hit-flash", 0x41C330, "game/Enemy.cpp Enemy::update_hit_flash（color2 / flags_lo 0x20000；低血阈值取 life_display）"},
+    {"player-body-collision", 0x4439E0, "game/Player.cpp Player::collide_body（.sht hitbox；擦弹圈 max(40, half/2.5)）"},
+    {"player-body-collision-rect", 0x443AF0, nullptr},  // flags&0x1000 矩形体碰撞：无 ECL 设置路径
+    {"damage-source-rect-rect", 0x4049C0, nullptr},     // 同上（0x445a30 param_2）
+    {"score-add", 0x43E080, "game/GameGlobals.hpp GameGlobals::add_score（含 0x43ddd0 分数 extend 阈值）"},
+    {"score-extend-threshold", 0x43DDD0, "game/GameGlobals.hpp GameGlobals::extend_threshold"},
+    {"spellcard-data", 0x4178A0, "game/Spellcard.hpp Spellcard（数据布局与标志位；0x417f00 / 0x417930 / 0x4182f0 待还原）"},
     {"enemy-spawn-op", 0x423050, "game/Enemy.cpp Enemy::execute case 300..305（相对/绝对/镜像生成子敌人）"},
     {"enemy-var-get", 0x423810, "game/Enemy.cpp Enemy::integer / Enemy::floating（-10000..-9902 变量读取）"},
     {"enemy-var-int-dst", 0x423F80, "game/Enemy.cpp Enemy::integer_destination"},
@@ -272,8 +291,24 @@ constexpr AddressAnchor kAnchors[] = {
     {"replay-file", 0x4403C5, nullptr},      // th16_%.2d.rpy
     {"ver-file", 0x43B480, nullptr},         // th16_%.4x%c.ver
     {"music-fmt", 0x43AEAE, nullptr},        // ../../bgm/thbgm.fmt
+    // —— EffectManager（DAT_004a6db8）——
+    {"effect-manager-create", 0x418A30, "game/Effect.cpp EffectManager::create（0x4187d0 装 bullet.anm 槽 7 / effect.anm 槽 8；更新链 0x1f）"},
+    {"effect-manager-sweep", 0x418AB0, "game/Effect.cpp EffectManager::sweep"},
+    {"effect-manager-slot", 0x40E6C0, "game/Effect.cpp EffectManager::allocate_slot"},
+    {"effect-manager-register", 0x41AA00, "game/Effect.cpp EffectManager::register_id"},
+    {"effect-manager-attach", 0x418AF0, "game/Effect.cpp EffectManager::attach（种类表 DAT_004a2250）"},
+    {"effect-manager-spawn", 0x40E730, "game/Effect.cpp EffectManager::spawn（ECL 334）"},
+    {"effect-ring-init", 0x405670, "game/Effect.cpp EffectManager::ring_init"},
+    {"effect-ring-update", 0x405700, "game/Effect.cpp EffectManager::ring_update（无活点时返回 -1 删 VM）"},
+    {"effect-ring-delete", 0x405ED0, "game/Effect.cpp EffectManager::ring_deleted"},
+    {"effect-ring-interrupt", 0x405F20, "game/Effect.cpp EffectManager::ring_interrupted（中断 1 → 计时前进 300）"},
+    {"anm-root-slowdown", 0x406340, "game/AnmManager.cpp AnmManager::root_slowdown"},
+    {"anm-hide-tree", 0x46F3B0, "game/AnmManager.cpp AnmManager::hide_tree"},
+    {"anm-set-layer", 0x406D80, "game/AnmVm.cpp anm_set_layer"},
+    {"anm-spawn-vm", 0x406380, "game/AnmManager.cpp AnmManager::spawn_vm（spawn / spawn_effect / spawn_front 共用）"},
+    {"anm-replace-script", 0x46F440, "game/Enemy.cpp Enemy::resolve_hits（旧 VM 停止，同文件 script 新建）"},
     // —— 未定位 ——
-    {"item-manager", 0, nullptr},
+    {"item-manager", 0x4314A0, nullptr},
     {"player-laser-create", 0x446200, nullptr},  // 魔理沙激光（回调 2：0x446260 / 0x446870）
     {"player-death", 0x443CD0, nullptr},     // 被弹结算（状态 4 → 2）
     {"season-system", 0, nullptr},  // th16 特有：季节槽/季节解放

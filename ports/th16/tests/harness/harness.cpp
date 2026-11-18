@@ -500,7 +500,21 @@ int main(int argc, char** argv) {
         u64 digest = 0xcbf29ce484222325ull;
         u64 enm_digest = 0xcbf29ce484222325ull;
         u64 bul_digest = 0xcbf29ce484222325ull;
+        u64 vm_digest = 0xcbf29ce484222325ull;
         auto feed = [&](const u8* p, size_t n) { for (size_t i = 0; i < n; ++i) { digest ^= p[i]; digest *= 0x100000001b3ull; } };
+        auto feed_vm_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { vm_digest ^= u8(v >> (8 * i)); vm_digest *= 0x100000001b3ull; } };
+        // 敌人 ANM VM（oracle enemy_vm_snapshot 同口径）：[槽, 脚本, 精灵, entity_offset×3, pos×3, rotation.z, flags_lo, flags_hi, 年龄]
+        auto enemy_vm_words = [&](const Enemy& e, std::vector<u32>& w) {
+            for (int slot = 0; slot < Enemy::kVmSyncSlots; ++slot) {
+                const AnmVm* vm = session.animations.find(e.vm_ids[slot]);
+                if (vm == nullptr) continue;
+                const u32 words[] = {u32(slot), u32(vm->script_index), u32(vm->sprite_index),
+                                     bits(vm->entity_offset.x), bits(vm->entity_offset.y), bits(vm->entity_offset.z),
+                                     bits(vm->pos.x), bits(vm->pos.y), bits(vm->pos.z), bits(vm->rotation.z),
+                                     vm->flags_lo, vm->flags_hi, u32(vm->age.current)};
+                for (u32 v : words) w.push_back(v);
+            }
+        };
         auto feed_u32 = [&](u32 v) { u8 b[4] = {u8(v), u8(v >> 8), u8(v >> 16), u8(v >> 24)}; feed(b, 4); };
         auto feed_enm = [&](const u8* p, size_t n) { for (size_t i = 0; i < n; ++i) { enm_digest ^= p[i]; enm_digest *= 0x100000001b3ull; } };
         auto feed_bul_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { bul_digest ^= u8(v >> (8 * i)); bul_digest *= 0x100000001b3ull; } };
@@ -631,6 +645,17 @@ int main(int argc, char** argv) {
                     feed_enm_u32(u32(e.life_max));
                     if (const char* rn = e.routine_name()) feed_enm(reinterpret_cast<const u8*>(rn), std::strlen(rn));
                 }
+                // 敌人 ANM VM（game-oracle.py enemy_vm_digest 同口径）：[frame, 敌人数] + 每敌人 [id, VM 数] + 每 VM 13 字
+                feed_vm_u32(u32(f + 1));
+                feed_vm_u32(live_enm);
+                for (const auto& ep : session.game.enemies.enemies) {
+                    if (!ep) continue;
+                    std::vector<u32> vw;
+                    enemy_vm_words(*ep, vw);
+                    feed_vm_u32(ep->id);
+                    feed_vm_u32(u32(vw.size() / 13));
+                    for (u32 v : vw) feed_vm_u32(v);
+                }
             }
             // 敌弹（game-oracle.py bullet_digest 同口径）：[frame, count, len] + 每弹 25 字
             {
@@ -741,7 +766,15 @@ int main(int argc, char** argv) {
                 print_motion("motion2", e.motion2); std::printf(",");
                 std::printf("\"ctx\":[%.9g,%d,%d,", e.primary.time, e.primary.routine, e.primary.instruction_offset);
                 if (rname) std::printf("\"%s\"", rname); else std::printf("null");
-                std::printf("],\"hp\":[%d,%d,0,0]}", e.life, e.life_max);
+                std::printf("],\"hp\":[%d,%d,%d,%d],\"vms\":[", e.life, e.life_max, e.life_display, e.life_budget);
+                std::vector<u32> vw;
+                enemy_vm_words(e, vw);
+                for (size_t k = 0; k < vw.size(); k += 13) {
+                    std::printf("%s[", k ? "," : "");
+                    for (size_t j = 0; j < 13; ++j) std::printf("%s%u", j ? "," : "", vw[k + j]);
+                    std::printf("]");
+                }
+                std::printf("],\"sprite_size\":[%u,%u]}", bits(e.sprite_size.x), bits(e.sprite_size.y));
             }
             std::printf("]}");
             {
@@ -763,9 +796,9 @@ int main(int argc, char** argv) {
             std::printf("}");
         }
         if (digest_only)
-            std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx enemies=%016llx bullets=%016llx\n",
+            std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx enemies=%016llx bullets=%016llx enemy_vms=%016llx\n",
                         stage, shot, season, frames, (unsigned long long)digest, (unsigned long long)enm_digest,
-                        (unsigned long long)bul_digest);
+                        (unsigned long long)bul_digest, (unsigned long long)vm_digest);
         else std::printf("]}\n");
         return 0;
     }

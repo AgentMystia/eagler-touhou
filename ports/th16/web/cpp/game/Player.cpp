@@ -5,6 +5,7 @@
 #include "Enemy.hpp"
 #include "GameGlobals.hpp"
 #include "Input.hpp"
+#include "Spellcard.hpp"
 
 #include <cmath>
 
@@ -248,7 +249,15 @@ void Player::graze(AnmManager& manager, AnmFile* effect_anm, GameGlobals& global
 void Player::hit(AnmManager& manager, AnmFile* effect_anm) {
     if ((flags & kFlagSilentHit) == 0) sfx_queue.push_back(2);
     if (effect_anm != nullptr) manager.spawn_effect(*effect_anm, 0x1d, -1, pos, 0.0f);
-    // DAT_004a6db0+0x78（Spellcard 管理器）：被弹时的符卡取得标志更新——Spellcard 接入时补
+    if (spellcard != nullptr && (spellcard->flags & Spellcard::kActive) != 0) {
+        // 开始 60 帧内被弹不算失败（炸弹中则记 kBombUsed）；之后奖励清零、取得失败
+        if (spellcard->timer.current < 0x3c) {
+            if (enemies != nullptr && enemies->bomb_active) spellcard->flags |= Spellcard::kBombUsed;
+        } else {
+            spellcard->bonus = 0;
+            spellcard->flags &= ~(Spellcard::kBonusAvailable | Spellcard::kBombUsed);
+        }
+    }
     state_timer.reset();
     state = kDying;
     invincible.set(0);
@@ -259,6 +268,31 @@ void Player::hit(AnmManager& manager, AnmFile* effect_anm) {
     vm.update_callback = 0;
     vm.time_callback = 0;
     manager.run(vm);
+}
+
+int Player::collide_body(AnmManager& manager, AnmFile* effect_anm, const Vec3& enemy_pos, float half_size,
+                         bool dialogue, bool probe) {
+    // 0x4439e0
+    const float dx = pos.x - enemy_pos.x;
+    const float dy = pos.y - enemy_pos.y;
+    float r = sht.hitbox;
+    const float d2 = dx * dx + dy * dy;
+    if ((flags & 0x10u) != 0) r = r * scale * 3.6f;
+    if (r * r + half_size * half_size <= d2) {
+        int result = 2;
+        float g = 40.0f;
+        if (40.0f <= half_size / 2.5f) g = half_size / 2.5f;
+        if ((g + r) * (g + r) + half_size * half_size <= d2) result = 0;
+        return result;
+    }
+    if (!dialogue) {
+        if (probe) return 2;
+        if (state != kRespawnWait && state != kDying && state != kState3) {
+            if (invincible.current < 1) hit(manager, effect_anm);
+            return 1;
+        }
+    }
+    return 0;
 }
 
 void Player::play_sprite(AnmManager& manager, int script) {
@@ -821,9 +855,12 @@ i32 Player::hit_bullet_default(AnmManager& manager, PlayerBullet& b) {
     return b.damage;
 }
 
-i32 Player::apply_damage_sources(AnmManager& manager, const Vec3& enemy_pos, float radius, u32 enemy_id) {
+i32 Player::apply_damage_sources(AnmManager& manager, GameGlobals& globals, const Vec3& enemy_pos, float radius,
+                                 u32 enemy_id, Vec3* hit_pos, bool* bomb_hit, bool probe) {
     // 0x445a30
     if (timer3.current == timer3.previous) return 0;
+    // Bomb（DAT_004a6da8）vtable+0xc 的炸弹伤害回调：Bomb 接入前为 0
+    if (bomb_hit != nullptr) *bomb_hit = false;
     auto rect_circle = [](float rx, float ry, float rw, float rh, float angle, float cx, float cy, float r) -> bool {
         // 0x403d30
         const float dx = cx - rx;
@@ -869,8 +906,9 @@ i32 Player::apply_damage_sources(AnmManager& manager, const Vec3& enemy_pos, flo
             if (d.f84 == i32(enemy_id)) continue;
             d.f84 = i32(enemy_id);
         }
+        if (bomb_hit != nullptr && (d.flags & 4u) != 0) *bomb_hit = true;
         i32 dmg = d.damage;
-        if (d.kind != 0) {
+        if (!probe && d.kind != 0) {
             d.f8c = i32(enemy_id);
             if (d.kind == 1 && d.owner >= 0 && d.owner < kBulletCount) {
                 // 0x445d40：按 .sht 项 hit_callback 分派（0 → 0x445e20；5 → 0x447270 文命中特效 + 0x445e20）
@@ -890,15 +928,19 @@ i32 Player::apply_damage_sources(AnmManager& manager, const Vec3& enemy_pos, flo
                 b.damage = 1;
             }
         }
-        d.f78 += d.damage;
+        if (!probe) d.f78 += d.damage;
         total += dmg;
+        if (hit_pos != nullptr) *hit_pos = d.motion.pos;
         if (d.f7c < 9999999 && d.f7c <= d.f78) {
             d.flags &= ~1u;
             d.damage = 0;
         }
     }
-    if (sht.damage_cap > 0 && total > sht.damage_cap)
-        total = sht.damage_cap;
+    if (total > sht.damage_cap) total = sht.damage_cap;
+    if (!probe && total != 0) {
+        const i32 extends = globals.add_score(total / 10 + 10);
+        for (i32 i = 0; i < extends; ++i) sfx_queue.push_back(0x11);
+    }
     return total;
 }
 

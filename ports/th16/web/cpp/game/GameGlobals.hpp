@@ -42,6 +42,13 @@ struct GameGlobals {
     i32 graze = 0;               // DAT_004a57c0：本局擦弹数
     i32 graze_total = 0;         // DAT_004a57c4：累计擦弹（含续关）
 
+    // 得分（0x43e080 累加，上限 999999999）与分数 extend（0x43ddd0 阈值表 DAT_00491880 / Extra DAT_004917c4）
+    i32 score = 0;               // DAT_004a57b0
+    i32 extend_index = 0;        // DAT_004a57fc：下一个分数 extend 阈值下标
+    i32 spell_id = 0;            // DAT_004a5798：当前符卡 / 阶段编号（op 524）
+    i32 enemy_bonus_pending = 0; // DAT_004a5880：op 569 登记的敌机击破奖励
+    i32 enemy_bonus = 0;         // DAT_004a5884：op 570 / 0x41d520 / 0x424f00 / 0x425010 结算的奖励
+
     // 外部推力（DAT_004d9dc4 / +4 / DAT_004d9dcc）：0x442560 每帧抄进 Player，0x441cf0 叠加到移动
     float push_x = 0, push_y = 0, push_z = 0;
 
@@ -60,6 +67,31 @@ struct GameGlobals {
         i32 n = 0;
         for (int i = 1; i <= 6; ++i) { if (season_gauge < season_threshold[i]) break; ++n; }
         return n;
+    }
+
+    // 0x43ddd0：当前分数 extend 阈值（Extra 用另一张表；表尾 1e9 哨兵）
+    i32 extend_threshold() const {
+        static constexpr i32 kNormal[12] = {500000, 1000000, 2000000, 4000000, 7000000, 10000000,
+                                            15000000, 25000000, 50000000, 100000000, 1000000000, 4794780};
+        static constexpr i32 kExtra[12] = {1000000, 2000000, 4000000, 6000000, 8000000, 10000000,
+                                           1000000000, 1084227584, 1092616192, 1101004800, 1106247680, 1109393408};
+        const int i = extend_index < 0 ? 0 : extend_index > 11 ? 11 : extend_index;
+        return difficulty == 4 ? kExtra[i] : kNormal[i];
+    }
+    // 0x43e080：score += value / 10，逐级越过阈值时残机 +1（上限 8；每级都推进阈值下标）；返回 extend 次数
+    // （调用方补 Gui 0x42c280 残机显示、音效 0x11、0x42bcf0 弹出）
+    i32 add_score(i32 value) {
+        score += value / 10;
+        i32 extends = 0;
+        while (score >= extend_threshold()) {
+            if (lives < 8) {
+                lives = lives + 1 > 8 ? 8 : lives + 1;
+                ++extends;
+            }
+            ++extend_index;
+        }
+        if (score > 999999999) score = 999999999;
+        return extends;
     }
 
     // 0x449190：设置模式位；若原模式不是 2 则 +0x38（DAT_004a57c8）置 -1

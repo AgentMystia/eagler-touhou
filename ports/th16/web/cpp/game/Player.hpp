@@ -100,6 +100,8 @@ struct PlayerWorld {
     bool stage_clear = false;   // DAT_004a6dd4->0x88 & 0x4000
 };
 
+struct Spellcard;
+
 class Player {
 public:
     enum State : i32 { kEnter = 0, kNormal = 1, kRespawnWait = 2, kState3 = 3, kDying = 4 };
@@ -173,6 +175,7 @@ public:
     std::vector<i32> sfx_queue;                        // 0x45e1f0 音效登记（宿主每帧取走）
     std::vector<i32> sfx_stop_queue;                   // 不射击时对 0x1e / 0x37 的停止标记（DAT_004d9e5c = -1）
     EnemyManager* enemies = nullptr;                   // DAT_004a6dc0（追踪弹索敌 0x425240 用）
+    Spellcard* spellcard = nullptr;                    // DAT_004a6db0（被弹时的取得标志更新）
 
     // 0x441c60 + 0x440fb0：资源已由调用方装入；返回 false 表示 .sht 缺失
     bool init(AnmManager& manager, GameGlobals& globals, AnmFile* player_anm, AnmFile* sub_player_anm,
@@ -186,12 +189,21 @@ public:
                 AnmFile* effect_anm, const AnmRenderer& geometry, float game_speed);
     // 0x443730：绘制链 0x1d 的逻辑部分（pos → VM entity_offset，flags 0x40000）
     void prepare_draw();
-    // 0x443f10：被弹——音效 2、effect.anm 脚本 0x1d、状态 4（决死猶予）、无敌 6 帧、主 VM 重播脚本 0
+    // 0x443f10：被弹——音效 2、effect.anm 脚本 0x1d、符卡取得标志、状态 4（决死猶予）、无敌 6 帧、主 VM 重播脚本 0
     void hit(AnmManager& manager, AnmFile* effect_anm);
+    // 0x4439e0：敌机体碰撞。half_size = 敌机 hurtbox.x × 0.5；返回 0 未触 / 1 被弹 / 2 擦弹圈内（或 probe / 对话中）
+    //   判定半径 .sht hitbox（flags & 0x10 时 × scale × 3.6）；擦弹圈 = max(40, half_size / 2.5)
+    int collide_body(AnmManager& manager, AnmFile* effect_anm, const Vec3& enemy_pos, float half_size,
+                     bool dialogue, bool probe);
     // 0x444cf0：擦弹——计数封顶 99999999、effect.anm 脚本 0x18 于中点、音效 0x2a（得点道具由调用方生成）
     void graze(AnmManager& manager, AnmFile* effect_anm, GameGlobals& globals, const Vec3& bullet_pos);
     // 0x445a30：对位置 enemy_pos、圆形半径 radius 的敌人（enemy_id）结算全部活动伤害源，返回本帧总伤害
-    i32 apply_damage_sources(AnmManager& manager, const Vec3& enemy_pos, float radius, u32 enemy_id);
+    //   hit_pos（param_5）：每次命中写入该伤害源坐标；bomb_hit（param_4）：炸弹伤害 > 0 或命中 flags&4 的源
+    //   probe（param_6 = 1）：只判定不结算——不走命中回调、不累计 f78、不加分
+    //   总伤害按 .sht 上限截断；非 probe 且有伤害时 0x43e080 加分（total/10+10），extend 音效 0x11 入 sfx_queue
+    //   原版 param_2（flags & 0x1000 的矩形判定，0x4049c0）无 ECL 设置路径，未移植
+    i32 apply_damage_sources(AnmManager& manager, GameGlobals& globals, const Vec3& enemy_pos, float radius,
+                             u32 enemy_id, Vec3* hit_pos = nullptr, bool* bomb_hit = nullptr, bool probe = false);
 
     std::string error;
 

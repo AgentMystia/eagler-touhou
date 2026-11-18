@@ -56,6 +56,13 @@ bool GameSession::load_boot_banks() {
         if (!load_anm(bank.name, res)) return false;
         if (animations.load(bank.slot, *res) == nullptr) { failure = std::string(bank.name) + " load failed"; return false; }
     }
+    // 0x418a30：EffectManager 持 effect.anm / bullet.anm，并把 VM 回调（充能环等）挂到 AnmManager
+    effects.create(animations, animations.file(8), animations.file(7));
+    effect_update_chain_ = chains.create([this]() -> ChainResult {
+        effects.sweep();
+        return ChainResult::Continue;
+    }, 0x1f, true);
+    chains.enable(effect_update_chain_);
     // 0x43adc0 → 0x4497e0 → 0x449720（ScoreFile 构造）：对 DAT_004a6d88 做 0x1ee 次单步随机（0 -> 0x41b6）
     for (int i = 0; i < 0x1ee; ++i) animations.visual_rng.next16();
     return true;
@@ -292,6 +299,9 @@ bool GameSession::enter_game() {
         game.enemies.anm_user = this;
         game.enemies.anm_fn = load_enemy_anm;
         game.enemies.bullets = game.bullets.get();
+        game.enemies.effects = &effects;
+        game.enemies.spellcard = &spellcard;
+        game.player.spellcard = &spellcard;
         if (!game.enemies.create(game.entry->ecl_name, globals, game.player_live ? &game.player : nullptr,
                                  animations.visual_rng, animations, u8(1u << (globals.difficulty & 31)))) {
             failure = game.enemies.error;
@@ -306,6 +316,7 @@ bool GameSession::enter_game() {
                     game.bullets->game_speed = supervisor.game_speed;
                     game.bullets->sfx_queue.clear();
                 }
+                game.enemies.dialogue_active = game.world.dialogue;
                 game.enemies.update(supervisor.game_speed);
                 if (game.bullets_live) {
                     // ECL 601 等发射期间登记的音效（0x45e1f0 调用序在敌人链内）
