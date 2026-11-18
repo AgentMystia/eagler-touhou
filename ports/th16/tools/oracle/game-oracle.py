@@ -687,6 +687,7 @@ class GameOracle(Oracle):
         # 自机弹出界判定 0x4456d0 → 0x468c00 → 0x406c40 读它们；oracle 不跑绘制链，在此一次性写入
         uc.mem_write(0x4D9D50, struct.pack('<ii', 320, 16))
         self.frame = 0
+        self.scene_exit = None   # 游戏场景之外的 DAT_004c17c4 请求（标题 4 / 结局 0xf / 0x10 / 退出 2）
 
     def on_sfx(self, o):
         esp = self.uc.reg_read(UC_X86_REG_ESP)
@@ -700,21 +701,32 @@ class GameOracle(Oracle):
         self.call(INPUT_EDGES, ecx=DAT_INPUT_HELD)
 
     def switch_scene(self):
-        """0x43ce10 的场景切换（主循环每帧在链更新前执行）。目前只接 case 0xc（过关 → 下一关）：
-        Supervisor+0x700（DAT_004c17d0 新开局标志）= 0、0x42d780 销毁、0x42d700(GameManager+0xac) 重建并同步装载。"""
+        """0x43ce10 的场景切换（主循环每帧在链更新前执行）：
+        case 0xc（过关 → 下一关）：Supervisor+0x700（DAT_004c17d0 新开局标志）= 0、0x42d780 销毁、0x42d700(GameManager+0xac) 重建；
+        case 0xa / 0xb / 0xe / 0x13（GameMenu 重开 / Extra 续关）：0x42d780 销毁、+0x700 = 1、关卡回到 DAT_004a5794、
+        0x42d700(0xb 时 1) 重建；其余请求（标题 / 结局 / 退出）记录在 scene_exit 并结束对拍。"""
         request = self.u32(DAT_SCENE_REQUEST)
         if request == self.u32(DAT_SCENE_CURRENT):
             return
-        if request != 0xC:
-            raise RuntimeError('scene request %#x not handled by oracle at frame %d' % (request, self.frame))
-        mode = self.u32(self.u32(DAT_GAME_MANAGER) + 0xAC)
-        self.uc.mem_write(DAT_UI_CAMERA + 0x700, struct.pack('<I', 0))
+        if request == 0xC:
+            mode = self.u32(self.u32(DAT_GAME_MANAGER) + 0xAC)
+            self.uc.mem_write(DAT_UI_CAMERA + 0x700, struct.pack('<I', 0))
+        elif request in (0xA, 0xB, 0xE, 0x13):
+            mode = 1 if request == 0xB else 0
+            self.uc.mem_write(DAT_UI_CAMERA + 0x700, struct.pack('<I', 1))
+            self.uc.mem_write(DAT_UI_CAMERA + 0x704, struct.pack('<I', 1 if request == 0x13 else 0))
+            stage = self.u32(DAT_STAGE_COPY)
+            self.uc.mem_write(DAT_STAGE_NUMBER, struct.pack('<I', stage))
+            self.uc.mem_write(DAT_STAGE_TABLE, struct.pack('<I', STAGE_TABLE_BASE + stage * STAGE_TABLE_STRIDE))
+        else:
+            self.scene_exit = request
+            return
         self.call(GAME_DESTROY)
         self.uc.mem_write(DAT_SCENE_REQUEST, struct.pack('<I', 7))
         self.game_manager = self.call(GAME_CREATE, ecx=mode)
         rc = self.call(GAME_LOAD)
         if rc != 0:
-            raise RuntimeError('0x42cb60 (next stage) failed rc=%#x errors=%s' % (rc, self.errors[-6:]))
+            raise RuntimeError('0x42cb60 (scene %#x) failed rc=%#x errors=%s' % (request, rc, self.errors[-6:]))
         self.uc.mem_write(DAT_SCENE_CURRENT, struct.pack('<I', 7))
 
     def stage_draw_side_effects(self):
@@ -1444,11 +1456,16 @@ def main():
         if a.refill_lives and a.lives is not None and o.i32(0x4A57F4) < a.lives:
             o.uc.mem_write(0x4A57F4, struct.pack('<i', a.lives))
         o.tick()
+        if o.scene_exit is not None:
+            # 游戏场景结束（回标题 / 结局 / 退出）：之后无 GameManager 可对拍，终止并把帧数记入输出
+            print('game-oracle: scene request %#x at frame %d, stopping' % (o.scene_exit, f + 1), file=sys.stderr)
+            break
         if (f + 1) % a.every == 0:
             frames.append(o.snapshot())
     notes = [e for e in o.errors if not e.startswith('note')]
     pathlib.Path(a.out).write_text(json.dumps({'stage': a.stage, 'shot': a.shot, 'season': a.season, 'difficulty': a.difficulty,
-                                               'input': a.input, 'frames': frames}, separators=(',', ':')))
+                                               'input': a.input, 'scene_exit': o.scene_exit, 'exit_frame': o.frame if o.scene_exit is not None else None,
+                                               'frames': frames}, separators=(',', ':')))
     if a.trace_ecl:
         pathlib.Path(a.trace_ecl).write_text(json.dumps(o.ecl_trace, separators=(',', ':')))
     if a.trace_rng:
