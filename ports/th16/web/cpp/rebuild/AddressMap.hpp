@@ -446,6 +446,25 @@ constexpr AddressAnchor kAnchors[] = {
     // —— 魔理沙激光（.sht 类型 2）——
     {"player-laser-create", 0x446200, "game/Player.cpp Player::start_laser（长度 0、音效 0x14、伤害源 f80=1 / size_x=0、清弹 flags bit0 → 伤害源由激光自己同步）"},
     {"player-laser-tick", 0x446260, "game/Player.cpp Player::tick_laser（贴子机坐标、朝向 .sht 角 / 低速 -π/2、长度 +18 至 512、VM flags 8 / 0x10 写 sprite_size.x / uv_scale.x、中点矩形伤害源；持续条件失效 → active 2 + 中断 1 + 冷却清零）"},
+    // —— 游戏内菜单（GameMenu.cpp；tests/menu.test.mjs 对 game-oracle.py menu_digest）——
+    {"game-menu-create", 0x43E5A0, "game/GameSession.cpp GameSession::create_menu（0x43e350 构造 memset 0 / 0x43e3f0 登记更新链 10 与绘制链 0x4a 并复位两只计时；新开局与各管理器一起建，换关沿用）"},
+    {"game-menu-destroy", 0x43E4C0, "game/GameMenu.cpp GameMenu::destroy（释放回放槽头 / HelpScreen；0x42d200 离开游戏时与 GameManager 一起）"},
+    {"game-menu-update", 0x43E5F0, "game/GameMenu.cpp GameMenu::update（0x43e720 thunk；模式 0：Esc 或失焦位、非回放 / 换关、GameManager 计时 > 0x1d → 0x43f0f0；模式 1..3 → 0x43f980；两计时按全局速度推进）"},
+    {"game-menu-set-mode", 0x43E150, "game/GameMenu.cpp GameMenu::set_mode（上一模式、状态 0、两计时复位、+0x108 清零）/ 0x43e200 set_state（主计时复位）"},
+    {"game-menu-open-pause", 0x43F0F0, "game/GameMenu.cpp GameMenu::open_pause（0x42dbc0 播放时长、flags |= 0x10、front.anm 0x9c / 练习 0x9e 菜单 VM + 中断 3、0x42e4d0、音效 0xe、BGM Pause、0x43ef20 截屏、速度 / 声音线程状态保存、0x42b610 / 0x42c580 隐藏）"},
+    {"game-menu-open-continue", 0x43F350, "game/GameMenu.cpp GameMenu::open_continue（回放中 → 场景 2 / 4；模式 2 状态 2、保存 BGM 名 + 0x471bd0 位置、th128_08 曲、音乐室位 +0x19fa6、声音线程状态 1；0x442560 残机 < 0 第 0x1e 帧 / 0x429ff0(-2) 符卡 bit7 调用）"},
+    {"game-menu-open-practice-result", 0x43F500, "game/GameMenu.cpp GameMenu::open_practice_result（0x42e150 练习 / 符卡练习过关：模式 3 状态 3 / 符卡练习 5、普通模式 0x440cd0 截屏、flags |= 4）"},
+    {"game-menu-open-return-title", 0x43F240, "game/GameMenu.cpp GameMenu::open_return_to_title（结局 / 回放结束：模式 1 状态 1、front.anm 0x9f）"},
+    {"game-menu-state-machine", 0x43F980, "game/GameMenu.cpp GameMenu::run_state_machine（状态 0 / 1 第 10 帧进主菜单（续关过禁用存回放 + 子脚本 0x82 / 0x8b / 0x97 中断 5）；2..5 显示分 / 最高分 + 0x43f7e0 排名 → 名字输入 0xf 或 LAB_4404ae 主菜单 0xa0 / 0xa1；6 上下 0x4186f0 导航 + 子脚本组 0x81.. 中断 6、R 重开 / Esc 回游戏 / Q 回标题；7 / 9 二次确认 0xe / cursor+0xf；8 回退；10 / 0xb 回放槽 th16_%.2d.rpy；0xc / 0xf 13 列名字表 + 空格 / 退格 / 结束；0xe 操作说明 0x42ea30；0x10 第 0xc 帧 0x43f6a0 / 0x43f740 / 0x43f790 后按光标执行）"},
+    {"game-menu-resume", 0x43F6A0, "game/GameMenu.cpp GameMenu::resume_game（模式 0 播放时长、flags &= ~0x10、速度 / 对话 0x42b820 / HUD 0x42c5c0 / 声音线程状态恢复）/ 0x43f740 / 0x43f790 close_overlay（截屏与菜单 VM 中断 1）"},
+    {"game-menu-continue", 0x43F980, "game/GameMenu.cpp GameMenu::continue_game（case 0x10 模式 2 光标 0：Extra → 场景 0xe；残机 2 / 碎片 0 / 炸弹 2 / 火力 per 级 + 0x43ddf0(per×4) / 0x4440e0 子机 / 续关 +1 上限 9 / 分数 0 / 剩余续关 −1 / 0x440bd0 + 0x45ed00(2,-1,曲名) 续播）"},
+    {"game-menu-rank", 0x43F7E0, "game/GameMenu.cpp GameMenu::register_rank（普通模式 0x43e250 入榜 → 光标槽 0x19 停在名次、名字缓冲取最近名字 +0x19f8c、与 8 空格不同则名字光标 −1、长度为末尾非空格位；练习更新 +0x5198 最高分；Extra 练习以关卡 9 记）"},
+    {"score-insert-rank", 0x43E250, "game/ScoreFile.hpp ScoreFile::insert_rank（首个 score ≤ 新分 的位置整体下移，新条目名字 8 空格、关卡 / 续关 / 时间 / 慢放率 / 季节）"},
+    {"score-defaults", 0x4493C0, "game/ScoreFile.hpp ScoreFile（每机体块 0x5318：6 难度 × 10 条 {100000 − 10000·i, 关卡 1, --------}；练习 +0x5198；公共块 +0x19f8c 最近名字 8 空格）"},
+    {"game-menu-screenshot", 0x43EF20, "game/GameMenu.cpp GameMenu::capture_screenshot（text.anm 0x34 UI VM；后备缓冲 384×448 场地区域拷进其纹理属渲染侧）"},
+    {"anm-spawn-ui", 0x418FE0, "game/AnmManager.cpp AnmManager::spawn_ui（flags_hi 0x400、creation_flags 4、插 UI 表尾、清 0xc000）"},
+    {"anm-tick-ui", 0x46E490, "game/AnmManager.cpp AnmManager::tick_ui（更新链 9 0x46e740：UI 表 VM 推进；层 0x18..0x1f → +0xc、其余归 0x26，只重建层 0x24..0x2a；0x46e340 世界表为链 0x21 0x46e710，装载中跳过）"},
+    {"help-screen", 0x42EAB0, "game/GameMenu.cpp HelpScreen::update（0x42e6a0 构造 / 0x42e760 装载线程 help.anm 槽 0x13 / 0x42efb0 目录项 VM；步 0 建 9 项、1 导航 + 确定 / 取消、2..3 装 help_%.2d.png、4 翻页 7 / 8 中断、5 换页；关闭 0x1e 帧后 +0x124）"},
     {"player-laser-hit", 0x446870, "game/Player.cpp Player::hit_laser（敌机转到激光坐标系：|perp| ≤ 半宽+r、along ≥ -(半宽+r)、端部圆；截到表面 sqrt(1-(perp/r)²)·r 再 +8；每隔一帧 pl01 脚本 8 / pl01sub 脚本 2 火花沿激光飘 64；每 4 帧结算伤害）"},
 };
 
