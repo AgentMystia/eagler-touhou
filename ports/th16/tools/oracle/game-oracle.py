@@ -714,6 +714,11 @@ class GameOracle(Oracle):
             # 0x43b290（text.anm 装载完成回调）→ 0x43d970：取后台缓冲表面（DAT_004c1284）与 '@R' 渲染目标表面
             # （DAT_004c127c / DAT_004c1280），并按窗口宽度给 4 个合成 VM 装 text.anm 脚本（640：0x3b/0x41/0x3e/0x44）
             self.call(0x43D970, ecx=DAT_UI_CAMERA)
+            # 0x43b290 续：启用 AsciiManager 的更新链（+8）与三条绘制链（+0xc 0x51 UI 相机 / +0x1924c 0x35 / +0x19250 0x42
+            # 场地相机），HUD 文字（得分 / 擦弹 / 得点值 / Boss 计时等）才会进入绘制调用流
+            for node_field in (8, 0xC, 0x1924C, 0x19250):
+                node = self.u32(self.ascii_manager + node_field)
+                uc.mem_write(node + 4, struct.pack('<I', self.u32(node + 4) | 2))
         if self.call(FRONT_INIT) != 0:
             raise RuntimeError('0x43ad20 failed: %s' % self.errors[-4:])
         self.score = self.alloc(0x1A3AC)
