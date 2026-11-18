@@ -1,117 +1,163 @@
-// th16 ANM 绘制——原版 0x468490（按 layer 链逐 VM 绘制）的屏幕四边形路径。
+// th16 ANM 绘制——原版 AnmManager 绘制侧（0x468490 族）的行为镜像：把一个 ANM VM 变成设备调用。
 //
-// 本文件覆盖启动幕 / 标题 / HUD 所需的 render mode：
-//   0x465c40 轴对齐几何（mode 0/2）  0x4660b0 带旋转（mode 1/3）
-//   0x465280 像素对齐、UV 滚动、颜色打包、提交 D3D DrawPrimitive（XYZRHW）
-//   0x467410 mode 8：世界矩阵（精灵尺寸/256 × scale × 三轴旋转 × 平移）经相机 view/proj 投影，
-//            ±128 单位四边形（0x46b900 顶点缓冲）+ 纹理矩阵（0x450）；本实现在 CPU 上完成
-//            D3D 固定管线的变换，输出带 rhw 的屏幕顶点，交由共享后端做透视正确插值。
-// 其余模式（条带/粒子/特效）待对应子系统接入时按同址扩展。
+// 职责与生命周期：GameSession 持有一份，所有绘制链回调（Supervisor 合成、关卡背景、各管理器、层回调）
+// 都经由它向 RenderDevice 下发；无设备（纯逻辑 harness）时所有绘制为空操作。
 //
-// 窗口缩放 DAT_004d9d34（0x45b280）默认 1.0；ins_313 的 scale mode 2/4 对其再 ×0.5。
+// 锚点：
+//   0x468490  单 VM 绘制分派：按 render mode（flags_lo bit25..29）选路径；入口先关 Z 写（0x43c570）
+//   0x465c40 / 0x4660b0  mode 0..3 四角（见 AnmGeometry）    0x465280  像素对齐、UV、顶点色、视口剔除、入批
+//   0x467410  mode 8：世界矩阵（精灵尺寸/256 × scale × 旋转 × 平移）+ 纹理矩阵，以 ±128 单位四边形走固定管线
+//   0x464f10  逐 VM 设备状态缓存：混合模式 / 采样过滤 / 寻址模式
+//   0x469640 / 0x469a00 / 0x469bd0  mode 0x11 / 0x12 / 0x13：无贴图的正多边形（扇面 / 轮廓 / 环带），
+//             边数 = $I0，半径 = 精灵宽 × scale，顶点格式 XYZRHW|DIFFUSE
+//   0x465b50  入批（每四边形 6 顶点 XYZRHW|DIFFUSE|TEX1）  0x465a80  出批 DrawPrimitiveUP
+//   0x46e750  遍历一层绘制链
+//   0x43c710  切相机：下发 view / projection，抖动偏移进绘制偏移
+//   0x43c4b0 / 0x43c4f0 / 0x43c530 / 0x43c570  Supervisor 上的雾 / Z 写缓存（0x4c10d0 +0xa0c / +0xa10）
+//
+// 与原版一致的两层缓存：
+//   设备状态缓存（AnmManager +0x184fbac..+0x184fbc4）——只在值变化时出批并下发；0x43d140 每帧开头复位
+//   Supervisor 雾 / Z 写缓存——关卡背景与层回调按需切换
 #pragma once
+#include "AnmGeometry.hpp"
 #include "AnmManager.hpp"
-#include "Stage.hpp"
+#include "Camera.hpp"
+#include "RenderDevice.hpp"
 #include "Types.hpp"
 
-#include <cmath>
-#include <cstdint>
-#include <functional>
 #include <string>
 #include <vector>
 
 namespace th16 {
 
-struct AnmQuad {
-    float x0 = 0, y0 = 0, x1 = 0, y1 = 0, x2 = 0, y2 = 0, x3 = 0, y3 = 0;
-    float u0 = 0, v0 = 0, u1 = 0, v1 = 0, u2 = 0, v2 = 0, u3 = 0, v3 = 0;
-    // D3D 视口深度（0..1）与 rhw（=1/w_clip）；屏幕空间模式恒为 z=0, rhw=1
-    float z[4] = {0, 0, 0, 0};
-    float rhw[4] = {1, 1, 1, 1};
-    u32 color0 = 0, color1 = 0, color2 = 0, color3 = 0;
-    u32 texture = 0;
-    i32 blend = 0;
-    i32 layer = 0;
-    i32 script = 0;
-    i32 file_slot = 0;
-    u32 id = 0;
-    bool nearest = false;
-    bool depth_write = false;     // D3DRS_ZWRITEENABLE：0x467410 默认开（flags_lo 0x2000 关），屏幕模式关
-    bool depth_test = true;       // D3DRS_ZENABLE：关卡层精灵（0x40c280）与 flags_lo 0x2000 的面关
-    bool fog = false;             // D3DRS_FOGENABLE：关卡 mode 8 / 0x18 面开（0x40af70）
-    u8 fog_factor[4] = {255, 255, 255, 255};  // 顶点雾因子（D3DRS_FOGVERTEXMODE LINEAR：(far - z_eye)/(far - near)）
-    u8 address_u = 1, address_v = 1;  // D3DTADDRESS：1 WRAP 2 MIRROR 3 CLAMP（0x464f10）
+// flags_lo bit5..8（ins_302）：混合模式 → 0x464f10 的 D3D 混合参数
+enum class AnmBlendMode : u32 {
+    Alpha = 0,            // SRCALPHA / INVSRCALPHA
+    Additive = 1,         // SRCALPHA / ONE
+    Subtractive = 2,      // ONE − SRCALPHA·src（REVSUBTRACT）
+    Replace = 3,          // 关 alpha test，ONE / ZERO
+    Screen = 4,           // INVDESTCOLOR / INVSRCCOLOR
+    Multiply = 5,         // DESTCOLOR / ZERO
+    InverseMultiply = 6,  // INVSRCCOLOR / INVSRCALPHA
+    DestinationAlpha = 7, // DESTALPHA / INVDESTALPHA
+    Darken = 8,           // MIN
+    Lighten = 9,          // MAX
 };
 
-// 关卡背景一帧的绘制结果（0x409f90 优先级 3）：场地矩形清屏 + 逐层四边形
-struct StagePass {
-    bool active = false;
-    u32 clear_color = 0;                      // 雾色；结束淡出时为 0
-    i32 clear_rect[4] = {32, 16, 416, 464};   // 屏幕场地（RT 视口 (116,4,408,472) 左移 96 后与场地相交）
-    u32 fog_color = 0;
-    float fog_near = 0, fog_far = 1;
-    std::vector<AnmQuad> quads;
-};
-
-// 0x43c780 建立的相机：视口中心正对 z=0 平面，距离 (h/2)/tan(fov/2)，up=(0,-1,0)，
-// PerspectiveFovLH(fov, w/h, 1, 10000)。UI 相机 0x4c1560 由 0x43cb10 以 fov=π/6、全窗口视口初始化。
-struct AnmCamera {
-    float fov = 0.5235988f;        // +0x54（0x3f060a92）
-    i32 viewport_x = 0, viewport_y = 0, viewport_w = 640, viewport_h = 480;  // +0xe0..+0xec
-    float view[16] = {};           // +0x60
-    float projection[16] = {};     // +0xa0
-    void setup();                  // 0x43c780
-    // 0x43c940：D3DXMatrixLookAtLH(eye, at, up) + PerspectiveFovLH(fov, w/h, zn, zf)（关卡相机 zn=30 zf=8000）
-    void look_at(const Vec3& eye, const Vec3& at, const Vec3& up, float zn, float zf);
-    // 世界坐标 → D3D 屏幕坐标（像素）、视口深度、rhw
-    void project(const float world[3], float& sx, float& sy, float& sz, float& rhw) const;
+// ANM render mode（flags_lo bit25..29，ins_303 / ins_306 / ins_600 族）
+enum class AnmRenderMode : u32 {
+    PixelQuad = 0,         // 屏幕空间、像素对齐
+    RotatedQuad = 1,       // 屏幕空间、绕 Z 旋转
+    Quad = 2,              // 屏幕空间、不对齐
+    RotatedQuad2 = 3,      // 同 1（历史别名）
+    ScreenCheckQuad = 4,   // 0x466390 过滤后同 1
+    Mode5 = 5, Mode6 = 6, Mode7 = 7,
+    World = 8,             // 世界空间固定管线四边形（关卡背景、3D 粒子）
+    VertexBuffer = 9,      // 0x4681f0：宿主自备顶点缓冲
+    Mode11 = 0xb,
+    VertexBuffer12 = 0xc, VertexBuffer13 = 0xd, VertexBuffer14 = 0xe,
+    WorldFogToggle = 0xf,  // 开雾画 mode 8 再关雾
+    Ellipse = 0x10,
+    PolygonFan = 0x11,     // 0x469640：中心色 color、边缘色 color2 的实心正多边形
+    PolygonOutline = 0x12, // 0x469a00：线段带轮廓
+    PolygonRing = 0x13,    // 0x469bd0：内外半径差 = 精灵高 × scale 的环带
+    Ellipse2 = 0x14, Ring = 0x15, Ring2 = 0x16,
+    Strip = 0x18, Strip2 = 0x19,
+    Arc = 0x1a, Arc2 = 0x1b,
 };
 
 class AnmRenderer {
 public:
-    // 解析纹理句柄：file_slot + entry_index → GraphicsDevice 句柄；返回 0 = 跳过
-    using TextureLookup = std::function<u32(int file_slot, int entry_index)>;
+    using PipelineState = touhou::graphics::PipelineState;
 
-    float window_scale = 1.0f;   // DAT_004d9d34
-    float draw_offset_x = 0;     // AnmManager +0xd0
-    float draw_offset_y = 0;     // AnmManager +0xd4
-    float field_offset_x = 320;  // DAT_004d9d50（layer group 0x40000）= 640/2（0x43b3d0 每帧写）
-    float field_offset_y = 16;   // DAT_004d9d54 = (480-448)/2
-    float screen_offset_x = 320; // DAT_004d9d48（layer group 其它非零）= 640/2（0x43cb10）
-    float screen_offset_y = 16;  // DAT_004d9d4c = 16 × 窗口缩放
-    AnmCamera camera;            // 当前 DAT_004c17b8 相机（标题/HUD 为 0x4c1560 UI 相机）
-    TextureLookup lookup;
+    AnmRenderer(AnmManager& manager, const AnmGeometry& geometry) : manager_(manager), geometry_(geometry) {}
+
+    RenderDevice* device = nullptr;   // 为空 = 无绘制（逻辑 harness）
     std::string error;
 
-    AnmRenderer() { camera.setup(); }
+    // ---- 相机（DAT_004c17b8 / DAT_004c17bc）----
+    // 0x43c710 + SetViewport：出批、下发 view / projection、绘制偏移 = 相机抖动偏移、视口 = 相机视口
+    void use_camera(const Camera& camera);
+    const Camera* camera() const { return camera_; }
 
-    // 0x468490：单 VM；成功写入 out 并返回 true；不可见 / 尚未实现的模式返回 false（非错误）
-    bool emit(AnmManager& manager, AnmVm& vm, AnmQuad& out);
+    // ---- Supervisor 设备状态缓存 ----
+    void set_fog(bool enabled);          // 0x43c4b0（开）/ 0x43c4f0（关）
+    void set_depth_write(bool enabled);  // 0x43c530（开）/ 0x43c570（关）
+    // ZFUNC（0x40a410 / 0x46e030 等直接下发，无缓存）
+    void set_depth_compare(touhou::graphics::Compare compare);
+    // 雾参数（0x409f90：FOGCOLOR / FOGSTART / FOGEND，每项前都先出批）
+    void set_fog_parameters(u32 color, float near_, float far_);
+
+    // ---- 色调（AnmManager +0x1c7fd88 / +0x1c7fd8c：关卡闪白 0x409f90 置位，绘制完背景后清回 0x80808080）----
+    void set_tint(bool enabled, u32 color) { tint_enabled_ = enabled; tint_ = color; }
+
+    // ---- 绘制偏移（AnmManager +0xd0 / +0xd4）----
+    void set_draw_offset(float x, float y) { draw_offset_x_ = x; draw_offset_y_ = y; }
+
+    // ---- 帧边界（0x45a8a0 主循环）----
+    // BeginScene 后：丢弃残批（0x465a30）、雾缓存置未知后关雾（DAT_004c1adc = 0xff → 0x43c4f0）
+    void begin_frame();
+    // 绘制链之后：出批、SetTexture(0, NULL)
+    void end_frame();
+
+    // ---- 批与缓存 ----
+    void flush();                 // 0x465a80
+    void reset_state_cache();     // 0x43d140 中段：纹理 / 混合 / 过滤 / 寻址 / 顶点格式缓存全部置"未知"，色调关、偏移清零
+    void reset_state_cache_after_device_defaults();  // 0x45ba80 尾
+    bool batch_pending() const { return !batch_.empty(); }
+
+    // ---- 绘制 ----
+    // 0x468490：返回 0 已处理，-1 跳过（不可见 / 删除中 / 模式未实现）
+    int draw_vm(AnmVm& vm);
     // 0x46e750：遍历一层绘制链
-    bool emit_layer(AnmManager& manager, int layer, std::vector<AnmQuad>& out);
-    // 遍历 0..35 全部非空层（启动幕 / 调试用）
-    bool emit_all(AnmManager& manager, std::vector<AnmQuad>& out);
-    // 0x409f90：关卡背景——以关卡相机（0x43c940）投影层 0..7 的层精灵与实例四边形
-    bool emit_stage(AnmManager& manager, StageManager& stage, StagePass& out);
-    // 0x468c00：VM 四角的屏幕坐标（逻辑侧出界判定用；mode 0/2/3 轴对齐、mode 1 带旋转，其它模式不写并返回 false）
-    bool vm_corners(const AnmVm& vm, float out[4][3]) const;
-    // 0x406a70：按 scale mode 缩放、沿父链累加（父旋转 flag 0x800000）或加 layer group 偏移
-    Vec3 transform_position(const AnmVm& vm, Vec3 p) const;
-    // 0x406c40 + 0x406a70：把 VM 位置变换到屏幕空间（Gui 对话文字跟随文字框子 VM 亦用此）
-    Vec3 world_position(const AnmVm& vm) const;
+    void draw_layer(int layer);
+    // 未实现的 render mode 计数（按模式号），对拍时据此发现缺口
+    u32 unimplemented_modes[32] = {};
 
 private:
-    const AnmCamera* active_camera_ = &camera;   // DAT_004c17b8
-    // 0x467410：mode 8 世界空间四边形经相机投影
-    bool emit_projected(AnmManager& manager, AnmVm& vm, const AnmRuntimeSprite& sprite, AnmQuad& out);
-    // 0x465c40：轴对齐四角（未加位置）
-    void axis_corners(const AnmVm& vm, float out[4][2]) const;
-    // 0x4660b0：带 Z 旋转的四角
-    void rotated_corners(const AnmVm& vm, float out[4][2]) const;
-    // 颜色：VM +0x520 的 BGRA 字节 → 0xAARRGGBB（D3DCOLOR / 共享后端约定）
-    static u32 pack_color(const u8 bgra[4]) {
-        return (u32(bgra[3]) << 24) | (u32(bgra[2]) << 16) | (u32(bgra[1]) << 8) | u32(bgra[0]);
-    }
+    AnmManager& manager_;
+    const AnmGeometry& geometry_;
+    const Camera* camera_ = nullptr;
+
+    // Supervisor +0xa0c / +0xa10：-1 未知、0 关、1 开
+    i32 fog_cache_ = -1;
+    i32 depth_write_cache_ = -1;
+
+    // AnmManager 设备状态缓存
+    enum class VertexFormat : u8 { Unknown = 0xff, ScreenQuads = 1, WorldQuad = 2, HostBuffer = 3 };
+    i32 texture_key_cache_ = -1;        // +0x184fbb0：精灵表 key（slot<<8 | entry）
+    u8 blend_cache_ = 0x0a;             // +0x184fbb4
+    u8 filter_cache_ = 0xff;            // +0x184fbba
+    u8 combiner_args_set_ = 0xff;       // +0x184fbbb：1 = ALPHAOP/COLOROP 已设为 MODULATE
+    u8 address_u_cache_ = 0xff;         // +0x184fbbc
+    u8 address_v_cache_ = 0xff;         // +0x184fbbd
+    VertexFormat vertex_format_cache_ = VertexFormat::Unknown;  // +0x184fbb6
+    const AnmRuntimeSprite* texture_matrix_sprite_ = nullptr;   // +0x184fbc0
+    u32 texture_factor_cache_ = 0;      // +0x184fbac
+    bool tint_enabled_ = false;         // +0x1c7fd8c
+    u32 tint_ = 0x80808080;             // +0x1c7fd88
+    float draw_offset_x_ = 0, draw_offset_y_ = 0;   // +0xd0 / +0xd4
+
+    std::vector<ScreenColorUvVertex> batch_;   // +0x184fc1c 起的四边形批（每四边形 6 顶点）
+
+    const AnmRuntimeSprite* sprite_of(const AnmVm& vm) const;
+    // 0x465280：mode 0..3 四角 → 像素对齐 / UV / 顶点色 / 视口剔除 / 入批
+    int submit_screen_quad(AnmVm& vm, const AnmRuntimeSprite& sprite, float corners[4][2], bool pixel_align);
+    // 0x467410
+    int draw_world_quad(AnmVm& vm, const AnmRuntimeSprite& sprite);
+    // 0x468490 mode 0x11..0x13 分支 + 0x469640 / 0x469a00 / 0x469bd0
+    int draw_polygon(AnmVm& vm, AnmRenderMode mode);
+    // 多边形顶点提交前的共同状态：ALPHAOP / COLOROP = SELECTARG2、ARG2 = DIFFUSE、FVF XYZRHW|DIFFUSE
+    void prepare_untextured_draw();
+    // 0x464f10
+    void apply_vm_state(const AnmVm& vm);
+    // 0x465280 / 0x467410 共用：纹理 key 变化时出批并绑定
+    void bind_sprite_texture(const AnmRuntimeSprite& sprite);
+    // 0x465a80 内：ALPHAOP / COLOROP = MODULATE（只设一次）
+    void ensure_modulate_combiner();
+    // 顶点色 × 色调（每通道 >>7 并钳 255）
+    u32 apply_tint(u32 color) const;
+    bool in_camera_viewport(const float corners[4][2]) const;
 };
 
 }  // namespace th16

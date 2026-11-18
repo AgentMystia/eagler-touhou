@@ -118,11 +118,12 @@ struct AnmVm {
     float rand_angle_scale = 0;       // 0x4d8  10028
     i32 rand_int_max = 0;             // 0x4dc  10029
     Vec3 pos2;                        // 0x4e0（flag 0x400 时 ins_400 写这里）
-    u8 unknown_4ec[0x30] = {};        // 0x4ec
+    Vec3 drawn_corners[4];            // 0x4ec 0x465280 写入的四角屏幕坐标（左上、右上、左下、右下）
     i32 creation_flags = 0;           // 0x51c（ins_500 系列的列表选择位）
     u8 color[4] = {255, 255, 255, 255};   // 0x520 b,g,r,a
     u8 color2[4] = {};                // 0x524 b,g,r,a
-    u8 unknown_528[8] = {};           // 0x528
+    u32 drawn_color = 0;              // 0x528 上次绘制实际用的顶点色（ins_315 子 VM 据此与父相乘）
+    u8 unknown_52c[4] = {};           // 0x52c（0x429b20 / 0x4197c0 写 0x15 / 0x10，未见读取）
     u32 flags_lo = 0;                 // 0x530
     u32 flags_hi = 0;                 // 0x534
     u32 id = 0;                       // 0x538（池下标 | 代数<<13）
