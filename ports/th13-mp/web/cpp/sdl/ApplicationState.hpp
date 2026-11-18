@@ -664,8 +664,10 @@ struct ApplicationState final : TitleScenePlatform, RunSceneServices, RunPausePl
     // 写入本席输入沿。默认 0 = 单席/本地多席零变化）。
     i32 mp_local_seat = 0;
     bool mp_history_playback = false;
+    bool mp_challenge = false;
     bool mp_legacy_stage_positions = false;
     bool mp_legacy_boss_mitigation = false;
+    bool mp_legacy_pickup_rewards = false;
     // M2：席位输入沿（浏览器侧逐席注入面；seat 0 由 step 参数携带——
     // Application::step 的单一 GameInput 即本席）。M7 Runtime 接线前，
     // 其余席由宿主直接写 run->battle.seat_inputs。
@@ -687,8 +689,10 @@ struct ApplicationState final : TitleScenePlatform, RunSceneServices, RunPausePl
         mp_characters = characters;
         mp_local_seat = local_seat;
         mp_history_playback = false;
+        mp_challenge = false;
         mp_legacy_stage_positions = false;
         mp_legacy_boss_mitigation = false;
+        mp_legacy_pickup_rewards = false;
         return true;
     }
     // 回放会话直入：解码 .rpy → 按录像头配置 → begin_run（跳过标题与装载挡板）。

@@ -439,7 +439,8 @@ void queue_mp_work(bool received = false);
 
 // Full history consumers rebuild only the recorded root, then replay inputs.
 bool mp_restore_history_root(const multiplayer::SessionSetup& setup, unsigned stage,
-                             const multiplayer::StageEntry* entry) {
+                             const multiplayer::StageEntry* entry,
+                             bool legacy_pickup_rewards = false) {
     const std::array<th13::i32, 3> characters = {
         th13::i32(setup.selections[0]), th13::i32(setup.selections[1]),
         th13::i32(setup.selections[2])};
@@ -451,6 +452,8 @@ bool mp_restore_history_root(const multiplayer::SessionSetup& setup, unsigned st
         return false;
     }
     app->mp_history_playback = true;
+    app->mp_challenge = setup.challenge;
+    app->mp_legacy_pickup_rewards = legacy_pickup_rewards;
     app->progress = th13::SessionState{};
     app->pending_load = 0;
     app->transition_gate_active = false;
@@ -488,6 +491,7 @@ bool mp_restore_history_root(const multiplayer::SessionSetup& setup, unsigned st
         for (unsigned seat = 0; seat < entry->seat_count && seat < 3; ++seat)
             app->run->battle.seat_inputs[seat] = entry->inputs[seat];
     }
+    if (app->mp_challenge && app->run) app->run->battle.apply_challenge_locks();
     return true;
 }
 
@@ -1105,7 +1109,7 @@ EMSCRIPTEN_KEEPALIVE int th13_room_preview() {
 
 EMSCRIPTEN_KEEPALIVE int th13_room_return_ready() {
     using namespace th13::sdl;
-    return app && mp_started && !th13::multiplayer::session.Simulating() &&
+    return app && mp_started && !mp_spectator_mode && !th13::multiplayer::session.Simulating() &&
         (app->exiting || (!app->run && !app->ending && app->title &&
                          app->title->state.screen == th13::TitleScreen::Main));
 }
@@ -2113,6 +2117,7 @@ EMSCRIPTEN_KEEPALIVE int th13_mp_start() {
         last_error = "TH13 multiplayer seat configuration rejected";
         return 0;
     }
+    app->mp_challenge = setup.challenge;
     // 新局状态：清练习/符卡残位（start_game 的 mode 分支读 run_mode_flags）。
     app->progress.run_mode_flags = 0;
     app->progress.practice_mode = 0;
@@ -2244,7 +2249,8 @@ bool mp_start_playback() {
         last_error = "TH13 multiplayer replay stage entry is invalid";
         return false;
     }
-    if (!mp_restore_history_root(setup, stage, bytes ? &entry : nullptr)) return false;
+    if (!mp_restore_history_root(setup, stage, bytes ? &entry : nullptr,
+                                 archive->UsesLegacyPickupRewards())) return false;
     app->mp_legacy_stage_positions = archive->UsesLegacyStagePositions();
     app->mp_legacy_boss_mitigation = archive->UsesLegacyBossMitigation();
     mp_playback_frame = 0;
