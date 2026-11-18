@@ -93,12 +93,13 @@ ANM VM 的还原证据：`tests/anm-vm.test.mjs` 以 `tools/oracle/anm-oracle.py
 | 0x44c570 / 0x451750 / 0x452330 / 0x4546f0 / 0x4545a0 / 0x4553d0 | 标题余项（Option / Replay / Player Data / Music Room / Manual / Spell Practice）；0x44af80 开头的 demo 录像触发；0x44a850 / 0x44a8e0 / 0x44a800 存档判定；0x41a390 + 0x418ba0 过场；0x43c470 BGM 淡出 |
 | 0x46d020 | AnmManager::load_file(slot, name)（同步等待装载线程） |
 | 0x418af0 / 0x405700 | EffectManager（DAT_004a6db8）：ins_508 按效果种类表 DAT_004a2250 挂 update/draw 回调；种类 1 的 update 回调维护环形顶点缓冲并生成 `effect.anm` 0x99。`effect.anm` 155–196 依赖它，暂不在 ANM golden 内 |
+| 0x42f440 / 0x42f0b0 / 0x42f260 / 0x4184a0 / 0x4308f0 / 0x42f4e0 / 0x430960 / 0x430c90 / 0x430d10 / 0x430d90 / 0x4307a0 / 0x430100 / 0x430620 / 0x4304a0 / 0x4303a0 / 0x43df70 / 0x43dff0 / 0x43dfb0 / 0x430dc0 / 0x43de50 / 0x443840 | ItemManager（0x1c972ec，DAT_004a6ddc）与 Item（0xc78 × 0x1258）：创建（更新链 0x1d / 绘制链 0x21 非季节 + 0x13 季节）、复位（普通池 600 / 得点池 0x1000 各自按槽号头插空闲链 → 最高槽先出）、每帧遍历 0x42f4e0：态 1 下落（重力 0.03、终速 2、y>472 回收）/ 2 上抛（脚本表 DAT_004917f8）/ 3 季节减速（op 1001 / 击杀掉落 `unit()*1.9f+0.2f` x87）/ 4 吸引（基准 sht+0x08=5、每帧 +0.2 至 12；收点线 y<128、魔理沙 3 号 148）/ 5 收点圈（低速时擦弹框，速度 = 基准/3）/ 6 得点池延迟出现（spawn_count % 4/8/16/32）；拾取框 → 结算：火力 0x430100（满火力折得点 × 高度比例）、得点 0x430620（[line, line+450] 线性）、大火力 0x4304a0（满火力 2 万双计）、满火力 0x4303a0、残机 0x43df70 / Bomb 碎片 0x43dff0 / Bomb 0x43dfb0、季节 0x43de50（量表 +1、跨阈值重建季节子机 0x4440e0）；0x4440e0 季节子机循环沿用主子机游标（激活当帧 x/y 取第 i 个子机槽偏移、target 写回该槽）；ECL -9989 / -9956 / -9955 = 0x443840 自机方向角、-9971..-9966 = 运动 1/2 角度·速度·半径、-9963/-9962 Boss 坐标、-9958 位移方向、-9931 最近生成 id；op 507 = 掉落表登记（0 单掉 / 1..15 数量 / 16 季节数） | `game/Item.cpp`、`game/Item.hpp`、`game/Enemy.cpp`、`game/Bullet.cpp`、`game/Player.cpp`、`game/GameSession.cpp` |
 | 0x491b1c 表 | ins_300/301 的 sprite_mapper 回调（VM +0x5dc 非零时由玩家/敌机子系统重映射精灵号） |
 | 0x41dcb0 | ECL 指令分发 |
 | 0x44ac70 | 标题场景初始化 |
 | 0x4497e0 / 0x4403c5 / 0x43b480 / 0x43aeae | score 文件 / replay 文件 / ver 文件 / thbgm.fmt |
 
-未定位：激光 / 道具管理器、季节系统（Season gauge / Release）；敌机、子弹、玩家与机体已还原。Supervisor、Chain 表、帧计时、输入、标题主菜单与难度/机体/季节/关卡画面已还原；Game 场景（7）与标题余项待接。全表见 `web/cpp/rebuild/AddressMap.hpp`。
+未定位：激光管理器 0x4314a0、Bomb / 季节解放（Release）、Gui、Spellcard；敌机、子弹、道具、玩家与机体已还原。Supervisor、Chain 表、帧计时、输入、标题主菜单与难度/机体/季节/关卡画面已还原；Game 场景（7）与标题余项待接。全表见 `web/cpp/rebuild/AddressMap.hpp`。
 
 ## 与 th15 的关系
 
