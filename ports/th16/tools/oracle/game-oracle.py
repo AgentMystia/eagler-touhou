@@ -1531,9 +1531,29 @@ def main():
     draw_file = None
     if a.draw:
         draw_file = open(a.draw_out or (a.out + '.draw.jsonl'), 'w')
+        # --draw-from 之前的帧不输出，但其状态调用（rs/tss/ss/tex/fvf/xf/vp/rt）折叠成 prefix 随首个输出帧写出，
+        # 让 draw-compare.py 从任意帧起步时仍知道生效状态
+        carried = {}
         def write_draw_frame(frame, calls):
-            if frame >= a.draw_from:
-                draw_file.write(json.dumps({'frame': frame, 'calls': calls}, separators=(',', ':')) + '\n')
+            if frame < a.draw_from:
+                for c in calls:
+                    if c[0] in ('rs', 'fvf', 'rt', 'vp'):
+                        key = (c[0], c[1]) if c[0] == 'rs' else (c[0],)
+                    elif c[0] in ('tss', 'ss'):
+                        key = (c[0], c[1], c[2])
+                    elif c[0] in ('tex', 'xf'):
+                        key = (c[0], c[1])
+                    else:
+                        continue
+                    carried.pop(key, None)
+                    carried[key] = c
+                return
+            rec = {'frame': frame}
+            if carried:
+                rec['prefix'] = list(carried.values())
+                carried.clear()
+            rec['calls'] = calls
+            draw_file.write(json.dumps(rec, separators=(',', ':')) + '\n')
         o.on_draw_frame = write_draw_frame
     held = 0
     frames = []
