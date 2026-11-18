@@ -4,6 +4,7 @@
 
 #include "AnmManager.hpp"
 #include "GameGlobals.hpp"
+#include "Item.hpp"
 #include "Motion.hpp"
 #include "Player.hpp"
 #include "Rng.hpp"
@@ -83,7 +84,6 @@ void BulletManager::reset() {
     iterate_current_ = nullptr;
     iterate_next_ = nullptr;
     sfx_queue.clear();
-    item_requests.clear();
     laser_requests.clear();
 }
 
@@ -608,11 +608,15 @@ int BulletManager::check_player_collision(Bullet& b, bool force_graze, float gs)
     return result;
 }
 
-// 0x444cf0：Player::graze（计数、特效、音效）后生成得点道具 0x10（0x430960，Item 接入前入请求队列）
+// 0x444cf0：Player::graze（计数、特效、音效）后生成得点道具 0x10（0x430960）
 void BulletManager::graze(const Vec3& pos) {
     player->graze(*animations, effect_anm, *globals, pos);
     const float angle = atan2_f(pos.y - player->pos.y, pos.x - player->pos.x);
-    item_requests.push_back({0x10, pos, angle, 1.9f, 0});
+    spawn_item(0x10, pos, angle, 1.9f, 0);
+}
+
+void BulletManager::spawn_item(i32 type, const Vec3& pos, float angle, float speed, i32 flag) {
+    if (items != nullptr) items->spawn(type, pos, angle, speed, flag);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -645,27 +649,27 @@ void BulletManager::convert_cancel_item(const Vec3& pos, i32 mode) {
     if (mode == 1 || mode == 3) return;
     constexpr float kSpread = 0.17453292f;  // 10°
     if (mode == 2) {
-        if (total_canceled % 5 == 0 && !spellcard_active) item_requests.push_back({1, pos, -kHalfPi, 2.2f, 0});
+        if (total_canceled % 5 == 0 && !spellcard_active) spawn_item(1, pos, -kHalfPi, 2.2f, 0);
         if (!spellcard_active) {
             const float a = float(rng->signed_unit() * kSpread) - kHalfPi;
-            item_requests.push_back({10, pos, a, 2.2f, 0});
+            spawn_item(10, pos, a, 2.2f, 0);
         }
         return;
     }
     if (mode == 5) {
         if (cancel_item_counter % 3 == 0) {
             const float a = float(rng->signed_unit() * kSpread) - kHalfPi;
-            item_requests.push_back({0x10, pos, a, 2.2f, 1});
+            spawn_item(0x10, pos, a, 2.2f, 1);
         }
         cancel_item_counter = cancel_item_counter + 1;
         return;
     }
     if (mode == 4) {
         const float a = float(rng->signed_unit() * kSpread) - kHalfPi;
-        item_requests.push_back({0x10, pos, a, 2.2f, 1});
+        spawn_item(0x10, pos, a, 2.2f, 1);
         if (season_release_active) {
             const float a2 = float(rng->signed_unit() * kSpread) - kHalfPi;
-            item_requests.push_back({season_release_item + 8, pos, a2, 2.2f, 0});
+            spawn_item(season_release_item + 8, pos, a2, 2.2f, 0);
         }
     }
 }

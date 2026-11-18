@@ -11,6 +11,7 @@ void GameManager::first_frame(AnmManager& manager, GameGlobals& globals) {
     if (stage_live) stage.start(manager);
     if (bullets_live) bullets->reset();                // 0x411b70
     if (player_live) player.reset(manager, globals);   // 0x441740
+    if (items_live) items->reset();                    // 0x4184a0
     globals.game_frame = 0;
     globals.stage_frame = 0;
     if (enemies_live) {

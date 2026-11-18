@@ -219,10 +219,14 @@ void Player::setup_options(AnmManager& manager, GameGlobals& globals) {
         o.offset_y = i32(sub_sht.option_unfocused[slot].y * 128.0f);
         o.focus_offset_x = i32(sub_sht.option_focused[slot].x * 128.0f);
         o.focus_offset_y = i32(sub_sht.option_focused[slot].y * 128.0f);
-        const i32 ox = focus != 0 ? o.focus_offset_x : o.offset_x;
-        const i32 oy = focus != 0 ? o.focus_offset_y : o.offset_y;
-        o.target_x = o.x = fixed_x + ox;
-        o.target_y = o.y = fixed_y + oy;
+        // 原版这一段沿用主子机循环的游标（+0xbc 起、步长 0xe4，未重定位到 +0x44c）：
+        // 本帧 x/y 取"第 i 个子机槽"（主子机 0..3，再接季节子机 0..）的偏移，target 也写回该槽；
+        // 下一帧 0x442380 按 snap 吸附到正确目标，故只影响激活当帧。
+        PlayerOption& cursor = i < kOptionCount ? options[i] : sub_options[i - kOptionCount];
+        const i32 ox = focus != 0 ? cursor.focus_offset_x : cursor.offset_x;
+        const i32 oy = focus != 0 ? cursor.focus_offset_y : cursor.offset_y;
+        cursor.target_x = o.x = fixed_x + ox;
+        cursor.target_y = o.y = fixed_y + oy;
         o.vm = spawn_option_vm(manager, *sub_anm, kSubOptionScript[globals.season]);
         o.active = 2;
     }

@@ -2,6 +2,7 @@
 #include "Enemy.hpp"
 #include "AnmManager.hpp"
 #include "Effect.hpp"
+#include "Item.hpp"
 #include "Spellcard.hpp"
 #include "GameGlobals.hpp"
 #include "Player.hpp"
@@ -16,11 +17,27 @@ constexpr u32 kFlagBossLife = 0x40000000;
 constexpr u32 kFlagReentry = 0x40000;
 constexpr u32 kFlagAlive = 0x10000;
 constexpr float kPi = 3.1415927410125732f;
+constexpr float kHalfPi = 1.5707963705062866f;  // 0x494534
 }  // namespace
 
 const char* Enemy::routine_name() const noexcept {
     if (!program || primary.routine < 0 || u32(primary.routine) >= program->definitions.size()) return nullptr;
     return program->subroutine(u32(primary.routine)).name.c_str();
+}
+
+// 0x443840：自机相对 from 的方向角；重合时返回 π/2（DAT_00494534）
+float Enemy::angle_to_player(const Vec3& from) const noexcept {
+    if (player == nullptr) return kHalfPi;
+    const float dy = player->pos.y - from.y;
+    const float dx = player->pos.x - from.x;
+    if (dy == 0.0f && dx == 0.0f) return kHalfPi;
+    return atan2_f(dy, dx);
+}
+
+// 0x417580：按 boss_ids[slot] 查敌机（未命中时原版返回最后遍历到的敌机，此处与 find_id 的 nullptr 口径一致）
+Enemy* Enemy::boss(int slot) const {
+    if (manager == nullptr || manager->boss_ids[slot] == 0) return nullptr;
+    return manager->find_id(manager->boss_ids[slot]);
 }
 
 bool Enemy::integer(i32 var, i32& value) {
@@ -46,10 +63,16 @@ bool Enemy::integer(i32 var, i32& value) {
         case -9980: value = truncate_int(float_regs[1]); return true;
         case -9979: value = truncate_int(float_regs[2]); return true;
         case -9978: value = truncate_int(float_regs[3]); return true;
-        case -9969: value = truncate_int(motion1.angle); return true;
-        case -9968: value = truncate_int(motion2.angle); return true;
-        case -9967: value = truncate_int(motion1.speed); return true;
-        case -9966: value = truncate_int(motion2.speed); return true;
+        case -9971: value = truncate_int(motion1.angle); return true;   // +0x12b0
+        case -9970: value = truncate_int(motion2.angle); return true;   // +0x12f4
+        case -9969: value = truncate_int(motion1.speed); return true;   // +0x12ac
+        case -9968: value = truncate_int(motion2.speed); return true;   // +0x12f0
+        case -9967: value = truncate_int(motion1.radius); return true;  // +0x12b4
+        case -9966: value = truncate_int(motion2.radius); return true;  // +0x12f8
+        case -9963: { const Enemy* b = boss(0); value = b ? truncate_int(b->pos.x) : 0; return true; }
+        case -9962: { const Enemy* b = boss(0); value = b ? truncate_int(b->pos.y) : 0x80; return true; }
+        case -9958: value = truncate_int(atan2_f(delta.y, delta.x)); return true;  // 0x4052a0(+0x1288, +0x1284)
+        case -9931: value = manager ? i32(manager->last_id) : 0; return true;     // DAT_004a6dc0+0x94
         case -9960: value = globals ? globals->rank : 0; return true;  // DAT_004a57bc
         case -9959: value = globals ? globals->difficulty : 0; return true;
         case -9954: value = life; return true;
@@ -114,10 +137,19 @@ bool Enemy::floating(i32 var, float& value) {
         case -9918: case -9917: case -9916: case -9915:
             value = manager ? manager->global_floats[var + 9922] : 0;
             return true;
-        case -9969: value = motion1.angle; return true;
-        case -9968: value = motion2.angle; return true;
-        case -9967: value = motion1.speed; return true;
-        case -9966: value = motion2.speed; return true;
+        case -9989: value = angle_to_player(pos); return true;          // 0x443840(+0x1250)
+        case -9971: value = motion1.angle; return true;
+        case -9970: value = motion2.angle; return true;
+        case -9969: value = motion1.speed; return true;
+        case -9968: value = motion2.speed; return true;
+        case -9967: value = motion1.radius; return true;
+        case -9966: value = motion2.radius; return true;
+        case -9963: { const Enemy* b = boss(0); value = b ? b->pos.x : 0.0f; return true; }
+        case -9962: { const Enemy* b = boss(0); value = b ? b->pos.y : 128.0f; return true; }
+        case -9958: value = atan2_f(delta.y, delta.x); return true;
+        case -9956: value = angle_to_player(motion1.pos); return true;  // 0x443840(+0x1294)
+        case -9955: value = angle_to_player(motion2.pos); return true;  // 0x443840(+0x12d8)
+        case -9931: value = manager ? float(double(manager->last_id)) : 0.0f; return true;  // 无符号 → double → float
         default: {
             i32 i = 0;
             if (!integer(var, i)) return false;
@@ -213,6 +245,7 @@ bool Enemy::init(EnemyManager& mgr, EclProgram& prog, const char* sub, const Ene
     player = pl;
     rng = &r;
     bullets = mgr.bullets;
+    items = mgr.items;
     effects = mgr.effects;
     std::memset(vm_ids, 0, sizeof vm_ids);
     for (int i = 0; i < kVmSyncSlots; ++i) { vm_offsets[i] = Vec3{}; vm_parent_slot[i] = -1; }
@@ -226,6 +259,7 @@ bool Enemy::init(EnemyManager& mgr, EclProgram& prog, const char* sub, const Ene
     for (int i = 0; i < kShooterSlots; ++i) { shooter_offset[i] = Vec3{}; shooter_pos2[i] = Vec3{}; shooter_ex_counter[i] = 0; }
     safe_radius_sq = 0;
     id = mgr.next_id;
+    mgr.last_id = id;  // DAT_004a6dc0+0x94（ECL -9931）
     mgr.next_id = mgr.next_id + 1;
     if (mgr.next_id == 0) mgr.next_id = 1;
     flags = 0;
@@ -652,9 +686,9 @@ int Enemy::resolve_hits(float game_speed) {
             if (season_item_step > 0 && season_item_next < damage_accum && rng != nullptr) {
                 do {
                     season_item_next += season_item_step;
-                    const float speed = float(double(rng->unit()) + 1.2);
+                    const float speed = float(double(rng->unit()) + double(1.2f));   // x87：unit + 1.2f
                     const float angle = rng->angle();
-                    if (bullets != nullptr) bullets->item_requests.push_back({0x10, pos, angle, speed, 0});
+                    if (items != nullptr) items->spawn(0x10, pos, angle, speed, 0);
                 } while (season_item_next < damage_accum);
             }
             hit_timer.set(0x1e);
@@ -685,13 +719,13 @@ int Enemy::resolve_hits(float game_speed) {
 void Enemy::scatter_items() {
     if (rng == nullptr) return;
     auto request = [&](i32 type, const Vec3& at, float angle, float speed) {
-        if (bullets != nullptr) bullets->item_requests.push_back({type, at, angle, speed, 0});
+        if (items != nullptr) items->spawn(type, at, angle, speed, 0);
     };
     float angle = float(double(rng->signed_unit()) * double(kPi));
     for (int index = 0; index < 16; ++index) {
         if (index == 15) {
             for (i32 i = 0; i < season_drop_max; ++i) {
-                const float speed = float(double(rng->unit()) * 1.9 + 0.2);
+                const float speed = float(double(rng->unit()) * double(1.9f) + double(0.2f));   // x87：unit × 1.9f + 0.2f
                 const float a = rng->angle();
                 request(0x10, pos, a, speed);
             }
@@ -716,8 +750,7 @@ void Enemy::scatter_items() {
 
 // 0x41a720
 void Enemy::release_items() {
-    if (drop_item_type != 0 && bullets != nullptr)
-        bullets->item_requests.push_back({drop_item_type, pos, -1.5707964f, 2.2f, 0});
+    if (drop_item_type != 0 && items != nullptr) items->spawn(drop_item_type, pos, -1.5707964f, 2.2f, 0);
     scatter_items();
     drop_item_type = 0;
 }
@@ -861,7 +894,14 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             std::memset(drop_counts, 0, sizeof drop_counts);
             return 0;
         }
-        case 507: case 509: {  // case 0x34 / 0x36：符卡练习模式外立即掉落
+        case 507: {  // case 0x34：掉落表 +0x3f90[arg0] = arg1（0 = 单掉道具种类、1..15 = 各类数量、16 = 季节道具数）
+            const i32 slot = iarg(0), count = iarg(1);
+            if (slot == 0) drop_item_type = count;
+            else if (slot >= 1 && slot <= 15) drop_counts[slot - 1] = count;
+            else if (slot == 16) season_drop_max = count;
+            return 0;
+        }
+        case 509: {  // case 0x36：符卡练习模式外立即掉落
             if (globals != nullptr && (globals->flags & GameGlobals::kModeMask) == 0x20u) return 0;
             settle_season_drop();
             release_items();
@@ -1073,7 +1113,6 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
         }
         case 412: {
             if (!rng) return fail("412: no rng");
-            constexpr float kHalfPi = 1.5707963705062866f;
             float angle = 0;
             const float x = pos.x, qw = bound_size.x * 0.25f;
             if (bound_center.x - qw > x) angle = float(float(rng->signed_unit() * kPi) / 3.0f);
@@ -1648,6 +1687,7 @@ bool EnemyManager::create(const char* ecl_name, GameGlobals& g, Player* pl, Rng&
     animations = &anm;
     enemies.clear();
     next_id = 1;
+    last_id = 0;
     enemy_count = 0;
     timer.set(0);
     program = EclProgram{};
