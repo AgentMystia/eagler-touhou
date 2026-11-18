@@ -284,6 +284,15 @@ int AnmRenderer::draw_vm(AnmVm& vm) {
     }
 }
 
+int AnmRenderer::draw_screen_sprite(AnmVm& vm) {
+    if (device == nullptr) return -1;
+    const AnmRuntimeSprite* sprite = sprite_of(vm);
+    if (sprite == nullptr) return -1;
+    float corners[4][2];
+    geometry_.axis_corners(vm, corners);
+    return submit_screen_quad(vm, *sprite, corners, true);
+}
+
 int AnmRenderer::submit_screen_quad(AnmVm& vm, const AnmRuntimeSprite& sprite, float corners[4][2], bool pixel_align) {
     // 0x465c40 / 0x4660b0 末尾：加位置；0x465280 开头：加绘制偏移（抖动）
     const Vec3 origin = geometry_.world_position(vm);
