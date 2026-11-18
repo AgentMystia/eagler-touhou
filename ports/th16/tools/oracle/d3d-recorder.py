@@ -82,7 +82,7 @@ class DeviceRecorder:
         self.anonymous_textures = 0
         self.pending_anm_texture = None   # 0x46d3b0 记下的 (bank 地址, entry 序号)
         self.backbuffer = oracle.alloc(0x10)
-        self.surfaces[self.backbuffer] = None
+        self.surfaces[self.backbuffer] = 'backbuffer'
         self.install()
 
     # ---- 安装 ----
@@ -273,6 +273,7 @@ class DeviceRecorder:
         self.ret(0)
 
     def m_SetRenderTarget(self):
+        # 目标记为 "backbuffer" 或所属纹理身份（'@R' 场地渲染目标 = text.anm [0,2] / [0,3]）
         surface = self.arg(2)
         owner = self.surfaces.get(surface, ['unknown-surface', surface])
         self.record(['rt', self.texture_id(owner) if isinstance(owner, int) else owner])
@@ -280,6 +281,11 @@ class DeviceRecorder:
 
     def m_GetRenderTarget(self):
         self.uc.mem_write(self.arg(2), struct.pack('<I', self.backbuffer))
+        self.ret(0)
+
+    def m_GetBackBuffer(self):
+        # (this, swapchain, index, type, IDirect3DSurface9** out)：0x43d970 / 0x43ba40 取后台缓冲表面存入 DAT_004c1284
+        self.uc.mem_write(self.arg(4), struct.pack('<I', self.backbuffer))
         self.ret(0)
 
     def m_Clear(self):

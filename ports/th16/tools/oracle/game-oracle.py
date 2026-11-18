@@ -673,8 +673,13 @@ class GameOracle(Oracle):
             # 0x43b520 → 0x46b900：九锚点四边形顶点缓冲（mode 8 DrawPrimitive 的流源）与批量顶点缓冲初值
             self.call(0x46B900)
             # 0x43ba40：Supervisor 的绘制链节点（0x401730 建节点、flags |= 2、+0x24 = &DAT_004c10d0、0x4013b0 登记）。
-            # 1 = 0x43d140 清屏 + 设备状态缓存复位 + UI 相机；其余只在 DAT_004c127c（场地 RT，v1.00a 从不建立）非空时动作，
-            # 0x38 = 0x43d820 回切后台缓冲并清屏、0x55 = 0x43d870 清相机抖动偏移
+            # 场地经两张 '@R' 渲染目标（text.anm 纹理 2 / 3，表面存 DAT_004c127c / DAT_004c1280，由 0x43d970 建立）合成：
+            #   1    0x43d140 清后台缓冲、切到 RT1 并按场地相机视口清场地区、设备状态缓存复位、UI 相机
+            #   0xe  0x43d400 切 RT2 清深度      0xf  0x43d2f0 把 RT1 以 VM 0x4c128c 画进 RT2（+ 图层 0x22）
+            #   0x19 0x43d5a0 切 RT1 清深度      0x1a 0x43d4a0 把 RT2 以 VM 0x4c1290 画进 RT1
+            #   0x2b 0x43d6f0 切 RT2 清深度      0x2c 0x43d640 把 RT1 以 VM 0x4c1294 画进 RT2
+            #   0x38 0x43d820 切回后台缓冲并清黑  0x39 0x43d7c0 把 RT2 以 VM 0x4c1298 画到屏幕场地位置
+            #   0x55 0x43d870 清相机抖动偏移
             for fn, priority in ((0x43D140, 1), (0x43D400, 0xE), (0x43D2F0, 0xF), (0x43D5A0, 0x19), (0x43D4A0, 0x1A),
                                  (0x43D6F0, 0x2B), (0x43D640, 0x2C), (0x43D820, 0x38), (0x43D7C0, 0x39), (0x43D870, 0x55)):
                 node = self.call(0x401730, args=(fn,))
@@ -699,6 +704,10 @@ class GameOracle(Oracle):
         self.call(ASCII_CTOR, ecx=self.ascii_manager)
         self.call(ASCII_INIT, ecx=self.ascii_manager)
         uc.mem_write(DAT_TEXT_BANK, struct.pack('<I', self.call(ANM_LOAD_FILE, args=(0, self.cstring('text.anm')))))
+        if self.run_draw:
+            # 0x43b290（text.anm 装载完成回调）→ 0x43d970：取后台缓冲表面（DAT_004c1284）与 '@R' 渲染目标表面
+            # （DAT_004c127c / DAT_004c1280），并按窗口宽度给 4 个合成 VM 装 text.anm 脚本（640：0x3b/0x41/0x3e/0x44）
+            self.call(0x43D970, ecx=DAT_UI_CAMERA)
         if self.call(FRONT_INIT) != 0:
             raise RuntimeError('0x43ad20 failed: %s' % self.errors[-4:])
         self.score = self.alloc(0x1A3AC)
