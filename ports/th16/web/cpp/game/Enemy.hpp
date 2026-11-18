@@ -32,6 +32,22 @@ struct EnemyInterrupt {
     std::string timeout_sub;   // +0x48（0x40 字节；op 521 可单独改写）
 };
 
+// 0x425870 / 0x4258b0：敌机位置插值器（0x68 字节；与 AnmVm 的 Interp<Vec3> 布局不同——current 在前，
+// 另有 flags bit0 = 逐轴模式（op 434/435：x / y 各自取 axis_modes）；结束时非 7 / 0x11 模式返回 goal，否则 initial）
+struct EnemyPosInterp {
+    Vec3 current;         // +0x00
+    Vec3 initial;         // +0x0c
+    Vec3 goal;            // +0x18
+    Vec3 bezier1;         // +0x24
+    Vec3 bezier2;         // +0x30
+    Timer timer;          // +0x3c
+    i32 end_time = 0;     // +0x50
+    i32 axis_modes[3]{};  // +0x54
+    i32 mode = 0;         // +0x60
+    u32 flags = 0;        // +0x64
+};
+static_assert(sizeof(EnemyPosInterp) == 0x68, "EnemyPosInterp 为 0x68 字节");
+
 struct EnemySpawnArgs {
     Vec3 pos;
     float life = 0;          // +0x14；≥1000 → flags |= 0x40000000
@@ -119,9 +135,12 @@ public:
     i32 int_regs[4]{};          // EnemyInf+0x1498 旁整数槽（部分与 life 重叠，先独立）
     float float_regs[4]{};
     float temp_regs[4]{};       // EnemyInf+0x14b8..0x14c4（-9935..-9932）
-    Interp<Vec3> pos_interp{};     // EnemyInf+0x2f8（op 401）
-    Interp<float> angle_interp{};  // EnemyInf+0x3c8（op 405/412）
-    Interp<float> speed_interp{};  // EnemyInf+0x3f8（op 405/412）
+    // 运动插值器（下标 0 = motion1 / 1 = motion2；0x41bb50 每帧推进）
+    EnemyPosInterp pos_interp[2]{};     // EnemyInf+0x2f8 / +0x360（op 401/403/425/426/434–439）
+    Interp<float> angle_interp[2]{};    // EnemyInf+0x3c8 / +0x428（op 405/407/412/413/441/443）
+    Interp<float> speed_interp[2]{};    // EnemyInf+0x3f8 / +0x458（op 405/407/409/411/412/413/421/423/445/447）
+    Interp<Vec2> radius_interp[2]{};    // EnemyInf+0x488 / +0x4cc：(radius, radius_speed)（op 409/411/421/423）
+    Interp<Vec2> ellipse_interp[2]{};   // EnemyInf+0x510 / +0x554：(angle2, f2c)（op 421/423 写入；原版无处推进）
 
     // 弹幕发射器（ECL 600..641 / 526；0x41b580 整块清零）
     static constexpr int kShooterSlots = 16;
@@ -166,6 +185,8 @@ public:
     void set_interrupt(int slot, i32 life_threshold, i32 time_threshold, const char* sub);
     // 0x41bb50 尾：flags & 0x100000 时按 delta.x 切换朝向脚本，并从主 VM 回读 sprite_size
     void sync_sprite_direction();
+    // 0x41c1f0：pos = motion1.pos + motion2.pos 的本帧位移积分（delta 记录、厘米取整、0x20000 场地夹紧）
+    void apply_motion_position();
     // 0x41d2e0 后段：按 vm_offsets / 父槽同步各 VM 的 entity_offset（0x80 位 VM 带朝向角）
     void sync_vm_offsets();
     // 0x41c330 尾：主 VM 的受击 / 低血闪烁（color2 + flags_lo 0x20000 位）与受击音效

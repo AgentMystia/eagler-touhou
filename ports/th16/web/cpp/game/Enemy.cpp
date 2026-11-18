@@ -18,6 +18,73 @@ constexpr u32 kFlagReentry = 0x40000;
 constexpr u32 kFlagAlive = 0x10000;
 constexpr float kPi = 3.1415927410125732f;
 constexpr float kHalfPi = 1.5707963705062866f;  // 0x494534
+constexpr float kTwoPi = 6.2831854820251465f;    // 0x4945b8
+
+// 0x4258b0：敌机位置插值推进。结束帧返回 goal（模式 7 / 0x11 返回 initial）；flags bit0 时按 axis_modes 逐轴计算。
+// 模式 0x11 的累加量放在 bezier2（+0x30），与 AnmVm 的 Interp 不同
+Vec3 step_pos_interp(EnemyPosInterp& it, float game_speed) {
+    const i32 end = it.end_time;
+    bool running = false;
+    if (end > 0) {
+        it.timer.tick(game_speed);
+        if (it.timer.current < end) {
+            running = true;
+        } else {
+            it.timer.set(end);
+            it.end_time = 0;
+        }
+    } else if (end != 0) {
+        running = true;
+    }
+    if (!running) return (it.mode != 7 && it.mode != 0x11) ? it.goal : it.initial;
+    float* cur = &it.current.x;
+    float* ini = &it.initial.x;
+    float* goal = &it.goal.x;
+    float* b1 = &it.bezier1.x;
+    float* b2 = &it.bezier2.x;
+    if ((it.flags & 1u) == 0) {
+        if (it.mode == 7) {
+            for (int i = 0; i < 3; ++i) { ini[i] = goal[i] + ini[i]; cur[i] = ini[i]; }
+        } else if (it.mode == 0x11) {
+            for (int i = 0; i < 3; ++i) { ini[i] = b2[i] + ini[i]; cur[i] = ini[i]; }
+            for (int i = 0; i < 3; ++i) b2[i] = b2[i] + goal[i];
+        } else if (it.mode == 8) {
+            const float r = it.timer.current_f / float(end);
+            for (int i = 0; i < 3; ++i) cur[i] = hermite(ini[i], goal[i], b1[i], b2[i], r);
+        } else {
+            const float f = interp_ease(it.mode, it.timer.current_f, float(end));
+            for (int i = 0; i < 3; ++i) cur[i] = (goal[i] - ini[i]) * f + ini[i];
+        }
+        return it.current;
+    }
+    for (int i = 0; i < 3; ++i) {
+        const i32 mode = it.axis_modes[i];
+        if (mode == 7) {
+            ini[i] = goal[i] + ini[i];
+            cur[i] = ini[i];
+        } else if (mode == 0x11) {
+            ini[i] = ini[i] + b2[i];
+            cur[i] = ini[i];
+            b2[i] = goal[i] + b2[i];
+        } else if (mode == 8) {
+            const float r = it.timer.current_f / float(end);
+            cur[i] = hermite(ini[i], goal[i], b1[i], b2[i], r);
+        } else {
+            const float f = interp_ease(mode, it.timer.current_f, float(end));
+            cur[i] = f * (goal[i] - ini[i]) + ini[i];
+        }
+    }
+    return it.current;
+}
+
+// 0x41dcb0 case 0x18 / 0x19 / 0x29 / 0x2a：镜像（flags & 0x80000）时的角度：π/2 - wrap(a - π/2) 再 wrap
+inline float mirror_angle(float a) noexcept { return wrap_angle(float(kHalfPi - wrap_angle(float(a - kHalfPi)))); }
+
+// 0x4033d0：轨道模式（4）把 pos2 对齐到 pos，再按当前模式积分一次
+inline void sync_motion_center(MotionState& m, float game_speed) noexcept {
+    if ((m.mode & 0xf) == 4) m.pos2 = m.pos;
+    m.integrate(game_speed);
+}
 }  // namespace
 
 const char* Enemy::routine_name() const noexcept {
@@ -312,40 +379,37 @@ bool Enemy::update(float game_speed) {
     if ((flags & kFlagReentry) != 0) return true;
     flags |= kFlagReentry;
 
-    // 0x41bb50：先推进运动插值器（角度 +0x3c8 / 速度 +0x3f8 / 位置 +0x2f8），再算速度与积分
-    if (angle_interp.end_time && (motion1.mode & 0xf) != 2 && (motion1.mode & 0xf) != 3)
-        motion1.angle = wrap_angle(step_interp_float(angle_interp, game_speed));
-    if (speed_interp.end_time)
-        motion1.speed = step_interp_float(speed_interp, game_speed);
-
-    if (pos_interp.end_time == 0) {
-        motion1.update_velocity(game_speed);
-    } else {
-        const Vec3 target = step_interp_vec3(pos_interp, game_speed);
-        motion1.velocity.x = target.x - motion1.pos.x;
-        motion1.velocity.y = target.y - motion1.pos.y;
-        motion1.velocity.z = target.z - motion1.pos.z;
+    // 0x41bb50：先推进两组运动的插值器（角度 +0x3c8/+0x428、速度 +0x3f8/+0x458、半径 +0x488/+0x4cc），
+    // 再按位置插值（+0x2f8/+0x360）或模式算速度，最后积分
+    for (int slot = 0; slot < 2; ++slot) {
+        MotionState& m = slot == 0 ? motion1 : motion2;
+        if (angle_interp[slot].end_time != 0 && (m.mode & 0xf) != 2 && (m.mode & 0xf) != 3)
+            m.angle = wrap_angle(wrap_angle(step_interp_float(angle_interp[slot], game_speed)));
+        if (speed_interp[slot].end_time != 0) m.speed = step_interp_float(speed_interp[slot], game_speed);
+    }
+    for (int slot = 0; slot < 2; ++slot) {
+        MotionState& m = slot == 0 ? motion1 : motion2;
+        if (radius_interp[slot].end_time != 0) {
+            const Vec2 r = step_interp_vec2(radius_interp[slot], game_speed);
+            m.radius = r.x;
+            m.radius_speed = r.y;
+        }
+    }
+    for (int slot = 0; slot < 2; ++slot) {
+        MotionState& m = slot == 0 ? motion1 : motion2;
+        if (pos_interp[slot].end_time == 0) {
+            m.update_velocity(game_speed);
+        } else {
+            const Vec3 target = step_pos_interp(pos_interp[slot], game_speed);
+            m.velocity.x = target.x - m.pos.x;
+            m.velocity.y = target.y - m.pos.y;
+            m.velocity.z = target.z - m.pos.z;
+        }
     }
     motion1.integrate(game_speed);
-    motion2.update_velocity(game_speed);
+    // flags & 0x4000000：motion2.pos += DAT_004c140c..14（从未写入，恒 0）
     motion2.integrate(game_speed);
-    // 0x41c1f0：本帧位移存 EnemyInf+0x78（朝向切换与 0x80 位 VM 的朝向角用）
-    delta.x = (motion1.pos.x + motion2.pos.x) - pos.x;
-    delta.y = (motion1.pos.y + motion2.pos.y) - pos.y;
-    delta.z = (motion1.pos.z + motion2.pos.z) - pos.z;
-    pos.x = floor_f((pos.x + delta.x) * 100.0f) / 100.0f;
-    pos.y = floor_f((pos.y + delta.y) * 100.0f) / 100.0f;
-    pos.z = pos.z + delta.z;
-    if ((flags & 0x20000u) != 0) {
-        const float hx = bound_size.x * 0.5f, hy = bound_size.y * 0.5f;
-        if (pos.x < bound_center.x - hx) pos.x = bound_center.x - hx;
-        else if (pos.x > bound_center.x + hx) pos.x = bound_center.x + hx;
-        if (pos.y < bound_center.y - hy) pos.y = bound_center.y - hy;
-        else if (pos.y > bound_center.y + hy) pos.y = bound_center.y + hy;
-        motion1.pos.x = pos.x - motion2.pos.x;
-        motion1.pos.y = pos.y - motion2.pos.y;
-        motion1.pos.z = pos.z - motion2.pos.z;
-    }
+    apply_motion_position();
 
     // 0x41bb50 尾：朝向切换 + 从主 VM 回读精灵宽高（+0x3f58/+0x3f5c，绑定前为 0），再判进入场地与出界销毁
     sync_sprite_direction();
@@ -420,6 +484,26 @@ AnmVm* Enemy::rebind_vm(int slot, i32 source, i32 script, bool full) {
 }
 
 // 0x41bb50 尾段
+// 0x41c1f0：本帧位移存 EnemyInf+0x78（朝向切换与 0x80 位 VM 的朝向角用），pos 以 mode 0 的 0x403110 积分
+void Enemy::apply_motion_position() {
+    delta.x = (motion1.pos.x + motion2.pos.x) - pos.x;
+    delta.y = (motion1.pos.y + motion2.pos.y) - pos.y;
+    delta.z = (motion1.pos.z + motion2.pos.z) - pos.z;
+    pos.x = floor_f((pos.x + delta.x) * 100.0f) / 100.0f;
+    pos.y = floor_f((pos.y + delta.y) * 100.0f) / 100.0f;
+    pos.z = pos.z + delta.z;
+    if ((flags & 0x20000u) != 0) {
+        const float hx = bound_size.x * 0.5f, hy = bound_size.y * 0.5f;
+        if (pos.x < bound_center.x - hx) pos.x = bound_center.x - hx;
+        else if (pos.x > bound_center.x + hx) pos.x = bound_center.x + hx;
+        if (pos.y < bound_center.y - hy) pos.y = bound_center.y - hy;
+        else if (pos.y > bound_center.y + hy) pos.y = bound_center.y + hy;
+        motion1.pos.x = pos.x - motion2.pos.x;
+        motion1.pos.y = pos.y - motion2.pos.y;
+        motion1.pos.z = pos.z - motion2.pos.z;
+    }
+}
+
 void Enemy::sync_sprite_direction() {
     if (manager == nullptr || manager->animations == nullptr) return;
     AnmManager& anm = *manager->animations;
@@ -1051,68 +1135,358 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
         case 518: case 519:
             // case 0x3f / 0x40：对话开始（Gui 0x429ff0 + 0x416f40 全屏消弹 + 0x431af0 道具吸引）与等待对话结束——Gui 接入时补
             return 0;
-        case 400: {
+        // —— 运动指令 400–447（0x41dcb0 case 0x16–0x2c）：偶数码作用于 motion1、奇数码作用于 motion2 ——
+        case 400: case 402: {  // case 0x16：直接设坐标
+            MotionState& m = opcode == 402 ? motion2 : motion1;
             const float x = farg(0), y = farg(1);
-            if (x > kSentinel) { motion1.pos.x = x; pos.x = motion1.pos.x + motion2.pos.x; }
-            if (y > kSentinel) { motion1.pos.y = y; pos.y = motion1.pos.y + motion2.pos.y; }
-            motion1.mode &= ~0xfu;
+            if (x > kSentinel) m.pos.x = x;
+            if (y > kSentinel) m.pos.y = y;
+            m.mode &= ~0xfu;
+            pos.x = motion2.pos.x + motion1.pos.x;
+            pos.y = motion2.pos.y + motion1.pos.y;
+            pos.z = motion2.pos.z + motion1.pos.z;
+            apply_motion_position();
             return 0;
         }
-        case 401: {
+        case 416: case 417: {  // case 0x1f：坐标偏移
+            MotionState& m = opcode == 417 ? motion2 : motion1;
+            m.pos.x = m.pos.x + farg(0);
+            m.pos.y = m.pos.y + farg(1);
+            m.pos.z = m.pos.z + farg(2);
+            apply_motion_position();
+            return 0;
+        }
+        case 401: case 403: case 436: case 437: {  // case 0x17：位置插值（436/437 为相对量，镜像时 x 取反）
+            const int slot = (opcode == 403 || opcode == 437) ? 1 : 0;
+            MotionState& m = slot ? motion2 : motion1;
+            EnemyPosInterp& it = pos_interp[slot];
             const i32 frames = iarg(0), mode = iarg(1);
-            const float x = farg(2), y = farg(3);
-            if (frames <= 0) { pos_interp.end_time = 0; return 0; }
-            pos_interp.initial = motion1.pos;
-            pos_interp.goal = {x > kSentinel ? x : motion1.pos.x, y > kSentinel ? y : motion1.pos.y, 0.0f};
-            pos_interp.bezier1 = {};
-            pos_interp.bezier2 = {};
-            pos_interp.mode = mode;
-            pos_interp.end_time = frames;
-            pos_interp.timer.set(0);
-            motion1.mode &= ~0xfu;
-            return 0;
-        }
-        case 404: case 406: {
-            float angle = farg(0), speed = farg(1);
-            if (angle > kSentinel) {
-                if ((flags & kFlagMirror) != 0) angle = wrap_angle(-(angle - kPi) + kPi);
-                motion1.angle = wrap_angle(angle);
+            float x = farg(2), y = farg(3);
+            if (frames <= 0) { it.end_time = 0; return 0; }
+            if (opcode == 436 || opcode == 437) {
+                x = (flags & kFlagMirror) != 0 ? m.pos.x - x : m.pos.x + x;
+                y = m.pos.y + y;
             }
-            if (speed > kSentinel) motion1.speed = speed;
-            motion1.mode &= ~0xfu;
+            it.end_time = frames;
+            it.bezier1 = {};
+            it.bezier2 = {};
+            it.mode = mode;
+            it.flags &= ~1u;
+            it.initial = m.pos;
+            it.goal = {x > kSentinel ? x : m.pos.x, y > kSentinel ? y : m.pos.y, 0.0f};
+            it.timer.reset();
+            m.mode &= ~0xfu;
             return 0;
         }
-        case 405: case 407: {
-            const i32 frames = iarg(0);
-            const i32 mode = iarg(1);
+        case 434: case 435: case 438: case 439: {  // case 0x28：逐轴模式的位置插值（438/439 为相对量）
+            const int slot = (opcode == 435 || opcode == 439) ? 1 : 0;
+            MotionState& m = slot ? motion2 : motion1;
+            EnemyPosInterp& it = pos_interp[slot];
+            const i32 frames = iarg(0), mode_x = iarg(1), mode_y = iarg(2);
+            float x = farg(3), y = farg(4);
+            if (frames <= 0) { it.end_time = 0; return 0; }
+            if (opcode == 438 || opcode == 439) {
+                x = (flags & kFlagMirror) != 0 ? m.pos.x - x : m.pos.x + x;
+                y = m.pos.y + y;
+            }
+            it.end_time = frames;
+            it.bezier1 = {};
+            it.bezier2 = {};
+            it.flags |= 1u;
+            it.axis_modes[0] = mode_x;
+            it.axis_modes[1] = mode_y;
+            it.initial = m.pos;
+            it.goal = {x > kSentinel ? x : m.pos.x, y > kSentinel ? y : m.pos.y, 0.0f};
+            it.timer.reset();
+            m.mode &= ~0xfu;
+            return 0;
+        }
+        case 425: case 426: {  // case 0x24：Hermite 位置插值（mode 8；f1/f2、f5/f6 为两端切线）
+            const int slot = opcode == 426 ? 1 : 0;
+            MotionState& m = slot ? motion2 : motion1;
+            EnemyPosInterp& it = pos_interp[slot];
+            it.flags &= ~1u;
+            it.bezier1 = {farg(1), farg(2), 0.0f};
+            it.end_time = iarg(0);
+            it.bezier2 = {farg(5), farg(6), 0.0f};
+            it.mode = 8;
+            it.initial = m.pos;
+            const float x = farg(3), y = farg(4);
+            it.goal = {x > kSentinel ? x : m.pos.x, y > kSentinel ? y : m.pos.y, 0.0f};
+            it.timer.reset();
+            m.mode &= ~0xfu;
+            return 0;
+        }
+        case 404: case 406: case 428: case 430: {  // case 0x18：设角度/速度（404/406 受镜像）
+            MotionState& m = (opcode == 406 || opcode == 430) ? motion2 : motion1;
+            float angle = farg(0);
+            const float speed = farg(1);
+            if (angle > kSentinel) {
+                if ((flags & kFlagMirror) != 0 && (opcode == 404 || opcode == 406)) angle = mirror_angle(angle);
+                m.angle = wrap_angle(angle);
+            }
+            if (speed > kSentinel) m.speed = speed;
+            m.mode &= ~0xfu;
+            return 0;
+        }
+        case 405: case 407: case 429: case 431: {  // case 0x19：角度/速度同时插值（mode 7 相对；两组插值器都重置）
+            const int slot = (opcode == 407 || opcode == 431) ? 1 : 0;
+            MotionState& m = slot ? motion2 : motion1;
             float angle = farg(2), speed = farg(3);
-            if (frames <= 0) { angle_interp.end_time = 0; speed_interp.end_time = 0; return 0; }
-            if (angle > kSentinel) {
-                if ((flags & kFlagMirror) != 0)
-                    angle = wrap_angle(float(1.5707963705062866f - wrap_angle(float(angle - 1.5707963705062866f))));
-                float start_a = motion1.angle;
-                if (!(std::fabs(float(start_a - angle)) < kPi)) {
-                    if (angle > start_a) start_a = float(start_a + 6.2831854820251465f);
-                    else angle = float(angle + 6.2831854820251465f);
-                }
-                angle_interp.initial = start_a;
-                angle_interp.goal = angle;
-                angle_interp.mode = mode;
-                angle_interp.end_time = frames;
-                angle_interp.timer.set(0);
+            const i32 frames = iarg(0);
+            if (frames <= 0) { angle_interp[slot].end_time = 0; speed_interp[slot].end_time = 0; return 0; }
+            const i32 mode = iarg(1);
+            const bool mirrored = (flags & kFlagMirror) != 0 && (opcode == 405 || opcode == 407);
+            if (mode == 7) {
+                if (angle > kSentinel) { if (mirrored) angle = -angle; }
+                else angle = 0.0f;
+                if (!(speed > kSentinel)) speed = 0.0f;
+            } else {
+                if (angle > kSentinel) { if (mirrored) angle = mirror_angle(angle); }
+                else angle = m.angle;
+                if (!(speed > kSentinel)) speed = m.speed;
             }
-            if (speed > kSentinel) {
-                speed_interp.initial = motion1.speed;
-                speed_interp.goal = speed;
-                speed_interp.mode = mode;
-                speed_interp.end_time = frames;
-                speed_interp.timer.set(0);
+            float start_a = m.angle;
+            if (!(std::fabs(float(start_a - angle)) < kPi)) {
+                if (angle > start_a) start_a = float(start_a + kTwoPi);
+                else angle = float(angle + kTwoPi);
             }
-            motion1.mode &= ~0xfu;
+            Interp<float>& ai = angle_interp[slot];
+            ai.initial = start_a;
+            ai.goal = angle;
+            ai.end_time = frames;
+            ai.mode = mode;
+            ai.bezier1 = 0.0f;
+            ai.bezier2 = 0.0f;
+            ai.timer.reset();
+            Interp<float>& si = speed_interp[slot];
+            si.initial = m.speed;
+            si.goal = speed;
+            si.end_time = iarg(0);
+            si.mode = mode;
+            si.bezier1 = 0.0f;
+            si.bezier2 = 0.0f;
+            si.timer.reset();
+            m.mode &= ~0xfu;
             return 0;
         }
-        case 412: {
+        case 440: case 442: {  // case 0x29：设角度（镜像翻转，无哨兵判断）
+            MotionState& m = opcode == 442 ? motion2 : motion1;
+            float angle = farg(0);
+            if ((flags & kFlagMirror) != 0) angle = mirror_angle(angle);
+            m.angle = wrap_angle(angle);
+            m.mode &= ~0xfu;
+            return 0;
+        }
+        case 441: case 443: {  // case 0x2a：角度插值（目标相对当前角取最短弧）
+            const int slot = opcode == 443 ? 1 : 0;
+            MotionState& m = slot ? motion2 : motion1;
+            Interp<float>& ai = angle_interp[slot];
+            const i32 frames = iarg(0);
+            if (frames <= 0) { ai.end_time = 0; return 0; }
+            const i32 mode = iarg(1);
+            float target = farg(2);
+            const bool mirrored = (flags & kFlagMirror) != 0;
+            if (mode == 7) {
+                if (target > kSentinel) { if (mirrored) target = -target; }
+                else target = 0.0f;
+            } else {
+                if (target > kSentinel) { if (mirrored) target = mirror_angle(target); }
+                else target = m.angle;
+            }
+            const float cur = m.angle;
+            float d;
+            if (target - cur > kPi) d = target - float(cur + kTwoPi);
+            else if (cur - target > kPi) d = target - float(cur - kTwoPi);
+            else d = target - cur;
+            ai.end_time = frames;
+            ai.mode = mode;
+            ai.bezier1 = 0.0f;
+            ai.bezier2 = 0.0f;
+            ai.initial = cur;
+            ai.goal = d + cur;
+            ai.timer.reset();
+            m.mode &= ~0xfu;
+            return 0;
+        }
+        case 444: case 446: {  // case 0x2b：设速度
+            MotionState& m = opcode == 446 ? motion2 : motion1;
+            const float speed = farg(0);
+            if (speed > kSentinel) m.speed = speed;
+            m.mode &= ~0xfu;
+            return 0;
+        }
+        case 445: case 447: {  // case 0x2c：速度插值（mode 7 相对）
+            const int slot = opcode == 447 ? 1 : 0;
+            MotionState& m = slot ? motion2 : motion1;
+            Interp<float>& si = speed_interp[slot];
+            const i32 frames = iarg(0);
+            if (frames <= 0) { si.end_time = 0; return 0; }
+            const i32 mode = iarg(1);
+            float speed = farg(2);
+            if (!(speed > kSentinel)) speed = mode == 7 ? 0.0f : m.speed;
+            si.initial = m.speed;
+            si.goal = speed;
+            si.end_time = frames;
+            si.mode = mode;
+            si.bezier1 = 0.0f;
+            si.bezier2 = 0.0f;
+            si.timer.reset();
+            m.mode &= ~0xfu;
+            return 0;
+        }
+        case 408: case 410: {  // case 0x1a：轨道模式（mode 2）参数
+            MotionState& m = opcode == 410 ? motion2 : motion1;
+            if ((m.mode & 0xf) != 2) m.velocity = m.pos;
+            const float angle = farg(0), speed = farg(1), radius = farg(2), radius_speed = farg(3);
+            if (angle > kSentinel) m.angle = wrap_angle(angle);
+            if (speed > kSentinel) m.speed = speed;
+            if (radius > kSentinel) m.radius = radius;
+            if (radius_speed > kSentinel) m.radius_speed = radius_speed;
+            m.mode = (m.mode & ~0xdu) | 2u;
+            sync_motion_center(m, ctx.interpolation_rate);
+            apply_motion_position();
+            return 0;
+        }
+        case 409: case 411: {  // case 0x1b：轨道模式速度/半径插值
+            const int slot = opcode == 411 ? 1 : 0;
+            MotionState& m = slot ? motion2 : motion1;
+            const i32 frames = iarg(0);
+            if (frames <= 0) { speed_interp[slot].end_time = 0; radius_interp[slot].end_time = 0; return 0; }
+            const i32 mode = iarg(1);
+            float speed = farg(2), radius = farg(3), radius_speed = farg(4);
+            if (!(speed > kSentinel)) speed = m.speed;
+            if (!(radius > kSentinel)) radius = m.radius;
+            if (!(radius_speed > kSentinel)) radius_speed = m.radius_speed;
+            Interp<float>& si = speed_interp[slot];
+            si.initial = m.speed;
+            si.goal = speed;
+            si.end_time = frames;
+            si.mode = mode;
+            si.bezier1 = 0.0f;
+            si.bezier2 = 0.0f;
+            si.timer.reset();
+            Interp<Vec2>& ri = radius_interp[slot];
+            ri.end_time = frames;
+            ri.bezier1 = {};
+            ri.bezier2 = {};
+            ri.mode = mode;
+            ri.initial = {m.radius, m.radius_speed};
+            ri.goal = {radius, radius_speed};
+            ri.timer.reset();
+            m.mode = (m.mode & ~0xdu) | 2u;
+            sync_motion_center(m, ctx.interpolation_rate);
+            apply_motion_position();
+            return 0;
+        }
+        case 418: case 419: {  // case 0x20：直接设速度向量
+            MotionState& m = opcode == 419 ? motion2 : motion1;
+            const float vx = farg(0), vy = farg(1);
+            if (vx > kSentinel) m.velocity.x = vx;
+            if (vy > kSentinel) m.velocity.y = vy;
+            sync_motion_center(m, ctx.interpolation_rate);
+            apply_motion_position();
+            return 0;
+        }
+        case 420: case 422: {  // case 0x21：椭圆模式（mode 3）参数
+            MotionState& m = opcode == 422 ? motion2 : motion1;
+            const float angle = farg(0), speed = farg(1), radius = farg(2), radius_speed = farg(3);
+            const float angle2 = farg(4), ratio = farg(5);
+            if ((m.mode & 0xf) != 2) m.velocity = m.pos;
+            if (angle > kSentinel) m.angle = wrap_angle(angle);
+            if (speed > kSentinel) m.speed = speed;
+            if (radius > kSentinel) m.radius = radius;
+            if (radius_speed > kSentinel) m.radius_speed = radius_speed;
+            if (angle2 > kSentinel) m.angle2 = wrap_angle(wrap_angle(angle2));
+            if (ratio > kSentinel) m.f2c = ratio;
+            m.mode = (m.mode & ~0xcu) | 3u;
+            sync_motion_center(m, ctx.interpolation_rate);
+            apply_motion_position();
+            return 0;
+        }
+        case 421: case 423: {  // case 0x22：椭圆模式插值（速度 / 半径 / (angle2, 轴比)）
+            const int slot = opcode == 423 ? 1 : 0;
+            MotionState& m = slot ? motion2 : motion1;
+            float speed = farg(2), radius = farg(3), radius_speed = farg(4), angle2 = farg(5), ratio = farg(6);
+            if (!(speed > kSentinel)) speed = m.speed;
+            if (!(radius_speed > kSentinel)) radius_speed = m.radius_speed;
+            if (!(radius > kSentinel)) radius = m.radius;
+            if (!(ratio > kSentinel)) ratio = m.f2c;
+            if (!(angle2 > kSentinel)) angle2 = m.angle2;
+            const i32 frames = iarg(0), mode = iarg(1);
+            if (frames <= 0) {
+                speed_interp[slot].end_time = 0;
+                radius_interp[slot].end_time = 0;
+                ellipse_interp[slot].end_time = 0;
+                return 0;
+            }
+            Interp<float>& si = speed_interp[slot];
+            si.initial = m.speed;
+            si.goal = speed;
+            si.mode = mode;
+            si.end_time = frames;
+            si.bezier1 = 0.0f;
+            si.bezier2 = 0.0f;
+            si.timer.reset();
+            Interp<Vec2>& ri = radius_interp[slot];
+            ri.end_time = frames;
+            ri.bezier1 = {};
+            ri.bezier2 = {};
+            ri.mode = mode;
+            ri.initial = {m.radius, m.radius_speed};
+            ri.goal = {radius, radius_speed};
+            ri.timer.reset();
+            Interp<Vec2>& ei = ellipse_interp[slot];
+            ei.end_time = frames;
+            ei.bezier1 = {};
+            ei.bezier2 = {};
+            ei.mode = mode;
+            ei.initial = {m.angle2, m.f2c};
+            ei.goal = {angle2, ratio};
+            ei.timer.reset();
+            m.velocity = m.pos;
+            m.mode = (m.mode & ~0xcu) | 3u;
+            sync_motion_center(m, ctx.interpolation_rate);
+            apply_motion_position();
+            return 0;
+        }
+        case 424:  // case 0x23：镜像位（flags bit 19）
+            flags = flags ^ (((u32(iarg(0)) << 19) ^ flags) & kFlagMirror);
+            return 0;
+        case 427: {  // case 0x25：motion2 并入 motion1 并清空全部插值
+            motion1.pos.x = motion2.pos.x + motion1.pos.x;
+            motion1.pos.y = motion2.pos.y + motion1.pos.y;
+            motion1.pos.z = motion2.pos.z + motion1.pos.z;
+            motion2.pos = {};
+            motion2.speed = 0.0f;
+            motion1.speed = 0.0f;
+            motion1.velocity = {};
+            motion2.velocity = {};
+            motion1.mode &= ~0xfu;
+            motion2.mode &= ~0xfu;
+            for (int slot = 0; slot < 2; ++slot) {
+                pos_interp[slot].end_time = 0;
+                angle_interp[slot].end_time = 0;
+                speed_interp[slot].end_time = 0;
+                radius_interp[slot].end_time = 0;
+                ellipse_interp[slot].end_time = 0;
+            }
+            return 0;
+        }
+        case 414: case 415: {  // case 0x1d / 0x1e：取 Boss 0 的坐标
+            if (Enemy* b = boss(0)) (opcode == 415 ? motion2 : motion1).pos = b->pos;
+            return 0;
+        }
+        case 432: case 433: {  // case 0x26 / 0x27：取指定 id 敌机的坐标
+            if (manager) {
+                if (Enemy* e = manager->find_id(u32(iarg(0)))) (opcode == 433 ? motion2 : motion1).pos = e->pos;
+            }
+            return 0;
+        }
+        case 412: case 413: {  // case 0x1c：随机漫游（413 作用于 motion2；方向依场地四分区与自机位置）
             if (!rng) return fail("412: no rng");
+            const int slot = opcode == 413 ? 1 : 0;
+            MotionState& m = slot ? motion2 : motion1;
             float angle = 0;
             const float x = pos.x, qw = bound_size.x * 0.25f;
             if (bound_center.x - qw > x) angle = float(float(rng->signed_unit() * kPi) / 3.0f);
@@ -1132,16 +1506,23 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
                 angle = angle < kHalfPi ? 1.5207964181900024f : 1.6207963228225708f;
             const i32 duration = iarg(0), mode = iarg(1);
             const float speed = farg(2);
-            angle_interp.initial = angle;
-            angle_interp.goal = angle;
-            angle_interp.mode = mode;
-            angle_interp.end_time = duration;
-            angle_interp.timer.set(0);
-            speed_interp.initial = speed;
-            speed_interp.goal = 0.0f;
-            speed_interp.end_time = duration;
-            speed_interp.timer.set(0);
-            motion1.mode &= ~0xfu;
+            Interp<float>& ai = angle_interp[slot];
+            ai.initial = angle;
+            ai.goal = angle;
+            ai.mode = mode;
+            ai.end_time = duration;
+            ai.bezier1 = 0.0f;
+            ai.bezier2 = 0.0f;
+            ai.timer.reset();
+            // 原版把 mode 再次写进角度插值器（+0x2c），速度插值器的 mode 保持上次值
+            Interp<float>& si = speed_interp[slot];
+            si.initial = speed;
+            si.goal = 0.0f;
+            si.end_time = duration;
+            si.bezier1 = 0.0f;
+            si.bezier2 = 0.0f;
+            si.timer.reset();
+            m.mode &= ~0xfu;
             return 0;
         }
         case 1000: {
