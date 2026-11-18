@@ -93,6 +93,7 @@ class GameOracle(Oracle):
         self.bullet_snap = False # --bullets：每帧敌弹快照（BulletManager 链表）
         self.item_snap = False   # --items：每帧道具快照（ItemManager 池）与得分/残机等资源全局
         self.ecl_trace = None
+        self.frame = -1  # 装载阶段（GAME_LOAD 之前）的 RNG 调用记为 -1 帧
         self.run_draw = False   # --draw：也跑绘制链（需 D3DXVec3ProjectArray 等桩，待渲染/裁剪阶段接入）
         self.import_log = []
         self.uc.mem_map(STUB2, STUB2_SIZE)
@@ -304,23 +305,42 @@ class GameOracle(Oracle):
         # MOVSX EAX, word ptr [ESI+4]; CMP EAX,0x5d
         self.splice_hook(0x4720AF, bytes.fromhex('0fbf460483f85d'), on_ins)
 
-    def enable_rng_trace(self):
-        """0x402b70（单步）/ 0x402be0（双步）入口：记录对 DAT_004a6d88（回放同步 RNG）的每次调用及其返回地址。"""
+    def enable_rng_trace(self, which=0x4A6D88):
+        """0x402b70（单步）/ 0x402be0（双步）入口：记录对 RNG `which`（默认 DAT_004a6d88 回放同步 RNG；
+        0x4a6d80 为游戏逻辑 RNG）的每次调用及其返回地址。"""
         self.rng_trace = []
         def make(step):
             def on_rng(o):
                 uc = self.uc
-                if uc.reg_read(UC_X86_REG_ECX) != 0x4A6D88:
+                if uc.reg_read(UC_X86_REG_ECX) != which:
                     return
                 esp = uc.reg_read(UC_X86_REG_ESP)
                 ret = self.u32(esp)
                 # 0x402c70 / 0x402cb0 / 0x402cf0 包装（push ebp; mov ebp,esp; push ecx; call）：真正调用方在 [esp+12]
                 caller = self.u32(esp + 12) if ret in (0x402C7C, 0x402CBC, 0x402CFC) else 0
-                self.rng_trace.append((self.frame, step, ret, caller))
+                self.rng_trace.append((self.frame, step, ret, caller, self.cur_vm_script, self.cur_vm_sprite))
             return on_rng
+        # 0x45f980（AnmVm::run）入口：记下当前 VM 的脚本号（+0x24）与精灵号（+0x20），便于归因 ANM 变量随机数
+        self.cur_vm_script = self.cur_vm_sprite = -1
+        def on_vm_run(o):
+            vm = self.uc.reg_read(UC_X86_REG_ECX)
+            self.cur_vm_script = self.i32(vm + 0x24)
+            self.cur_vm_sprite = self.i32(vm + 0x20)
+        # PUSH EBP; MOV EBP,ESP; AND ESP,-8
+        self.splice_hook(0x45F980, bytes.fromhex('558bec83e4f8'), on_vm_run)
         # CMP byte ptr [0x4c10b6], 0
         self.splice_hook(0x402B70, bytes.fromhex('803db6104c0000'), make(1))
         self.splice_hook(0x402BE0, bytes.fromhex('803db6104c0000'), make(2))
+
+    def enable_vm_trace(self):
+        """0x407b20（AnmFile::init_vm：按脚本模板初始化 VM）入口：记录每次 VM 生成 (frame, AnmFile this, 脚本号, 返回地址)。"""
+        self.vm_trace = []
+        def on_init(o):
+            uc = self.uc
+            esp = uc.reg_read(UC_X86_REG_ESP)
+            self.vm_trace.append((self.frame, uc.reg_read(UC_X86_REG_ECX), self.i32(esp + 8), self.u32(esp)))
+        # PUSH EBP; MOV EBP,ESP; PUSH EBX; MOV EBX,[EBP+8]
+        self.splice_hook(0x407B20, bytes.fromhex('558bec538b5d08'), on_init)
 
     def make_stub2(self, ret_bytes, fn):
         addr = STUB2 + self.stub2_count * 16
@@ -884,6 +904,8 @@ class GameOracle(Oracle):
             'dialogue': self.i32(self.u32(0x4A6DCC) + 0x1C8) if self.u32(0x4A6DCC) else 0,
             # DAT_004a6d88（回放同步 RNG）：种子与调用计数（调试对拍用；不进 digest）
             'rng': [struct.unpack('<H', self.uc.mem_read(0x4A6D88, 2))[0], self.u32(0x4A6D8C)],
+            # DAT_004a6d80（游戏逻辑 RNG）：种子与调用计数（调试对拍用；不进 digest）
+            'game_rng': [struct.unpack('<H', self.uc.mem_read(0x4A6D80, 2))[0], self.u32(0x4A6D84)],
         }
         if self.enemy_snap:
             snap['enemies'] = self.enemy_snapshot()
@@ -1087,6 +1109,8 @@ def main():
     ap.add_argument('--replay-slot', type=int, default=-1, help='DAT_004a57c8（默认 -1 走 MainFront；0 走 MainBossSpell）')
     ap.add_argument('--trace-ecl', default='', help='把每条执行的 ECL 指令 (frame, enemy, sub, pc, time, ins_time, op) 写到此文件')
     ap.add_argument('--trace-rng', default='', help='把回放同步 RNG（DAT_004a6d88）的每次调用 (frame, 步数, 返回地址, 包装外层调用方) 写到此文件')
+    ap.add_argument('--trace-game-rng', action='store_true', help='--trace-rng 改为追踪游戏逻辑 RNG（DAT_004a6d80）')
+    ap.add_argument('--trace-vm', default='', help='把每次 ANM VM 生成 (frame, AnmFile 指针, 脚本号, 0x407b20 返回地址) 写到此文件')
     a = ap.parse_args()
     o = GameOracle(pathlib.Path(a.exe), a.dat_dir, a.stage, a.shot, a.season, a.difficulty, a.seed, a.debug, a.replay_slot,
                    a.lives)
@@ -1097,7 +1121,9 @@ def main():
     if a.trace_ecl:
         o.enable_ecl_trace()
     if a.trace_rng:
-        o.enable_rng_trace()
+        o.enable_rng_trace(0x4A6D80 if a.trace_game_rng else 0x4A6D88)
+    if a.trace_vm:
+        o.enable_vm_trace()
     o.boot()
     print('booted: chains=%s banks=%s device_calls=%s' % (
         [(p, hex(cb)) for p, cb, _ in o.chain_list()], o.loaded_banks, o.device_calls), file=sys.stderr)
@@ -1118,6 +1144,8 @@ def main():
         pathlib.Path(a.trace_ecl).write_text(json.dumps(o.ecl_trace, separators=(',', ':')))
     if a.trace_rng:
         pathlib.Path(a.trace_rng).write_text(json.dumps(o.rng_trace, separators=(',', ':')))
+    if a.trace_vm:
+        pathlib.Path(a.trace_vm).write_text(json.dumps(o.vm_trace, separators=(',', ':')))
     print('game-oracle: %d frames → %s digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x errors=%s' % (
         a.frames, a.out, frame_digest(frames),
         enemy_digest(frames) if a.enemies else 0,

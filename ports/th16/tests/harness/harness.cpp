@@ -719,10 +719,11 @@ int main(int argc, char** argv) {
             if (digest_only) continue;
 
             std::printf("%s{\"frame\":%d,\"game_frame\":%d,\"stage_frame\":%d,\"input\":[%u,%u],\"power\":%d,\"season_gauge\":%d,"
-                        "\"enemy_count\":%d,\"dialogue\":%d,\"rng\":[%u,%u],\"player\":{",
+                        "\"enemy_count\":%d,\"dialogue\":%d,\"rng\":[%u,%u],\"game_rng\":[%u,%u],\"player\":{",
                         f == 0 ? "" : ",", f + 1, g.game_frame, g.stage_frame, session.game_input.held, session.game_input.pressed,
                         g.power, g.season_gauge, session.game.world.enemy_count, session.game.world.dialogue ? 1 : 0,
-                        u32(session.animations.visual_rng.seed), session.animations.visual_rng.calls);
+                        u32(session.animations.visual_rng.seed), session.animations.visual_rng.calls,
+                        u32(session.animations.game_rng.seed), session.animations.game_rng.calls);
             size_t at = player_begin;
             std::printf("\"state\":%d,", i32(w[at])); at += 1;
             print_words("pos", w, at, 3); at += 3; std::printf(",");
@@ -860,6 +861,18 @@ int main(int argc, char** argv) {
                             g.score, g.extend_index, g.lives, g.life_fragments, g.bombs, g.bomb_fragments, g.point_value,
                             g.point_value_max, g.point_items, g.graze, g.collect_sum, g.collect_count, g.collect_indicator,
                             g.bomb_fragment_items, bits(g.collect_pos.x), bits(g.collect_pos.y), bits(g.collect_pos.z));
+            }
+            {
+                // 符卡快照（game-oracle.py spell_snapshot 同口径）
+                const Spellcard& sc = session.spellcard;
+                const EnemyManager& em = session.game.enemies;
+                std::printf(",\"spell\":{\"flags\":%u,\"timer\":[%u,%u,%u],\"id\":%d,\"bonus\":%d,\"bonus_initial\":%d,"
+                            "\"time_limit\":%d,\"count\":%d,\"state\":%d,\"vm\":[%u,%u,%u,%u,%u],\"dialogue\":%d,"
+                            "\"boss_ids\":[%u,%u,%u],\"enemy_bonus\":[%d,%d],\"spell_id\":%d}",
+                            sc.flags, u32(sc.timer.previous), u32(sc.timer.current), bits(sc.timer.current_f), sc.id, sc.bonus,
+                            sc.bonus_initial, sc.time_limit, sc.capture_count, sc.state, has(sc.vm_ids[0]), has(sc.vm_ids[1]),
+                            has(sc.vm_ids[2]), has(sc.vm_ids[3]), has(sc.vm_ids[4]), session.game.world.dialogue ? 1 : 0,
+                            em.boss_ids[0], em.boss_ids[1], em.boss_ids[2], g.enemy_bonus_pending, g.enemy_bonus, g.spell_id);
             }
             std::printf("}");
         }
