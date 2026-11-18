@@ -159,8 +159,8 @@ bool Gui::start_dialogue(i32 entry_index) {
     if (entry_index == -2) {
         // 符卡标志 bit7（续关中）→ 0x43f350 续关流程；否则 0x42e150 过关
         if (spellcard_flags != nullptr && (*spellcard_flags & 0x80u) != 0) {
-            error = "dialogue entry -2 (continue flow 0x43f350) not ported";
-            return false;
+            if (on_continue_screen) on_continue_screen();
+            return true;
         }
         stage_clear();
         return error.empty();
@@ -267,8 +267,8 @@ void Gui::stage_clear() {
     if (player != nullptr && animations != nullptr) player->gather_options(*animations);
     if (bomb != nullptr) bomb->on_stage_clear();   // 灵梦：把尚未引爆的阴阳玉全部引爆
     if (mode != 0) {
-        // 练习 / 符卡练习：成绩文件记录 + 0x43f500 返回菜单
-        error = "stage clear in practice mode (0x43f500) not ported";
+        // 练习 / 符卡练习：练习过关位（成绩文件 +0x519c，接入时补）+ 0x43f500 结算菜单
+        if (on_practice_result) on_practice_result();
         return;
     }
     if (globals->stage == 6 || globals->stage == 7) {
@@ -608,5 +608,28 @@ void Gui::execute(Msg& m, const MsgInstruction& ins) {
         break;  // 3 / 30 及未知码：原版 switch 无分支
     }
 }
+
+// 0x42b610 / 0x42b820
+void Gui::hide_dialogue() {
+    if (!dialogue || animations == nullptr) return;
+    Msg& m = *dialogue;
+    for (u32 id : {m.portrait_vm, m.face_vms[0], m.face_vms[1], m.face_vms[2], m.face_vms[3], m.frame_vm,
+                   m.text_vms[0], m.text_vms[1], m.text_vms[2], m.text_vms[3], m.name_vm, m.box_vm}) {
+        if (AnmVm* vm = animations->find(id)) AnmManager::hide_tree(*vm);
+    }
+}
+
+void Gui::show_dialogue() {
+    if (!dialogue || animations == nullptr) return;
+    Msg& m = *dialogue;
+    for (u32 id : {m.portrait_vm, m.face_vms[0], m.face_vms[1], m.face_vms[2], m.face_vms[3], m.frame_vm,
+                   m.text_vms[0], m.text_vms[1], m.text_vms[2], m.text_vms[3], m.name_vm, m.box_vm}) {
+        if (AnmVm* vm = animations->find(id)) AnmManager::show_tree(*vm);
+    }
+}
+
+// 0x42c580 / 0x42c5c0：HUD 根 VM（+0x12c）尚未建立
+void Gui::hide_hud() {}
+void Gui::show_hud() {}
 
 }  // namespace th16

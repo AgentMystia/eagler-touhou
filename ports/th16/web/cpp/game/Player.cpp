@@ -577,8 +577,10 @@ void Player::update(AnmManager& manager, GameGlobals& globals, const InputState&
         if (state_timer.current == 3) scatter_death_items(manager, globals);
         if (state_timer.current > 0x1d) {
             if (globals.lives < 0 && state_timer.current == 0x1e) {
-                // 0x43f350：续关 / 结束画面（Pause 管理器 DAT_004a6ef4）；此处只记录请求并照常推进计时
-                game_over_pending = true;
+                // 0x43f350：续关画面（回放中 DAT_004a6f08+0xc == 1 不调用）；此分支额外推进一次状态计时，
+                // 使续关后下一帧不再落入 == 0x1e 的判断
+                if (on_game_over) on_game_over();
+                state_timer.tick(game_speed);
             } else {
                 respawn(manager, globals);
             }

@@ -66,13 +66,13 @@ void GameManager::reset_for_stage(AnmManager& manager, GameGlobals& globals) {
 bool GameManager::update(AnmManager& manager, GameGlobals& globals, float game_speed) {
     // 0x42d7b0
     if ((flags & kStageClear) != 0) {
-        if ((flags & 0x10u) != 0) return false;
+        if ((flags & kMenuOpen) != 0) return false;
         ++end_counter;
         if (end_counter == 0xb4 && on_screen_fade) on_screen_fade(5, 200, 0);
         // end_counter > 0x17b：模式 0 → 场景 0xf / 0x10（结局 / Extra 结局），其他模式 0x43f240：结局场景接入时补
     }
     // 过关奖励展示期间（Gui bit8、计时 < 0x78）整帧跳过（含帧计数与计时）
-    if (gui_live && gui.clear_bonus_pending() && (flags & 0x10u) == 0) return true;
+    if (gui_live && gui.clear_bonus_pending() && (flags & kMenuOpen) == 0) return true;
     if (timer.current == 0) {
         if (!first_frame(manager, globals)) return true;
     } else if (timer.current == 0x1e) {
@@ -83,7 +83,7 @@ bool GameManager::update(AnmManager& manager, GameGlobals& globals, float game_s
         if (on_previous_stage_destroyed) on_previous_stage_destroyed(*previous_stage);
         previous_stage.reset();
     }
-    // timer == 5 → DAT_004d9d90 = 2（声音线程状态）：Sound 接入时补
+    if (timer.current == 5) globals.sound_thread_state = 2;   // DAT_004d9d90：声音线程进入“游戏中”
     if ((flags & kLoading) != 0) {
         flags |= kFirstUpdate;
         return true;

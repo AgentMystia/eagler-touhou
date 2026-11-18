@@ -15,6 +15,8 @@
 //   +0x2c780 方向（DAT_00492c20 表下标）  +0x2c788/+0x2c78c .sht  +0x2c798 缩放插值  +0x2c7c0/+0x2c7c8 缩放
 //   +0x2c7dc 第二组判定矩形（收点 / 擦弹 / 收点整幅）
 #pragma once
+#include <functional>
+
 #include "AnmVm.hpp"
 #include "Motion.hpp"
 #include "ShotTable.hpp"
@@ -181,7 +183,8 @@ public:
     std::vector<i32> sfx_queue;                        // 0x45e1f0 音效登记（宿主每帧取走）
     std::vector<i32> sfx_stop_queue;                   // 不射击时对 0x1e / 0x37 的停止标记（DAT_004d9e5c = -1）
     std::vector<i32> gui_events;                       // Gui 接入前的占位：1 = 残机显示 0x42c280，2 = Bomb 显示 0x42c390
-    bool game_over_pending = false;                    // 0x43f350：残机 < 0 且复活等待第 0x1e 帧（续关 / 结束画面待接）
+    // 0x43f350：残机 < 0 且复活等待第 0x1e 帧（非回放）→ GameMenu::open_continue；GameSession 绑定
+    std::function<void()> on_game_over;
     EnemyManager* enemies = nullptr;                   // DAT_004a6dc0（追踪弹索敌 0x425240 用）
     Spellcard* spellcard = nullptr;                    // DAT_004a6db0（被弹时的取得标志更新）
     ItemManager* items = nullptr;                      // DAT_004a6ddc（被弹后 0x430960 散出火力 / 得点道具）
