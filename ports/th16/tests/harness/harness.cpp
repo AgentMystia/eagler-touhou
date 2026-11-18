@@ -499,9 +499,11 @@ int main(int argc, char** argv) {
         constexpr size_t kSnapshotBytes = 0x568;
         u64 digest = 0xcbf29ce484222325ull;
         u64 enm_digest = 0xcbf29ce484222325ull;
+        u64 bul_digest = 0xcbf29ce484222325ull;
         auto feed = [&](const u8* p, size_t n) { for (size_t i = 0; i < n; ++i) { digest ^= p[i]; digest *= 0x100000001b3ull; } };
         auto feed_u32 = [&](u32 v) { u8 b[4] = {u8(v), u8(v >> 8), u8(v >> 16), u8(v >> 24)}; feed(b, 4); };
         auto feed_enm = [&](const u8* p, size_t n) { for (size_t i = 0; i < n; ++i) { enm_digest ^= p[i]; enm_digest *= 0x100000001b3ull; } };
+        auto feed_bul_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { bul_digest ^= u8(v >> (8 * i)); bul_digest *= 0x100000001b3ull; } };
         auto feed_enm_u32 = [&](u32 v) { u8 b[4] = {u8(v), u8(v >> 8), u8(v >> 16), u8(v >> 24)}; feed_enm(b, 4); };
         auto timer3 = [&](const Timer& t, std::vector<u32>& w) { w.push_back(u32(t.previous)); w.push_back(u32(t.current)); w.push_back(bits(t.current_f)); };
         auto vec3 = [&](const Vec3& v, std::vector<u32>& w) { w.push_back(bits(v.x)); w.push_back(bits(v.y)); w.push_back(bits(v.z)); };
@@ -602,8 +604,9 @@ int main(int argc, char** argv) {
                 w.push_back(u32(d.f78)); w.push_back(u32(d.f7c)); w.push_back(u32(d.f80)); w.push_back(u32(d.f84));
                 w.push_back(u32(d.owner)); w.push_back(u32(d.f8c)); w.push_back(u32(d.kind));
             }
-            w.push_back(u32(session.sfx_events.size()));
-            for (i32 s : session.sfx_events) w.push_back(u32(s));
+            // oracle 只记录 Player 代码段（0x440000..0x449000）登记的音效
+            w.push_back(u32(session.player_sfx_events.size()));
+            for (i32 s : session.player_sfx_events) w.push_back(u32(s));
             for (u32 v : w) feed_u32(v);
             feed(reinterpret_cast<const u8*>(&pl.vm), kSnapshotBytes);
             {
@@ -629,12 +632,32 @@ int main(int argc, char** argv) {
                     if (const char* rn = e.routine_name()) feed_enm(reinterpret_cast<const u8*>(rn), std::strlen(rn));
                 }
             }
+            // 敌弹（game-oracle.py bullet_digest 同口径）：[frame, count, len] + 每弹 25 字
+            {
+                u32 live_bul = 0;
+                const BulletManager* bm = session.game.bullets_live ? session.game.bullets.get() : nullptr;
+                if (bm) for (const Bullet* b = bm->active_head; b; b = b->active_next) ++live_bul;
+                feed_bul_u32(u32(f + 1));
+                feed_bul_u32(u32(bm ? bm->active_count : 0));
+                feed_bul_u32(live_bul);
+                if (bm) for (const Bullet* b = bm->active_head; b; b = b->active_next) {
+                    const u32 words[] = {u32(b->index), b->flags, u32(b->state), u32(i32(b->type)), u32(i32(b->color)),
+                                         bits(b->pos.x), bits(b->pos.y), bits(b->pos.z),
+                                         bits(b->velocity.x), bits(b->velocity.y), bits(b->velocity.z),
+                                         bits(b->speed), bits(b->angle), bits(b->hitbox.x), bits(b->hitbox.y),
+                                         bits(b->scale), u32(b->ex_index), b->ex_flags,
+                                         u32(b->timer.previous), u32(b->timer.current), bits(b->timer.current_f),
+                                         u32(b->vm_main.sprite_index)};
+                    for (u32 v : words) feed_bul_u32(v);
+                }
+            }
             if (digest_only) continue;
 
             std::printf("%s{\"frame\":%d,\"game_frame\":%d,\"stage_frame\":%d,\"input\":[%u,%u],\"power\":%d,\"season_gauge\":%d,"
-                        "\"enemy_count\":%d,\"dialogue\":%d,\"player\":{",
+                        "\"enemy_count\":%d,\"dialogue\":%d,\"rng\":[%u,%u],\"player\":{",
                         f == 0 ? "" : ",", f + 1, g.game_frame, g.stage_frame, session.game_input.held, session.game_input.pressed,
-                        g.power, g.season_gauge, session.game.world.enemy_count, session.game.world.dialogue ? 1 : 0);
+                        g.power, g.season_gauge, session.game.world.enemy_count, session.game.world.dialogue ? 1 : 0,
+                        u32(session.animations.visual_rng.seed), session.animations.visual_rng.calls);
             size_t at = player_begin;
             std::printf("\"state\":%d,", i32(w[at])); at += 1;
             print_words("pos", w, at, 3); at += 3; std::printf(",");
@@ -720,11 +743,29 @@ int main(int argc, char** argv) {
                 if (rname) std::printf("\"%s\"", rname); else std::printf("null");
                 std::printf("],\"hp\":[%d,%d,0,0]}", e.life, e.life_max);
             }
-            std::printf("]}}");
+            std::printf("]}");
+            {
+                const BulletManager* bm = session.game.bullets_live ? session.game.bullets.get() : nullptr;
+                std::printf(",\"bullets\":{\"count\":%d,\"bullets\":[", bm ? bm->active_count : 0);
+                bool first_bul = true;
+                if (bm) for (const Bullet* b = bm->active_head; b; b = b->active_next) {
+                    std::printf("%s{\"index\":%d,\"flags\":%u,\"state\":%u,\"type\":%d,\"color\":%d,\"pos\":[%u,%u,%u],\"vel\":[%u,%u,%u],"
+                                "\"speed\":%u,\"angle\":%u,\"hitbox\":[%u,%u],\"scale\":%u,\"ex_index\":%d,\"ex_flags\":%u,"
+                                "\"timer\":[%d,%d,%u],\"sprite_id\":%d}",
+                                first_bul ? "" : ",", b->index, b->flags, u32(b->state), i32(b->type), i32(b->color),
+                                bits(b->pos.x), bits(b->pos.y), bits(b->pos.z), bits(b->velocity.x), bits(b->velocity.y), bits(b->velocity.z),
+                                bits(b->speed), bits(b->angle), bits(b->hitbox.x), bits(b->hitbox.y), bits(b->scale), b->ex_index, b->ex_flags,
+                                b->timer.previous, b->timer.current, bits(b->timer.current_f), b->vm_main.sprite_index);
+                    first_bul = false;
+                }
+                std::printf("]}");
+            }
+            std::printf("}");
         }
         if (digest_only)
-            std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx enemies=%016llx\n",
-                        stage, shot, season, frames, (unsigned long long)digest, (unsigned long long)enm_digest);
+            std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx enemies=%016llx bullets=%016llx\n",
+                        stage, shot, season, frames, (unsigned long long)digest, (unsigned long long)enm_digest,
+                        (unsigned long long)bul_digest);
         else std::printf("]}\n");
         return 0;
     }
