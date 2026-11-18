@@ -10,6 +10,7 @@
 #include "AnmRenderer.hpp"
 #include "AnmResource.hpp"
 #include "Archive.hpp"
+#include "Ascii.hpp"
 #include "Chain.hpp"
 #include "Effect.hpp"
 #include "ScreenEffect.hpp"
@@ -36,6 +37,7 @@ public:
     using OnResourceLoaded = std::function<bool(AnmResource&)>;
 
     AnmManager animations;
+    AsciiManager ascii;           // DAT_004a6d98（0x407cb0：启动期创建，更新链 4，绘制链 0x51 / 0x35 / 0x42）
     EffectManager effects;        // DAT_004a6db8（0x418a30：启动期创建，更新链 0x1f）
     Spellcard spellcard;          // DAT_004a6db0（0x4178a0：进游戏时创建；敌机 / 自机被弹共用其标志）
     ScreenShakeOffset screen_shake;  // DAT_004c1788 / DAT_004c1530：ECL 517 画面震动当前偏移
@@ -79,6 +81,8 @@ public:
     bool begin_boot();                 // 0x43adc0：ascii + sig，注册启动幕绘制链，请求 Title
     // 跳过启动幕/标题直接进入场景 7（harness）：装启动 bank 后按 globals（stage/shot/season/difficulty）装载关卡
     bool start_game_direct();
+    // 0x43b290：AsciiManager 的更新链 4 与绘制链 0x51 / 0x35 / 0x42 在启动幕装载完成时一起打开
+    void enable_ascii_chains();
     // 0x43ce10 case 0xa / 0xb / 0xe / 0x13：GameMenu 重开 / Extra 续关——0x42d200 按请求决定快速重开（bit0）或整体销毁，
     // 再以 stage_copy 新开局
     bool restart_game(SceneId reason, i32 replay_mode);
@@ -91,6 +95,8 @@ private:
     std::vector<std::unique_ptr<AnmResource>> resources_;  // 地址稳定：AnmManager 持有 resource 指针；逐关累加不设上限
     std::vector<std::string> resource_names_;
     ChainEntry* boot_draw_chain_ = nullptr;
+    ChainEntry* ascii_update_chain_ = nullptr;        // 4（0x408070）
+    ChainEntry* ascii_draw_chains_[3] = {};           // 0x51 / 0x35 / 0x42（0x408090 / 0x4080a0 / 0x4080b0）
     ChainEntry* effect_update_chain_ = nullptr;
     ChainEntry* title_update_chain_ = nullptr;
     ChainEntry* game_update_chain_ = nullptr;

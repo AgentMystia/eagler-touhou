@@ -459,6 +459,18 @@ constexpr AddressAnchor kAnchors[] = {
     {"gui-hud-teardown", 0x427730, "game/Gui.cpp Gui::shutdown（0x427a20：通知 / 星 / 血条 / 标签 / 残机炸弹格 / 计时数字标删，再 0x46f270 卸 front.anm）"},
     {"anm-request-interrupt", 0x4174D0, "game/AnmManager.cpp AnmManager::request_interrupt（回调钩子 + pending_interrupt）/ interrupt_now（随即执行）"},
     {"gui-hud-root-vm", 0x42C580, nullptr},   // Gui+0x12c HUD 根 VM：th16 从不创建，0x42c580 / 0x42c5c0 为空操作（死代码）
+    // —— AsciiManager（Ascii.cpp；DAT_004a6d98 文字队列 → 三条绘制链 0x51 / 0x35 / 0x42）——
+    {"ascii-create", 0x407CB0, "game/Ascii.cpp AsciiManager::create + GameSession.cpp load_boot_banks（更新链 4 / 绘制链 0x51·0x35·0x42 建为禁用；0x43b290 启用）"},
+    {"ascii-enable", 0x43B290, "game/GameSession.cpp GameSession::enable_ascii_chains（启动幕装载完成：四条链 |= 2 并请求 Title）"},
+    {"ascii-reset-style", 0x407C10, "game/Ascii.hpp AsciiManager::Style 默认值（白、缩放 1、字宽 9、对齐 1/1、字体 0、组 0、寿命 0）"},
+    {"ascii-print", 0x408140, "game/Ascii.cpp AsciiManager::print（队列上限 0x140；入队时抄下当前 Style）"},
+    {"ascii-printf", 0x408260, "game/Ascii.cpp AsciiManager::printf（vsprintf 260 字节）+ 0x4084f0 printf_small（字体 1）"},
+    {"ascii-print-grouped", 0x4082B0, "game/Ascii.cpp AsciiManager::print_grouped（千分位逗号，\"%d,%.3d\" 族）"},
+    {"ascii-print-score", 0x4083B0, "game/Ascii.cpp AsciiManager::print_score（末位为续关 / 最高分续关数：\"%d,%.2d%d\" 族）"},
+    {"ascii-update", 0x408070, "game/Ascii.cpp AsciiManager::update（寿命 −1，< 0 移除；frame++）"},
+    {"ascii-draw-group", 0x408560, "game/Ascii.cpp AsciiManager::draw_group（0x408090 组 0：画完出批、切 UI 相机）"},
+    {"ascii-draw-field-group", 0x408EF0, "game/Ascii.cpp AsciiManager::draw_field_group（0x4080a0 组 1：场地相机 + 层组 0x80000 偏移；0x4080b0 组 2：场地相机原样）"},
+    {"ascii-draw-entry", 0x408650, "game/Ascii.cpp AsciiManager::draw_entry（字体 0..5 的字形映射 / 字宽 / 对齐 / 阴影 +2 / 换行与空格推进；0x465c40 + 0x465280(…,1) 像素对齐屏幕四边形）"},
     {"anm-draw-screen-sprite", 0x465C40, "game/AnmRenderer.cpp AnmRenderer::draw_screen_sprite（轴对齐四角 + submit_screen_quad 像素对齐，不判可见位）"},
     {"msg-text-draw", 0x46D990, nullptr},     // AsciiManager 文字画入 VM 纹理（Msg::text_requests 记录请求）
     {"stage-clear", 0x42E150, "game/Gui.cpp Gui::stage_clear（MSG op 21 / 0x429ff0(-2)：非练习 0x42c070 奖励、0x42ca80 子机收拢、普通模式 1..5 面场景请求 0xc + 关卡号 +1 + 练习解锁位；练习 0x43f500；6·Extra 面 flags 0x4000 + 残机 × 5 + 残弹 奖励 + 通关记录；回放 0x43f240）"},

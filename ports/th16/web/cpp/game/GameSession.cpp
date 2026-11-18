@@ -49,9 +49,30 @@ bool GameSession::load_anm(const char* name, AnmResource*& out) {
 bool GameSession::load_boot_banks() {
     AnmResource* ascii = nullptr;
     AnmResource* sig = nullptr;
-    // 0x407cb0 AsciiManager：ascii.anm → 槽 2
+    // 0x407cb0 AsciiManager：ascii.anm → 槽 2，更新链 4 与三条按组绘制的链
     if (!load_anm("ascii.anm", ascii)) return false;
-    animations.load(AnmManager::kAsciiSlot, *ascii);
+    AnmFile* ascii_file = animations.load(AnmManager::kAsciiSlot, *ascii);
+    if (ascii_file == nullptr) { failure = "ascii.anm load failed"; return false; }
+    this->ascii.window_scale = geometry.window_scale;
+    this->ascii.create(animations, *ascii_file);
+    ascii_update_chain_ = chains.create([this]() -> ChainResult {
+        this->ascii.update();
+        return ChainResult::Continue;
+    }, 4, true);
+    chains.enable(ascii_update_chain_);
+    ascii_draw_chains_[0] = chains.create([this]() -> ChainResult {
+        this->ascii.draw_group(AsciiManager::Group::Ui, renderer, compositor.ui_camera);
+        return ChainResult::Continue;
+    }, 0x51, false);
+    ascii_draw_chains_[1] = chains.create([this]() -> ChainResult {
+        this->ascii.draw_field_group(AsciiManager::Group::Field, renderer, compositor.field_camera, compositor.ui_camera);
+        return ChainResult::Continue;
+    }, 0x35, false);
+    ascii_draw_chains_[2] = chains.create([this]() -> ChainResult {
+        this->ascii.draw_field_group(AsciiManager::Group::FieldLate, renderer, compositor.field_camera, compositor.ui_camera);
+        return ChainResult::Continue;
+    }, 0x42, false);
+    // 四条链此时都还关着：启动幕装载完成（0x43b290）才一起打开
     // 0x43adc0：sig.anm → 槽 1
     if (!load_anm("sig.anm", sig)) return false;
     if (animations.load(1, *sig) == nullptr) { failure = "sig.anm load failed"; return false; }
@@ -114,9 +135,15 @@ bool GameSession::begin_boot() {
     }, 0x44, false);
     chains.enable(boot_draw_chain_);
 
-    // 0x43b290：装载完成请求 Title
+    // 0x43b290：装载完成——打开 AsciiManager 的更新 / 绘制链，请求 Title
+    enable_ascii_chains();
     supervisor.boot_init_finished();
     return true;
+}
+
+void GameSession::enable_ascii_chains() {
+    chains.enable(ascii_update_chain_);
+    for (ChainEntry* entry : ascii_draw_chains_) chains.enable(entry);
 }
 
 bool GameSession::enter_title_assets() {
@@ -185,6 +212,7 @@ void GameSession::leave_title() {
 
 bool GameSession::start_game_direct() {
     if (!load_boot_banks()) return false;
+    enable_ascii_chains();   // 原版由启动幕 0x43b290 打开；直接进游戏时在此补上
     supervisor.current = SceneId::Game;
     supervisor.requested = SceneId::Game;
     return enter_game();

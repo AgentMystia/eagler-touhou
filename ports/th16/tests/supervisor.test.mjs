@@ -30,14 +30,16 @@ const Z = '0x1', X = '0x2', UP = '0x10', DOWN = '0x20', LEFT = '0x40', RIGHT = '
 const MENU_LIVE = 180;       // 启动幕 +0x638 到 0xb4 的那一帧（绘制之后）标题线程登记更新链；该链从下一帧起运行
 const MAIN = MENU_LIVE + 12; // Timer 0x78→0x83（>0x82）进入 case 2
 // 常驻绘制链：Supervisor 画面合成 10 条（0x43ba40）+ AnmManager 层绘制 39 条（0x46a3a0：33 条普通层 + 6 条切相机的特殊层）
-const PERMANENT_DRAW_CHAINS = 49;
+// + AsciiManager 文字 3 条（0x407cb0：优先级 0x51 / 0x35 / 0x42，启动幕装载完成 0x43b290 时启用）
+const PERMANENT_DRAW_CHAINS = 52;
 
 test('scene-boot: boot hold is exactly 0xb4 draw-chain frames, then title decor/intro', needDat, () => {
   const before = parse(run(['scene-boot', dat, String(MENU_LIVE)]));
   assert.equal(before.header.title_live, 1);
   assert.equal(before.header.boot_frames, 180);
   assert.equal(before.header.draw_chains, PERMANENT_DRAW_CHAINS, 'boot draw chain removed once the title thread unloads sig.anm');
-  assert.equal(before.header.update_chains, 4, 'AnmManager UI/world tick chains (prio 9 / 0x21, 0x46e740 / 0x46e710) + EffectManager chain (prio 0x1f, 0x4187d0 at boot) + title update chain (prio 6) registered');
+  // 原版 oracle 启动完成后的更新链表：(4, 0x408070) AsciiManager、(6) 标题、(9 / 0x21) AnmManager、(0x1f) EffectManager
+  assert.equal(before.header.update_chains, 5, 'AsciiManager chain (prio 4, 0x408070) + AnmManager UI/world tick chains (prio 9 / 0x21, 0x46e740 / 0x46e710) + EffectManager chain (prio 0x1f, 0x4187d0 at boot) + title update chain (prio 6) registered');
   // 标题更新链的首帧
   const firstTick = parse(run(['scene-boot', dat, String(MENU_LIVE + 1)]));
   assert.equal(firstTick.header.screen, 1, '0x44af80 case 0 → 0x44a560(1) main menu on the first title tick');
@@ -192,7 +194,7 @@ test('game start flow: Normal / Cirno / Autumn → scene 7 with stage 1, title d
   assert.equal(started.header.shot, 1);
   assert.equal(started.header.season, 2, 'Autumn');
   assert.equal(started.header.stage, 1);
-  assert.equal(started.header.update_chains, 16, 'title update chain removed; AnmManager ticks(9, 0x21) + EffectManager(0x1f, boot) + GameManager(0xf)+GameMenu(10)+StageManager(0x11)+Replay 记录(0x10)+Player(0x16)+Bullet(0x1c)+Item(0x1d)+Laser(0x1b)+Enemy(0x1a)+Bomb(0x18)+Release(0x19)+Gui(0x20)+Spellcard(0x1e) registered (0x46e740/0x46e710/0x4187d0/0x42d700/0x43e3f0/0x409db0/0x447fd0/0x440fb0/0x411dd0/0x42f440/0x4314a0/0x41b340/0x40d890/0x427ca0/0x417700)');
+  assert.equal(started.header.update_chains, 17, 'title update chain removed; AsciiManager(4) + AnmManager ticks(9, 0x21) + EffectManager(0x1f, boot) + GameManager(0xf)+GameMenu(10)+StageManager(0x11)+Replay 记录(0x10)+Player(0x16)+Bullet(0x1c)+Item(0x1d)+Laser(0x1b)+Enemy(0x1a)+Bomb(0x18)+Release(0x19)+Gui(0x20)+Spellcard(0x1e) registered (0x408070/0x46e740/0x46e710/0x4187d0/0x42d700/0x43e3f0/0x409db0/0x447fd0/0x440fb0/0x411dd0/0x42f440/0x4314a0/0x41b340/0x40d890/0x427ca0/0x417700)');
   // 0x44ad20：title.anm / title_v.anm VM 全部清掉；ascii.anm 落叶发射器（+0x73c）只收到 interrupt 1，
   // 其脚本 case 1 在 10/14 帧后自删，所以切场后短暂只剩槽 2 的落叶（mode 8）
   assert.ok(started.quads.length > 0, 'leaf particles (ascii.anm mode 8) still falling right after the switch');
