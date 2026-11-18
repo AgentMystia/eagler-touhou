@@ -8,6 +8,7 @@
 #include "GameGlobals.hpp"
 #include "Input.hpp"
 #include "Item.hpp"
+#include "Laser.hpp"
 #include "Spellcard.hpp"
 
 #include <cmath>
@@ -530,11 +531,16 @@ void Player::update(AnmManager& manager, GameGlobals& globals, const InputState&
         pos.y = float(fixed_y) * kFixedToFloat;
         for (PlayerOption& o : options) o.snap = 1;
         if (state_timer.current < 0x1e) {
-            // 0x431a70(pos_copy, 0, 1)：激光管理器按半径 (t×512)/30+64 切断——LaserManager 接入时补
-        } else if (bullet_manager != nullptr) {
-            bullet_manager->cancel_radius(pos, 640.0f, 0, true);   // 0x416d20
+            // 前 30 帧：以 pos_copy 为中心、半径从 64 线性扩到 576 切断激光（先尊重免疫，再按 1/4 半径无视免疫）
+            const float radius = float(state_timer.current * 512 / 30 + 64);
+            if (laser_manager != nullptr) {
+                laser_manager->cancel_radius(pos_copy, radius, false, true);          // 0x431a70
+                laser_manager->cancel_radius(pos_copy, radius * 0.25f, false, false);
+            }
+        } else {
+            if (bullet_manager != nullptr) bullet_manager->cancel_radius(pos, 640.0f, 0, true);   // 0x416d20
+            if (laser_manager != nullptr) laser_manager->cancel_radius(pos, 640.0f, false, false); // 0x431a70
         }
-        // 0x431a70(pos_copy / pos, 0, 0)：激光管理器——LaserManager 接入时补
         if (state_timer.current > 0x3b) {
             state = kNormal;
             state_timer.set(0);
@@ -564,7 +570,8 @@ void Player::update(AnmManager& manager, GameGlobals& globals, const InputState&
         }
         break;
     case kState3:
-        // 第 0xf 帧 0x431af0(1)：激光全部终止——LaserManager 接入时补
+        // 第 0xf 帧：激光全部终止并转得点道具
+        if (state_timer.current == 0xf && laser_manager != nullptr) laser_manager->cancel_all(true);  // 0x431af0(1)
         break;
     default:
         break;

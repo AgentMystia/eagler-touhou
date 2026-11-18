@@ -87,6 +87,8 @@ private:
     ChainEntry* item_update_chain_ = nullptr;
     ChainEntry* item_draw_chain_ = nullptr;
     ChainEntry* item_draw_season_chain_ = nullptr;
+    ChainEntry* laser_update_chain_ = nullptr;
+    ChainEntry* laser_draw_chain_ = nullptr;
     ChainEntry* spellcard_update_chain_ = nullptr;
     ChainEntry* gui_update_chain_ = nullptr;
     std::vector<ChainEntry*> shake_chains_;  // 0x45d150(1) 实例（链 0x13，自删）

@@ -41,7 +41,7 @@ void GameManager::reset_for_stage(AnmManager& manager, GameGlobals& globals) {
     if (player_live) player.reset(manager, globals);   // 0x441740
     if (items_live) items->reset();                    // 0x4184a0
     if (enemies_live) enemies.reset();                 // 0x4185b0
-    // 0x42cb00 Laser 复位：LaserManager 接入时补
+    if (lasers_live) lasers->reset();                  // 0x42cb00
     globals.game_frame = 0;
     globals.stage_frame = 0;
     // 0x448eb0：Replay 链启用、0x449120 游戏输入状态清零；关卡段记录本体 Replay 接入时补

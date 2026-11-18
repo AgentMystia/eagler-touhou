@@ -30,6 +30,7 @@ class AnmManager;
 class AnmRenderer;
 class BulletManager;
 class EnemyManager;
+class LaserManager;
 struct GameGlobals;
 struct InputState;
 class Player;
@@ -110,6 +111,7 @@ public:
     const AnmRenderer* geometry = nullptr;   // 0x406a70 / 0x406c40（文字框子 VM 的屏幕位置）
     EnemyManager* enemies = nullptr;         // DAT_004a6dc0（ANM 表 / 全灭 / Boss 槽）
     BulletManager* bullets = nullptr;        // DAT_004a6dac（0x416f40 全屏消弹）
+    LaserManager* lasers = nullptr;          // DAT_004a6ee0（0x431af0 对话开始时激光全灭）
     Player* player = nullptr;                // DAT_004a6ef8（立绘 ANM 文件）
     PlayerWorld* world = nullptr;            // dialogue 标志的宿主镜像（DAT_004a6dcc->0x1c8 != 0）
     GameGlobals* globals = nullptr;

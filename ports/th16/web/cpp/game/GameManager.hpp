@@ -27,6 +27,7 @@
 #include "Gui.hpp"
 #include "Input.hpp"
 #include "Item.hpp"
+#include "Laser.hpp"
 #include "Player.hpp"
 #include "Stage.hpp"
 #include "StageTable.hpp"
@@ -69,6 +70,8 @@ public:
     bool bullets_live = false;
     std::unique_ptr<ItemManager> items;      // DAT_004a6ddc（0x1c972ec 字节，堆分配）
     bool items_live = false;
+    std::unique_ptr<LaserManager> lasers;    // DAT_004a6ee0（0x610 字节；0x4314a0）
+    bool lasers_live = false;
     Gui gui;                     // DAT_004a6dcc（0x427ca0；对话 / Boss 标题 / 过关结算；HUD 渲染阶段补齐）
     bool gui_live = false;
     PlayerWorld world;           // 敌人 / 对话 / 过关状态；enemy_count 由 EnemyManager 同步

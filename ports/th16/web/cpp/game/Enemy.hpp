@@ -21,6 +21,7 @@ class Archive;
 class EffectManager;
 class Gui;
 class ItemManager;
+class LaserManager;
 struct GameGlobals;
 class Player;
 struct PlayerWorld;
@@ -198,6 +199,8 @@ public:
     // 0x41c330 尾：主 VM 的受击 / 低血闪烁（color2 + flags_lo 0x20000 位）与受击音效
     void update_hit_flash();
 
+    // ECL 601 / 702 / 703 / 711 / 713 共用：发射器实际发射坐标（ECL 628 绝对坐标优先，否则敌机坐标 + 偏移）
+    Vec3 shooter_origin(int slot) const noexcept;
     // EclVariables：0x423810 / 0x423f80（先覆盖 st01 前段用到的）
     float angle_to_player(const Vec3& from) const noexcept;
     Enemy* boss(int slot) const;
@@ -249,6 +252,7 @@ public:
     float* global_game_speed = nullptr;  // DAT_004a5788（ECL 547 写入）
     BulletManager* bullets = nullptr;  // DAT_004a6dac（GameSession 在 BulletManager 创建后绑定）
     ItemManager* items = nullptr;      // DAT_004a6ddc（同上；道具掉落 0x41a720 / 0x41d700 / op 1001 直接生成）
+    LaserManager* lasers = nullptr;    // DAT_004a6ee0（ECL 700..714 / 545 / 518 / 613 / 615 / 616 / 635 / 636）
     AnmManager* animations = nullptr;
     GameGlobals* globals = nullptr;
     Player* player = nullptr;
