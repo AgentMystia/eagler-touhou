@@ -272,6 +272,24 @@ u32 AnmManager::spawn(AnmFile& file, int script, int layer, AnmVm** out_vm) {
     return insert_world_back(*vm);
 }
 
+// 0x40e5c0
+u32 AnmManager::spawn_effect(AnmFile& file, int script, int layer, const Vec3& pos, float rotation_z) {
+    ++spawn_count;
+    AnmVm* vm = allocate();
+    init_from_template(file, *vm, script);
+    const u32 hi = vm->flags_hi;
+    vm->flags_hi = hi | 0x400u;
+    if (layer >= 0) {
+        vm->layer = layer;
+        if (layer < 0x18) vm->flags_hi = (hi & 0xfff7ffffu) | 0x40400u;
+    }
+    vm->entity_offset = pos;
+    vm->rotation.z = rotation_z;
+    run(*vm);
+    vm->creation_flags = 0;
+    return insert_world_back(*vm);
+}
+
 // 0x426160
 u32 AnmManager::spawn_front(AnmFile& file, int script, int layer, AnmVm** out_vm) {
     ++spawn_count;

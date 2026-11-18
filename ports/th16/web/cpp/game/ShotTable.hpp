@@ -72,6 +72,7 @@ struct ShotTable {
     float speed_diag_focus = 0;  // +0x1c
     i32 max_level = 0;       // +0x20
     i32 power_per_level = 0; // +0x24
+    i32 damage_cap = 0;      // +0x28（0x445a30 单次结算伤害上限）
     Vec2 option_unfocused[kOptionSlots];  // +0x40
     Vec2 option_focused[kOptionSlots];    // +0xe8
     std::vector<std::vector<ShotEntry>> sets;

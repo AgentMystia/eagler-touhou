@@ -223,11 +223,21 @@ bool Enemy::init(EnemyManager& mgr, EclProgram& prog, const char* sub, const Ene
     motion1 = MotionState{};
     motion2 = MotionState{};
     motion1.pos = args.pos;
+    hitbox = {24.0f, 24.0f, 0.0f};
+    hurtbox = {24.0f, 24.0f, 0.0f};
     life = truncate_int(args.life);
     life_max = life;
+    phase_life = 0;
+    life_budget = life * 7;
+    life_flags = 0;
     int_regs[0] = 1;  // 0x41aa70：puVar6[0x1498] = 1
     invuln.set(2);
     life_timer.set(0x3c);
+    season_drop_timer.set(0x3c);
+    season_drop_duration = 0x3c;
+    season_drop_max = 0;
+    season_drop_min = 1;
+    death_sfx = i32((id & 1u) + 3u);
     primary.difficulty = difficulty;
     const i32 routine = prog.find_index(sub);
     if (routine < 0) { error = std::string("missing sub ") + sub; return false; }
@@ -260,9 +270,12 @@ bool Enemy::update(float game_speed) {
     motion1.integrate(game_speed);
     motion2.update_velocity(game_speed);
     motion2.integrate(game_speed);
-    pos.x = floor_f((motion1.pos.x + motion2.pos.x) * 100.0f) / 100.0f;
-    pos.y = floor_f((motion1.pos.y + motion2.pos.y) * 100.0f) / 100.0f;
-    pos.z = motion1.pos.z + motion2.pos.z;
+    const float vx = (motion1.pos.x + motion2.pos.x) - pos.x;
+    const float vy = (motion1.pos.y + motion2.pos.y) - pos.y;
+    const float vz = (motion1.pos.z + motion2.pos.z) - pos.z;
+    pos.x = floor_f((pos.x + vx) * 100.0f) / 100.0f;
+    pos.y = floor_f((pos.y + vy) * 100.0f) / 100.0f;
+    pos.z = pos.z + vz;
     if ((flags & 0x20000u) != 0) {
         const float hx = bound_size.x * 0.5f, hy = bound_size.y * 0.5f;
         if (pos.x < bound_center.x - hx) pos.x = bound_center.x - hx;
@@ -298,7 +311,63 @@ bool Enemy::update(float game_speed) {
         ++it;
     }
 
+    // 0x41c330：受击结算（0x445a30 伤害源碰撞）与死亡判定（0x41d520）
+    flags &= ~0x200000u;
+    if ((flags & 0x21u) == 0 && player != nullptr && manager != nullptr && manager->animations != nullptr) {
+        i32 dmg = 0;
+        if (hitbox.x > 0.0f) {
+            dmg = player->apply_damage_sources(*manager->animations, pos, hitbox.x * 0.5f, id);
+            dmg = i32(float(dmg) * player->scale2);
+        }
+        if (player->state == 2 || player->state == 0) dmg /= 5;
+        if (dmg > 0) {
+            if ((flags & 0x10u) == 0 && invuln.current < 1) {
+                // 0x41a6d0：符卡期间（life_flags & 1）按 7 倍血量池折算
+                if ((life_flags & 1u) != 0) {
+                    life_budget -= dmg;
+                    life = (life_budget - phase_life * 7) / 7 + phase_life;
+                } else {
+                    life -= dmg;
+                }
+            }
+            if (life < 1 && ((flags >> 7) & 1u) == 0) {
+                // 0x41d520：死亡音效 + 0x41d700 季节道具掉落（消耗 visual_rng）
+                if (death_sfx >= 0 && manager != nullptr) manager->sfx_queue.push_back(death_sfx);
+                i32 drop_count = season_drop_min;
+                if (season_drop_timer.current >= 1 && season_drop_duration > 0) {
+                    drop_count = ((season_drop_max - season_drop_min) * season_drop_timer.current) /
+                                     season_drop_duration +
+                                 season_drop_min;
+                }
+                season_drop_max = drop_count;
+                if (rng != nullptr) {
+                    (void)rng->signed_unit();
+                    for (i32 k = 0; k < drop_count; ++k) {
+                        (void)rng->unit();
+                        (void)rng->angle();
+                    }
+                }
+                alive = false;
+                return false;
+            }
+            flags |= 0x200000u;
+        }
+    }
+    if (has_main_vm) {
+        if (hit_flash_timer == 0) {
+            if ((flags & 0x200000u) != 0 && (flags & 0x2000u) == 0) {
+                hit_flash_timer = 4;
+                if (manager != nullptr)
+                    manager->sfx_queue.push_back(hit_sfx < 0 ? 0x22 : hit_sfx);
+            }
+        } else {
+            --hit_flash_timer;
+        }
+    }
+
     if (invuln.current > 0) invuln.untick(game_speed);
+    life_timer.tick(game_speed);
+    if (season_drop_timer.current > 0) season_drop_timer.untick(game_speed);
     // 注意：不在这里清除 kFlagReentry——由 EnemyManager::update 清除（对齐 0x41b3d0）
     return true;
 }
@@ -374,7 +443,14 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
         case 510: /* 受击/死亡特效颜色（+0x4054） */ return 0;
         case 511: {
             life = life_max = iarg(0);
+            phase_life = 0;
+            life_budget = life * 7;
             if ((flags & 0x800000u) != 0) flags |= kFlagBossLife;
+            return 0;
+        }
+        case 514: {
+            const i32 threshold = iarg(1);
+            if (threshold >= 0) phase_life = threshold;
             return 0;
         }
         case 512: {
@@ -438,24 +514,27 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             const i32 mode = iarg(1);
             float angle = farg(2), speed = farg(3);
             if (frames <= 0) { angle_interp.end_time = 0; speed_interp.end_time = 0; return 0; }
-            if (!(angle > kSentinel)) angle = motion1.angle;
-            else if ((flags & kFlagMirror) != 0) angle = wrap_angle(float(1.5707963705062866f - wrap_angle(float(angle - 1.5707963705062866f))));
-            if (!(speed > kSentinel)) speed = motion1.speed;
-            float start_a = motion1.angle;
-            if (!(std::fabs(float(start_a - angle)) < kPi)) {
-                if (angle > start_a) start_a = float(start_a + 6.2831854820251465f);
-                else angle = float(angle + 6.2831854820251465f);
+            if (angle > kSentinel) {
+                if ((flags & kFlagMirror) != 0)
+                    angle = wrap_angle(float(1.5707963705062866f - wrap_angle(float(angle - 1.5707963705062866f))));
+                float start_a = motion1.angle;
+                if (!(std::fabs(float(start_a - angle)) < kPi)) {
+                    if (angle > start_a) start_a = float(start_a + 6.2831854820251465f);
+                    else angle = float(angle + 6.2831854820251465f);
+                }
+                angle_interp.initial = start_a;
+                angle_interp.goal = angle;
+                angle_interp.mode = mode;
+                angle_interp.end_time = frames;
+                angle_interp.timer.set(0);
             }
-            angle_interp.initial = start_a;
-            angle_interp.goal = angle;
-            angle_interp.mode = mode;
-            angle_interp.end_time = frames;
-            angle_interp.timer.set(0);
-            speed_interp.initial = motion1.speed;
-            speed_interp.goal = speed;
-            speed_interp.mode = mode;
-            speed_interp.end_time = frames;
-            speed_interp.timer.set(0);
+            if (speed > kSentinel) {
+                speed_interp.initial = motion1.speed;
+                speed_interp.goal = speed;
+                speed_interp.mode = mode;
+                speed_interp.end_time = frames;
+                speed_interp.timer.set(0);
+            }
             motion1.mode &= ~0xfu;
             return 0;
         }
@@ -493,16 +572,20 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             motion1.mode &= ~0xfu;
             return 0;
         }
-        case 1000:
-            drop_timer = iarg(0);
-            drop_interval = iarg(1);
-            drop_type = iarg(2);
+        case 1000: {
+            const i32 d = iarg(0);
+            season_drop_duration = d;
+            season_drop_timer.set(d);
+            season_drop_max = iarg(1);
+            season_drop_min = iarg(2);
             return 0;
+        }
         case 1001: return 0;
         case 306: {
             // 0x41dcb0 case 3：slot == 0 时设精灵宽高（妖精 32×32）并置 flags |= 0x100000
             const i32 slot = iarg(0);
             if (slot == 0) {
+                has_main_vm = true;
                 sprite_size = {32.0f, 32.0f};
                 flags |= 0x100000u;
             }
@@ -510,7 +593,10 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
         }
         case 303: {
             const i32 slot = iarg(0);
-            if (slot == 0) sprite_size = {32.0f, 32.0f};
+            if (slot == 0) {
+                has_main_vm = true;
+                sprite_size = {32.0f, 32.0f};
+            }
             return 0;
         }
         case 307: case 308: case 309: case 313: case 316: case 319:
@@ -542,7 +628,14 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             ctx.time = float(ctx.time - float(delays[d]));
             return 0;
         }
-        case 537: case 545: case 550: case 552:
+        case 522: case 537: case 538: case 539:
+            // 开启符卡：置符卡 7 倍减伤位（0x41a6d0）
+            life_flags |= 1u;
+            return 0;
+        case 568:
+            life_flags = (life_flags & ~1u) | (u32(iarg(0)) & 1u);
+            return 0;
+        case 545: case 550: case 552:
             return 0;
         default:
             // 未识别操作码：先空操作以免整条 ECL 链因后续关卡指令中断；oracle 对拍时再逐个补全

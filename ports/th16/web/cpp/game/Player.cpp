@@ -2,8 +2,11 @@
 
 #include "AnmManager.hpp"
 #include "AnmRenderer.hpp"
+#include "Enemy.hpp"
 #include "GameGlobals.hpp"
 #include "Input.hpp"
+
+#include <cmath>
 
 namespace th16 {
 
@@ -675,11 +678,52 @@ void Player::tick_bullets(AnmManager& manager, const AnmRenderer& geometry, floa
         if (b.active == 0) continue;
         const ShotEntry* e = shot_entry(b.shot_id);
         if (e == nullptr) { release_bullet(b); continue; }
-        // 逐帧回调（DAT_004919a0）：1 追踪（0x445ee0：有敌人时转向最近敌人——Enemy 接入时补；无敌人时加速到 16）
-        //                           5 加速 0.5/帧（0x447480）；2 激光（0x446260）随激光系统接入
+        // 逐帧回调（DAT_004919a0）：1 追踪（0x445ee0 + 0x425240）；5 加速 0.5/帧（0x447480）；2 激光（0x446260）随激光系统接入
         switch (e->tick_callback()) {
         case 1:
             if (b.active != 2) {
+                if (enemies == nullptr) {
+                    b.target = 0;
+                } else if (b.target == 0) {
+                    // 0x425240：在 (flags & 0xc000021) == 0 的敌人中找距离 < 256 且最近者
+                    float best_d2 = 256.0f * 256.0f;
+                    u32 best_id = 0;
+                    for (const auto& ep : enemies->enemies) {
+                        if (!ep || (ep->flags & 0xc000021u) != 0) continue;
+                        const float dx = b.motion.pos.x - ep->pos.x;
+                        const float dy = b.motion.pos.y - ep->pos.y;
+                        const float d2 = dy * dy + dx * dx;
+                        if (d2 < best_d2) { best_d2 = d2; best_id = ep->id; }
+                    }
+                    b.target = i32(best_id);
+                }
+                Enemy* target_enemy = (b.target != 0 && enemies != nullptr) ? enemies->find_id(u32(b.target)) : nullptr;
+                if (target_enemy == nullptr) {
+                    b.target = 0;
+                } else if ((target_enemy->flags & 0xc000021u) == 0) {
+                    const float target_a = float(std::atan2(double(target_enemy->pos.y - b.motion.pos.y),
+                                                            double(target_enemy->pos.x - b.motion.pos.x)));
+                    const float cur_a = b.motion.angle;
+                    float diff = target_a - cur_a;
+                    if (diff > 3.1415927f) diff = target_a - (cur_a + 6.2831855f);
+                    else if (cur_a - target_a > 3.1415927f) diff = target_a - (cur_a - 6.2831855f);
+                    if (b.timer.current >= 0x3c) {
+                        b.motion.speed += 0.2f;
+                        break;
+                    }
+                    float spd = b.motion.speed;
+                    const float adiff = std::fabs(diff);
+                    if (adiff < 0.7853981852531433f) {
+                        if (adiff < 0.2617993950843811f) {
+                            spd = (spd + 0.2f <= 16.0f) ? (spd + 0.2f) : 16.0f;
+                        }
+                    } else {
+                        spd = (spd - 0.2f >= 4.0f) ? (spd - 0.2f) : 4.0f;
+                    }
+                    b.motion.angle = wrap_angle(wrap_angle(cur_a + diff * 0.07999999821186066f));
+                    b.motion.speed = spd;
+                    break;
+                }
                 const float s = b.motion.speed + 0.1f;
                 b.motion.speed = s <= 16.0f ? s : 16.0f;
             }
@@ -730,6 +774,105 @@ void Player::tick_bullets(AnmManager& manager, const AnmRenderer& geometry, floa
         }
         b.timer.tick(game_speed);
     }
+}
+
+i32 Player::hit_bullet_default(AnmManager& manager, PlayerBullet& b) {
+    // 0x445e20
+    AnmVm* vmp = manager.find(b.vm);
+    if (vmp == nullptr) b.vm = 0;
+    b.motion.pos.z = 0.1f;
+    if (vmp != nullptr) {
+        vmp->pending_interrupt = 1;
+        vmp->entity_offset = b.motion.pos;
+    }
+    b.active = 2;
+    b.motion.speed *= 0.125f;
+    if (b.damage_source != 0) {
+        damage_sources[b.damage_source - 1].flags &= ~1u;
+        b.damage_source = 0;
+    }
+    return b.damage;
+}
+
+i32 Player::apply_damage_sources(AnmManager& manager, const Vec3& enemy_pos, float radius, u32 enemy_id) {
+    // 0x445a30
+    if (timer3.current == timer3.previous) return 0;
+    auto rect_circle = [](float rx, float ry, float rw, float rh, float angle, float cx, float cy, float r) -> bool {
+        // 0x403d30
+        const float dx = cx - rx;
+        const float dy = cy - ry;
+        const float neg_a = -angle;
+        const float s = sin_f(neg_a);
+        const float c = cos_f(neg_a);
+        const float lx = dx * c - dy * s;
+        const float ly = dx * s + dy * c;
+        const float hw = rw * 0.5f;
+        const float hh = rh * 0.5f;
+        const float ax = std::fabs(lx);
+        const float ay = std::fabs(ly);
+        if (ax <= hw + r && ay <= hh) return true;
+        if (ax <= hw && ay <= hh + r) return true;
+        const float r2 = r * r;
+        const float x0 = lx - hw, y0 = ly - hh;
+        if (x0 * x0 + y0 * y0 < r2) return true;
+        const float x1 = lx + hw;
+        if (x1 * x1 + y0 * y0 < r2) return true;
+        const float y1 = ly + hh;
+        if (x0 * x0 + y1 * y1 < r2) return true;
+        return x1 * x1 + y1 * y1 < r2;
+    };
+
+    i32 total = 0;
+    for (int i = 0; i < kDamageSourceCount; ++i) {
+        DamageSource& d = damage_sources[i];
+        if ((d.flags & 1u) == 0 || d.timer.current == d.timer.previous) continue;
+        if (d.f80 == 0 || (d.timer.current % d.f80) != 0) continue;
+        bool hit = false;
+        if ((d.flags & 2u) == 0) {
+            hit = rect_circle(d.motion.pos.x, d.motion.pos.y, d.size_x, d.size_y, d.angle,
+                              enemy_pos.x, enemy_pos.y, radius);
+        } else {
+            const float sum_r = d.f04 + radius;
+            const float dx = d.motion.pos.x - enemy_pos.x;
+            const float dy = d.motion.pos.y - enemy_pos.y;
+            hit = dx * dx + dy * dy <= sum_r * sum_r;
+        }
+        if (!hit) continue;
+        if (enemy_id != 0) {
+            if (d.f84 == i32(enemy_id)) continue;
+            d.f84 = i32(enemy_id);
+        }
+        i32 dmg = d.damage;
+        if (d.kind != 0) {
+            d.f8c = i32(enemy_id);
+            if (d.kind == 1 && d.owner >= 0 && d.owner < kBulletCount) {
+                // 0x445d40：按 .sht 项 hit_callback 分派（0 → 0x445e20；5 → 0x447270 文命中特效 + 0x445e20）
+                PlayerBullet& b = bullets[d.owner];
+                const ShotEntry* se = shot_entry(b.shot_id);
+                if (se != nullptr && se->hit_callback() == 5) {
+                    const float jitter = manager.game_rng.signed_unit() * 0.34906584f;
+                    const float eff_angle = wrap_angle(b.motion.angle + jitter);
+                    if (AnmFile* eff = manager.file(8))
+                        manager.spawn_effect(*eff, 0x98, -1, b.motion.pos, eff_angle);
+                }
+                dmg = hit_bullet_default(manager, b);
+            } else if (d.kind == 2 && d.owner >= 0 && d.owner < kBulletCount) {
+                // 0x4474a0：文低速充能弹返回当前伤害并将弹伤害降为 1
+                PlayerBullet& b = bullets[d.owner];
+                dmg = b.damage;
+                b.damage = 1;
+            }
+        }
+        d.f78 += d.damage;
+        total += dmg;
+        if (d.f7c < 9999999 && d.f7c <= d.f78) {
+            d.flags &= ~1u;
+            d.damage = 0;
+        }
+    }
+    if (sht.damage_cap > 0 && total > sht.damage_cap)
+        total = sht.damage_cap;
+    return total;
 }
 
 void Player::prepare_draw() {

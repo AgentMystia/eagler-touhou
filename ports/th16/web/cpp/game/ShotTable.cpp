@@ -15,6 +15,7 @@ bool ShotTable::parse(const u8* bytes, u32 size) {
     speed_diag_focus = read_f32(bytes + 0x1c);
     max_level = read_i32(bytes + 0x20);
     power_per_level = read_i32(bytes + 0x24);
+    damage_cap = read_i32(bytes + 0x28);
     for (int i = 0; i < kOptionSlots; ++i) {
         option_unfocused[i] = {read_f32(bytes + 0x40 + i * 8), read_f32(bytes + 0x44 + i * 8)};
         option_focused[i] = {read_f32(bytes + 0xe8 + i * 8), read_f32(bytes + 0xec + i * 8)};

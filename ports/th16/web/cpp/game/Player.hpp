@@ -25,6 +25,7 @@ namespace th16 {
 class AnmManager;
 class AnmRenderer;
 struct AnmFile;
+class EnemyManager;
 struct GameGlobals;
 struct InputState;
 struct Rng;
@@ -170,6 +171,7 @@ public:
     i32 option_cooldown[16] = {};                      // +0x165f8：.sht 类型 2 弹按子机 [opt-1 (+8 子季节)] 记录发射时火力等级
     std::vector<i32> sfx_queue;                        // 0x45e1f0 音效登记（宿主每帧取走）
     std::vector<i32> sfx_stop_queue;                   // 不射击时对 0x1e / 0x37 的停止标记（DAT_004d9e5c = -1）
+    EnemyManager* enemies = nullptr;                   // DAT_004a6dc0（追踪弹索敌 0x425240 用）
 
     // 0x441c60 + 0x440fb0：资源已由调用方装入；返回 false 表示 .sht 缺失
     bool init(AnmManager& manager, GameGlobals& globals, AnmFile* player_anm, AnmFile* sub_player_anm,
@@ -183,6 +185,8 @@ public:
                 AnmFile* effect_anm, const AnmRenderer& geometry, float game_speed);
     // 0x443730：绘制链 0x1d 的逻辑部分（pos → VM entity_offset，flags 0x40000）
     void prepare_draw();
+    // 0x445a30：对位置 enemy_pos、圆形半径 radius 的敌人（enemy_id）结算全部活动伤害源，返回本帧总伤害
+    i32 apply_damage_sources(AnmManager& manager, const Vec3& enemy_pos, float radius, u32 enemy_id);
 
     std::string error;
 
@@ -204,6 +208,7 @@ private:
     i32 alloc_damage_source(const Vec3& pos, float angle, i32 lifetime, i32 damage, float size_x, float size_y);  // 0x444b20
     void tick_bullets(AnmManager& manager, const AnmRenderer& geometry, float game_speed);  // 0x4456d0
     void release_bullet(PlayerBullet& b);                                 // 池项失活 + 伤害源 bit0 清零
+    i32 hit_bullet_default(AnmManager& manager, PlayerBullet& b);         // 0x445e20
     const ShotEntry* shot_entry(u32 shot_id) const;                       // (set<<8|entry)(+0x10000 子季节) → .sht 项
     u32 spawn_option_vm(AnmManager& manager, AnmFile& file, int script);  // 0x4440e0 内联生成（世界链表尾，layer 0xe）
 };
