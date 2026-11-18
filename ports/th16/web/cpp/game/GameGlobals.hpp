@@ -21,6 +21,7 @@ struct GameGlobals {
     i32 title_origin = 0;        // DAT_004a6f1c：进入标题的来源（0 首次 1 正常 2 Replay 结束 4 练习返回 5 符卡练习返回）
     i32 stage_table = 0;         // DAT_004a6f18：0 = &DAT_004a23a4 普通关卡表，1 = &DAT_004a289c Extra 表（按季节表时另记）
     i32 scene_request = -1;      // DAT_004c17c4：Supervisor 场景请求（7 = Game）
+    bool new_game = false;       // DAT_004c17d0：0x43ce10 case 7 进游戏时置 1、case 0xc 换关时清 0（HUD 面板 / 难度牌只在新开局建）
     i32 game_frame = 0;          // DAT_004a579c：本局帧计数（0x42d7b0 每帧 +1，0x42dc50 清零）
     i32 stage_frame = 0;         // DAT_004a57a0：本关帧计数
 
@@ -90,6 +91,13 @@ struct GameGlobals {
         return n;
     }
 
+    // 0x43df20：季节量表在当前子机级内的进度 0..1（HUD 量表条长 = 进度 × 100）；满 6 级后恒为 1
+    float season_gauge_fraction() const {
+        const i32 level = season_option_count();
+        if (level >= 6) return 1.0f;
+        return float(season_gauge - season_threshold[level]) / float(season_step[level + 1]);
+    }
+
     // 0x43ddd0：当前分数 extend 阈值（Extra 用另一张表；表尾 1e9 哨兵）
     i32 extend_threshold() const {
         static constexpr i32 kNormal[12] = {500000, 1000000, 2000000, 4000000, 7000000, 10000000,
@@ -117,21 +125,25 @@ struct GameGlobals {
         miss_count = 0;
     }
 
-    // 0x43e080：score += value / 10，逐级越过阈值时残机 +1（上限 8；每级都推进阈值下标）；返回 extend 次数
-    // （调用方补 Gui 0x42c280 残机显示、音效 0x11、0x42bcf0 弹出）
-    i32 add_score(i32 value) {
+    // 0x43e080：score += value / 10，逐级越过阈值时残机 +1（上限 8；每级都推进阈值下标）。
+    // 每次 extend 都在残机已 +1 之后立刻调一次 on_extend()——原版此处是 Gui 0x42c280 残机显示、音效 0x11、
+    // Gui 0x42bcf0(0, 4) 弹出（见 Gui::celebrate_extend）；返回 extend 次数
+    template <class OnExtend>
+    i32 add_score(i32 value, OnExtend&& on_extend) {
         score += value / 10;
         i32 extends = 0;
         while (score >= extend_threshold()) {
             if (lives < 8) {
                 lives = lives + 1 > 8 ? 8 : lives + 1;
                 ++extends;
+                on_extend();
             }
             ++extend_index;
         }
         if (score > 999999999) score = 999999999;
         return extends;
     }
+    i32 add_score(i32 value) { return add_score(value, [] {}); }
 
     // 0x449190：设置模式位；若原模式不是 2 则 +0x38（DAT_004a57c8）置 -1
     void set_mode(i32 mode) {
