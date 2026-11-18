@@ -297,6 +297,24 @@ class GameOracle(Oracle):
         # MOVSX EAX, word ptr [ESI+4]; CMP EAX,0x5d
         self.splice_hook(0x4720AF, bytes.fromhex('0fbf460483f85d'), on_ins)
 
+    def enable_rng_trace(self):
+        """0x402b70（单步）/ 0x402be0（双步）入口：记录对 DAT_004a6d88（回放同步 RNG）的每次调用及其返回地址。"""
+        self.rng_trace = []
+        def make(step):
+            def on_rng(o):
+                uc = self.uc
+                if uc.reg_read(UC_X86_REG_ECX) != 0x4A6D88:
+                    return
+                esp = uc.reg_read(UC_X86_REG_ESP)
+                ret = self.u32(esp)
+                # 0x402c70 / 0x402cb0 / 0x402cf0 包装（push ebp; mov ebp,esp; push ecx; call）：真正调用方在 [esp+12]
+                caller = self.u32(esp + 12) if ret in (0x402C7C, 0x402CBC, 0x402CFC) else 0
+                self.rng_trace.append((self.frame, step, ret, caller))
+            return on_rng
+        # CMP byte ptr [0x4c10b6], 0
+        self.splice_hook(0x402B70, bytes.fromhex('803db6104c0000'), make(1))
+        self.splice_hook(0x402BE0, bytes.fromhex('803db6104c0000'), make(2))
+
     def make_stub2(self, ret_bytes, fn):
         addr = STUB2 + self.stub2_count * 16
         self.stub2_count += 1
@@ -652,9 +670,36 @@ class GameOracle(Oracle):
                 'motion1': self.words(inf + 0x88, 17), 'motion2': self.words(inf + 0xCC, 17),
                 'ctx': [struct.unpack('<f', self.uc.mem_read(ctx, 4))[0], sub, self.i32(ctx + 8), name],
                 'hp': self.words(inf + 0x3F74, 4),
+                'vms': self.enemy_vm_snapshot(inf),
+                'sprite_size': self.words(inf + 0x3F58, 2),
             })
             node = self.u32(node + 4)
         return out
+
+    def enemy_vm_snapshot(self, inf):
+        """EnemyInf+0x124 的 14 个 ANM VM id（ECL 303/306/307/… 生成）→ 按 0x46efa0 查到的 VM 关键字段
+        [槽号, 脚本号 +0x24, 精灵号 +0x20, entity_offset +0x5e0 ×3, pos +0x2c ×3, rotation.z +0x40, flags_lo +0x530, flags_hi +0x534, 年龄 +0x558]。"""
+        vms = []
+        for slot in range(14):
+            vid = self.u32(inf + 0x124 + slot * 4)
+            if not vid:
+                continue
+            vm = self.anm_find(vid)
+            if not vm:
+                continue
+            vms.append([slot, self.i32(vm + 0x24), self.i32(vm + 0x20)] + self.words(vm + 0x5E0, 3) +
+                       self.words(vm + 0x2C, 3) + [self.u32(vm + 0x40), self.u32(vm + 0x530), self.u32(vm + 0x534), self.i32(vm + 0x558)])
+        return vms
+
+    def anm_find(self, vid):
+        """0x46efa0：AnmManager（DAT_004c0f48）池 +0xec 起每 0x614 字节；id 低 13 位为池下标，+0x538 必须等于 id 且未打删除位。"""
+        mgr = self.u32(0x4C0F48)
+        if not mgr or not vid:
+            return 0
+        vm = mgr + 0xEC + (vid & 0x1FFF) * 0x614
+        if self.uc.mem_read(vm + 0x60C, 1)[0] == 0 or self.u32(vm + 0x538) != vid:
+            return 0
+        return vm
 
     def bullet_snapshot(self):
         """BulletManager（DAT_004a6dac）：+0x40 count，+0x70 活动链表（节点在 Bullet+0x10）。"""
@@ -852,6 +897,25 @@ def enemy_digest(frames, digest=0xCBF29CE484222325):
     return digest
 
 
+def enemy_vm_digest(frames, digest=0xCBF29CE484222325):
+    """敌人 ANM VM（EnemyInf+0x124 槽）摘要：每帧 [frame, 敌人数] + 每敌人 [id, VM 数] + 每 VM 13 字。"""
+    mask = (1 << 64) - 1
+    def feed(data):
+        nonlocal digest
+        for b in data:
+            digest = ((digest ^ b) * 0x100000001B3) & mask
+    for f in frames:
+        en = f.get('enemies') or {'count': 0, 'enemies': []}
+        lst = en.get('enemies') or []
+        feed(struct.pack('<II', f['frame'] & 0xFFFFFFFF, len(lst)))
+        for e in lst:
+            vms = e.get('vms') or []
+            feed(struct.pack('<II', e['id'] & 0xFFFFFFFF, len(vms)))
+            for v in vms:
+                feed(b''.join(struct.pack('<I', w & 0xFFFFFFFF) for w in v))
+    return digest
+
+
 def bullet_digest(frames, digest=0xCBF29CE484222325):
     mask = (1 << 64) - 1
     def feed(data):
@@ -904,6 +968,7 @@ def main():
     ap.add_argument('--bullets', action='store_true', help='每帧附敌弹快照（BulletManager 链表）')
     ap.add_argument('--replay-slot', type=int, default=-1, help='DAT_004a57c8（默认 -1 走 MainFront；0 走 MainBossSpell）')
     ap.add_argument('--trace-ecl', default='', help='把每条执行的 ECL 指令 (frame, enemy, sub, pc, time, ins_time, op) 写到此文件')
+    ap.add_argument('--trace-rng', default='', help='把回放同步 RNG（DAT_004a6d88）的每次调用 (frame, 步数, 返回地址, 包装外层调用方) 写到此文件')
     a = ap.parse_args()
     o = GameOracle(pathlib.Path(a.exe), a.dat_dir, a.stage, a.shot, a.season, a.difficulty, a.seed, a.debug, a.replay_slot)
     o.run_draw = a.draw
@@ -911,6 +976,8 @@ def main():
     o.bullet_snap = a.bullets
     if a.trace_ecl:
         o.enable_ecl_trace()
+    if a.trace_rng:
+        o.enable_rng_trace()
     o.boot()
     print('booted: chains=%s banks=%s device_calls=%s' % (
         [(p, hex(cb)) for p, cb, _ in o.chain_list()], o.loaded_banks, o.device_calls), file=sys.stderr)
@@ -929,9 +996,12 @@ def main():
                                                'input': a.input, 'frames': frames}, separators=(',', ':')))
     if a.trace_ecl:
         pathlib.Path(a.trace_ecl).write_text(json.dumps(o.ecl_trace, separators=(',', ':')))
-    print('game-oracle: %d frames → %s digest=%016x enemies=%016x bullets=%016x errors=%s' % (
+    if a.trace_rng:
+        pathlib.Path(a.trace_rng).write_text(json.dumps(o.rng_trace, separators=(',', ':')))
+    print('game-oracle: %d frames → %s digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x errors=%s' % (
         a.frames, a.out, frame_digest(frames),
         enemy_digest(frames) if a.enemies else 0,
+        enemy_vm_digest(frames) if a.enemies else 0,
         bullet_digest(frames) if a.bullets else 0,
         notes[:3]))
     return 0
