@@ -13,6 +13,7 @@
 #include "Input.hpp"
 #include "Laser.hpp"
 #include "Player.hpp"
+#include "Spellcard.hpp"
 #include "StageTable.hpp"
 
 namespace th16 {
@@ -63,6 +64,20 @@ bool Gui::init(AnmManager& anm, AnmFile* front_anm, AnmFile* logo_anm, const Sta
     flags_1ac = 0;
     clear_timer = Timer{};
     displayed_score = score_step = 0;
+    // HUD 字段（上一局的 VM 已随 shutdown 标删，指针不能带入新局）
+    hud_frame_vm = boss_indicator_vm = notice_vm = notice_small_vm = 0;
+    difficulty_label_vm = difficulty_badge_vm = panel_vm = notice_label_vm = 0;
+    gauge_level_shown = bomb_ready_shown = notice_label_active = spell_star_count = 0;
+    for (int i = 0; i < kResourceSlots; ++i) {
+        life_vm_ids[i] = bomb_vm_ids[i] = 0;
+        life_vms[i] = bomb_vms[i] = nullptr;
+    }
+    boss_timer_vm_ids[0] = boss_timer_vm_ids[1] = 0;
+    boss_timer_vms[0] = boss_timer_vms[1] = nullptr;
+    for (u32& id : notice_digit_vms) id = 0;
+    for (u32& id : notice_comma_vms) id = 0;
+    for (u32& id : spell_star_vms) id = 0;
+    for (BossBar& bar : boss_bars) bar = BossBar{};
     return stage_init(logo_anm, stage, std::move(msg_bytes));
 }
 
@@ -232,8 +247,28 @@ void Gui::destroy_dialogue() {
 }
 
 void Gui::shutdown() {
+    // 0x427730：弹出通知 / Boss 名牌 / 符卡星 / 血条 VM 标删；0x427a20 续：难度名牌、奖励数字、计时数字，
+    // 最后 0x46f270 标删 front.anm 的全部 VM（HUD 底板 / 残机炸弹格 / 面板随之消失）
     destroy_dialogue();
     boss_name_vm = vm_110 = boss_title_vm = 0;
+    if (animations == nullptr) return;
+    kill_vm(notice_vm);
+    kill_vm(notice_small_vm);
+    for (u32& id : spell_star_vms) kill_vm(id);
+    for (BossBar& bar : boss_bars) retire_boss_bar(bar);
+    spell_star_count = 0;
+    flags_1ac |= 0xe0u;
+    kill_vm(difficulty_label_vm);
+    for (u32& id : notice_digit_vms) kill_vm(id);
+    for (u32& id : notice_comma_vms) kill_vm(id);
+    for (u32& id : boss_timer_vm_ids) kill_vm(id);
+    boss_timer_vms[0] = boss_timer_vms[1] = nullptr;
+    if (front != nullptr) animations->kill_file(front->slot);
+    hud_frame_vm = boss_indicator_vm = difficulty_badge_vm = panel_vm = notice_label_vm = 0;
+    for (int i = 0; i < kResourceSlots; ++i) {
+        life_vm_ids[i] = bomb_vm_ids[i] = 0;
+        life_vms[i] = bomb_vms[i] = nullptr;
+    }
 }
 
 // 0x42c240：场景请求 8 与 DAT_004a5bec bit6 时不建
@@ -333,80 +368,79 @@ void Gui::clear_text_vms(Msg& m) {
 }
 
 // 0x427cf0（Msg 部分）
+// 0x427cf0（更新链 0x20）。各段按原版顺序；HUD 段的实现在 GuiHud.cpp
 void Gui::update(float game_speed) {
-    // 0x427cf0 开头：过关奖励显示中 +0x1b0 计时（速度槽强制 0 → 游戏速度）推进
+    if (animations == nullptr) return;
+    // 过关奖励显示中 +0x1b0 计时（速度槽强制 0 → 游戏速度）推进
     if ((flags_1ac & 0x100u) != 0) {
         clear_timer.speed_slot = 0;
         clear_timer.tick(game_speed);
     }
+    update_notice_label();
+    slide_hud_for_player();
     update_boss_timer();
-    if (!dialogue) return;
-    if (!run_dialogue(game_speed)) {
-        Msg& m = *dialogue;
-        m.age.tick(game_speed);
-        return;
+    update_boss_bars();
+    update_spell_stars();
+    if (dialogue) {
+        if (!run_dialogue(game_speed)) dialogue->age.tick(game_speed);
+        else destroy_dialogue();
     }
-    destroy_dialogue();
+    update_boss_indicator();
+    update_bomb_ready_mark();
+    timer_154.speed_slot = 0;
+    timer_154.tick(game_speed);
 }
 
 // 0x427cf0 中段：Boss 剩余时间数字。隐藏条件：无 Boss / 未计时 / ECL 642 隐藏 / 对话中 / 关卡切换中。
 // flags_1ac bit9 = 数字已因自机靠近而移位，bit10 = 刚从隐藏恢复（下一次显示前先复位到原位）
 void Gui::update_boss_timer() {
+    if (boss_timer_vms[0] == nullptr || boss_timer_vms[1] == nullptr) return;   // HUD 未建（原版此时已建）
     const bool hidden = enemies == nullptr || boss_timer_display < 0 || enemies->boss_slot(0) == nullptr || enemies->hud_hidden ||
                         dialogue != nullptr || (game_flags != nullptr && (*game_flags & 0x10000u) != 0);
     if (hidden) {
-        for (u32 id : boss_timer_vms)
-            if (AnmVm* vm = animations != nullptr ? animations->find(id) : nullptr) AnmManager::hide_tree(*vm);
+        for (AnmVm* vm : boss_timer_vms) AnmManager::hide_tree(*vm);
         flags_1ac = (flags_1ac & ~0x200u) | 0x400u;
         return;
     }
-    for (u32 id : boss_timer_vms)
-        if (AnmVm* vm = animations != nullptr ? animations->find(id) : nullptr) AnmManager::show_tree(*vm);
-    const bool flipped = spellcard_flags != nullptr && (*spellcard_flags & 0x100u) != 0;
+    for (AnmVm* vm : boss_timer_vms) AnmManager::show_tree(*vm);
+    const bool flipped = spellcard_flags != nullptr && (*spellcard_flags & Spellcard::kFlipped) != 0;
     const float player_y = player != nullptr ? player->pos.y : 0.0f;
     const u32 shift_state = flags_1ac & 0x600u;
     if (shift_state == 0) {
         if ((!flipped && player_y < 128.0f) || (flipped && player_y > 320.0f)) {
             flags_1ac = (flags_1ac & ~0x400u) | 0x200u;
-            for (u32 vm : boss_timer_vms) move_timer_digit(vm, TimerDigitMove::Aside);
+            for (AnmVm* vm : boss_timer_vms) move_timer_digit(vm, TimerDigitMove::Aside);
         }
     } else if (shift_state == 0x200) {
         const bool keep_aside = (flipped || player_y >= 160.0f) && (!flipped || player_y <= 288.0f);
         if (!keep_aside) {
-            for (u32 vm : boss_timer_vms) move_timer_digit(vm, TimerDigitMove::Back);
+            for (AnmVm* vm : boss_timer_vms) move_timer_digit(vm, TimerDigitMove::Back);
             flags_1ac &= ~0x600u;
         }
     } else {
-        for (u32 vm : boss_timer_vms) move_timer_digit(vm, TimerDigitMove::Reset);
+        for (AnmVm* vm : boss_timer_vms) move_timer_digit(vm, TimerDigitMove::Reset);
         flags_1ac &= ~0x600u;
     }
     const i32 seconds = boss_timer_display;
     if (seconds < boss_timer_shown) {
         if (seconds < 2) {
-            for (u32 vm : boss_timer_vms) if (animations != nullptr) animations->interrupt(vm, 9);
+            for (AnmVm* vm : boss_timer_vms) animations->request_interrupt(*vm, 9);
             play_sfx(0xc);
         } else if (seconds < 5) {
-            for (u32 vm : boss_timer_vms) if (animations != nullptr) animations->interrupt(vm, 8);
+            for (AnmVm* vm : boss_timer_vms) animations->request_interrupt(*vm, 8);
             play_sfx(0xb);
         }
     } else if (boss_timer_shown < seconds) {
-        for (u32 vm : boss_timer_vms) if (animations != nullptr) animations->interrupt(vm, 7);
+        for (AnmVm* vm : boss_timer_vms) animations->request_interrupt(*vm, 7);
     }
-    if (seconds != boss_timer_shown && animations != nullptr) {
-        // 0x46f410：按 VM 所属 ANM 文件换精灵（front.anm 0xef 起为数字 0..9）
-        if (front != nullptr) {
-            if (AnmVm* tens = animations->find(boss_timer_vms[0])) anm_set_sprite(*front, *tens, seconds / 10 + 0xef);
-            if (AnmVm* ones = animations->find(boss_timer_vms[1])) anm_set_sprite(*front, *ones, seconds % 10 + 0xef);
+    if (seconds != boss_timer_shown) {
+        // 0x46f410：按 VM 所属 ANM 文件（ascii.anm）换精灵，0xef 起为数字 0..9
+        if (AnmFile* ascii = animations->file(boss_timer_vms[0]->file_slot)) {
+            anm_set_sprite(*ascii, *boss_timer_vms[0], seconds / 10 + 0xef);
+            anm_set_sprite(*ascii, *boss_timer_vms[1], seconds % 10 + 0xef);
         }
     }
     boss_timer_shown = seconds;
-}
-
-// 0x42c8f0 / 0x42c8c0 / 0x42c890（+ 0x418440 / 0x418470）：计时数字移位。数字 VM 随 HUD（0x426d70）接入，
-// 此前 id 为 0，这里只保留状态机
-void Gui::move_timer_digit(u32 vm, TimerDigitMove move) {
-    (void)vm;
-    (void)move;
 }
 
 // 0x42a1d0
@@ -709,9 +743,5 @@ void Gui::show_dialogue() {
         if (AnmVm* vm = animations->find(id)) AnmManager::show_tree(*vm);
     }
 }
-
-// 0x42c580 / 0x42c5c0：HUD 根 VM（+0x12c）尚未建立
-void Gui::hide_hud() {}
-void Gui::show_hud() {}
 
 }  // namespace th16

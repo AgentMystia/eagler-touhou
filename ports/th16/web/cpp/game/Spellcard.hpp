@@ -19,6 +19,8 @@
 
 namespace th16 {
 
+class Gui;
+
 class AnmManager;
 class EnemyManager;
 struct GameGlobals;
@@ -39,8 +41,6 @@ struct Spellcard {
     static constexpr u32 kFlipped = 0x100;          // op 567：画面上下翻转布局（名牌 / Gui 计时按 352 / 320 阈值翻转）
     static constexpr u32 kStageBackground = 0x200;  // 0x417f00：关卡表 Boss 块 +0x08 位（背景 VM 不遮关卡）
 
-    // Gui 0x42bcf0(value, kind) 弹出通知（Gui 接入前由宿主取走）：kind 0 = 符卡奖励、1 = 取得失败、4 = extend
-    struct GuiNotice { i32 value; i32 kind; };
 
     u32 vm_ids[5]{};        // +0xc..+0x1c：关卡表背景 / ascii.anm 0 / text.anm 2 名字 / ascii.anm 1 / effect.anm 0xd 倒计时
     Timer timer;            // +0x20：符卡计时
@@ -64,8 +64,7 @@ struct Spellcard {
     std::vector<i32> sfx_queue;         // 0x45e150：开始 0x21、取得 0x2e、超时 0x45、extend 0x11
     std::vector<i32>* sfx_sink = nullptr;
     void play_sfx(i32 id) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(id); }
-    std::vector<GuiNotice> gui_events;  // 0x42bcf0
-    std::vector<i32> gui_timer_events;  // 0x4175d0 / 0x417650：Gui+0x94 / +0x98 计时 VM 中断 2 / 3（Gui 接入前占位）
+    Gui* gui = nullptr;                 // DAT_004a6dcc：计时数字样式（0x4175d0 / 0x417650）、弹出通知（0x42bcf0）、extend 残机显示
 
     // 0x4178a0：memset 0 后 flags |= 2
     void reset();

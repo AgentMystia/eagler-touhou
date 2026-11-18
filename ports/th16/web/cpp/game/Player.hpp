@@ -188,7 +188,7 @@ public:
         if (sfx_sink != nullptr) sfx_sink->push_back(id);
     }
     std::vector<i32> sfx_stop_queue;                   // 不射击时对 0x1e / 0x37 的停止标记（DAT_004d9e5c = -1）
-    std::vector<i32> gui_events;                       // Gui 接入前的占位：1 = 残机显示 0x42c280，2 = Bomb 显示 0x42c390
+    class Gui* gui = nullptr;                          // DAT_004a6dcc：残机 / 炸弹格显示刷新（0x42c280 / 0x42c390）、extend 弹出
     // 0x43f350：残机 < 0 且复活等待第 0x1e 帧（非回放）→ GameMenu::open_continue；GameSession 绑定
     std::function<void()> on_game_over;
     EnemyManager* enemies = nullptr;                   // DAT_004a6dc0（追踪弹索敌 0x425240 用）

@@ -1,6 +1,9 @@
 // th16 Gui——原版 DAT_004a6dcc（0x2e4 字节；0x427ca0 创建 → 0x4268c0 / 0x426b00 / 0x426c10；更新链 0x20 → 0x427cf0；
-// 绘制链 0x33 / 0x30）。本阶段接入影响游戏逻辑的部分：对话（Msg）与其带出的 VM、ECL 518 / 519 / 554 入口。
-// HUD（残机 / 炸弹 / Boss 血条 / 计时数字：0x426d70 建 VM、0x42c280 / 0x42c390 / 0x42c4f0 等）在渲染阶段补齐。
+// 绘制链 0x33 / 0x30）。两部分：
+//   · 对话（Msg）与其带出的 VM、ECL 518 / 519 / 554 入口——Gui.cpp
+//   · HUD：残机 / 炸弹格、季节量表、Boss 血条 / 计时数字 / 方位标、符卡星、弹出通知——GuiHud.cpp
+//     （0x426d70 建 VM；0x42c280 / 0x42c390 / 0x42c600 刷新；0x42bcf0 弹出；0x427cf0 每帧）
+// HUD 的文字（得分 / 擦弹 / 得点值等，绘制链 0x30 → 0x428e70）经 AsciiManager 画出，不在此类。
 //
 //   0x426c10  装 logo ANM（关卡表 +0x24 → 槽 6）；按机体读 msg 文件（关卡表 +0x14[shot + shot_aux]）到 +0x1cc；
 //             +0x154 计时复位；+0x170 = DAT_004a57b0；+0x1d0 / +0x1d8 = -1（过关换关时 0x42cb60 再次调用，Gui 对象本身不重建）
@@ -108,8 +111,79 @@ public:
     i32 boss_timer_display = -1;     // +0x1d0：Boss 剩余秒数（0x425010 每帧写；-1 = 无）
     i32 boss_timer_fraction = 0;     // +0x1d4：百分秒
     i32 boss_timer_shown = -1;       // +0x1d8：上一帧显示的秒数（变化时换数字、≤4 / ≤1 秒警告音）
-    u32 boss_timer_vms[2]{};         // +0x94 / +0x98：十位 / 个位数字 VM（0x426d70 HUD 初始化时建）
     const u32* game_flags = nullptr; // GameManager+0x88（bit16 关卡切换中不显示计时）
+
+    // ---- HUD（0x426d70 建；UI 链表常驻，跨关保留；新开局才建面板 / 难度牌）----
+    static constexpr int kResourceSlots = 8;     // 残机 / 炸弹各 8 格
+    static constexpr int kSpellStarSlots = 10;   // Boss 剩余符卡星（ECL 540 给数量）
+    static constexpr int kBossBarSlots = 2;      // EnemyManager Boss 槽 0 / 1 各一套血条
+    static constexpr int kBossBarMarkers = 4;    // 血条上的阶段刻度（ECL 527）
+    static constexpr int kBossBarVms = 7;        // 环 0xf4、底 0xf5、面 0xf6、刻度 0xf7 ×4
+    static constexpr int kNoticeDigits = 8;      // 符卡奖励弹出的 8 位数字
+
+    // front.anm 脚本号（0x426d70 / 0x427cf0 / 0x42bcf0 直接用常量；集中在此便于对照 front.anm）
+    enum FrontScript : i32 {
+        kHudFrame = 0x00,            // +0x150 底板（UI 链表）
+        kLifeSlot0 = 0x1e,           // +0xc[i]：残机格 0x1e..0x25
+        kBombSlot0 = 0x26,           // +0x2c[i]：炸弹格 0x26..0x2d
+        kNoticeSpellBonus = 0x3d,    // +0xc8：符卡奖励（数字由 ascii.anm 4..0xb 组成）
+        kNoticeSpellFailed = 0x3e,
+        kNoticeFullPower = 0x3f,     // +0xcc
+        kNoticeKind3 = 0x40,
+        kNoticeExtend = 0x41,
+        kNoticeKind6 = 0x42,         // +0xc8
+        kStageOneHint = 0x45,        // 第 1 面首次开局的操作提示（随机体偏移）
+        kSpellStar0 = 0x46,          // +0xdc[i]：0x46..0x4f
+        kDifficultyLabel0 = 0x51,    // +0x104：难度名牌 0x51 + 难度
+        kDifficultyBadge0 = 0x57,    // +0x108：难度徽记 0x57 + 难度
+        kNoticeLabel = 0x60,         // +0x128：弹出通知的文字底（0x428e70 在其上画文字）
+        kBossIndicator = 0x70,       // +0x9c：场地下沿的 Boss 方位标
+        kHudPanel = 0x71,            // +0x10c：右侧面板（子 VM：0x73 量表条、0x74 量表等级、0x75 季节图、0x76 炸弹可用标）
+        kGaugeBar = 0x73,
+        kGaugeLevel = 0x74,
+        kSeasonIcon = 0x75,          // 精灵 0x52 + 子季节
+        kBombReadyMark = 0x76,
+        kDemoBanner = 0x77,          // flags bit6（演示回放）
+        kBossRing = 0xf4,            // Boss 血条：环（rotation.x = -2π × 显示比例）
+        kBossRingBase = 0xf5,
+        kBossRingFace = 0xf6,
+        kBossRingMarker = 0xf7,
+    };
+
+    u32 hud_frame_vm = 0;                        // +0x150
+    u32 life_vm_ids[kResourceSlots]{};           // +0xc..+0x28
+    AnmVm* life_vms[kResourceSlots]{};           // +0x54..+0x70（0x42c280 直接按指针操作）
+    u32 bomb_vm_ids[kResourceSlots]{};           // +0x2c..+0x48
+    AnmVm* bomb_vms[kResourceSlots]{};           // +0x74..+0x90
+    u32 boss_timer_vm_ids[2]{};                  // +0x4c / +0x50：ascii.anm 2 / 3——十位 / 个位
+    AnmVm* boss_timer_vms[2]{};                  // +0x94 / +0x98
+    u32 boss_indicator_vm = 0;                   // +0x9c
+    u32 notice_digit_vms[kNoticeDigits]{};       // +0xa0..+0xbc：ascii.anm 4 + i
+    u32 notice_comma_vms[2]{};                   // +0xc0 / +0xc4：ascii.anm 0xc / 0xd（百万位 / 千位逗号）
+    u32 notice_vm = 0;                           // +0xc8
+    u32 notice_small_vm = 0;                     // +0xcc
+    u32 spell_star_vms[kSpellStarSlots]{};       // +0xdc..+0x100
+    u32 difficulty_label_vm = 0;                 // +0x104
+    u32 difficulty_badge_vm = 0;                 // +0x108
+    u32 panel_vm = 0;                            // +0x10c
+    i32 gauge_level_shown = 0;                   // +0x114：量表等级 VM 当前是否展开（0x42c600 的中断 2 / 3 切换）
+    i32 bomb_ready_shown = 0;                    // +0x118：炸弹可用标当前是否点亮（中断 2 / 3）
+    u32 notice_label_vm = 0;                     // +0x128
+    i32 notice_label_active = 0;                 // +0x14c：0x428e70 在 notice_label_vm 上画奖励文字
+    i32 spell_star_count = 0;                    // +0x188（ECL 540）
+
+    // Boss 血条一套（+0x1dc 起、每槽 0x54 字节）
+    struct BossBar {
+        float shown = 0;                         // +0x1dc：显示比例，每帧向 target 逼近 0.025
+        float target = 0;                        // +0x1e0 = life / life_max
+        i32 life = 0;                            // +0x1e4
+        float markers[kBossBarMarkers]{};        // +0x1ec / +0x1f4 / +0x1fc / +0x204：阶段刻度比例（ECL 527）
+        i32 marker_flags[kBossBarMarkers]{};     // +0x1f0 / …：ECL 527 arg2（原版无读取方）
+        u32 vm_ids[kBossBarVms]{};               // +0x20c..+0x224
+        i32 created = 0;                         // +0x228
+        i32 near_player = 0;                     // +0x22c：自机贴近 Boss 时整套中断 3 淡出、离开中断 2 恢复
+    };
+    BossBar boss_bars[kBossBarSlots];
 
     // 宿主绑定
     AnmManager* animations = nullptr;
@@ -125,6 +199,7 @@ public:
     bool replay_playback = false;            // GameManager+0xac != 0
     const u32* spellcard_flags = nullptr;    // DAT_004a6db0->0x78（0x429ff0(-2) 的续关判定 bit7）
     class Bomb* bomb = nullptr;              // DAT_004a6da8（0x42e150 过关时仍在发动 → 收尾 vtable+0x14）
+    class Bomb* season_release = nullptr;    // DAT_004a6da4（0x427cf0：解放可发动 ↔ 面板炸弹可用标）
     std::vector<i32> sfx_queue;              // 0x45e150：op 11 按键推进 0
     std::vector<i32>* sfx_sink = nullptr;
     void play_sfx(i32 id) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(id); }
@@ -172,16 +247,54 @@ public:
     void show_dialogue();
     void update_boss_timer();        // 0x427cf0 中段：Boss 剩余秒数显示 / 警告音 0xb / 0xc
     enum class TimerDigitMove { Aside, Back, Reset };
-    void move_timer_digit(u32 vm, TimerDigitMove move);
-    // 0x42c580 / 0x42c5c0：同上，针对 HUD 根 VM（+0x12c）；HUD VM 在渲染阶段建立，之前为空操作
+    void move_timer_digit(AnmVm* vm, TimerDigitMove move);
+    // 0x42c580 / 0x42c5c0：暂停 / 续关菜单期间隐藏 / 恢复 HUD 根 VM（+0x12c；th16 无创建路径，恒为空操作）
     void hide_hud();
     void show_hud();
-    // 0x42c280 / 0x42c390：残机 / 炸弹显示刷新（续关、extend）。HUD VM 建立前只记录事件（1 残机 / 2 炸弹）
-    std::vector<i32> hud_events;
-    void refresh_lives_display() { hud_events.push_back(1); }
-    void refresh_bombs_display() { hud_events.push_back(2); }
+
+    // ---- HUD（GuiHud.cpp）----
+    // 0x426d70：关卡首帧（0x42dc50 / 0x42dee0）启用 Gui 三条链并建 HUD VM；残机 / 炸弹格与计时数字只在第一次建，
+    // 面板 / 难度名牌 / 第 1 面操作提示 / 演示横幅按条件建；最后刷新残机、炸弹、季节量表显示
+    void init_hud(AnmFile* ascii);
+    // 0x42c280：前 lives 格中断 2（亮）、第 lives 格按碎片比例中断 7 + 碎片×5 / 阈值、其余中断 3（暗）；lives ≥ 8 时无碎片格
+    void refresh_lives_display(i32 lives, i32 fragments);
+    // 0x42c390：同上，碎片格中断 7 + fragments
+    void refresh_bombs_display(i32 bombs, i32 fragments);
+    // 0x42c600：量表条长 = 本级进度 × 100；等级 VM 0 级隐藏、≥1 级中断 7 + 级；等级有无变化时量表条中断 2 / 3
+    void refresh_season_gauge();
+    // 0x42bcf0：场地中央弹出通知
+    enum class Notice : i32 {
+        SpellBonus = 0,      // 符卡取得：front 0x3d + ascii 数字（value = 奖励分）+ 奖励文字底 0x60
+        SpellFailed = 1,     // front 0x3e + 文字底 0x60
+        FullPower = 2,       // front 0x3f
+        Kind3 = 3,           // front 0x40（th16 无调用方）
+        Extend = 4,          // front 0x41
+        None = 5,            // 原版跳转表指向函数尾，无操作
+        Kind6 = 6,           // front 0x42（th16 无调用方）
+    };
+    void show_notice(Notice kind, i32 value);
+    // 0x43e080 每次 extend 的 Gui 侧：残机显示刷新、音效 0x11、extend 弹出
+    void celebrate_extend();
+    // 0x42dc50 换关首帧：正在显示的弹出通知中断 1
+    void dismiss_notice();
+    // ECL 527：Boss 槽 slot 血条第 index 个刻度 = ratio（0x41dcb0 case 0x48）
+    void set_boss_bar_marker(i32 slot, i32 index, float ratio, i32 flag);
+    // 0x4175d0（符卡开始：中断 2）/ 0x417650（符卡结束：中断 3）：两位计时数字立即切样式
+    enum class TimerStyle : i32 { Spell = 2, Normal = 3 };
+    void set_boss_timer_style(TimerStyle style);
 
 private:
+    // 0x427cf0 的 HUD 段，按原版顺序由 update 调用
+    void update_notice_label();        // +0x14c / +0x128：文字底 VM 消失后停止画字
+    void slide_hud_for_player();       // 自机在面板附近（y > 400 且 x < -64）时面板中断 5 让位、离开中断 4
+    void update_boss_bars();           // Boss 槽 0 / 1 血条：比例逼近、刻度朝向、贴近淡出；Boss 消失后收回
+    void retire_boss_bar(BossBar& bar);
+    void update_spell_stars();         // spell_star_count 个星星 VM（front 0x46 + i），多余的中断 1
+    void update_boss_indicator();      // 场地下沿 Boss 方位标：x 跟随、靠近自机变淡、按血量阶段中断 7..10
+    void update_bomb_ready_mark();     // Bomb 0x40dda0 可发动 ↔ 面板子 VM 0x76 中断 2 / 3
+    AnmVm* panel_child(i32 script);    // find_child(panel_vm, script, 0)，面板不在则清 id
+    u32 spawn_world(AnmFile& file, i32 script);     // 0x406380(file, script, -1)
+    u32 spawn_hidden_world(AnmFile& file, i32 script, AnmVm** out_vm);  // 0x426d70 计时数字：建后整树隐藏
     // 0x429b20
     void create_dialogue(i32 entry_index, const u8* script);
     // 0x4264a0

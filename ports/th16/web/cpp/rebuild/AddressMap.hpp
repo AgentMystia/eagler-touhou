@@ -253,7 +253,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"spellcard-update", 0x417930, "game/Spellcard.cpp Spellcard::update（0x417ee0 thunk；state++、>0x3b 关 Stage 绘制位、>299 奖励递减、名牌随自机 y 翻转（kFlipped 352/320）、倒计时 VM 0.05 跟随 Boss、Bomb 结束清 kBombUsed）"},
     {"spellcard-end", 0x4182F0, "game/Spellcard.cpp Spellcard::end（Stage 绘制位、名牌中断 1、背景 / 倒计时 VM 删、Gui 计时中断 3、取得 → 0x43e080 加分 + 0x42bcf0(bonus,0) + 音效 0x2e；失败 → 0x42bcf0(0,1)；超时音效 0x45）"},
     {"spellcard-ecl-start-op", 0x41DCB0, "game/Enemy.cpp Enemy::execute case 522/528/537..539（case 0x43：指令偏移 32 处 XOR 解密符卡名（key 0x77 步 7 / +0x10）、537..539 加难度偏移、life_flags |= 1 与 7 倍血量池）"},
-    {"spellcard-gui-timer-start", 0x4175D0, nullptr},  // Gui+0x94 / +0x98 计时 VM 中断 2：Gui 接入时补（Spellcard::gui_timer_events）
+    {"spellcard-gui-timer-start", 0x4175D0, "game/Spellcard.cpp Spellcard::start → Gui::set_boss_timer_style(Spell)（计时数字中断 2）"},
     {"spellcard-gui-timer-end", 0x417650, nullptr},    // 同上中断 3
     {"spellcard-timing", 0x417BC0, nullptr},           // 成绩文件符卡练习计次：ScoreFile 接入时补
     {"spellcard-draw", 0x417D70, nullptr},             // 绘制链 0xc：名牌 / 倒计时文字（渲染侧）
@@ -443,8 +443,22 @@ constexpr AddressAnchor kAnchors[] = {
     {"gui-boss-title", 0x42C240, "game/Gui.cpp Gui::show_boss_title（ECL 554：logo ANM 脚本 0；场景请求 8 / DAT_004a5bec bit6 不建）"},
     {"gui-boss-name", 0x42C480, "game/Gui.cpp Gui::ensure_boss_name（spell_id < 0x29 取关卡表块 1 序号否则块 0；front.anm 序号 + 0xa4）"},
     {"ecl-dialogue-ops", 0x41DCB0, "game/Enemy.cpp Enemy::execute case 518 / 519（case 0x3f：0x429ff0 + 0x416f40 + 0x431af0 + 落入 0x41d900；case 0x40：Msg+0x18c == 0 时等待）"},
-    {"gui-hud-init", 0x426D70, nullptr},      // 残机 / 炸弹 / 血条 / 计时 HUD VM：渲染阶段补齐
-    {"gui-lives-display", 0x42C280, nullptr}, // 残机显示（8 槽；--lives > 8 会越界，故长程对拍用 --refill-lives）
+    // —— Gui HUD（GuiHud.cpp；tests/draw 对拍 game-oracle.py --draw，ascii 文字另见 AsciiManager）——
+    {"gui-hud-init", 0x426D70, "game/GuiHud.cpp Gui::init_hud（边框 / 残机炸弹 16 格 / 计时数字 / 关卡标题 / 演示横幅 / Boss 指示 / 一面提示 / 难度标签·徽章 / 新局面板·季节图标 / 量表）"},
+    {"gui-spawn-ui-vm", 0x42C920, "game/AnmManager.cpp AnmManager::spawn_ui(out_vm)（残机 / 炸弹格：UI 链表 VM 并回传指针）"},
+    {"gui-lives-display", 0x42C280, "game/GuiHud.cpp Gui::refresh_lives_display（8 槽；--lives > 8 会越界，故长程对拍用 --refill-lives）"},
+    {"gui-bombs-display", 0x42C390, "game/GuiHud.cpp Gui::refresh_bombs_display（整数 → 中断 1、碎片 → 中断 2 + 精灵 0x5b+碎片、空 → 中断 4）"},
+    {"gui-season-gauge", 0x42C600, "game/GuiHud.cpp Gui::refresh_season_gauge（0x43df20 比例 → 面板子 VM 0x73 $F0 / 0x74 等级精灵）"},
+    {"gui-season-gauge-fraction", 0x43DF20, "game/GameGlobals.hpp GameGlobals::season_gauge_fraction（等级 ≥ 6 → 1，否则 (量表 - 阈值) / 本级步长）"},
+    {"gui-notice", 0x42BCF0, "game/GuiHud.cpp Gui::show_notice（0 符卡奖励 + 8 位 ascii 数字·逗号 / 1 失败 / 2·3·4 小横幅 / 6；标签 0x60）"},
+    {"gui-notice-extend", 0x42C8F0, "game/GuiHud.cpp Gui::celebrate_extend（标签 VM 挂起中断 5）+ 0x42c8c0（中断 4）"},
+    {"gui-notice-dismiss", 0x418440, "game/GuiHud.cpp Gui::dismiss_notice（0x418470 / 0x42c890：标签与数字 interrupt_now 3 / 2 再 4）"},
+    {"gui-boss-timer-style", 0x4175D0, "game/GuiHud.cpp Gui::set_boss_timer_style（0x4175d0 符卡 → 中断 2；0x417650 普通 → 中断 3）"},
+    {"gui-boss-bar-marker", 0x41DCB0, "game/Enemy.cpp ECL 527 → Gui::set_boss_bar_marker（Gui+0x1ec+槽×0x54+序号×8 = 生命比例 / 标志）；ECL 540 → spell_star_count"},
+    {"gui-hud-update", 0x427CF0, "game/GuiHud.cpp update_notice_label / slide_hud_for_player / update_boss_bars / update_spell_stars / update_boss_indicator / update_bomb_ready_mark"},
+    {"gui-hud-teardown", 0x427730, "game/Gui.cpp Gui::shutdown（0x427a20：通知 / 星 / 血条 / 标签 / 残机炸弹格 / 计时数字标删，再 0x46f270 卸 front.anm）"},
+    {"anm-request-interrupt", 0x4174D0, "game/AnmManager.cpp AnmManager::request_interrupt（回调钩子 + pending_interrupt）/ interrupt_now（随即执行）"},
+    {"gui-hud-root-vm", 0x42C580, nullptr},   // Gui+0x12c HUD 根 VM：th16 从不创建，0x42c580 / 0x42c5c0 为空操作（死代码）
     {"msg-text-draw", 0x46D990, nullptr},     // AsciiManager 文字画入 VM 纹理（Msg::text_requests 记录请求）
     {"stage-clear", 0x42E150, "game/Gui.cpp Gui::stage_clear（MSG op 21 / 0x429ff0(-2)：非练习 0x42c070 奖励、0x42ca80 子机收拢、普通模式 1..5 面场景请求 0xc + 关卡号 +1 + 练习解锁位；练习 0x43f500；6·Extra 面 flags 0x4000 + 残机 × 5 + 残弹 奖励 + 通关记录；回放 0x43f240）"},
     {"game-manager-ending", 0x42D7B0, "game/GameManager.cpp GameManager::update（flags 0x4000：+0xb0 过 0x17b → 场景 0xf / 0x10；回放 → 0x43f240）"},

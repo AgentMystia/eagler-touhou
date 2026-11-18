@@ -23,7 +23,7 @@ bool GameManager::first_frame(AnmManager& manager, GameGlobals& globals) {
         previous_stage->begin_end(0x1e, 2);
         if (stage_live && stage) stage->begin_end(0x3c, 4);
         flags |= kRetry;
-        // Gui+0xc8（HUD 关卡标题 VM）interrupt 1：HUD 渲染阶段补
+        if (gui_live) gui.dismiss_notice();   // 上一关末尾弹出的通知（符卡奖励等）中断 1 收起
         return true;
     }
     reset_for_stage(manager, globals);
@@ -57,7 +57,7 @@ void GameManager::reset_for_stage(AnmManager& manager, GameGlobals& globals) {
         }
         // enemy_count 由敌人更新链同步；harness 桩可覆盖，避免此处抢写
     }
-    // 0x426d70 HUD 初始化：渲染阶段补
+    if (gui_live) gui.init_hud(manager.file(AnmManager::kAsciiSlot));   // 0x426d70
     chains_suspended = false;  // 各管理器链 |= 2
     if (player_live) player.setup_options(manager, globals);  // 0x4440e0
     // 0x43c3f0 BGM 播放、AsciiManager +0x19244 中断、DAT_004c12a0 中断：Sound / 渲染阶段补

@@ -270,7 +270,6 @@ bool GameSession::create_player() {
         harvest_player_sfx();
         harvest_menu_events();   // 0x43f350 在自机更新内打开续关画面时登记的音效
         game.player.sfx_stop_queue.clear();
-        game.player.gui_events.clear();
         return ChainResult::Continue;
     }, 0x16, true);
     player_draw_chain_ = chains.create([this]() -> ChainResult {
@@ -441,9 +440,6 @@ void GameSession::bind_spellcard() {
         spellcard_update_chain_ = chains.create([this]() -> ChainResult {
             if (game.chains_suspended) return ChainResult::Continue;
             spellcard.update(supervisor.game_speed);
-            gui_events.insert(gui_events.end(), spellcard.gui_events.begin(), spellcard.gui_events.end());
-            spellcard.gui_events.clear();
-            spellcard.gui_timer_events.clear();  // Gui+0x94 / +0x98 计时 VM 中断：Gui 接入时补
             return ChainResult::Continue;
         }, 0x1e, true);
     }
@@ -479,6 +475,7 @@ bool GameSession::enter_game(i32 replay_mode) {
     animations.visual_rng.calls = 0;
 
     // 0x42cb60：新游戏（DAT_004c17d0，0x43ce10 case 7 置位）先建 Player，再建 Gui / Stage / …
+    globals.new_game = true;
     if (!create_player()) return false;
     if (!create_stage()) return false;
 
@@ -523,9 +520,7 @@ bool GameSession::enter_game(i32 replay_mode) {
                 game.items->focus_held = (game_input.held & 0x8u) != 0;
                 sync_bomb_state();
                 game.items->update(supervisor.game_speed);
-                // 0x44a460 弹出数字 / 0x42bcf0 Gui 通知：Ascii / Gui 接入前无状态影响
-                game.items->popups.clear();
-                game.items->gui_events.clear();
+                game.items->popups.clear();   // 0x44a460 弹出数字：AsciiManager 接入前无状态影响
             }
             return ChainResult::Continue;
         }, 0x1d, true);
@@ -589,7 +584,12 @@ bool GameSession::enter_game(i32 replay_mode) {
         game.gui.spellcard_flags = &spellcard.flags;
         game.gui.game_flags = &game.flags;
         game.gui.bomb = game.bombs.main();
+        game.gui.season_release = game.bombs.release();
         game.gui.scores = &scores;
+        // 各子系统反向持有 Gui：残机 / 炸弹格刷新、弹出通知、extend 都在原版调用点直接发生
+        game.player.gui = &game.gui;
+        if (game.items) game.items->gui = &game.gui;
+        spellcard.gui = &game.gui;
         game.gui.on_continue_screen = [this]() { if (menu_live) menu.open_continue(); };
         game.gui.on_practice_result = [this]() { if (menu_live) menu.open_practice_result(); };
         game.gui.on_return_to_title = [this]() { if (menu_live) menu.open_return_to_title(); };
@@ -674,6 +674,7 @@ void GameSession::spawn_loading_vm(const Vec3& pos) {
 
 bool GameSession::next_stage() {
     // 0x43ce10 case 0xc：DAT_004c17d0（新开局）= 0；当前场景 7 → 0x42d780 销毁；请求改回 7；0x42d700(模式) 重建
+    globals.new_game = false;
     // ---- 0x42d780 → 0x42d200（DAT_004a5bec bit1 路径）----
     // 0x449a00 成绩文件写盘：ScoreFile 接入时补
     globals.flags &= ~3u;
@@ -763,9 +764,11 @@ void GameSession::create_bombs() {
     context.spellcard = &spellcard;
     context.sfx_sink = &sfx_events;
     context.world = &game.world;
+    context.gui = &game.gui;
     game.bombs.create(std::move(context));
     game.player.bomb = game.bombs.main();
     game.player.season_release = game.bombs.release();
+    game.gui.season_release = game.bombs.release();
     if (game.items_live) game.items->release_bonus = &game.bombs.release()->release_bonus;
 
     // 0x40d600：更新链 0x18 / 0x19（0x40dd00），绘制链 0x28 / 0x29（0x40da70）
@@ -824,7 +827,6 @@ void GameSession::sync_bomb_state() {
 
 void GameSession::harvest_bomb_events() {
     BombContext& context = game.bombs.context();
-    context.gui_events.clear();   // 0x42c390 / 0x42c600 HUD 显示：渲染接入前无状态影响
     for (const BombShakeRequest& request : context.shake_requests) {
         if (request.kind == BombShakeRequest::kLinear) {
             create_screen_shake(EnemyManager::ShakeRequest{request.a, request.b, request.c});
@@ -1019,14 +1021,12 @@ void GameSession::create_menu() {
     chains.enable(menu_update_chain_);
 }
 
-// GameMenu 登记的音效（0x45e150）并入本帧音效表；BGM / HUD 事件在 Sound / HUD 接入前无状态影响
+// GameMenu 登记的音效（0x45e150）并入本帧音效表；BGM 事件在 Sound 接入前无状态影响
 void GameSession::harvest_menu_events() {
     if (!menu_live) return;
     sfx_events.insert(sfx_events.end(), menu.sfx_queue.begin(), menu.sfx_queue.end());
     menu.sfx_queue.clear();
     menu.bgm_events.clear();
-    menu.gui_events.clear();
-    game.gui.hud_events.clear();
 }
 
 // 自机音效已随 Player::play_sfx 直接进入 sfx_events；这里只取走自机子集（harness 的 player.sfx 字段）
@@ -1039,7 +1039,6 @@ bool GameSession::logic_step() {
     sample_input();
     sfx_events.clear();
     player_sfx_events.clear();
-    gui_events.clear();
 
     // 游戏中登记的 DAT_004c17c4（过关 0x42e150 → 0xc、装载失败 → 2）在下一帧主循环 0x43ce10 处被消费
     if (game_live && globals.scene_request >= 0) {

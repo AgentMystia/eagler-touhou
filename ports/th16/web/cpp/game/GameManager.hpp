@@ -19,7 +19,7 @@
 //             帧计数清零、Replay 0x448eb0、生成 "main"、HUD 0x426d70、启用各管理器链、0x4440e0 子机、BGM、
 //             "Loading" VM 中断、+0xc 计时复位
 //
-// Gui 当前接入对话（Msg）、过关结算与显示分；HUD 渲染阶段补齐。
+// Gui 接入对话（Msg）、过关结算、显示分与 HUD（残机 / 炸弹格、季节量表、Boss 血条 / 计时 / 方位标、弹出通知）。
 #pragma once
 #include "AnmVm.hpp"
 #include "Bomb.hpp"
@@ -75,7 +75,7 @@ public:
     std::unique_ptr<LaserManager> lasers;    // DAT_004a6ee0（0x610 字节；0x4314a0）
     bool lasers_live = false;
     BombManager bombs;           // DAT_004a6da8 / DAT_004a6da4（0x40d890 每关装载时建，0x40da90 离开时毁）
-    Gui gui;                     // DAT_004a6dcc（0x427ca0；对话 / Boss 标题 / 过关结算；HUD 渲染阶段补齐）
+    Gui gui;                     // DAT_004a6dcc（0x427ca0；对话 / Boss 标题 / 过关结算 / HUD）
     bool gui_live = false;
     PlayerWorld world;           // 敌人 / 对话 / 过关状态；enemy_count 由 EnemyManager 同步
     // 换关：0x42d200 禁用 Item / Bullet / Replay 链，0x41b340 / 0x4178a0 新建的 Enemy / Spellcard 链也未启用，

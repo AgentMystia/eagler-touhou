@@ -65,6 +65,7 @@ struct BombContext {
     EffectManager* effects = nullptr;    // DAT_004a6db8
     Spellcard* spellcard = nullptr;      // DAT_004a6db0
     const PlayerWorld* world = nullptr;  // Gui+0x1c8 对话中
+    class Gui* gui = nullptr;            // DAT_004a6dcc：残弹显示 0x42c390、季节量表显示 0x42c600
     class Bomb* main = nullptr;          // DAT_004a6da8
     class Bomb* release = nullptr;       // DAT_004a6da4
 
@@ -72,7 +73,6 @@ struct BombContext {
     std::vector<i32>* sfx_sink = nullptr;
     void play_sfx(i32 id) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(id); }
     std::vector<BombShakeRequest> shake_requests;  // 0x45d150(1 / 8)
-    std::vector<i32> gui_events;                   // 2 = 0x42c390 残弹显示，3 = 0x42c600 季节量表显示
 };
 
 // BombInf 基类（vftable 0x491d40）：+0x08 / +0x0c 两条链、+0x14 位置、+0x30 活动、+0x34 计时……

@@ -104,7 +104,7 @@ public:
     std::vector<i32>* sfx_sink = nullptr;
     void play_sfx(i32 id) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(id); }
     std::vector<ScorePopup> popups;    // 0x44a460 弹出数字（宿主每帧取走）
-    std::vector<i32> gui_events;       // 0x42bcf0(0, n) Gui 弹出通知：2 = 满火力、4 = extend；0x42c280 / 0x42c390 / 0x42c600 由 Gui 接入时读全局
+    class Gui* gui = nullptr;          // DAT_004a6dcc：满火力 / extend 弹出（0x42bcf0）、残机 / 炸弹格 / 季节量表显示刷新
 
     AnmManager* animations = nullptr;  // DAT_004c0f48
     AnmFile* anm = nullptr;            // DAT_004a6dac->0x1403b24 bullet.anm（槽 7）
@@ -143,9 +143,10 @@ private:
     bool add_life();                                    // 0x43df70
     void add_bomb_fragment();                           // 0x43dff0
     void add_bomb();                                    // 0x43dfb0
+    void notify_full_power();                           // 0x42bcf0(0, 2)：火力到顶时的弹出
     void add_point_value(float value);                  // 0x430dc0
     bool add_season_gauge();                            // 0x43de50
-    void add_score(i32 value);                          // 0x43e080（extend 音效 0x11、Gui 通知）
+    void add_score(i32 value);                          // 0x43e080（extend 时 Gui::celebrate_extend）
     void popup(const Vec3& pos, i32 value, u32 color);  // 0x44a460
     void record_collect(i32 value);                     // DAT_004a5860/5868/5870 自动收点统计
     i32 point_line() const;                             // 128（魔理沙 148）：自机 y 低于此线自动收点

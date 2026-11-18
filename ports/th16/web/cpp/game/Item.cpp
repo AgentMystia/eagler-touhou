@@ -4,6 +4,7 @@
 #include "AnmManager.hpp"
 #include "AnmRenderer.hpp"
 #include "GameGlobals.hpp"
+#include "Gui.hpp"
 #include "Motion.hpp"
 #include "Player.hpp"
 #include "Rng.hpp"
@@ -76,7 +77,6 @@ void ItemManager::reset() {
     attract_scale = 1.0f;
     sfx_queue.clear();
     popups.clear();
-    gui_events.clear();
 }
 
 void ItemManager::push_front(Item*& head, Item& it) {
@@ -395,8 +395,14 @@ void ItemManager::record_collect(i32 value) {
 }
 
 void ItemManager::add_score(i32 value) {
-    const i32 extends = globals->add_score(value);
-    for (i32 i = 0; i < extends; ++i) { play_sfx(0x11); gui_events.push_back(4); }
+    globals->add_score(value, [this] {
+        if (gui != nullptr) gui->celebrate_extend();
+        else play_sfx(0x11);
+    });
+}
+
+void ItemManager::notify_full_power() {
+    if (gui != nullptr) gui->show_notice(Gui::Notice::FullPower, 0);   // 0x42bcf0(0, 2)
 }
 
 i32 ItemManager::full_point_value() const {
@@ -421,7 +427,7 @@ void ItemManager::collect_power(Item& it) {
     i32 value;
     if (globals->power < globals->power_max) {
         globals->power = globals->power + 1;
-        if (globals->power > globals->power_max) { globals->power = globals->power_max; gui_events.push_back(2); }
+        if (globals->power > globals->power_max) { globals->power = globals->power_max; notify_full_power(); }
         if ((globals->power - 1) / globals->power_per_level != globals->power / globals->power_per_level) {
             player->setup_options(*animations, *globals);
             popup(it.pos, -1, 0xffffff40u);
@@ -466,7 +472,7 @@ void ItemManager::collect_big_power(Item& it) {
     if (globals->power < globals->power_max) {
         globals->power = globals->power + per;
         value = 100;
-        if (globals->power > globals->power_max) { globals->power = globals->power_max; gui_events.push_back(2); }
+        if (globals->power > globals->power_max) { globals->power = globals->power_max; notify_full_power(); }
         if ((globals->power - per) / globals->power_per_level != globals->power / globals->power_per_level) {
             player->setup_options(*animations, *globals);
             play_sfx(0xd);
@@ -493,7 +499,7 @@ void ItemManager::collect_full_power(Item& it) {
     }
     const i32 max = globals->power_max;
     globals->power = globals->power + max;
-    if (globals->power > max) { globals->power = max; gui_events.push_back(2); }
+    if (globals->power > max) { globals->power = max; notify_full_power(); }
     if ((globals->power - max) / globals->power_per_level != globals->power / globals->power_per_level) {
         player->setup_options(*animations, *globals);
         popup(it.pos, -1, 0xffffff40u);
@@ -502,15 +508,16 @@ void ItemManager::collect_full_power(Item& it) {
 }
 
 bool ItemManager::add_life() {
-    // 0x43df70（Gui 0x42c280 残机显示由 Gui 接入时读全局）
+    // 0x43df70
     if (globals->lives > 7) return false;
     globals->lives = globals->lives + 1;
     if (globals->lives > 8) globals->lives = 8;
+    if (gui != nullptr) gui->refresh_lives_display(globals->lives, globals->life_fragments);
     return true;
 }
 
 void ItemManager::add_bomb_fragment() {
-    // 0x43dff0
+    // 0x43dff0：凑满 5 片进一颗（音效 0x2e），进位时与结束时各刷新一次炸弹显示
     if (globals->bombs > 7) { globals->bomb_fragments = 0; return; }
     globals->bomb_fragments = globals->bomb_fragments + 1;
     if (globals->bomb_fragments > 4) {
@@ -518,7 +525,9 @@ void ItemManager::add_bomb_fragment() {
         globals->bomb_fragments = 0;
         if (globals->bombs < 9) play_sfx(0x2e);
         else globals->bombs = 8;
+        if (gui != nullptr) gui->refresh_bombs_display(globals->bombs, globals->bomb_fragments);
     }
+    if (gui != nullptr) gui->refresh_bombs_display(globals->bombs, globals->bomb_fragments);
 }
 
 void ItemManager::add_bomb() {
@@ -526,6 +535,7 @@ void ItemManager::add_bomb() {
     globals->bombs = globals->bombs + 1;
     if (globals->bombs < 9) play_sfx(0x2e);
     else globals->bombs = 8;
+    if (gui != nullptr) gui->refresh_bombs_display(globals->bombs, globals->bomb_fragments);
 }
 
 void ItemManager::add_point_value(float value) {
@@ -550,7 +560,10 @@ void ItemManager::collect(Item& it) {
     case kItemPoint: collect_point(it); break;
     case kItemBigPower: collect_big_power(it); break;
     case kItemLife:
-        if (add_life()) { play_sfx(0x11); gui_events.push_back(4); }
+        if (add_life()) {
+            play_sfx(0x11);
+            if (gui != nullptr) gui->show_notice(Gui::Notice::Extend, 0);   // 0x42bcf0(0, 4)
+        }
         break;
     case kItemBombFragment: add_bomb_fragment(); break;
     case kItemBomb: add_bomb(); break;
@@ -562,7 +575,7 @@ void ItemManager::collect(Item& it) {
             play_sfx(0x3f);
         }
         add_score(10);
-        // 0x42c600：Gui 季节量表显示
+        if (gui != nullptr) gui->refresh_season_gauge();   // 0x42c600
         break;
     default:
         if (is_season_value(it.type)) {
