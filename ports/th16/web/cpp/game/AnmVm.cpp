@@ -651,7 +651,12 @@ struct AnmInterpreter {
                     const i32 base = argi(ins, 0), count = argi(ins, 1);
                     index = i32(m.game_rng.next32() % u32(count)) + base;
                 }
-                // sprite_mapper（DAT_00491b1c 表，0x5dc）非零时由玩家/敌机等子系统重映射下标：待这些子系统接入
+                // DAT_00491b1c[sprite_mapper]（0x5dc）：敌弹 / 激光 / 道具按宿主的弹种与颜色重映射精灵号
+                if (vm.sprite_mapper != 0) {
+                    const u32 slot = u32(vm.sprite_mapper);
+                    if (slot < AnmManager::kSpriteMapperCount && m.sprite_mappers[slot] != nullptr)
+                        index = m.sprite_mappers[slot](vm, index);
+                }
                 AnmFile* f = m.file(vm.file_slot);
                 if (index < 0) { index = 0x102; f = m.file(AnmManager::kAsciiSlot); }  // DAT_004a6d98->0x19240：ascii.anm 的 0x102 号精灵
                 if (f != nullptr) set_sprite(*f, index);

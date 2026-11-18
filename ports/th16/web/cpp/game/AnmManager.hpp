@@ -83,8 +83,17 @@ public:
 
     // 0x45f980：单 VM 推进；返回非零表示应删除
     int run(AnmVm& vm);
+    // 0x4090f0：VM 复位（保留 entity_offset、池下标、layer；宿主内嵌 VM 重绑脚本前调用）
+    static void reset_vm(AnmVm& vm);
     // 0x407b20：把脚本模板复制到调用方自备的 VM（StageManager 的面 VM / 层精灵不入池）
     void init_from_template(AnmFile& file, AnmVm& vm, int script);
+    // 0x45f160：不经模板，把宿主自备的 VM（敌弹 / 激光，内嵌于宿主对象）绑到 file 的 script 并立即跑首帧
+    void init_script(AnmFile& file, AnmVm& vm, int script);
+
+    // DAT_00491b1c：ins_300 / ins_301 精灵号重映射钩子（1 = 敌弹 0x417140，2 = 激光 0x431fa0，3 = 道具 0x43a840）
+    static constexpr u32 kSpriteMapperCount = 4;
+    using SpriteMapper = i32 (*)(AnmVm& vm, i32 index);
+    SpriteMapper sprite_mappers[kSpriteMapperCount] = {};
 
     AnmListNode* world_head() const { return world_head_; }
     AnmListNode* ui_head() const { return ui_head_; }

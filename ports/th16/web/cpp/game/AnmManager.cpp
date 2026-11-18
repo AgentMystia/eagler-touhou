@@ -3,10 +3,8 @@
 
 namespace th16 {
 
-namespace {
-
 // 0x4090f0：VM 复位（保留 0x5e0 偏移、池下标、layer）
-void reset_vm(AnmVm& vm) {
+void AnmManager::reset_vm(AnmVm& vm) {
     const Vec3 offset = vm.entity_offset;
     const u32 pool_index = vm.pool_index;
     const i32 layer = vm.layer;
@@ -34,6 +32,8 @@ void reset_vm(AnmVm& vm) {
     vm.delete_node = {&vm, nullptr, nullptr, nullptr};
 }
 
+namespace {
+
 // 0x407a50：spawn 前清 0x538.. 尾部并重建链表结点
 void reset_tail(AnmVm& vm) {
     const Vec3 offset = vm.entity_offset;
@@ -51,7 +51,7 @@ void reset_tail(AnmVm& vm) {
 // 0x45f020：模板初始化
 void init_template(AnmFile& file, AnmVm& vm, int script) {
     if (file.scripts[script] == nullptr) { std::memset(static_cast<void*>(&vm), 0, sizeof vm); return; }
-    reset_vm(vm);
+    AnmManager::reset_vm(vm);
     vm.template_script = i16(script);
     vm.flags_lo &= 0xffffe7ffu;
     vm.file_slot = file.slot;
@@ -184,6 +184,29 @@ void AnmManager::init_from_template(AnmFile& file, AnmVm& vm, int script) {
     std::memcpy(static_cast<void*>(&vm), static_cast<const void*>(&file.templates[script]), 0x538);
     vm.age.reset();
     vm.time.reset();
+}
+
+// 0x45f160：与 0x45f020 相同的脚本绑定，但随即跑首帧并把 0x8000（首帧前）转成 0x4000
+void AnmManager::init_script(AnmFile& file, AnmVm& vm, int script) {
+    if (script < 0 || u32(script) >= file.scripts.size() || file.scripts[u32(script)] == nullptr) {
+        // 原版 memset(vm, 0, 0x5fc)：脚本缺失时整个 VM 清零；宿主指针是移植附加字段，保留以免精灵映射钩子解引用空指针
+        void* owner = vm.owner;
+        std::memset(static_cast<void*>(&vm), 0, sizeof vm);
+        vm.owner = owner;
+        return;
+    }
+    vm.template_script = i16(script);
+    vm.flags_lo &= 0xffffe7ffu;
+    vm.file_slot = file.slot;
+    vm.script_index = script;
+    vm.ins_offset = 0;
+    vm.flags_hi = (vm.flags_hi & 0xffffbfffu) | 0x8000u;
+    vm.age.reset();
+    vm.time.reset();
+    vm.flags_lo &= ~AnmVm::kVisible;
+    run(vm);
+    ++spawn_count;
+    if ((vm.flags_hi & 0xc000u) == 0x8000u) vm.flags_hi = (vm.flags_hi & 0xffff7fffu) | 0x4000u;
 }
 
 u32 AnmManager::next_id(AnmVm& vm) {
