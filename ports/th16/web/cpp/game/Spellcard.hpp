@@ -67,6 +67,8 @@ struct Spellcard {
 
     // 0x4178a0：memset 0 后 flags |= 2
     void reset();
+    // 0x417790：+0x10 / +0x14 / +0x18 的 VM 标删（0x46f1c0）后释放；换关后由 0x4178a0 重建 → 这里接着 reset()
+    void destroy();
     // 0x417f00；anm_index 为关卡表 Boss 块下标（切入 VM）
     void start(i32 spell_id, const char* spell_name, i32 limit, i32 anm_index);
     // 0x417930
