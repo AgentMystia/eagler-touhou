@@ -2,6 +2,7 @@
 
 #include "AnmManager.hpp"
 #include "AnmRenderer.hpp"
+#include "Bomb.hpp"
 #include "Bullet.hpp"
 #include "Effect.hpp"
 #include "Enemy.hpp"
@@ -548,12 +549,26 @@ void Player::update(AnmManager& manager, GameGlobals& globals, const InputState&
         }
         break;
     case kNormal:
-        // 0x40dda0 / 0x40db20：炸弹可用判定与发动（输入位 2 / 0x800）——Bomb 管理器接入时补
+        // 0x40dda0 / 0x40db20：炸弹（X 键）与季节解放（C 键）按边沿触发
+        if (bomb != nullptr && bomb->usable() && (game_input.pressed & InputState::kBomb) != 0) bomb->start();
+        if (season_release != nullptr && season_release->usable() && (game_input.pressed & InputState::kRelease) != 0) {
+            season_release->start();
+        }
         move(manager, game_input, world, effect_anm, game_speed);
         break;
     case kDying:
         if (state_timer.current <= 7) {
-            // 决死：Bomb（输入位 2）/ 季节解放（0x800）可用时 0x40db20 发动并经 0x444070 回到状态 1（计时 0x3c）——Bomb 接入时补
+            // 决死猶予：炸弹可用时发动并回到状态 1（0x444070：计时 0x3c）。原版把解放的判定嵌在炸弹成功之后，
+            // 而炸弹已在发动中使解放永远不可用——保留同样的嵌套以免日后误改
+            if (bomb != nullptr && (game_input.pressed & InputState::kBomb) != 0 && bomb->usable()) {
+                bomb->start();
+                recover_from_deathbomb();
+                if (season_release != nullptr && season_release->usable() &&
+                    (game_input.pressed & InputState::kRelease) != 0) {
+                    season_release->start();
+                    recover_from_deathbomb();
+                }
+            }
             break;
         }
         die(manager, globals, effect_anm);
@@ -591,7 +606,22 @@ void Player::update(AnmManager& manager, GameGlobals& globals, const InputState&
 
     if (invincible.current < 1) {
         vm.flags_lo &= ~0x60000u;
-        // flags 0x20（闪烁模式）与 speed_mult > 1.01 的残影特效（0x40e5c0）——Effect 管理器接入时补
+        // 残影：秋季解放（移动倍率 1.5）每帧留一枚黄色残影；土用解放（kFlagBlinkMode）留红色残影
+        if ((flags & kFlagBlinkMode) == 0) {
+            if (speed_mult > 1.01f) {
+                if (state_timer.current % 8 < 4) {
+                    vm.color2[0] = 0x00; vm.color2[1] = 0xff; vm.color2[2] = 0xff; vm.color2[3] = 0xff;
+                    vm.flags_lo = (vm.flags_lo & ~0x40000u) | 0x20000u;
+                }
+                spawn_afterimage(manager, globals, false);
+            }
+        } else {
+            if (state_timer.current % 8 < 4) {
+                vm.color2[0] = 0x00; vm.color2[1] = 0x00; vm.color2[2] = 0xff; vm.color2[3] = 0xff;
+                vm.flags_lo = (vm.flags_lo & ~0x40000u) | 0x20000u;
+            }
+            spawn_afterimage(manager, globals, true);
+        }
     } else {
         invincible.untick(game_speed);
         if (state_timer.current == state_timer.previous || state_timer.current % 3 != 0) {
@@ -654,6 +684,23 @@ void Player::update(AnmManager& manager, GameGlobals& globals, const InputState&
         sfx_stop_queue.push_back(0x37);
     }
     tick_bullets(manager, geometry, game_speed);
+}
+
+// 0x444070：决死中成功发动炸弹——回到状态 1，状态计时 0x3c
+void Player::recover_from_deathbomb() {
+    state_timer.set(0x3c);
+    state = kNormal;
+}
+
+// 0x442560 残影段：按机体在自机位置生成 pl0N.anm 脚本 {10, 9, 0xd, 0x10}[shot]，精灵取自机当前帧；red 时整体染红
+void Player::spawn_afterimage(AnmManager& manager, const GameGlobals& globals, bool red) {
+    if (anm == nullptr) return;
+    static constexpr int kAfterimageScript[4] = {10, 9, 0xd, 0x10};
+    const u32 id = manager.spawn_effect(*anm, kAfterimageScript[globals.shot & 3], -1, pos);
+    AnmVm* ghost = manager.find(id);
+    if (ghost == nullptr) return;
+    anm_set_sprite(*anm, *ghost, vm.sprite_index);   // 0x45edb0
+    if (red) { ghost->color[0] = 0x00; ghost->color[1] = 0x00; ghost->color[2] = 0xff; ghost->color[3] = 0xff; }
 }
 
 void Player::shoot(AnmManager& manager, GameGlobals& globals, const InputState& game_input, float game_speed) {

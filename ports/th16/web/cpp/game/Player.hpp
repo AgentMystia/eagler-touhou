@@ -105,6 +105,7 @@ struct PlayerWorld {
 };
 
 struct Spellcard;
+class Bomb;
 
 class Player {
 public:
@@ -186,6 +187,8 @@ public:
     EffectManager* effects = nullptr;                  // DAT_004a6db8（被弹特效 0x1c 登记入 id 表）
     BulletManager* bullet_manager = nullptr;           // DAT_004a6dac（入场态 0x416d20 半径 640 消弹）
     LaserManager* laser_manager = nullptr;             // DAT_004a6ee0（入场态 0x431a70 切断 / 决死态 0x431af0 全灭）
+    Bomb* bomb = nullptr;                              // DAT_004a6da8（状态 1 / 决死态按输入位 2 发动）
+    Bomb* season_release = nullptr;                    // DAT_004a6da4（按输入位 0x800 发动）
     float* global_game_speed = nullptr;                // DAT_004a5788（复活时置回 1.0）
 
     // 0x441c60 + 0x440fb0：资源已由调用方装入；返回 false 表示 .sht 缺失
@@ -220,6 +223,12 @@ public:
     //   原版 param_2（flags & 0x1000 的矩形判定，0x4049c0）无 ECL 设置路径，未移植
     i32 apply_damage_sources(AnmManager& manager, GameGlobals& globals, const Vec3& enemy_pos, float radius,
                              u32 enemy_id, Vec3* hit_pos = nullptr, bool* bomb_hit = nullptr, bool probe = false);
+    // 0x444b20：分配矩形伤害源（size_x × size_y，绕 angle）；返回 1 起的下标，池满返回 0
+    i32 alloc_damage_source(const Vec3& pos, float angle, i32 lifetime, i32 damage, float size_x, float size_y);
+    // 0x4449b0：分配圆形伤害源（半径 radius，每帧 += growth）；返回 1 起的下标，池满返回 0
+    i32 alloc_circle_damage_source(const Vec3& pos, float radius, float growth, i32 lifetime, i32 damage);
+    // 按 1 起的下标取伤害源；0 返回 nullptr
+    DamageSource* damage_source(i32 index) { return index == 0 ? nullptr : &damage_sources[index - 1]; }
 
     std::string error;
 
@@ -238,9 +247,9 @@ private:
     void start_shot_timer(i32 t);                                         // 0x440d50
     void fire_sets(AnmManager& manager, GameGlobals& globals, i32 frame, i32 frame2);  // 0x445470
     bool spawn_bullet(AnmManager& manager, GameGlobals& globals, u32 shot_id);          // 0x445360 → 0x444e10
-    i32 alloc_damage_source(const Vec3& pos, float angle, i32 lifetime, i32 damage, float size_x, float size_y);  // 0x444b20
-    i32 alloc_circle_damage_source(const Vec3& pos, float radius, float growth, i32 lifetime, i32 damage);        // 0x4449b0
     void respawn(AnmManager& manager, GameGlobals& globals);               // 0x442560 case 2 尾：状态 0、复活圆伤害源、回到 (0, 480)
+    void recover_from_deathbomb();                                         // 0x444070
+    void spawn_afterimage(AnmManager& manager, const GameGlobals& globals, bool red);  // 0x442560 残影段
     void scatter_death_items(AnmManager& manager, GameGlobals& globals);  // 0x442560 case 2 第 3 帧：火力减半级、7 枚火力道具扇形散出
     void tick_bullets(AnmManager& manager, const AnmRenderer& geometry, float game_speed);  // 0x4456d0
     void release_bullet(PlayerBullet& b);                                 // 池项失活 + 伤害源 bit0 清零

@@ -567,7 +567,7 @@ void ItemManager::collect(Item& it) {
         if (is_season_value(it.type)) {
             const float value = kSeasonValues[it.type - kItemSeasonValue0];
             add_point_value(value);
-            release_value = release_value + value;
+            if (release_bonus != nullptr) *release_bonus = *release_bonus + value;
             const i32 q = globals->point_value / 100;
             add_score(((q - q % 10) / 100) * 10);
         }
