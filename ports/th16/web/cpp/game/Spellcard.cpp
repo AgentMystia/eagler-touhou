@@ -80,7 +80,7 @@ void Spellcard::start(i32 spell_id, const char* spell_name, i32 limit, i32 anm_i
         // 0x46dab0：名字文本写入 text.anm VM 的纹理（渲染侧接入时补）
         if (anm->find(vm_ids[2]) == nullptr) vm_ids[2] = 0;
     }
-    sfx_queue.push_back(0x21);
+    play_sfx(0x21);
 
     // effect.anm 0xd 倒计时：entity_offset = Boss 坐标，子 VM（脚本 0xb / 0xc）的 $I2 = 时限
     boss_pos = boss_position();
@@ -180,15 +180,15 @@ void Spellcard::end() {
             // 0x43e080：每次 extend 另有 Gui 0x42c280 残机显示、音效 0x11、0x42bcf0(0, 4)
             const i32 extends = globals->add_score(bonus);
             for (i32 i = 0; i < extends; ++i) {
-                sfx_queue.push_back(0x11);
+                play_sfx(0x11);
                 gui_events.push_back({0, 4});
             }
         }
         gui_events.push_back({bonus, 0});
         // 成绩文件符卡取得计数：ScoreFile 接入时补
-        sfx_queue.push_back(0x2e);
+        play_sfx(0x2e);
     }
-    if ((flags & kTimedOut) != 0) sfx_queue.push_back(0x45);
+    if ((flags & kTimedOut) != 0) play_sfx(0x45);
 }
 
 }  // namespace th16

@@ -62,6 +62,8 @@ struct Spellcard {
     StageManager* stage = nullptr;      // DAT_004a6da0（+0x66c4 绘制位）
     const StageEntry* entry = nullptr;  // DAT_004a6f18
     std::vector<i32> sfx_queue;         // 0x45e150：开始 0x21、取得 0x2e、超时 0x45、extend 0x11
+    std::vector<i32>* sfx_sink = nullptr;
+    void play_sfx(i32 id) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(id); }
     std::vector<GuiNotice> gui_events;  // 0x42bcf0
     std::vector<i32> gui_timer_events;  // 0x4175d0 / 0x417650：Gui+0x94 / +0x98 计时 VM 中断 2 / 3（Gui 接入前占位）
 

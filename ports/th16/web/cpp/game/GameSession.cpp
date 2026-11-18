@@ -250,18 +250,11 @@ bool GameSession::create_player() {
     }, 0x10, true);
     // 0x440fb0：自机更新链 0x16（0x443720 → 0x442560）与绘制链 0x1d（0x443730）
     game.player.on_game_over = [this]() { if (menu_live) menu.open_continue(); };
+    game.player.sfx_sink = &sfx_events;
     player_update_chain_ = chains.create([this]() -> ChainResult {
         game.player.update(animations, globals, game_input, game.world, animations.file(8), geometry, supervisor.game_speed);
-        harvest_bomb_events();   // 状态 1 / 决死中发动的炸弹（音效先于自机本帧的射击音）
-        // 入场态 0x416d20 / 0x431a70 的消弹音效（0x47）在自机链内登记，先于本帧自机自身的音效
-        if (game.bullets_live) {
-            sfx_events.insert(sfx_events.end(), game.bullets->sfx_queue.begin(), game.bullets->sfx_queue.end());
-            game.bullets->sfx_queue.clear();
-        }
-        if (game.lasers_live) {
-            sfx_events.insert(sfx_events.end(), game.lasers->sfx_queue.begin(), game.lasers->sfx_queue.end());
-            game.lasers->sfx_queue.clear();
-        }
+        harvest_bomb_events();   // 状态 1 / 决死中发动的炸弹（震屏 / HUD 事件）
+        // 入场态 0x416d20 / 0x431a70 的消弹音效（0x47）与炸弹音效已直接进入 sfx_events，自机自身的音效随后并入
         harvest_player_sfx();
         harvest_menu_events();   // 0x43f350 在自机更新内打开续关画面时登记的音效
         game.player.sfx_stop_queue.clear();
@@ -350,19 +343,11 @@ bool GameSession::create_enemies() {
     if (enemy_update_chain_ == nullptr) {
         enemy_update_chain_ = chains.create([this]() -> ChainResult {
             if (game.enemies_live && !game.chains_suspended) {
-                game.enemies.sfx_queue.clear();
                 game.enemies.shake_requests.clear();
-                if (game.bullets_live) {
-                    game.bullets->game_speed = supervisor.game_speed;
-                    game.bullets->sfx_queue.clear();
-                }
-                game.enemies.sfx_sink = game.bullets_live ? &game.bullets->sfx_queue : nullptr;
+                if (game.bullets_live) game.bullets->game_speed = supervisor.game_speed;
+                game.enemies.sfx_sink = &sfx_events;   // 敌机受击 / 击破与 ECL 601 发射音效按 0x45e1f0 调用序直接汇总
                 sync_bomb_state();
                 game.enemies.update(supervisor.game_speed);
-                // 敌机受击 / 击破与 ECL 601 等发射音效按 0x45e1f0 调用序登记在敌人链内
-                std::vector<i32>& enemy_sfx = game.bullets_live ? game.bullets->sfx_queue : game.enemies.sfx_queue;
-                sfx_events.insert(sfx_events.end(), enemy_sfx.begin(), enemy_sfx.end());
-                enemy_sfx.clear();
                 if (sync_enemy_count) game.world.enemy_count = game.enemies.enemy_count;
                 for (const auto& request : game.enemies.shake_requests) create_screen_shake(request);
                 game.enemies.shake_requests.clear();
@@ -400,13 +385,12 @@ void GameSession::bind_spellcard() {
     spellcard.globals = &globals;
     spellcard.stage = game.stage.get();
     spellcard.entry = game.entry;
+    spellcard.sfx_sink = &sfx_events;
     game.gui.spellcard_flags = &spellcard.flags;
     if (spellcard_update_chain_ == nullptr) {
         spellcard_update_chain_ = chains.create([this]() -> ChainResult {
             if (game.chains_suspended) return ChainResult::Continue;
             spellcard.update(supervisor.game_speed);
-            sfx_events.insert(sfx_events.end(), spellcard.sfx_queue.begin(), spellcard.sfx_queue.end());
-            spellcard.sfx_queue.clear();
             gui_events.insert(gui_events.end(), spellcard.gui_events.begin(), spellcard.gui_events.end());
             spellcard.gui_events.clear();
             spellcard.gui_timer_events.clear();  // Gui+0x94 / +0x98 计时 VM 中断：Gui 接入时补
@@ -452,23 +436,16 @@ bool GameSession::enter_game() {
         game.bullets = std::make_unique<BulletManager>();
         game.bullets->create(animations, *bullet_anm, animations.file(8), globals,
                              game.player_live ? &game.player : nullptr, &game.world, animations.visual_rng);
+        game.bullets->sfx_sink = &sfx_events;
         game.bullets_live = true;
         bullet_update_chain_ = chains.create([this]() -> ChainResult {
             // 0x411880：GameManager 装载中（bit2）或结束位（bit0 经 >>2 映射）时跳过
             if (game.bullets_live && !game.chains_suspended && ((game.flags | (game.flags >> 2)) & 1u) == 0) {
-                game.bullets->sfx_queue.clear();
                 sync_bomb_state();
                 game.bullets->update(supervisor.game_speed, (game.flags & 0x400u) != 0);
                 // Ex 0x8000000 在 0x413860 内直接建激光（同帧挂入激光链尾，下一帧起推进）
-                if (game.lasers_live) {
-                    game.lasers->consume_bullet_requests();
-                    sfx_events.insert(sfx_events.end(), game.lasers->sfx_queue.begin(), game.lasers->sfx_queue.end());
-                    game.lasers->sfx_queue.clear();
-                } else {
-                    game.bullets->laser_requests.clear();
-                }
-                sfx_events.insert(sfx_events.end(), game.bullets->sfx_queue.begin(), game.bullets->sfx_queue.end());
-                game.bullets->sfx_queue.clear();
+                if (game.lasers_live) game.lasers->consume_bullet_requests();
+                else game.bullets->laser_requests.clear();
                 // 被弹（0x443f10）在弹幕链内登记的自机音效本帧即生效
                 if (game.player_live) harvest_player_sfx();
             }
@@ -485,6 +462,7 @@ bool GameSession::enter_game() {
         game.items = std::make_unique<ItemManager>();
         game.items->create(animations, animations.file(BulletManager::kBulletAnmSlot), animations.file(8), globals,
                            game.player_live ? &game.player : nullptr, animations.game_rng);
+        game.items->sfx_sink = &sfx_events;
         game.items_live = true;
         game.bullets->items = game.items.get();
         item_update_chain_ = chains.create([this]() -> ChainResult {
@@ -495,8 +473,6 @@ bool GameSession::enter_game() {
                 game.items->focus_held = (game_input.held & 0x8u) != 0;
                 sync_bomb_state();
                 game.items->update(supervisor.game_speed);
-                sfx_events.insert(sfx_events.end(), game.items->sfx_queue.begin(), game.items->sfx_queue.end());
-                game.items->sfx_queue.clear();
                 // 0x44a460 弹出数字 / 0x42bcf0 Gui 通知：Ascii / Gui 接入前无状态影响
                 game.items->popups.clear();
                 game.items->gui_events.clear();
@@ -518,16 +494,14 @@ bool GameSession::enter_game() {
         game.lasers = std::make_unique<LaserManager>();
         game.lasers->create(animations, *animations.file(BulletManager::kBulletAnmSlot), animations.file(8), *game.bullets,
                             game.player_live ? &game.player : nullptr, &game.enemies, &effects, &game.world);
+        game.lasers->sfx_sink = &sfx_events;
         game.lasers_live = true;
         game.player.laser_manager = game.lasers.get();
         laser_update_chain_ = chains.create([this]() -> ChainResult {
             // 0x4316b0：GameManager 装载中（bit2）/ 结束位（bit0 经 >>2 映射）/ 0x400 冻结时跳过；bit1 时以速度 0 推进
             if (game.lasers_live && !game.chains_suspended && ((game.flags | (game.flags >> 2)) & 1u) == 0 &&
                 (game.flags & 0x400u) == 0) {
-                game.lasers->sfx_queue.clear();
                 game.lasers->update((game.flags & 0x2u) != 0 ? 0.0f : supervisor.game_speed);
-                sfx_events.insert(sfx_events.end(), game.lasers->sfx_queue.begin(), game.lasers->sfx_queue.end());
-                game.lasers->sfx_queue.clear();
                 // 被弹（0x443f10）在激光链内登记的自机音效本帧即生效
                 if (game.player_live) harvest_player_sfx();
             }
@@ -562,6 +536,7 @@ bool GameSession::enter_game() {
         game.gui.bomb = game.bombs.main();
         game.gui.on_continue_screen = [this]() { if (menu_live) menu.open_continue(); };
         game.gui.on_practice_result = [this]() { if (menu_live) menu.open_practice_result(); };
+        game.gui.sfx_sink = &sfx_events;
         if (!game.gui.init(animations, animations.file(5), logo, *game.entry, std::move(msg_bytes))) {
             failure = game.gui.error;
             return false;
@@ -570,8 +545,6 @@ bool GameSession::enter_game() {
         gui_update_chain_ = chains.create([this]() -> ChainResult {
             if (game.gui_live) {
                 game.gui.update(supervisor.game_speed);
-                sfx_events.insert(sfx_events.end(), game.gui.sfx_queue.begin(), game.gui.sfx_queue.end());
-                game.gui.sfx_queue.clear();
                 harvest_menu_events();   // 对话 -2 / 练习过关在 Gui 更新内打开菜单时登记的音效
                 game.gui.bgm_events.clear();  // Sound 接入前无状态影响
                 if (game.gui.dialogue) game.gui.dialogue->text_requests.clear();  // 文字贴图：渲染接入前无状态影响
@@ -706,6 +679,7 @@ void GameSession::create_bombs() {
     context.lasers = game.lasers.get();
     context.effects = &effects;
     context.spellcard = &spellcard;
+    context.sfx_sink = &sfx_events;
     context.world = &game.world;
     game.bombs.create(std::move(context));
     game.player.bomb = game.bombs.main();
@@ -768,8 +742,6 @@ void GameSession::sync_bomb_state() {
 
 void GameSession::harvest_bomb_events() {
     BombContext& context = game.bombs.context();
-    sfx_events.insert(sfx_events.end(), context.sfx_queue.begin(), context.sfx_queue.end());
-    context.sfx_queue.clear();
     context.gui_events.clear();   // 0x42c390 / 0x42c600 HUD 显示：渲染接入前无状态影响
     for (const BombShakeRequest& request : context.shake_requests) {
         if (request.kind == BombShakeRequest::kLinear) {
@@ -954,8 +926,8 @@ void GameSession::harvest_menu_events() {
     game.gui.hud_events.clear();
 }
 
+// 自机音效已随 Player::play_sfx 直接进入 sfx_events；这里只取走自机子集（harness 的 player.sfx 字段）
 void GameSession::harvest_player_sfx() {
-    sfx_events.insert(sfx_events.end(), game.player.sfx_queue.begin(), game.player.sfx_queue.end());
     player_sfx_events.insert(player_sfx_events.end(), game.player.sfx_queue.begin(), game.player.sfx_queue.end());
     game.player.sfx_queue.clear();
 }

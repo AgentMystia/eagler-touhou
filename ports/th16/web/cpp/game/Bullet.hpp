@@ -265,6 +265,8 @@ public:
     i32 total_canceled = 0;             // +0x1403b14
     std::vector<u32> cancel_effect_ids; // +0x13ffc8c：按槽记录消弹特效 VM id
     std::vector<i32> sfx_queue;         // 0x45e1f0 音效登记（发射 / Ex 变换 / 擦弹 0x2a / 消弹 0x47）
+    std::vector<i32>* sfx_sink = nullptr;
+    void play_sfx(i32 id) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(id); }
     std::vector<BulletLaserRequest> laser_requests; // Ex 0x8000000 调用序（宿主每帧取走）
     bool spellcard_active = false;      // DAT_004a6db0->0x78 bit0（Spellcard 管理器接入前由宿主同步）
     bool season_release_active = false; // DAT_004a6da4->0x30 == 1（季节解放中；消弹模式 4 附加掉落）

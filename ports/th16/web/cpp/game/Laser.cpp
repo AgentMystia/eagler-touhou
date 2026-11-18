@@ -189,7 +189,7 @@ void LaserManager::reset() {
     sfx_queue.clear();
 }
 
-void LaserManager::push_sfx(i32 sfx) { sfx_queue.push_back(sfx); }
+void LaserManager::push_sfx(i32 sfx) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(sfx); }
 
 // 0x431fa0
 i32 LaserManager::map_sprite_beam(AnmVm& vm, i32 index) {

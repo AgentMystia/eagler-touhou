@@ -100,6 +100,8 @@ public:
     bool focus_held = false;           // DAT_004a52c8 & 8（低速时收点圈取擦弹框）
     float* release_bonus = nullptr;    // DAT_004a6da4->0xdc：拾取季节得点时无条件累加到解放的奖励（飘字 "+%d"）
     std::vector<i32> sfx_queue;        // 0x45e150 / 0x45e1f0 音效登记（宿主每帧取走）
+    std::vector<i32>* sfx_sink = nullptr;
+    void play_sfx(i32 id) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(id); }
     std::vector<ScorePopup> popups;    // 0x44a460 弹出数字（宿主每帧取走）
     std::vector<i32> gui_events;       // 0x42bcf0(0, n) Gui 弹出通知：2 = 满火力、4 = extend；0x42c280 / 0x42c390 / 0x42c600 由 Gui 接入时读全局
 
