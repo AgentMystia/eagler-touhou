@@ -558,7 +558,7 @@ int main(int argc, char** argv) {
         auto feed_spell_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { spell_digest ^= u8(v >> (8 * i)); spell_digest *= 0x100000001b3ull; } };
         auto feed_laser_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { laser_digest ^= u8(v >> (8 * i)); laser_digest *= 0x100000001b3ull; } };
         auto feed_bomb_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { bomb_digest ^= u8(v >> (8 * i)); bomb_digest *= 0x100000001b3ull; } };
-        // 炸弹 / 季节解放（game-oracle.py bomb_snapshot 同口径）：公共区 29 字 + 阴阳玉数 + 每枚 27 字
+        // 炸弹 / 季节解放（game-oracle.py bomb_digest 同口径）：公共区 24 字 + 阴阳玉数 + 每枚 21 字
         auto bomb_class_index = [](const char* name) -> u32 {
             static const char* const kNames[] = {"ReimuA", "CirnoA", "AyaA", "MarisaA", "ReimuSub", "CirnoSub", "AyaSub", "MarisaSub", "AllSub"};
             for (u32 i = 0; i < 9; ++i) if (std::strcmp(kNames[i], name) == 0) return i;
@@ -579,7 +579,7 @@ int main(int argc, char** argv) {
                                    bits(o.motion.speed), bits(o.motion.angle), bits(o.motion.radius),
                                    bits(o.motion.velocity.x), bits(o.motion.velocity.y), bits(o.motion.velocity.z), o.motion.mode,
                                    u32(o.active), u32(o.timer.previous), u32(o.timer.current), bits(o.timer.current_f),
-                                   bits(o.delta.x), bits(o.delta.y), bits(o.delta.z), o.target_id, u32(o.index), u32(o.damage_source), 0u};
+                                   bits(o.delta.x), bits(o.delta.y), bits(o.delta.z), o.target_id, u32(o.index), u32(o.damage_source)};
                 w.insert(w.end(), std::begin(orb), std::end(orb));
             }
         };
