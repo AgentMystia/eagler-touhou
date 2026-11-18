@@ -354,7 +354,7 @@ constexpr AddressAnchor kAnchors[] = {
     // —— Gui（DAT_004a6dcc，0x427ca0；对话部分）——
     {"gui-create", 0x427CA0, "game/Gui.cpp Gui::init + GameSession.cpp enter_game（0x426c10：logo ANM 槽 6、按机体 msg 文件；更新链 0x20）"},
     {"gui-update", 0x427CF0, "game/Gui.cpp Gui::update（Msg 部分：0x42a1d0 返回 0 → 年龄计时推进，否则 0x4264a0 删除；HUD 部分渲染阶段补齐）"},
-    {"gui-dialogue-start", 0x429FF0, "game/Gui.cpp Gui::start_dialogue（entry ≥ 0：msg[4 + entry×8] 起点；-1/-2/-3 结局 / 过关入口后续接入）"},
+    {"gui-dialogue-start", 0x429FF0, "game/Gui.cpp Gui::start_dialogue（entry ≥ 0：msg[4 + entry×8] 起点；-1 / -3 切曲 + logo 标题；-2 过关 → Gui::stage_clear）"},
     {"msg-create", 0x429B20, "game/Gui.cpp Gui::create_dialogue（text.anm 0 ×2 / 1 ×2 文字 VM（+0x52c/+0x52d = 0x15、flags_hi 0x1000、draw_callback 5）、0x416f40 全屏消弹、0x41d900 敌机全灭、文字位置 (384,640) 宽 320）"},
     {"msg-update", 0x42A1D0, "game/Gui.cpp Gui::run_dialogue / Gui::execute（ecl_release 倒数、长按 Z/Ctrl ≥ 20 帧快进、指令 0..35；op 11 等待期间脚本时刻冻结；文字 VM 跟随文字框子 VM 0xb4+下标）"},
     {"msg-destroy", 0x4264A0, "game/Gui.cpp Gui::destroy_dialogue（立绘 / 文字 / 名牌 / 文字框 VM 0x46f1c0 标删）"},
@@ -366,7 +366,9 @@ constexpr AddressAnchor kAnchors[] = {
     {"gui-hud-init", 0x426D70, nullptr},      // 残机 / 炸弹 / 血条 / 计时 HUD VM：渲染阶段补齐
     {"gui-lives-display", 0x42C280, nullptr}, // 残机显示（8 槽；--lives > 8 会越界，故长程对拍用 --refill-lives）
     {"msg-text-draw", 0x46D990, nullptr},     // AsciiManager 文字画入 VM 纹理（Msg::text_requests 记录请求）
-    {"stage-clear", 0x42E150, nullptr},       // MSG op 21 / 0x429ff0(-2)：过关结算
+    {"stage-clear", 0x42E150, "game/Gui.cpp Gui::stage_clear（MSG op 21 / 0x429ff0(-2)：非练习 0x42c070 奖励、0x42ca80 子机收拢、普通模式 1..5 面场景请求 0xc + 关卡号 +1；练习 0x43f500 / 6·Extra 面结局 / 续关 0x43f350 待接入）"},
+    {"stage-clear-bonus", 0x42C070, "game/Gui.cpp Gui::stage_clear（front.anm 0x78 奖励 VM、+0x2dc = 关卡 × 1,000,000 → 0x43e080、flags_1ac bit8、+0x1b0 计时复位）"},
+    {"player-gather-options", 0x42CA80, "game/Player.cpp Player::gather_options（flags bit1、全部子机 VM 中断 3、收拢计数清零）"},
     // —— 未定位 ——
     {"laser-manager", 0x4314A0, nullptr},
     {"player-laser-create", 0x446200, nullptr},  // 魔理沙激光（回调 2：0x446260 / 0x446870）

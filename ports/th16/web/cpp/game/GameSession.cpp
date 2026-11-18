@@ -406,6 +406,7 @@ bool GameSession::enter_game() {
         game.gui.input = &game_input;
         game.gui.geometry = &geometry;
         game.gui.replay_playback = game.mode != 0;
+        game.gui.spellcard_flags = &spellcard.flags;
         if (!game.gui.init(animations, animations.file(5), logo, *game.entry, std::move(msg_bytes))) {
             failure = game.gui.error;
             return false;
