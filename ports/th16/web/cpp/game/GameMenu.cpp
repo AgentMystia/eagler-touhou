@@ -150,7 +150,7 @@ void GameMenu::set_mode(Mode m) {
     state = PauseIntro;
     timer.reset();
     timer2.reset();
-    field_108 = 0;
+    cursor.disabled_count = 0;   // +0x108
 }
 
 // 0x43e200
@@ -429,7 +429,7 @@ bool GameMenu::register_rank() {
             if (g.stage == 9 && practice != 0) g.stage = 7;
             if (rank >= 0) {
                 cursor.count = 0x19;
-                menu_shown = 1;
+                cursor.wrap = true;
                 cursor.set(rank);
                 begin_name_entry();
                 no_rank = 0;
@@ -460,7 +460,7 @@ void GameMenu::begin_name_entry() {
 void GameMenu::enter_main_menu_after_rank() {
     set_state(MainMenu);
     cursor.count = 5;
-    menu_shown = 1;
+    cursor.wrap = true;
     AnmManager& anm = *ctx.animations;
     const bool spell_practice_result = (flags & kFlagSpellPractice) != 0;
     if (!spell_practice_result && (ctx.globals->flags & GameGlobals::kModeMask) == 0) {
@@ -490,7 +490,7 @@ void GameMenu::enter_replay_slots() {
     hide_menu();
     cursor.push();
     cursor.count = kReplaySlots;
-    menu_shown = 1;
+    cursor.wrap = true;
     cursor.set(0);
     for (int i = 0; i < kReplaySlots; ++i) replay_slot_used[i] = ctx.replays != nullptr && ctx.replays->slot_exists(i + 1);
 }
@@ -519,7 +519,7 @@ void GameMenu::run_state_machine() {
             child_interrupt(0x8b, 5);
             child_interrupt(0x97, 5);
         }
-        menu_shown = 1;
+        cursor.wrap = true;
         cursor.set(Resume);
         cursor_interrupt(7);
         kind = 0;
@@ -532,7 +532,7 @@ void GameMenu::run_state_machine() {
         cursor.disable(Manual);
         cursor.disable(SaveReplay);
         cursor.disable(Resume);
-        menu_shown = 1;
+        cursor.wrap = true;
         cursor.set(ToTitle);
         cursor_interrupt(7);
         kind = 1;
@@ -611,7 +611,7 @@ void GameMenu::run_state_machine() {
         if (timer.current == 0x14) {
             cursor.push();
             cursor.count = 2;
-            menu_shown = 1;
+            cursor.wrap = true;
             cursor.set(1);
             anm.interrupt(menu_vm, 0xe);
         }
@@ -683,7 +683,7 @@ void GameMenu::run_state_machine() {
             flags &= ~(kFlagReplaySave | kFlagNameEntry);
             cursor.pop();
             cursor.count = 5;
-            menu_shown = 1;
+            cursor.wrap = true;
             cursor_interrupt(7);
             for (bool& used : replay_slot_used) used = false;
             if (mode == Pause) {
