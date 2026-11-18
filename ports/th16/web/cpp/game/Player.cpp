@@ -683,7 +683,7 @@ void Player::update(AnmManager& manager, GameGlobals& globals, const InputState&
         sfx_stop_queue.push_back(0x1e);
         sfx_stop_queue.push_back(0x37);
     }
-    tick_bullets(manager, geometry, game_speed);
+    tick_bullets(manager, globals, world, geometry, game_speed);
 }
 
 // 0x444070：决死中成功发动炸弹——回到状态 1，状态计时 0x3c
@@ -909,9 +909,10 @@ bool Player::spawn_bullet(AnmManager& manager, GameGlobals& globals, u32 shot_id
     d.f7c = 10000000;
     d.owner = b->index;
     b->flags |= 1u;
-    // 生成回调（DAT_004919c0）：1 清追踪目标；4 伤害源类型 2（Aya 主弹）；2 激光（Marisa）随激光系统接入
+    // 生成回调（DAT_004919c0）：1 清追踪目标；2 激光（0x446200）；4 伤害源类型 2（文低速充能弹）
     switch (e->create_callback()) {
     case 1: b->target = 0; break;
+    case 2: start_laser(*b); break;
     case 4: d.kind = 2; break;
     default: break;
     }
@@ -920,15 +921,19 @@ bool Player::spawn_bullet(AnmManager& manager, GameGlobals& globals, u32 shot_id
     return true;
 }
 
-void Player::tick_bullets(AnmManager& manager, const AnmRenderer& geometry, float game_speed) {
+void Player::tick_bullets(AnmManager& manager, const GameGlobals& globals, const PlayerWorld& world,
+                          const AnmRenderer& geometry, float game_speed) {
     // 0x4456d0
     for (int i = 0; i < kBulletCount; ++i) {
         PlayerBullet& b = bullets[i];
         if (b.active == 0) continue;
         const ShotEntry* e = shot_entry(b.shot_id);
         if (e == nullptr) { release_bullet(b); continue; }
-        // 逐帧回调（DAT_004919a0）：1 追踪（0x445ee0 + 0x425240）；5 加速 0.5/帧（0x447480）；2 激光（0x446260）随激光系统接入
+        // 逐帧回调（DAT_004919a0）：1 追踪（0x445ee0 + 0x425240）；2 激光（0x446260）；5 加速 0.5/帧（0x447480）
         switch (e->tick_callback()) {
+        case 2:
+            tick_laser(manager, globals, world, b, *e);
+            break;
         case 1:
             if (b.active != 2) {
                 if (enemies == nullptr) {
@@ -1033,6 +1038,149 @@ i32 Player::hit_bullet_default(AnmManager& manager, PlayerBullet& b) {
     return b.damage;
 }
 
+// ---------------------------------------------------------------------------------------------
+// 魔理沙激光（.sht 类型 2）。一条激光占一个弹池项：位置每帧贴到所属子机、角度跟随 .sht 角（低速时竖直向上），
+// 长度 hit_w 每帧 +18 至 512，命中敌机时截到敌机表面；伤害源是一条以激光中点为心、长 hit_w × 宽 hit_h 的旋转矩形。
+// 自机弹的 flags bit0 被清掉，所以 0x4456d0 不再替它同步伤害源——同步由逐帧回调自己做。
+
+// 0x446200
+void Player::start_laser(PlayerBullet& b) {
+    b.hit_w = 0.0f;
+    sfx_queue.push_back(0x14);
+    if (DamageSource* d = damage_source(b.damage_source)) {
+        d->f80 = 1;
+        d->size_x = 0.0f;
+    }
+    b.flags &= ~1u;
+}
+
+// 0x446260
+void Player::tick_laser(AnmManager& manager, const GameGlobals& globals, const PlayerWorld& world, PlayerBullet& b,
+                        const ShotEntry& e) {
+    const bool sub = (b.shot_id & 0xf0000u) != 0;
+    const int option_index = int(e.source()) - 1;                                    // 0 起；子季节子机为 100 起
+    if (option_index < 0) return;   // .sht 里的激光都挂在子机上；无子机的激光原版会读到越界内存
+    const PlayerOption& opt = option_index < 100 ? options[option_index] : sub_options[option_index - 100];
+    b.motion.pos = {float(opt.x) * kFixedToFloat, float(opt.y) * kFixedToFloat, 0.0f};
+
+    // 朝向：低速时竖直向上，否则取 .sht 角。与目标角相差 ≥ 0.001 直接对齐，否则以 0.1 比例逼近
+    //（原版两分支写反了直觉，但只影响 0.001 弧度以内的尾差，照搬以保持位精确）
+    const float current = b.motion.angle;
+    const float target = focus == 0 ? wrap_angle(e.angle()) : -1.5707964f;
+    float away = current - target;
+    if (away > 3.1415927f) away = current - (target + 6.2831855f);
+    else if (target - current > 3.1415927f) away = current - (target - 6.2831855f);
+    away = wrap_angle(away);
+    if (std::fabs(away) >= 0.001f) {
+        b.motion.angle = wrap_angle(target);
+    } else {
+        float toward = target - current;
+        if (toward > 3.1415927f) toward = target - (current + 6.2831855f);
+        else if (current - target > 3.1415927f) toward = target - (current - 6.2831855f);
+        toward = wrap_angle(wrap_angle(toward) * 0.1f);
+        b.motion.angle = wrap_angle(wrap_angle(current + toward));
+    }
+    if (b.active == 2) return;   // 收束段：ANM 走完后由 0x4456d0 回收
+
+    // 原版此处按自机 x 调激光循环音的声像（IDirectSoundBuffer::SetPan），无逻辑副作用
+    DamageSource* d = damage_source(b.damage_source);
+    if (b.hit_w < 512.0f) {
+        b.hit_w += 18.0f;
+        if (d != nullptr) d->size_x = b.hit_w;
+    }
+    const Vec3 half = polar(b.motion.angle, b.hit_w * 0.5f);
+    if (AnmVm* vm = manager.find(b.vm)) {
+        vm->flags_lo |= 8u;
+        vm->sprite_size.x = b.hit_w;
+        vm->flags_lo |= 0x10u;
+        vm->uv_scale.x = b.hit_w * 0.001953125f;
+    } else {
+        b.vm = 0;
+    }
+    if (d != nullptr) d->motion.pos = {b.motion.pos.x + half.x, b.motion.pos.y + half.y, 0.0f};
+
+    if (b.laser_hit == 0) {
+        if (b.active != 1) { b.laser_hit = 0; return; }
+        if (b.laser_hitting == 1) {
+            manager.interrupt(b.vm, 3);   // 离开敌机：收起命中火花
+            b.laser_hitting = 0;
+        }
+    }
+    if (b.active == 1) {
+        // 持续条件：仍按着射击、所属子机仍在、非复活等待 / 决死、发射时的火力等级未变、无对话、敌机管理器在
+        const int cooldown_slot = (option_index < 100 ? option_index : option_index - 100) + (sub ? 8 : 0);
+        const bool option_alive = sub ? option_index - 100 < sub_count : option_index < option_count;
+        const i32 power_level_now = globals.power_per_level != 0 ? globals.power / globals.power_per_level : 0;
+        const bool keep = shot_timer.current >= 0 && option_alive && state != kRespawnWait && state != kDying &&
+                          option_cooldown[cooldown_slot] == power_level_now && !world.dialogue && enemies != nullptr;
+        if (!keep) {
+            if (d != nullptr) d->flags &= ~1u;
+            b.active = 2;
+            manager.interrupt(b.vm, 1);   // 收束动画
+            option_cooldown[cooldown_slot] = 0;
+            sfx_stop_queue.push_back(0x14);
+        }
+    }
+    b.laser_hit = 0;
+}
+
+// 0x446870（圆形判定路径；原版另有 flags & 0x1000 的矩形路径，th16 ECL 无设置点，未移植）
+// 返回本次结算的伤害：激光每 4 帧结算一次伤害源的伤害值
+i32 Player::hit_laser(AnmManager& manager, const GameGlobals& globals, PlayerBullet& b, const Vec3& enemy_pos,
+                      float radius) {
+    b.laser_hit = 1;
+    if (b.laser_hitting == 0) {
+        manager.interrupt(b.vm, 2);   // 贴上敌机：命中火花
+        b.laser_hitting = 1;
+    }
+    DamageSource* d = damage_source(b.damage_source);
+    // 把敌机位置转到激光坐标系：along 沿激光、perp 垂直激光；判定半宽 = 激光半宽 + 敌机半径
+    const float half_width = (d != nullptr ? d->size_y : 0.0f) * 0.5f + radius;
+    const float dx = enemy_pos.x - b.motion.pos.x;
+    const float dy = enemy_pos.y - b.motion.pos.y;
+    const float s = sin_f(-b.motion.angle);
+    const float c = cos_f(-b.motion.angle);
+    const float perp = dy * c + dx * s;
+    float along = dx * c - dy * s;
+    const bool inside = std::fabs(perp) <= half_width && -half_width <= along &&
+                        (0.0f <= along || along * along + perp * perp <= half_width * half_width);
+    if (inside) {
+        // 截到敌机圆的近表面：沿激光方向回退 sqrt(1 - (perp / r)²) × r
+        const float t = perp / half_width;
+        along -= float(std::sqrt(double(1.0f - t * t))) * half_width;
+    }
+    b.hit_w = along + 8.0f;
+    if (b.hit_w < 0.0f) b.hit_w = 0.0f;
+    if (d != nullptr) d->size_x = b.hit_w;
+
+    // 每隔一帧在激光末端放一枚命中火花（主射击 pl01 脚本 8 / 冬季子机 pl01sub 脚本 2），沿激光方向飘出 64
+    if (b.timer.current != b.timer.previous && (b.timer.current & 1) == 0) {
+        const Vec3 reach = polar(b.motion.angle, b.hit_w);
+        const Vec3 tip{b.motion.pos.x + reach.x, b.motion.pos.y + reach.y, 0.0f};
+        const Vec3 drift = polar(b.motion.angle, 64.0f);
+        const bool sub = (b.shot_id & 0xf0000u) != 0;
+        AnmFile* file = sub ? sub_anm : anm;
+        if (file != nullptr) {
+            const u32 id = manager.spawn_effect(*file, sub ? 2 : 8, -1, tip, 0.0f);
+            if (effects != nullptr) effects->register_id(id);
+            if (AnmVm* spark = manager.find(id)) {
+                spark->flags_lo |= 4u;
+                spark->rotation.z = b.motion.angle;
+                const Vec3 push{globals.push_x, globals.push_y, globals.push_z};
+                spark->pos_interp.end_time = 0x14;
+                spark->pos_interp.bezier1 = push;
+                spark->pos_interp.bezier2 = push;
+                spark->pos_interp.mode = 4;
+                spark->pos_interp.initial = push;
+                spark->pos_interp.goal = {drift.x, drift.y, 0.0f};
+                spark->pos_interp.timer.reset();
+            }
+        }
+    }
+    if (b.timer.current != b.timer.previous && b.timer.current % 4 == 0) return d != nullptr ? d->damage : 0;
+    return 0;
+}
+
 i32 Player::apply_damage_sources(AnmManager& manager, GameGlobals& globals, const Vec3& enemy_pos, float radius,
                                  u32 enemy_id, Vec3* hit_pos, bool* bomb_hit, bool probe) {
     // 0x445a30
@@ -1065,16 +1213,21 @@ i32 Player::apply_damage_sources(AnmManager& manager, GameGlobals& globals, cons
         if (!probe && d.kind != 0) {
             d.f8c = i32(enemy_id);
             if (d.kind == 1 && d.owner >= 0 && d.owner < kBulletCount) {
-                // 0x445d40：按 .sht 项 hit_callback 分派（0 → 0x445e20；5 → 0x447270 文命中特效 + 0x445e20）
+                // 0x445d40：按 .sht 项 hit_callback（DAT_00491980 表）分派：
+                //   0 → 0x445e20 默认消散；2 → 0x446870 激光截断；5 → 0x447270 文命中特效 + 0x445e20
                 PlayerBullet& b = bullets[d.owner];
                 const ShotEntry* se = shot_entry(b.shot_id);
-                if (se != nullptr && se->hit_callback() == 5) {
-                    const float jitter = manager.game_rng.signed_unit() * 0.34906584f;
-                    const float eff_angle = wrap_angle(b.motion.angle + jitter);
-                    if (AnmFile* eff = manager.file(8))
-                        manager.spawn_effect(*eff, 0x98, -1, b.motion.pos, eff_angle);
+                if (se != nullptr && se->hit_callback() == 2) {
+                    dmg = hit_laser(manager, globals, b, enemy_pos, radius);
+                } else {
+                    if (se != nullptr && se->hit_callback() == 5) {
+                        const float jitter = manager.game_rng.signed_unit() * 0.34906584f;
+                        const float eff_angle = wrap_angle(b.motion.angle + jitter);
+                        if (AnmFile* eff = manager.file(8))
+                            manager.spawn_effect(*eff, 0x98, -1, b.motion.pos, eff_angle);
+                    }
+                    dmg = hit_bullet_default(manager, b);
                 }
-                dmg = hit_bullet_default(manager, b);
             } else if (d.kind == 2 && d.owner >= 0 && d.owner < kBulletCount) {
                 // 0x4474a0：文低速充能弹返回当前伤害并将弹伤害降为 1
                 PlayerBullet& b = bullets[d.owner];

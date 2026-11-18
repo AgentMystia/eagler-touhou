@@ -42,11 +42,12 @@ struct PlayerBullet {
     Timer timer;            // +0x0c
     u8 pad20[0x28] = {};    // +0x20
     MotionState motion;     // +0x48（pos +0x48 / speed +0x60 / angle +0x64 / velocity +0x7c / mode +0x88）
-    i32 active = 0;         // +0x8c（1 活动；2 = 激光等由回调改）
+    i32 active = 0;         // +0x8c（1 活动；2 = 命中后的消散段 / 激光收束段）
     i32 target = 0;         // +0x90 追踪目标敌人 id（回调 1）
-    u32 pad94[2] = {};      // +0x94
+    i32 laser_hit = 0;      // +0x94 激光：本帧命中过敌机（命中回调 0x446870 置 1，逐帧回调 0x446260 末尾清 0）
+    i32 laser_hitting = 0;  // +0x98 激光：处于「贴着敌机」状态（进入时中断 2，离开时中断 3）
     i32 damage = 0;         // +0x9c（.sht +2）
-    float hit_w = 0;        // +0xa0（.sht +0xc）
+    float hit_w = 0;        // +0xa0（.sht +0xc；激光用作当前长度：每帧 +18 至 512，命中时截到敌机表面 +8）
     float hit_h = 0;        // +0xa4（.sht +0x10）
     u32 pada8 = 0;          // +0xa8
     u32 shot_id = 0;        // +0xac  (set<<8 | entry)，子季节组另加 0x10000
@@ -251,9 +252,16 @@ private:
     void recover_from_deathbomb();                                         // 0x444070
     void spawn_afterimage(AnmManager& manager, const GameGlobals& globals, bool red);  // 0x442560 残影段
     void scatter_death_items(AnmManager& manager, GameGlobals& globals);  // 0x442560 case 2 第 3 帧：火力减半级、7 枚火力道具扇形散出
-    void tick_bullets(AnmManager& manager, const AnmRenderer& geometry, float game_speed);  // 0x4456d0
+    void tick_bullets(AnmManager& manager, const GameGlobals& globals, const PlayerWorld& world,
+                      const AnmRenderer& geometry, float game_speed);       // 0x4456d0
     void release_bullet(PlayerBullet& b);                                 // 池项失活 + 伤害源 bit0 清零
     i32 hit_bullet_default(AnmManager& manager, PlayerBullet& b);         // 0x445e20
+    // 魔理沙激光（.sht 类型 2：pl01 主射击与冬季子机）：生成 / 逐帧 / 命中回调
+    void start_laser(PlayerBullet& b);                                    // 0x446200
+    void tick_laser(AnmManager& manager, const GameGlobals& globals, const PlayerWorld& world, PlayerBullet& b,
+                    const ShotEntry& e);                                  // 0x446260
+    i32 hit_laser(AnmManager& manager, const GameGlobals& globals, PlayerBullet& b, const Vec3& enemy_pos,
+                  float radius);                                          // 0x446870（圆形判定路径）
     const ShotEntry* shot_entry(u32 shot_id) const;                       // (set<<8|entry)(+0x10000 子季节) → .sht 项
     u32 spawn_option_vm(AnmManager& manager, AnmFile& file, int script);  // 0x4440e0 内联生成（世界链表尾，layer 0xe）
 };
