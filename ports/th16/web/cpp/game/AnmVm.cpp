@@ -984,7 +984,11 @@ int AnmManager::run(AnmVm& vm) {
     AnmFile* f = file(vm.file_slot);
     if (f == nullptr || vm.script_index < 0 || u32(vm.script_index) >= f->scripts.size()) return 0;
     AnmInterpreter it{*this, vm, *f};
-    return it.run();
+    const AnmVm* outer = running_vm;
+    running_vm = &vm;
+    const int rc = it.run();
+    running_vm = outer;
+    return rc;
 }
 
 }  // namespace th16

@@ -6,6 +6,7 @@
 //   harness archive-list <th16.dat>            → 每行 "name size fnv1a64"（与 thtk 解包对照）
 //   harness archive-extract <th16.dat> <name> <out>
 //   harness anm <th16.dat> <name.anm>          → 逐 entry 报告：name w h format sprites scripts texture
+//   harness anm-script <th16.dat> <x.anm> <script>  → 反汇编单个 ANM 脚本（调试）
 //   harness anm-run <th16.dat> <name.anm> <scripts: all|3|0-20,40> <frames> [layer]
 //                                              → JSON：每帧世界链表各 VM 的 {id, script, bytes(0..0x568 hex)} 与 36 条 layer 绘制链
 //                                                （与 tools/oracle/anm-oracle.py 直接执行原版得到的快照逐字节对照）
@@ -296,6 +297,31 @@ int main(int argc, char** argv) {
         }
         return 0;
     }
+    if (command == "anm-script" && argc >= 5) {
+        // 反汇编一个 ANM 脚本：每行 time type mask | 参数（十六进制 / i32 / f32）
+        std::vector<u8> bytes;
+        if (!archive.read(argv[3], bytes)) return fail(archive.error.c_str());
+        AnmResource anm;
+        if (!anm.parse(bytes.data(), u32(bytes.size()), argv[3])) return fail(anm.error.c_str());
+        const int want = std::atoi(argv[4]);
+        for (const auto& e : anm.entries) {
+            for (const auto& s : e.scripts) {
+                if (s.id != want) continue;
+                std::printf("%s script %d\n", e.name.c_str(), s.id);
+                for (const auto& ins : s.instructions) {
+                    std::printf("  +%-5u t=%-5d op=%-4u mask=%04x |", ins.offset, ins.time, ins.type, ins.param_mask);
+                    for (u32 i = 0; i + 4 <= ins.arg_bytes; i += 4) {
+                        u32 v; float fv;
+                        std::memcpy(&v, ins.args + i, 4);
+                        std::memcpy(&fv, ins.args + i, 4);
+                        std::printf(" %08x(%d/%g)", v, i32(v), fv);
+                    }
+                    std::printf("\n");
+                }
+            }
+        }
+        return 0;
+    }
     if (command == "anm-run" && argc >= 6) {
         std::vector<u8> bytes;
         if (!archive.read(argv[3], bytes)) return fail(archive.error.c_str());
@@ -500,6 +526,22 @@ int main(int argc, char** argv) {
         // refill != 0：每帧开始前把残机补回 lives（game-oracle.py --refill-lives 同口径）；原版残机显示 0x42c280 只有 8 槽，
         // 不能直接写入 > 8 的残机数，长程无输入对拍只能靠补满越过 Game Over
         const int refill_lives = (argc >= 14 && argv[13][0] != '\0' && std::atoi(argv[13]) != 0) ? session.globals.lives : -1;
+
+        // TH16_TRACE_GAME_RNG=<frame>（1 起）：该帧每次游戏 RNG（DAT_004a6d80）调用按正在运行的 ANM VM 归因写到 stderr，
+        // 与 game-oracle.py --trace-rng --trace-game-rng 的 (脚本号, 精灵号) 对照
+        struct RngTraceState { GameSession* session; int frame; int current; } trace_state{&session, 0, 0};
+        if (const char* env = std::getenv("TH16_TRACE_GAME_RNG")) {
+            trace_state.frame = std::atoi(env);
+            static RngTraceState* s_trace = nullptr;
+            s_trace = &trace_state;
+            g_rng_trace = [](const Rng& rng, int step) {
+                if (s_trace == nullptr || s_trace->current != s_trace->frame) return;
+                if (&rng != &s_trace->session->animations.game_rng) return;
+                const AnmVm* vm = s_trace->session->animations.running_vm;
+                std::fprintf(stderr, "rng frame=%d step=%d script=%d sprite=%d\n", s_trace->current, step,
+                             vm != nullptr ? vm->script_index : -1, vm != nullptr ? vm->sprite_index : -1);
+            };
+        }
 
         constexpr size_t kSnapshotBytes = 0x568;
         u64 digest = 0xcbf29ce484222325ull;

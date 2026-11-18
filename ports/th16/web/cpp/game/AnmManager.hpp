@@ -126,6 +126,7 @@ public:
 
     // 全局状态（原版为独立全局变量，oracle 中亦为零/默认）
     float game_speed = 1.0f;          // DAT_004a5788
+    const AnmVm* running_vm = nullptr;  // 正在 run 的 VM（0x45f980 入口；RNG 调试钩子归因用）
     Rng game_rng;                     // DAT_004a6d80
     Rng visual_rng;                   // DAT_004a6d88
     // DAT_004c168c 全局相机副本（StageManager::camera_global）：ANM 变量 10016..10018 = pos + pos_offset、

@@ -21,6 +21,10 @@
 
 namespace th16 {
 
+struct Rng;
+// 调试钩子（对拍 game-oracle.py --trace-rng 用）：每次单步 / 双步前调用；正常运行为空
+inline void (*g_rng_trace)(const Rng& rng, int step) = nullptr;
+
 struct Rng {
     u16 seed = 0;
     u16 reserved = 0;
@@ -28,6 +32,7 @@ struct Rng {
 
     // 0x402b70
     u16 next16() noexcept {
+        if (g_rng_trace != nullptr) g_rng_trace(*this, 1);
         const u16 mixed = u16((seed ^ 0x9630u) - 0x6553u);
         seed = u16((mixed >> 14) + mixed * 4);
         ++calls;
@@ -36,6 +41,7 @@ struct Rng {
 
     // 0x402be0
     u32 next32() noexcept {
+        if (g_rng_trace != nullptr) g_rng_trace(*this, 2);
         const u16 high = u16((seed ^ 0x9630u) - 0x6553u);
         const u16 middle = u16((high >> 14) + high * 4);
         const u16 low = u16((middle ^ 0x9630u) - 0x6553u);
