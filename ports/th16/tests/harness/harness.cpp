@@ -667,6 +667,10 @@ int main(int argc, char** argv) {
         i32 dialogue_hold = -1;
         // 提供了 enemies/dialogue 时间表时，由桩接管 PlayerWorld 对应字段（保持“最后一次赋值”语义）
         if (!enemy_script.empty()) session.sync_enemy_count = false;
+        // 与 game-oracle.py 同口径：游戏场景结束（回标题 / 结局 / 退出）后没有 GameManager 可对拍，
+        // 在该帧停止，不再记录帧；scene_exit 为切换到的场景号
+        i32 scene_exit = -1;
+        i32 exit_frame = 0;
         for (int f = 0; f < frames; ++f) {
             for (const Event& e : input_script) if (e.frame == f) held = e.value;
             for (const Event& e : enemy_script) if (e.frame == f) enemy_hold = e.value;
@@ -677,6 +681,11 @@ int main(int argc, char** argv) {
             if (refill_lives >= 0 && session.globals.lives < refill_lives) session.globals.lives = refill_lives;
             trace_state.current = f + 1;
             if (!session.logic_step()) return fail(session.failure.c_str());
+            if (!session.game_live) {
+                scene_exit = i32(session.supervisor.current);
+                exit_frame = f + 1;
+                break;
+            }
 
             const Player& pl = session.game.player;
             const GameGlobals& g = session.globals;
@@ -1136,12 +1145,12 @@ int main(int argc, char** argv) {
             std::printf("}");
         }
         if (digest_only)
-            std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx enemies=%016llx bullets=%016llx enemy_vms=%016llx items=%016llx spell=%016llx lasers=%016llx bombs=%016llx menu=%016llx\n",
-                        stage, shot, season, frames, (unsigned long long)digest, (unsigned long long)enm_digest,
+            std::printf("stage=%d shot=%d season=%d frames=%d scene_exit=%d exit_frame=%d digest=%016llx enemies=%016llx bullets=%016llx enemy_vms=%016llx items=%016llx spell=%016llx lasers=%016llx bombs=%016llx menu=%016llx\n",
+                        stage, shot, season, frames, scene_exit, exit_frame, (unsigned long long)digest, (unsigned long long)enm_digest,
                         (unsigned long long)bul_digest, (unsigned long long)vm_digest, (unsigned long long)item_digest,
                         (unsigned long long)spell_digest, (unsigned long long)laser_digest, (unsigned long long)bomb_digest,
                         (unsigned long long)menu_digest);
-        else std::printf("]}\n");
+        else std::printf("],\"scene_exit\":%d,\"exit_frame\":%d}\n", scene_exit, exit_frame);
         if (!session.game.enemies.unknown_ops.empty()) {
             std::fprintf(stderr, "unknown_ecl_ops=");
             for (size_t i = 0; i < session.game.enemies.unknown_ops.size(); ++i)
