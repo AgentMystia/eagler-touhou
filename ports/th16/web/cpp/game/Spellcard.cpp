@@ -4,10 +4,12 @@
 #include <cstring>
 
 #include "AnmManager.hpp"
+#include "Ascii.hpp"
 #include "Enemy.hpp"
 #include "GameGlobals.hpp"
 #include "Gui.hpp"
 #include "Player.hpp"
+#include "ScoreFile.hpp"
 #include "Stage.hpp"
 #include "StageTable.hpp"
 
@@ -63,7 +65,7 @@ void Spellcard::start(i32 spell_id, const char* spell_name, i32 limit, i32 anm_i
     std::strncpy(name, spell_name, sizeof(name) - 1);
     name[sizeof(name) - 1] = '\0';
     flags = (flags & ~(kSurvival | kNoTimeout | kTimedOut)) | (kActive | kBonusAvailable);
-    // 成绩文件（DAT_004a6f0c）符卡挑战计数与名字登记：ScoreFile 接入时补（非回放模式写入）
+    if (scores != nullptr && !replay_playback) scores->record_spell_attempt(record_shot(), id, is_spell_practice(), name);
     if (gui != nullptr) gui->set_boss_timer_style(Gui::TimerStyle::Spell);   // 0x4175d0
     state = 1;
     flags &= ~(kBombUsed | kTiming);
@@ -158,6 +160,10 @@ void Spellcard::update(float game_speed) {
     if ((flags & kBombUsed) != 0 && (enemies == nullptr || !enemies->bomb_active)) flags &= ~kBombUsed;
 }
 
+// 成绩文件机体块下标 DAT_004a57a4 + DAT_004a57a8；符卡练习（模式 2）记在第二组计数
+int Spellcard::record_shot() const { return globals != nullptr ? globals->shot + globals->shot_aux : 0; }
+bool Spellcard::is_spell_practice() const { return globals != nullptr && globals->mode() == 2; }
+
 // 0x4182f0
 void Spellcard::end() {
     if ((flags & kActive) == 0) return;
@@ -177,10 +183,40 @@ void Spellcard::end() {
     } else {
         if (globals != nullptr) globals->add_score(bonus, [this] { if (gui != nullptr) gui->celebrate_extend(); });   // 0x43e080
         if (gui != nullptr) gui->show_notice(Gui::Notice::SpellBonus, bonus);
-        // 成绩文件符卡取得计数：ScoreFile 接入时补
+        if (scores != nullptr && !replay_playback) scores->record_spell_capture(record_shot(), id, is_spell_practice());
         play_sfx(0x2e);
     }
     if ((flags & kTimedOut) != 0) play_sfx(0x45);
+}
+
+// 0x417d70
+void Spellcard::draw_text(AsciiManager& text) const {
+    if ((flags & kActive) == 0 || animations == nullptr) return;
+    const AnmVm* label = animations->find(vm_ids[3]);
+    if (label == nullptr) return;
+    AsciiManager::Style& style = text.style;
+    style.font = AsciiManager::Font::Medium;
+    style.group = AsciiManager::Group::FieldLate;
+    text.set_alpha(label->color[3]);
+    if ((flags & kBonusAvailable) != 0) {
+        text.printf({266.0f, 35.0f, 0.0f}, "%8d", bonus);
+    } else {
+        text.printf({282.0f, 35.0f, 0.0f}, "$");
+    }
+    const SpellRecord* record = scores != nullptr ? scores->spell_record(record_shot(), id) : nullptr;
+    const u32 captures = record != nullptr ? record->captures[is_spell_practice()] : 0;
+    const u32 attempts = record != nullptr ? record->attempts[is_spell_practice()] : 0;
+    const Vec3 record_pos{360.0f, 35.0f, 0.0f};
+    if (captures >= 100) {
+        text.printf(record_pos, "MASTER");
+    } else if (attempts >= 100) {
+        text.printf(record_pos, "%.2d/99+", captures);
+    } else {
+        text.printf(record_pos, "%.2d/%.2d", captures, attempts);
+    }
+    style.font = AsciiManager::Font::Default;
+    style.group = AsciiManager::Group::Ui;
+    text.set_alpha(0xff);
 }
 
 }  // namespace th16

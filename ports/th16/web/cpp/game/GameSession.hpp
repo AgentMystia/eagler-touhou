@@ -117,6 +117,8 @@ private:
     ChainEntry* bomb_draw_chain_ = nullptr;           // 0x28（0x40da70）
     ChainEntry* release_draw_chain_ = nullptr;        // 0x29
     ChainEntry* gui_update_chain_ = nullptr;
+    ChainEntry* gui_draw_chains_[2]{};                // 0x33（0x426b00 +0x8：空回调）/ 0x30（0x428e70 HUD 文字）
+    ChainEntry* spellcard_draw_chain_ = nullptr;      // 0xc（0x417d70 符卡奖励 / 取得数文字）
     ChainEntry* menu_update_chain_ = nullptr;         // 10（0x43e720 → 0x43e5f0）
     ChainEntry* ui_tick_chain_ = nullptr;             // 9（0x46e740 → 0x46e490：UI 表 VM 推进）
     ChainEntry* world_tick_chain_ = nullptr;          // 0x21（0x46e710 → 0x46e340：世界表 VM 推进）

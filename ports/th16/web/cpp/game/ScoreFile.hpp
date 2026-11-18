@@ -4,6 +4,8 @@
 //   0x4493c0  每机体一块 0x5318：+0x10 起 6 个难度 × 10 条排名（0x20 字节）；+0x5198 练习最高分 [难度 × 8 + 关卡]{分, 过关位}
 //   0x449720  公共块（+0x19f80）：+0xc 最近输入的名字（8 空格）
 //   0x43e250  排名插入：首个 score ≤ 新分 的位置，其后整体下移一格；新条目名字 8 空格、附关卡 / 续关数 / 时间 / 慢放率 / 季节
+//   0x417f00 / 0x4182f0  符卡记录：机体块 +0x8d8 起每张 0x9c{名字 0x80, 取得[2], 挑战[2]}（[1] 为符卡练习）；
+//             第 5 块（+0x15538 起）是全机体合计，和当前机体块同步累加；回放中不计
 // 读盘（0x402440 + 0x449880 校验）/ 写盘（0x449a00）与音乐室 / 符卡记录由宿主的存档接入时补齐。
 #pragma once
 #include <cstring>
@@ -27,8 +29,17 @@ struct PracticeRecord {
     u8 cleared = 0;         // +0x04
 };
 
+struct SpellRecord {
+    char name[0x80] = {};   // +0x00
+    u32 captures[2] = {};   // +0x80：[0] 正常 / [1] 符卡练习
+    u32 attempts[2] = {};   // +0x88
+};
+
 struct ScoreFile {
-    static constexpr int kShots = 5;          // 机体块数（shot + shot_aux）
+    static constexpr int kShots = 5;          // 机体块数（shot + shot_aux；块 4 为全机体合计）
+    static constexpr int kAllShotsBlock = 4;
+    static constexpr int kSpellRecords = 119; // +0x8d8 到练习表 +0x5198 之间能放下的符卡数
+    static constexpr u32 kCounterLimit = 99999;
     static constexpr int kDifficulties = 6;
     static constexpr int kRanks = 10;
     static constexpr int kPracticeSlots = kDifficulties * 8;  // 难度 × 8 + 关卡
@@ -38,6 +49,7 @@ struct ScoreFile {
     PracticeRecord practice[kShots][kPracticeSlots];
     u32 clears[kShots][kDifficulties] = {};          // +0x5168：各难度通关次数（上限 99999）
     u32 no_continue_clears[kShots][kDifficulties] = {};  // +0x5184：未续关通关次数
+    SpellRecord spells[kShots][kSpellRecords];       // +0x8d8
     char last_name[9];                       // +0x19f8c
 
     ScoreFile() {
@@ -69,6 +81,31 @@ struct ScoreFile {
             return rank;
         }
         return -1;
+    }
+
+    // 0x417f00 符卡开始（非回放）：当前机体块与合计块都登记名字、挑战数 +1
+    void record_spell_attempt(int shot, int spell, bool practice, const char* name) {
+        if (!spell_record_valid(shot, spell)) return;
+        for (int block : {shot, kAllShotsBlock}) {
+            SpellRecord& record = spells[block][spell];
+            std::strncpy(record.name, name, sizeof(record.name) - 1);
+            record.name[sizeof(record.name) - 1] = '\0';
+            if (record.attempts[practice] < kCounterLimit) ++record.attempts[practice];
+        }
+    }
+    // 0x4182f0 符卡取得（非回放）：两块取得数 +1
+    void record_spell_capture(int shot, int spell, bool practice) {
+        if (!spell_record_valid(shot, spell)) return;
+        for (int block : {shot, kAllShotsBlock}) {
+            SpellRecord& record = spells[block][spell];
+            if (record.captures[practice] < kCounterLimit) ++record.captures[practice];
+        }
+    }
+    const SpellRecord* spell_record(int shot, int spell) const {
+        return spell_record_valid(shot, spell) ? &spells[shot][spell] : nullptr;
+    }
+    static bool spell_record_valid(int shot, int spell) {
+        return shot >= 0 && shot < kAllShotsBlock && spell >= 0 && spell < kSpellRecords;
     }
 
     // 0x42e150 第 6 面 / Extra 通关（非回放）：通关次数 +1，未续关再 +1

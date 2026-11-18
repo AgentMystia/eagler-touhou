@@ -255,8 +255,9 @@ constexpr AddressAnchor kAnchors[] = {
     {"spellcard-ecl-start-op", 0x41DCB0, "game/Enemy.cpp Enemy::execute case 522/528/537..539（case 0x43：指令偏移 32 处 XOR 解密符卡名（key 0x77 步 7 / +0x10）、537..539 加难度偏移、life_flags |= 1 与 7 倍血量池）"},
     {"spellcard-gui-timer-start", 0x4175D0, "game/Spellcard.cpp Spellcard::start → Gui::set_boss_timer_style(Spell)（计时数字中断 2）"},
     {"spellcard-gui-timer-end", 0x417650, nullptr},    // 同上中断 3
-    {"spellcard-timing", 0x417BC0, nullptr},           // 成绩文件符卡练习计次：ScoreFile 接入时补
-    {"spellcard-draw", 0x417D70, nullptr},             // 绘制链 0xc：名牌 / 倒计时文字（渲染侧）
+    {"spellcard-timing", 0x417BC0, nullptr},           // 实时（QueryPerformanceCounter）取得用时 → +0x90 / +0xa4；oracle 不跑主循环，恒 0
+    {"spellcard-draw", 0x417D70, "game/Spellcard.cpp Spellcard::draw_text（绘制链 0xc：名牌 VM 透明度、字体 2 组 2；奖励 \"%8d\" / 已失 \"$\"；取得 / 挑战 \"%.2d/%.2d\"、≥100 次 \"99+\" / \"MASTER\"）"},
+    {"spellcard-records", 0x417F00, "game/ScoreFile.hpp ScoreFile::record_spell_attempt / record_spell_capture（机体块 +0x8d8 + id×0x9c：名字、挑战 +0x88 / 取得 +0x80 [符卡练习 +4]；合计块 4 同步；回放不计；0x4182f0 取得）"},
     // —— ScreenEffect（0x45d150 kind 1 画面震动：更新链 0x13、绘制链 0x54）——
     {"screen-effect-create", 0x45D150, "game/GameSession.cpp GameSession::create_screen_shake（0x45d1a0 kind 1 登记更新链 0x13；ECL 517 经 EnemyManager::shake_requests 在敌机链之后创建）"},
     {"screen-shake-update", 0x45CD30, "game/ScreenEffect.cpp screen_shake_step（计时、线性振幅、game_rng %3 ×2 决定 x/y 符号、DAT_004c1788 / DAT_004c1530 输出；到时返回 7）"},
@@ -459,6 +460,9 @@ constexpr AddressAnchor kAnchors[] = {
     {"gui-hud-teardown", 0x427730, "game/Gui.cpp Gui::shutdown（0x427a20：通知 / 星 / 血条 / 标签 / 残机炸弹格 / 计时数字标删，再 0x46f270 卸 front.anm）"},
     {"anm-request-interrupt", 0x4174D0, "game/AnmManager.cpp AnmManager::request_interrupt（回调钩子 + pending_interrupt）/ interrupt_now（随即执行）"},
     {"gui-hud-root-vm", 0x42C580, nullptr},   // Gui+0x12c HUD 根 VM：th16 从不创建，0x42c580 / 0x42c5c0 为空操作（死代码）
+    {"gui-hud-text", 0x428E70, "game/GuiHud.cpp Gui::draw_hud_text（绘制链 0x30；0x426b00 建、0x426d70 启用：过关奖励 / 符卡用时（0x426840 解码）/ 最高分·得分（末位续关数）/ 下一 extend / 炸弹碎片 n/5 / 火力 / 得点值 / 擦弹 / Boss 计时百分秒 / 场地底部季节等级）"},
+    {"gui-hud-text-noop", 0x426B00, "game/GameSession.cpp enter_game（Gui 绘制链 0x33 回调只返回 1；0x30 → draw_hud_text）"},
+    {"gui-spell-time-decode", 0x426840, "game/GuiHud.cpp decode_spell_time（((秒+22+百分秒)×1000 + (秒+66)%1000)×100 + (百分秒+33)%100，校验不符 → 999.99）"},
     // —— AsciiManager（Ascii.cpp；DAT_004a6d98 文字队列 → 三条绘制链 0x51 / 0x35 / 0x42）——
     {"ascii-create", 0x407CB0, "game/Ascii.cpp AsciiManager::create + GameSession.cpp load_boot_banks（更新链 4 / 绘制链 0x51·0x35·0x42 建为禁用；0x43b290 启用）"},
     {"ascii-enable", 0x43B290, "game/GameSession.cpp GameSession::enable_ascii_chains（启动幕装载完成：四条链 |= 2 并请求 Title）"},

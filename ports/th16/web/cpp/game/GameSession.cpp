@@ -463,13 +463,22 @@ void GameSession::bind_spellcard() {
     spellcard.stage = game.stage.get();
     spellcard.entry = game.entry;
     spellcard.sfx_sink = &sfx_events;
+    spellcard.scores = &scores;
+    spellcard.replay_playback = game.mode == 1;   // ReplayManager+0xc 由 0x447e20(GameManager+0xac) 赋值
     game.gui.spellcard_flags = &spellcard.flags;
+    game.gui.spellcard = &spellcard;
     if (spellcard_update_chain_ == nullptr) {
         spellcard_update_chain_ = chains.create([this]() -> ChainResult {
             if (game.chains_suspended) return ChainResult::Continue;
             spellcard.update(supervisor.game_speed);
             return ChainResult::Continue;
         }, 0x1e, true);
+    }
+    if (spellcard_draw_chain_ == nullptr) {
+        spellcard_draw_chain_ = chains.create([this]() {
+            spellcard.draw_text(ascii);
+            return ChainResult::Continue;
+        }, 0x0c, false);
     }
 }
 
@@ -646,10 +655,18 @@ bool GameSession::enter_game(i32 replay_mode) {
             return ChainResult::Continue;
         }, 0x20, true);
         chains.enable(gui_update_chain_);
+        // 0x426b00：两条绘制链建为禁用，0x426d70（关卡首帧 init_hud）启用。0x33 的回调只返回 1；0x30 画 HUD 文字
+        gui_draw_chains_[0] = chains.create([]() { return ChainResult::Continue; }, 0x33, false);
+        gui_draw_chains_[1] = chains.create([this]() {
+            if (game.gui_live) game.gui.draw_hud_text(ascii);
+            return ChainResult::Continue;
+        }, 0x30, false);
+        game.gui.on_hud_init = [this]() { for (ChainEntry* entry : gui_draw_chains_) chains.enable(entry); };
     }
 
     bind_spellcard();
     chains.enable(spellcard_update_chain_);
+    chains.enable(spellcard_draw_chain_);
     register_game_chains();
     // 0x42cb60 末：+0x90 = 0x3c、清 flags&4、DAT_004a5bec 清 bit0 / bit1 / bit3、0x418420 启用链
     game.transition_length = 0x3c;
@@ -952,9 +969,13 @@ void GameSession::leave_game() {
     if (laser_update_chain_) { chains.remove(laser_update_chain_); laser_update_chain_ = nullptr; }
     if (laser_draw_chain_) { chains.remove(laser_draw_chain_); laser_draw_chain_ = nullptr; }
     if (spellcard_update_chain_) { chains.remove(spellcard_update_chain_); spellcard_update_chain_ = nullptr; }
+    if (spellcard_draw_chain_) { chains.remove(spellcard_draw_chain_); spellcard_draw_chain_ = nullptr; }
     destroy_bombs();
     game.gui.bomb = nullptr;
     if (gui_update_chain_) { chains.remove(gui_update_chain_); gui_update_chain_ = nullptr; }
+    for (ChainEntry*& entry : gui_draw_chains_) {
+        if (entry) { chains.remove(entry); entry = nullptr; }
+    }
     // 0x43e4c0：GameMenu 随 GameManager 一起销毁
     if (menu_update_chain_) { chains.remove(menu_update_chain_); menu_update_chain_ = nullptr; }
     if (menu_live) {
