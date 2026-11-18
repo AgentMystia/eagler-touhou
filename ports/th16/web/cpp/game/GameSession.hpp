@@ -90,6 +90,10 @@ private:
     ChainEntry* laser_update_chain_ = nullptr;
     ChainEntry* laser_draw_chain_ = nullptr;
     ChainEntry* spellcard_update_chain_ = nullptr;
+    ChainEntry* bomb_update_chain_ = nullptr;         // 0x18（0x40dd00 主炸弹）
+    ChainEntry* release_update_chain_ = nullptr;      // 0x19（0x40dd00 季节解放）
+    ChainEntry* bomb_draw_chain_ = nullptr;           // 0x28（0x40da70）
+    ChainEntry* release_draw_chain_ = nullptr;        // 0x29
     ChainEntry* gui_update_chain_ = nullptr;
     std::vector<ChainEntry*> shake_chains_;  // 0x45d150(1) 实例（链 0x13，自删）
     std::vector<ChainEntry*> fade_chains_;   // 0x45d150(0/2/3/5) 实例（链 0x13，自删）
@@ -107,6 +111,16 @@ private:
     // 0x426c10 Gui 关卡部分（logo 槽 6 + 机体 msg）/ 0x4178a0 Spellcard 绑定
     bool create_stage();
     bool create_enemies();
+    // 0x40d890：ECL 之后、Spellcard 之前建主炸弹 + 季节解放，挂更新链 0x18 / 0x19 与绘制链 0x28 / 0x29
+    void create_bombs();
+    // 0x40da90（0x42d200 无条件调用）
+    void destroy_bombs();
+    // 原版各管理器直接读 DAT_004a6da8 / DAT_004a6da4 的发动状态与解放等级；这里在每条消费链前镜像一次
+    void sync_bomb_state();
+    // 炸弹代码段登记的音效 / Gui 通知 / 画面震动（0x45d150 kind 1 与 kind 8）
+    void harvest_bomb_events();
+    // 0x45d150(8, amplitude, attack, sustain, decay) + 0x45cf10：炸弹震动包络（链 0x13，visual_rng）
+    void create_screen_shake_envelope(const BombShakeRequest& request);
     bool load_gui_stage_assets(AnmFile*& logo, std::vector<u8>& msg_bytes);
     void bind_spellcard();
     void register_game_chains();   // 0x42cb60 末：GameManager 链 0xf

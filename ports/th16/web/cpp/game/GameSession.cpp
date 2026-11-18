@@ -229,6 +229,7 @@ bool GameSession::create_player() {
     // 0x440fb0：自机更新链 0x16（0x443720 → 0x442560）与绘制链 0x1d（0x443730）
     player_update_chain_ = chains.create([this]() -> ChainResult {
         game.player.update(animations, globals, game_input, game.world, animations.file(8), geometry, supervisor.game_speed);
+        harvest_bomb_events();   // 状态 1 / 决死中发动的炸弹（音效先于自机本帧的射击音）
         harvest_player_sfx();
         game.player.sfx_stop_queue.clear();
         game.player.gui_events.clear();
@@ -322,6 +323,7 @@ bool GameSession::create_enemies() {
                     game.bullets->game_speed = supervisor.game_speed;
                     game.bullets->sfx_queue.clear();
                 }
+                sync_bomb_state();
                 game.enemies.update(supervisor.game_speed);
                 if (game.bullets_live) {
                     // ECL 601 等发射期间登记的音效（0x45e1f0 调用序在敌人链内）
@@ -419,6 +421,7 @@ bool GameSession::enter_game() {
             // 0x411880：GameManager 装载中（bit2）或结束位（bit0 经 >>2 映射）时跳过
             if (game.bullets_live && !game.chains_suspended && ((game.flags | (game.flags >> 2)) & 1u) == 0) {
                 game.bullets->sfx_queue.clear();
+                sync_bomb_state();
                 game.bullets->update(supervisor.game_speed, (game.flags & 0x400u) != 0);
                 // Ex 0x8000000 在 0x413860 内直接建激光（同帧挂入激光链尾，下一帧起推进）
                 if (game.lasers_live) {
@@ -454,6 +457,7 @@ bool GameSession::enter_game() {
                 (game.flags & 0x400u) == 0) {
                 game.items->dialogue = game.world.dialogue;
                 game.items->focus_held = (game_input.held & 0x8u) != 0;
+                sync_bomb_state();
                 game.items->update(supervisor.game_speed);
                 sfx_events.insert(sfx_events.end(), game.items->sfx_queue.begin(), game.items->sfx_queue.end());
                 game.items->sfx_queue.clear();
@@ -500,6 +504,7 @@ bool GameSession::enter_game() {
     }
 
     if (!create_enemies()) return false;
+    create_bombs();
 
     // 0x427ca0 / 0x426b00 / 0x426c10：Gui——front.anm（槽 5）、关卡 logo ANM → 槽 6、按机体的 msg 文件；
     // 更新链 0x20（0x429af0 → 0x427cf0）。原版在 Bullet 之前创建，这里放到 ECL 之后以便直接绑定各管理器指针
@@ -517,6 +522,7 @@ bool GameSession::enter_game() {
         game.gui.geometry = &geometry;
         game.gui.replay_playback = game.mode != 0;
         game.gui.spellcard_flags = &spellcard.flags;
+        game.gui.bomb = game.bombs.main();
         if (!game.gui.init(animations, animations.file(5), logo, *game.entry, std::move(msg_bytes))) {
             failure = game.gui.error;
             return false;
@@ -598,14 +604,17 @@ bool GameSession::next_stage() {
     // 暂停 / Bullet / Replay 链禁用（0x42dee0 再启用）；0x4184a0 Item 复位
     game.chains_suspended = true;
     if (game.items_live) game.items->reset();
-    // (bec & 9) == 0：0x41b1a0 EnemyManager 析构（ECL ANIM 槽卸载）、0x46f270 标删 effect.anm / bullet.anm 全部 VM、
-    // 0x40da90 Bomb 析构（Bomb 接入时补）、0x417790 Spellcard 析构
+    // (bec & 9) == 0：0x41b1a0 EnemyManager 析构（ECL ANIM 槽卸载），否则 0x4185b0 复位；随后无条件
+    // 0x46f270 标删 effect.anm / bullet.anm 全部 VM、0x40da90 Bomb 析构、0x417790 Spellcard 析构
     if ((globals.flags & 9u) == 0) {
         if (game.enemies_live) { game.enemies.destroy(); game.enemies_live = false; }
-        animations.kill_file(8);
-        animations.kill_file(BulletManager::kBulletAnmSlot);
-        spellcard.destroy();
+    } else if (game.enemies_live) {
+        game.enemies.reset();
     }
+    animations.kill_file(8);
+    animations.kill_file(BulletManager::kBulletAnmSlot);
+    destroy_bombs();
+    spellcard.destroy();
     if (game_update_chain_) { chains.remove(game_update_chain_); game_update_chain_ = nullptr; }
     // 0x42e4d0 声音循环 / DAT_004c1b0c：Sound 接入时补
     globals.post_load_frames = 1;
@@ -632,6 +641,8 @@ bool GameSession::next_stage() {
     }
     if (!create_stage()) return false;
     if ((globals.flags & 9u) == 0 && !create_enemies()) return false;
+    create_bombs();
+    game.gui.bomb = game.bombs.main();
     bind_spellcard();
     register_game_chains();
     game.transition_length = 0x3c;
@@ -642,6 +653,115 @@ bool GameSession::next_stage() {
     chains.enable(game_update_chain_);
     chains.enable(stage_update_chain_);
     return true;
+}
+
+void GameSession::create_bombs() {
+    destroy_bombs();
+    BombContext context;
+    context.animations = &animations;
+    context.player = &game.player;
+    context.globals = &globals;
+    context.enemies = &game.enemies;
+    context.bullets = game.bullets.get();
+    context.lasers = game.lasers.get();
+    context.effects = &effects;
+    context.spellcard = &spellcard;
+    context.world = &game.world;
+    game.bombs.create(std::move(context));
+    game.player.bomb = game.bombs.main();
+    game.player.season_release = game.bombs.release();
+    if (game.items_live) game.items->release_bonus = &game.bombs.release()->release_bonus;
+
+    // 0x40d600：更新链 0x18 / 0x19（0x40dd00），绘制链 0x28 / 0x29（0x40da70）
+    // 0x40d600 建链时即置启用位（与 Enemy / Spellcard 链等到 0x42dee0 才启用不同），不看换关状态
+    bomb_update_chain_ = chains.create([this]() -> ChainResult {
+        game.bombs.update_main(supervisor.game_speed);
+        harvest_bomb_events();
+        return ChainResult::Continue;
+    }, 0x18, true);
+    release_update_chain_ = chains.create([this]() -> ChainResult {
+        game.bombs.update_release(supervisor.game_speed);
+        harvest_bomb_events();
+        return ChainResult::Continue;
+    }, 0x19, true);
+    bomb_draw_chain_ = chains.create([this]() -> ChainResult {
+        game.bombs.prepare_draw_main(supervisor.game_speed);
+        return ChainResult::Continue;
+    }, 0x28, false);
+    release_draw_chain_ = chains.create([this]() -> ChainResult {
+        game.bombs.prepare_draw_release(supervisor.game_speed);
+        return ChainResult::Continue;
+    }, 0x29, false);
+    chains.enable(bomb_update_chain_);
+    chains.enable(release_update_chain_);
+    chains.enable(bomb_draw_chain_);
+    chains.enable(release_draw_chain_);
+}
+
+void GameSession::destroy_bombs() {
+    for (ChainEntry** entry : {&bomb_update_chain_, &release_update_chain_, &bomb_draw_chain_, &release_draw_chain_}) {
+        if (*entry != nullptr) { chains.remove(*entry); *entry = nullptr; }
+    }
+    if (game.bombs.main() == nullptr) return;
+    game.bombs.destroy();
+    game.player.bomb = nullptr;
+    game.player.season_release = nullptr;
+    if (game.items_live) game.items->release_bonus = nullptr;
+}
+
+void GameSession::sync_bomb_state() {
+    const Bomb* main = game.bombs.main();
+    const Bomb* release = game.bombs.release();
+    const bool main_active = main != nullptr && main->active == 1;
+    const bool release_active = release != nullptr && release->active == 1;
+    game.enemies.bomb_active = main_active;
+    game.enemies.release_active = release_active;
+    if (game.bullets_live) {
+        game.bullets->season_release_active = release_active;
+        game.bullets->season_release_item = release != nullptr ? release->release_level : 0;
+    }
+    if (game.items_live) {
+        game.items->bomb_attract = main_active && main->timer.current < 0x3c;
+        game.items->release_attract = release_active && release->timer.current < 10000;
+    }
+}
+
+void GameSession::harvest_bomb_events() {
+    BombContext& context = game.bombs.context();
+    sfx_events.insert(sfx_events.end(), context.sfx_queue.begin(), context.sfx_queue.end());
+    context.sfx_queue.clear();
+    context.gui_events.clear();   // 0x42c390 / 0x42c600 HUD 显示：渲染接入前无状态影响
+    for (const BombShakeRequest& request : context.shake_requests) {
+        if (request.kind == BombShakeRequest::kLinear) {
+            create_screen_shake(EnemyManager::ShakeRequest{request.a, request.b, request.c});
+        } else {
+            create_screen_shake_envelope(request);
+        }
+    }
+    context.shake_requests.clear();
+}
+
+// 0x45d150(8, amplitude, attack, sustain, decay) + 0x45d1a0：更新链 0x13（0x45cf10）
+void GameSession::create_screen_shake_envelope(const BombShakeRequest& request) {
+    auto shake = std::make_shared<ScreenShakeEnvelope>();
+    shake->amplitude = request.a;
+    shake->attack = request.b;
+    shake->sustain = request.c;
+    shake->decay = request.d;
+    shake->timer.reset();
+    ChainEntry* entry = chains.create([this, shake]() -> ChainResult {
+        const bool frozen = ((game.flags | (game.flags >> 2)) & 1u) != 0 || (game.flags & 0x72u) != 0;
+        return screen_shake_envelope_step(*shake, animations.visual_rng, geometry.window_scale, supervisor.game_speed,
+                                          globals.post_load_frames, frozen, screen_shake)
+                   ? ChainResult::Continue
+                   : ChainResult::Destroy;
+    }, 0x13, true);
+    entry->on_destroy = [this, entry]() {
+        shake_chains_.erase(std::remove(shake_chains_.begin(), shake_chains_.end(), entry), shake_chains_.end());
+        chains.remove(entry);
+    };
+    shake_chains_.push_back(entry);
+    chains.enable(entry);
 }
 
 // 0x45d150(1, duration, from, to) + 0x45d1a0：更新链 0x13（0x45cd30）、绘制链 0x54；计时结束返回 7 → 0x45d130 自删
@@ -701,6 +821,8 @@ void GameSession::leave_game() {
     if (laser_update_chain_) { chains.remove(laser_update_chain_); laser_update_chain_ = nullptr; }
     if (laser_draw_chain_) { chains.remove(laser_draw_chain_); laser_draw_chain_ = nullptr; }
     if (spellcard_update_chain_) { chains.remove(spellcard_update_chain_); spellcard_update_chain_ = nullptr; }
+    destroy_bombs();
+    game.gui.bomb = nullptr;
     if (gui_update_chain_) { chains.remove(gui_update_chain_); gui_update_chain_ = nullptr; }
     if (game.gui_live) {
         // 0x427a20：对话 VM 标删；关卡 logo ANM 槽 6 回收
