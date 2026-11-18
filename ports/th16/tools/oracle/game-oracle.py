@@ -810,10 +810,27 @@ class GameOracle(Oracle):
             'bonus': self.i32(s + 0x7C), 'bonus_initial': self.i32(s + 0x80), 'time_limit': self.i32(s + 0x84),
             'count': self.i32(s + 0x88), 'state': self.i32(s + 0x8C),
             'vm': [1 if self.u32(s + 0xC + i * 4) else 0 for i in range(5)],
-            'dialogue': self.i32(gui + 0x1C8) if gui else 0,
+            'dialogue': 1 if gui and self.u32(gui + 0x1C8) else 0,  # Gui+0x1c8 Msg 指针有无（指针值随堆变化，不入对拍）
             'boss_ids': self.words(em + 0x48, 3) if em else [0, 0, 0],
             'enemy_bonus': [self.i32(0x4A5880), self.i32(0x4A5884)],
             'spell_id': self.i32(0x4A5798),
+        }
+
+    def msg_snapshot(self):
+        """Gui+0x1c8 对话 Msg（0x429b20）：脚本偏移 / 三计时器 / 标志 / 侧 / 行计数 / 文字框 / VM 有无。
+        与 harness `game-run` 的 msg 字段同口径；无对话时为 None。"""
+        gui = self.u32(0x4A6DCC)
+        m = self.u32(gui + 0x1C8) if gui else 0
+        if not m:
+            return None
+        base = self.u32(gui + 0x1CC)
+        return {
+            'entry': self.i32(m), 'pc': self.u32(m + 0x158) - base,
+            'age': self.i32(m + 0x4 + 4), 'timer': self.i32(m + 0x18 + 4), 'wait': self.i32(m + 0x2C + 4),
+            'ecl_release': self.i32(m + 0x18C), 'flags': self.u32(m + 0x190),
+            'lines': [self.i32(m + 0x194), self.i32(m + 0x198)], 'side': self.i32(m + 0x19C),
+            'text_pos': self.words(m + 0x1B0, 2), 'width': self.u32(m + 0x1BC), 'box_index': self.i32(m + 0x1C4),
+            'vm': [1 if self.u32(m + 0x40 + i * 4) else 0 for i in range(12)],
         }
 
     def player_snapshot(self):
@@ -901,7 +918,8 @@ class GameOracle(Oracle):
             'player': self.player_snapshot(),
             # 其它管理器尚未移植时 harness 的外部状态输入（PlayerWorld）：不进 digest
             'enemy_count': self.i32(self.u32(0x4A6DC0) + 0x18C) if self.u32(0x4A6DC0) else 0,
-            'dialogue': self.i32(self.u32(0x4A6DCC) + 0x1C8) if self.u32(0x4A6DCC) else 0,
+            'dialogue': 1 if self.u32(0x4A6DCC) and self.u32(self.u32(0x4A6DCC) + 0x1C8) else 0,
+            'msg': self.msg_snapshot(),
             # DAT_004a6d88（回放同步 RNG）：种子与调用计数（调试对拍用；不进 digest）
             'rng': [struct.unpack('<H', self.uc.mem_read(0x4A6D88, 2))[0], self.u32(0x4A6D8C)],
             # DAT_004a6d80（游戏逻辑 RNG）：种子与调用计数（调试对拍用；不进 digest）
