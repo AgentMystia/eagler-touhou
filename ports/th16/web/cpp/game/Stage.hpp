@@ -58,6 +58,9 @@ public:
 
     StdFile std;
     StageCamera camera;
+    // DAT_004c168c：0x409e50 每帧脚本与插值之后整体抄出的全局相机副本（ANM 变量 10016..10021 读它；
+    // 首次更新前保持默认值——原版此处为上一关 / 上一局残留，仅影响第 0 帧的读取）
+    StageCamera camera_global;
     AnmFile* anm = nullptr;      // +0x66b4
     i32 stage_number = 0;        // +0x66dc
 

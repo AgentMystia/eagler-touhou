@@ -128,7 +128,12 @@ public:
     float game_speed = 1.0f;          // DAT_004a5788
     Rng game_rng;                     // DAT_004a6d80
     Rng visual_rng;                   // DAT_004a6d88
-    Vec3 entity_offset_delta;         // DAT_004c1790..98
+    // DAT_004c168c 全局相机副本（StageManager::camera_global）：ANM 变量 10016..10018 = pos + pos_offset、
+    // 10019..10021 = facing_norm；未绑定（标题 / 无关卡）时读 0
+    const Vec3* camera_pos = nullptr;
+    const Vec3* camera_pos_offset = nullptr;
+    const Vec3* camera_facing_norm = nullptr;
+    Vec3 entity_offset_delta;         // DAT_004c1790..98（= 全局相机副本的 pos_delta，StageManager::update 每帧写入）
     bool paused = false;              // DAT_004a6dd4->0x88 & 2
     u32 spawn_count = 0;              // +0x134（文件计数）
     u32 world_count = 0;              // +0xd8
