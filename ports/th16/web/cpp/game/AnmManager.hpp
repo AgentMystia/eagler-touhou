@@ -59,7 +59,10 @@ struct AnmVmHooks {
 class AnmManager {
 public:
     static constexpr u32 kPoolSize = 0x1fff;
-    static constexpr int kLayerCount = 0x24;
+    // 层链表 0..0x23 为世界表（0x46e340 每帧清空并重建），0x24..0x2a 为 UI 表（0x46e490：层 0x18..0x1f 映射到 +0xc，
+    // 其余归 0x26）；两段共用一组哨兵（+0x1c6fc30 起每层 0x5fc）
+    static constexpr int kWorldLayerCount = 0x24;
+    static constexpr int kLayerCount = 0x2b;
     static constexpr int kBankSlots = 31;
     static constexpr int kAsciiSlot = 2;   // AsciiManager（DAT_004a6d98，0x407cb0）把 ascii*.anm 装入槽 2
 
@@ -80,6 +83,9 @@ public:
     u32 spawn_effect(AnmFile& file, int script, int layer, const Vec3& pos, float rotation_z = 0.0f);
     // 0x426160：同上但挂到世界链表头、creation_flags = 2（自机满火力附加 VM 等）
     u32 spawn_front(AnmFile& file, int script, int layer, AnmVm** out_vm = nullptr);
+    // 0x418fe0：UI 链表 VM（暂停 / 续关菜单、截屏框）：不改 layer、creation_flags = 4、挂到 UI 链表尾，
+    // 插入后清 flags_hi 的 0x4000 | 0x8000。UI 链表由更新链 9（0x46e740 → 0x46e490）推进，暂停期间照常运行
+    u32 spawn_ui(AnmFile& file, int script);
     // 以上三者及 0x41dcb0 op 307/315/338、0x41bb50 朝向切换等内联展开的公共形：
     // 池取 → 模板复制 → flags_hi |= 0x400 → layer（≥0 才设；<0x18 时 flags_hi=(hi&~0x80000)|0x40400）
     // → entity_offset / rotation.z → 首帧 run → creation_flags → 插入世界链表（front/back）

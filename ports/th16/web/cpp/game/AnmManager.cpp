@@ -323,6 +323,21 @@ u32 AnmManager::spawn_vm(AnmFile& file, int script, int layer, const Vec3& offse
     return front ? insert_world_front(*vm) : insert_world_back(*vm);
 }
 
+// 0x418fe0
+u32 AnmManager::spawn_ui(AnmFile& file, int script) {
+    ++spawn_count;
+    AnmVm* vm = allocate();
+    init_from_template(file, *vm, script);
+    vm->flags_hi |= 0x400u;
+    vm->entity_offset = {};
+    vm->rotation.z = 0.0f;
+    run(*vm);
+    vm->creation_flags = 4;
+    const u32 id = insert_ui_back(*vm);
+    vm->flags_hi &= 0xffff3fffu;
+    return id;
+}
+
 // 0x406340
 float AnmManager::root_slowdown(const AnmVm& vm) noexcept {
     const AnmVm* cur = &vm;
@@ -521,7 +536,10 @@ void AnmManager::release(AnmVm& vm) {
 }
 
 void AnmManager::tick_list(AnmListNode*& head, bool ui) {
-    for (int l = 0; l < kLayerCount; ++l) layer_heads_[l] = nullptr;
+    // 各自只清本表的层链：世界表 0..0x23，UI 表 0x24..0x2a
+    const int first = ui ? kWorldLayerCount : 0;
+    const int last = ui ? kLayerCount : kWorldLayerCount;
+    for (int l = first; l < last; ++l) layer_heads_[l] = nullptr;
     AnmVm* tails[kLayerCount] = {};
     AnmListNode pending{nullptr, nullptr, nullptr, nullptr};
     for (AnmListNode* n = head; n != nullptr;) {
