@@ -2,9 +2,9 @@
 //
 // 锚点：
 //   0x42d700  new 0xb4、flags |= 4（装载中）、+0xac = 模式参数、起线程 0x42d1f0 → 0x42cb60
-//   0x42cb60  装载：等启动画面；按 DAT_004a6f18（关卡表）建 Gui 0x447e20 / Stage 0x409db0 / Player 0x427ca0 /
-//             Bullet 0x411dd0 / 0x42f440 / Item 0x4314a0 / 0x43e5a0 / 0x449e50 / Enemy(ECL) 0x41b340 /
-//             Bomb 0x40d890 / 0x4178a0；BGM 0x43c370；注册更新链 0xf（0x42d7b0）与绘制链 2；清 flags&4
+//   0x42cb60  装载：等启动画面；新游戏时先建 Player 0x441c60；按 DAT_004a6f18（关卡表）建 Replay 0x447e20 /
+//             Stage 0x409db0 / Gui 0x427ca0 / Bullet 0x411dd0 / Item 0x42f440 / Laser 0x4314a0 / 0x43e5a0 / 0x449e50 /
+//             Enemy(ECL) 0x41b340 / Bomb 0x40d890 / Spellcard 0x4178a0；BGM 0x43c370；注册更新链 0xf（0x42d7b0）与绘制链 2；清 flags&4
 //   0x42d7b0  更新：+0x10（帧计时）== 0 → 0x42dc50 首帧初始化（0x40add0 建面 VM、启用各管理器链、开 BGM）；
 //             == 0x1e → 0x42dee0；+0x88 位：4 装载中 / 8 装载失败 / 0x10|0x20|0x40 结束 / 0x800 重试 /
 //             0x4000 过关 / 0x10000 关卡切换；末尾 DAT_004a579c++、DAT_004a57a0++、+0xc 计时推进
@@ -14,6 +14,7 @@
 #include "AnmVm.hpp"
 #include "Bullet.hpp"
 #include "Enemy.hpp"
+#include "Item.hpp"
 #include "Player.hpp"
 #include "Stage.hpp"
 #include "StageTable.hpp"
@@ -52,6 +53,8 @@ public:
     bool enemies_live = false;
     std::unique_ptr<BulletManager> bullets;  // DAT_004a6dac（0x1403b28 字节，堆分配）
     bool bullets_live = false;
+    std::unique_ptr<ItemManager> items;      // DAT_004a6ddc（0x1c972ec 字节，堆分配）
+    bool items_live = false;
     PlayerWorld world;           // 敌人 / 对话 / 过关状态；enemy_count 由 EnemyManager 同步
 
     // 0x42dc50 首帧初始化（关卡背景 + 生成 "main"）

@@ -22,6 +22,7 @@ class AnmManager;
 struct AnmFile;
 struct AnmRuntimeSprite;
 struct GameGlobals;
+class ItemManager;
 class Player;
 struct PlayerWorld;
 struct Rng;
@@ -231,16 +232,6 @@ struct Bullet {
     i16 color = 0;              // +0x1476
 };
 
-// 0x430960 道具生成请求（擦弹得点 / 消弹转化）。ItemManager（0x4314a0）接入前由宿主取走；
-// 0x430960 本身不消耗 RNG，延后生成不影响随机序。
-struct ItemSpawnRequest {
-    i32 type = 0;
-    Vec3 pos;
-    float angle = 0;
-    float speed = 0;
-    i32 flag = 0;        // 0x430960 末参数（消弹模式 4/5 的季节道具为 1）
-};
-
 // Ex 0x8000000 激光生成请求（a==0 直线 0x431130 / a==1 曲线 0x431860）。LaserManager（0x42f440）接入前
 // 记录解析后的参数；原版在 LaserManager 槽满（0x200）时同样跳过生成，只推进 Ex 下标。
 struct BulletLaserRequest {
@@ -274,7 +265,6 @@ public:
     i32 total_canceled = 0;             // +0x1403b14
     std::vector<u32> cancel_effect_ids; // +0x13ffc8c：按槽记录消弹特效 VM id
     std::vector<i32> sfx_queue;         // 0x45e1f0 音效登记（发射 / Ex 变换 / 擦弹 0x2a / 消弹 0x47）
-    std::vector<ItemSpawnRequest> item_requests;    // 0x430960 调用序（宿主每帧取走）
     std::vector<BulletLaserRequest> laser_requests; // Ex 0x8000000 调用序（宿主每帧取走）
     bool spellcard_active = false;      // DAT_004a6db0->0x78 bit0（Spellcard 管理器接入前由宿主同步）
     bool season_release_active = false; // DAT_004a6da4->0x30 == 1（季节解放中；消弹模式 4 附加掉落）
@@ -287,6 +277,7 @@ public:
     Player* player = nullptr;           // DAT_004a6ef8
     const PlayerWorld* world = nullptr; // DAT_004a6dcc->0x1c8 对话中
     Rng* rng = nullptr;                 // DAT_004a6d88
+    ItemManager* items = nullptr;       // DAT_004a6ddc（擦弹得点 / 消弹转化道具 0x430960）
 
     // 0x411dd0 + 0x411a30：构造（分配池、绑定依赖）；0x411b70：首帧复位（空闲链重建、计数清零）
     void create(AnmManager& anm_manager, AnmFile& bullet_anm, AnmFile* effect, GameGlobals& g, Player* pl,
@@ -308,6 +299,8 @@ public:
     void cancel_radius(const Vec3& center, float radius, i32 item_mode, bool check_immunity);
     // 0x444cf0：Player::graze（计数、特效、音效）后生成得点道具 0x10（敌机体擦弹 0x41c330 亦经此）
     void graze(const Vec3& pos);
+    // 0x430960：经 items 生成道具（ItemManager 未绑定时忽略；0x430960 不消耗 RNG）
+    void spawn_item(i32 type, const Vec3& pos, float angle, float speed, i32 flag);
     // 0x416f40：全屏消弹（状态非 0/3 的全部槽）
     void cancel_all(i32 item_mode);
 

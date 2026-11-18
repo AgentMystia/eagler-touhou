@@ -167,7 +167,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"game-input-edges", 0x418650, "game/Input.hpp InputState::commit（DAT_004a52c8 族）"},
     {"anm-unload-file", 0x46D770, "game/AnmManager.cpp AnmManager::unload"},
     {"game-manager-create", 0x42D700, "game/GameSession.cpp GameSession::enter_game（DAT_004a6dd4；更新链 0xf / 绘制链 2；装载线程 0x42d1f0→0x42cb60）"},
-    {"game-manager-load", 0x42CB60, "game/GameSession.cpp enter_game（Player + StageManager + EnemyManager/ECL + BulletManager；Gui/Item/Effect/Laser 待还原）"},
+    {"game-manager-load", 0x42CB60, "game/GameSession.cpp enter_game（Player + StageManager + EnemyManager/ECL + BulletManager + ItemManager；Gui/Laser/Bomb/Spellcard 待还原）"},
     {"game-manager-update", 0x42D7B0, "game/GameManager.cpp GameManager::update（timer 0 → first_frame；DAT_004a579c/DAT_004a57a0++）"},
     {"game-manager-first-frame", 0x42DC50, "game/GameManager.cpp GameManager::first_frame（0x40add0 启动关卡面 VM、0x441740 自机复位、0x41aa70 生成 main）"},
     {"game-manager-destroy", 0x42D200, "game/GameSession.cpp GameSession::leave_game"},
@@ -307,8 +307,28 @@ constexpr AddressAnchor kAnchors[] = {
     {"anm-set-layer", 0x406D80, "game/AnmVm.cpp anm_set_layer"},
     {"anm-spawn-vm", 0x406380, "game/AnmManager.cpp AnmManager::spawn_vm（spawn / spawn_effect / spawn_front 共用）"},
     {"anm-replace-script", 0x46F440, "game/Enemy.cpp Enemy::resolve_hits（旧 VM 停止，同文件 script 新建）"},
+    // —— ItemManager（DAT_004a6ddc，0x1c972ec 字节；更新链 0x1d、绘制链 0x21 / 0x13）——
+    {"item-manager-create", 0x42F440, "game/Item.cpp ItemManager::create（0x42f0b0 更新 / 0x42f260 绘制回调；sprite_mapper 不挂道具）"},
+    {"item-manager-reset", 0x4184A0, "game/Item.cpp ItemManager::reset（普通池 600 / 得点池 0x1000 按槽号头插空闲链，最高槽先出）"},
+    {"item-manager-update", 0x4308F0, "game/Item.cpp ItemManager::update（GameManager flags bit0|bit2 / 0x400 时跳过；逐槽 0x42f4e0）"},
+    {"item-update", 0x42F4E0, "game/Item.cpp ItemManager::update 单道具：态 1 下落 / 2 上抛 / 3 季节减速 / 4 吸引 / 5 收点圈 / 6 延迟出现；收点线 y<128（魔理沙 3 号 148）、拾取框 → ItemManager::collect 分派、收点圈判定、VM 同步"},
+    {"item-spawn", 0x430960, "game/Item.cpp ItemManager::spawn（普通池 x 钳 ±192、0xf→6 计 Bomb 碎片、0x430d10 生成特效；得点池按 spawn_count 取模 4/8/16/32 延迟）"},
+    {"item-appear", 0x430C90, "game/Item.cpp ItemManager::appear（0x10 → 态 3 脚本 0x81+季节；其它 → 态 2 脚本表 DAT_004917f8）"},
+    {"item-spawn-effect", 0x430D10, "game/Item.cpp ItemManager::spawn_effect"},
+    {"item-release", 0x430D90, "game/Item.cpp ItemManager::release（回空闲链头）"},
+    {"item-draw", 0x4307A0, "game/Item.cpp ItemManager::prepare_draw（0x21 非季节道具 / 0x13 季节道具）"},
+    {"item-collect-power", 0x430100, "game/Item.cpp ItemManager::collect_power（火力 +1；满火力折得点值 × 收点线比例、收点统计、弹出 0x44a460）"},
+    {"item-collect-point", 0x430620, "game/Item.cpp ItemManager::collect_point（得点值按自机高度在 [line, line+450] 线性折算、得点道具计数）"},
+    {"item-collect-big-power", 0x4304A0, "game/Item.cpp ItemManager::collect_big_power（满火力时 2 万双计）"},
+    {"item-collect-full-power", 0x4303A0, "game/Item.cpp ItemManager::collect_full_power"},
+    {"item-add-life", 0x43DF70, "game/Item.cpp ItemManager::add_life（残机上限 8）"},
+    {"item-add-bomb-fragment", 0x43DFF0, "game/Item.cpp ItemManager::add_bomb_fragment（5 碎片合成 1 Bomb，音效 0x2e）"},
+    {"item-add-bomb", 0x43DFB0, "game/Item.cpp ItemManager::add_bomb（上限 8）"},
+    {"item-add-point-value", 0x430DC0, "game/Item.cpp ItemManager::add_point_value（× 100 累加、封顶 point_value_max）"},
+    {"item-add-season-gauge", 0x43DE50, "game/Item.cpp ItemManager::add_season_gauge（量表 +1 封顶；跨子机阈值时重建季节子机）"},
+    {"item-score-popup", 0x44A460, nullptr},  // 得分弹出（Gui）：Item 暂以 popups 队列记录，Gui 还原后接入
     // —— 未定位 ——
-    {"item-manager", 0x4314A0, nullptr},
+    {"laser-manager", 0x4314A0, nullptr},
     {"player-laser-create", 0x446200, nullptr},  // 魔理沙激光（回调 2：0x446260 / 0x446870）
     {"player-death", 0x443CD0, nullptr},     // 被弹结算（状态 4 → 2）
     {"season-system", 0, nullptr},  // th16 特有：季节槽/季节解放

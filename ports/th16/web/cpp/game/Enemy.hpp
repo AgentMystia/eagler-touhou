@@ -19,6 +19,7 @@ struct AnmFile;
 struct AnmVm;
 class Archive;
 class EffectManager;
+class ItemManager;
 struct GameGlobals;
 class Player;
 struct Spellcard;
@@ -130,6 +131,7 @@ public:
     i32 shooter_ex_counter[kShooterSlots]{};  // EnemyInf+0x3d98（ECL 611 / 612 递增下标）
     float safe_radius_sq = 0;                 // EnemyInf+0x4074（ECL 526：发射时自机近身安全半径²）
     BulletManager* bullets = nullptr;         // DAT_004a6dac
+    ItemManager* items = nullptr;             // DAT_004a6ddc
     std::string error;
     bool alive = true;
 
@@ -148,7 +150,7 @@ public:
     void scatter_items();
     // 0x41a720：先掉 drop_item_type（op 510），再 scatter_items()
     void release_items();
-    // op 507 / 509 / 0x41d520 共用：按限时计时折算季节道具数到 season_drop_max
+    // op 509 / 0x41d520 共用：按限时计时折算季节道具数到 season_drop_max
     void settle_season_drop();
     // 0x41d520：死亡结算（音效、死亡特效、掉落、死亡子程序）；返回后敌机移出列表
     void die(float game_speed);
@@ -170,6 +172,8 @@ public:
     void update_hit_flash();
 
     // EclVariables：0x423810 / 0x423f80（先覆盖 st01 前段用到的）
+    float angle_to_player(const Vec3& from) const noexcept;
+    Enemy* boss(int slot) const;
     bool integer(i32 id, i32& value) override;
     bool floating(i32 id, float& value) override;
     i32* integer_destination(i32 id) override;
@@ -191,7 +195,8 @@ class EnemyManager final : public EclResourceProvider {
 public:
     EclProgram program;
     std::list<std::unique_ptr<Enemy>> enemies;
-    u32 next_id = 1;
+    u32 next_id = 1;            // +0x90
+    u32 last_id = 0;            // +0x94：最近一次生成的敌机 id（ECL -9931）
     i32 enemy_count = 0;        // +0x18c
     Timer timer;
     i32 enemy_control = 99999;  // +0x8c
@@ -208,6 +213,7 @@ public:
     bool dialogue_active = false;  // Gui+0x1c8 != 0（对话中伤害为 0、不判体碰撞）
     std::vector<i32> sfx_queue; // Enemy 触发的 0x45e1f0 音效（受击 0x22/0x23、死亡 3/4）
     BulletManager* bullets = nullptr;  // DAT_004a6dac（GameSession 在 BulletManager 创建后绑定）
+    ItemManager* items = nullptr;      // DAT_004a6ddc（同上；道具掉落 0x41a720 / 0x41d700 / op 1001 直接生成）
     AnmManager* animations = nullptr;
     GameGlobals* globals = nullptr;
     Player* player = nullptr;

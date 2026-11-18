@@ -49,6 +49,17 @@ struct GameGlobals {
     i32 enemy_bonus_pending = 0; // DAT_004a5880：op 569 登记的敌机击破奖励
     i32 enemy_bonus = 0;         // DAT_004a5884：op 570 / 0x41d520 / 0x424f00 / 0x425010 结算的奖励
 
+    // 得点值与道具拾取统计（0x42cb60 初值；ItemManager 0x430100 / 0x430620 / 0x430dc0 / 0x4303a0 改写）
+    i32 point_value = 0;         // DAT_004a57d8：得点道具当前价值（×100 存）
+    i32 point_value_initial = 0; // DAT_004a57dc = DAT_004922a8[difficulty] × 100
+    i32 point_value_max = 0;     // DAT_004a57e0 = DAT_00492290[difficulty] × 100
+    i32 point_items = 0;         // DAT_004a57d4：拾取的得点道具数
+    i32 collect_sum = 0;         // DAT_004a5860：自动收点累计分值
+    i32 collect_count = 0;       // DAT_004a5868：自动收点累计个数
+    i32 collect_indicator = 0;   // DAT_004a586c：有非季节道具被吸向自机时置 8（Gui 收点提示）
+    Vec3 collect_pos;            // DAT_004a5870：最近一次自动收点时的自机坐标
+    i32 bomb_fragment_items = 0; // DAT_004a587c：以种类 0xf 生成的炸弹碎片数
+
     // 外部推力（DAT_004d9dc4 / +4 / DAT_004d9dcc）：0x442560 每帧抄进 Player，0x441cf0 叠加到移动
     float push_x = 0, push_y = 0, push_z = 0;
 

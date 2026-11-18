@@ -113,7 +113,7 @@ public:
     // 0x45f160：不经模板，把宿主自备的 VM（敌弹 / 激光，内嵌于宿主对象）绑到 file 的 script 并立即跑首帧
     void init_script(AnmFile& file, AnmVm& vm, int script);
 
-    // DAT_00491b1c：ins_300 / ins_301 精灵号重映射钩子（1 = 敌弹 0x417140，2 = 激光 0x431fa0，3 = 道具 0x43a840）
+    // DAT_00491b1c：ins_300 / ins_301 精灵号重映射钩子（1 = 敌弹 0x417140，2 = 激光 0x431fa0，3 = 0x43a840：经宿主 +0x5ec → +0x5d0 + 0x20c 取表，属激光数据而非道具；ItemManager 不挂此钩子）
     static constexpr u32 kSpriteMapperCount = 4;
     using SpriteMapper = i32 (*)(AnmVm& vm, i32 index);
     SpriteMapper sprite_mappers[kSpriteMapperCount] = {};

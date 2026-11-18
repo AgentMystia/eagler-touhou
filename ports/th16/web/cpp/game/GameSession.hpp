@@ -76,6 +76,9 @@ private:
     ChainEntry* enemy_update_chain_ = nullptr;
     ChainEntry* bullet_update_chain_ = nullptr;
     ChainEntry* bullet_draw_chain_ = nullptr;
+    ChainEntry* item_update_chain_ = nullptr;
+    ChainEntry* item_draw_chain_ = nullptr;
+    ChainEntry* item_draw_season_chain_ = nullptr;
 
     bool load_anm(const char* name, AnmResource*& out);
     bool load_boot_banks();            // 0x43adc0 / 0x407cb0 / 0x43ad20 / 0x418790 的同步装载部分

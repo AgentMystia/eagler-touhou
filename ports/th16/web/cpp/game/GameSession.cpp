@@ -165,6 +165,15 @@ bool GameSession::create_player() {
     // 0x42cb60 新游戏段（DAT_004c17d0 != 0）
     // 残机：模式 0 → 2；符卡练习 → 0（炸弹亦 0）；练习 → DAT_004a5bf8 ? 其值-1 : 9
     const i32 mode = globals.mode();
+    // 得分 / 擦弹清零；得点值初值与上限按难度表（DAT_004922a8 / DAT_00492290 × 100；Extra 为 100000 / 1000000）
+    static constexpr i32 kPointInitial[6] = {10000, 10000, 10000, 10000, 10000, 100000};
+    static constexpr i32 kPointMax[6] = {500000, 500000, 500000, 500000, 500000, 1000000};
+    const int diff = globals.difficulty < 0 ? 0 : globals.difficulty > 5 ? 5 : globals.difficulty;
+    globals.graze = 0;
+    globals.score = 0;
+    globals.point_value_initial = kPointInitial[diff] * 100;
+    globals.point_value_max = kPointMax[diff] * 100;
+    globals.point_value = i32((double(float(globals.point_value_initial)) / 100.0) * 100.0);
     if (mode == 2) { globals.lives = 0; globals.bombs = 0; }
     else if (mode == 0) globals.lives = 2;
     else globals.lives = 9;
@@ -283,6 +292,37 @@ bool GameSession::enter_game() {
         }, 0x25, false);
     }
 
+    // 0x42f440：ItemManager；更新链 0x1d（0x4308f0 → 0x42f4e0）、绘制链 0x21 / 0x13（0x4307a0）
+    {
+        game.items = std::make_unique<ItemManager>();
+        game.items->create(animations, animations.file(BulletManager::kBulletAnmSlot), animations.file(8), globals,
+                           game.player_live ? &game.player : nullptr, animations.game_rng);
+        game.items_live = true;
+        game.bullets->items = game.items.get();
+        item_update_chain_ = chains.create([this]() -> ChainResult {
+            // 0x4308f0：GameManager 装载中（bit2）/ 结束位（bit0 经 >>2 映射）/ 0x400 冻结时跳过
+            if (game.items_live && ((game.flags | (game.flags >> 2)) & 1u) == 0 && (game.flags & 0x400u) == 0) {
+                game.items->dialogue = game.world.dialogue;
+                game.items->focus_held = (game_input.held & 0x8u) != 0;
+                game.items->update(supervisor.game_speed);
+                sfx_events.insert(sfx_events.end(), game.items->sfx_queue.begin(), game.items->sfx_queue.end());
+                game.items->sfx_queue.clear();
+                // 0x44a460 弹出数字 / 0x42bcf0 Gui 通知：Ascii / Gui 接入前无状态影响
+                game.items->popups.clear();
+                game.items->gui_events.clear();
+            }
+            return ChainResult::Continue;
+        }, 0x1d, true);
+        item_draw_chain_ = chains.create([this]() -> ChainResult {
+            if (game.items_live && (game.flags & GameManager::kLoading) == 0) game.items->prepare_draw(false);
+            return ChainResult::Continue;
+        }, 0x21, false);
+        item_draw_season_chain_ = chains.create([this]() -> ChainResult {
+            if (game.items_live && (game.flags & GameManager::kLoading) == 0) game.items->prepare_draw(true);
+            return ChainResult::Continue;
+        }, 0x13, false);
+    }
+
     // 0x41b340 / 0x41ae70：装 ECL，登记敌人更新链优先级 0x1a（0x41b4f0→0x41b3d0）
     {
         auto read_ecl = [](void* user, const std::string& name, std::vector<u8>& data) -> bool {
@@ -299,6 +339,7 @@ bool GameSession::enter_game() {
         game.enemies.anm_user = this;
         game.enemies.anm_fn = load_enemy_anm;
         game.enemies.bullets = game.bullets.get();
+        game.enemies.items = game.items.get();
         game.enemies.effects = &effects;
         game.enemies.spellcard = &spellcard;
         game.player.spellcard = &spellcard;
@@ -349,6 +390,9 @@ bool GameSession::enter_game() {
     chains.enable(stage_update_chain_);
     if (bullet_update_chain_) chains.enable(bullet_update_chain_);
     if (bullet_draw_chain_) chains.enable(bullet_draw_chain_);
+    if (item_update_chain_) chains.enable(item_update_chain_);
+    if (item_draw_chain_) chains.enable(item_draw_chain_);
+    if (item_draw_season_chain_) chains.enable(item_draw_season_chain_);
     if (enemy_update_chain_) chains.enable(enemy_update_chain_);
     game_live = true;
     return true;
@@ -361,6 +405,9 @@ void GameSession::leave_game() {
     if (enemy_update_chain_) { chains.remove(enemy_update_chain_); enemy_update_chain_ = nullptr; }
     if (bullet_update_chain_) { chains.remove(bullet_update_chain_); bullet_update_chain_ = nullptr; }
     if (bullet_draw_chain_) { chains.remove(bullet_draw_chain_); bullet_draw_chain_ = nullptr; }
+    if (item_update_chain_) { chains.remove(item_update_chain_); item_update_chain_ = nullptr; }
+    if (item_draw_chain_) { chains.remove(item_draw_chain_); item_draw_chain_ = nullptr; }
+    if (item_draw_season_chain_) { chains.remove(item_draw_season_chain_); item_draw_season_chain_ = nullptr; }
     if (replay_record_chain_) { chains.remove(replay_record_chain_); replay_record_chain_ = nullptr; }
     if (player_update_chain_) { chains.remove(player_update_chain_); player_update_chain_ = nullptr; }
     if (player_draw_chain_) { chains.remove(player_draw_chain_); player_draw_chain_ = nullptr; }
