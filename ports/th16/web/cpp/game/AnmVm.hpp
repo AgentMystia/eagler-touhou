@@ -203,6 +203,10 @@ struct AnmVm {
 
     int blend_mode() const noexcept { return int((flags_lo & kBlendMask) >> kBlendShift); }
     int render_mode() const noexcept { return int((flags_lo & kRenderModeMask) >> kRenderModeShift); }
+
+    // 原版 memset(vm, 0, 0x5fc)：原版字段全部清零，移植附加字段回到默认值（精灵来源槽 -1 = 跟随 file_slot；
+    // 宿主指针与顶点缓冲析构函数置空——它们由生成后的宿主重新写入）
+    void clear() noexcept;
 };
 
 // 0x406d80：设 layer 并按区间改 flags_hi 的层组位

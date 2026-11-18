@@ -6,9 +6,15 @@
 // 每帧顺序（0x45f980）：慢放系数 → 存活计时 → 中断检查 → 执行到 time > 当前时刻 → 速度/角速度（0x4630f0）
 // → 插值推进（0x463b30）→ 600 系列几何（0x4632f0）→ 脚本计时 +1。
 #include <cmath>
+#include <cstring>
 #include "AnmManager.hpp"
 
 namespace th16 {
+
+void AnmVm::clear() noexcept {
+    std::memset(static_cast<void*>(this), 0, sizeof *this);
+    sprite_source_slot = -1;
+}
 
 namespace {
 

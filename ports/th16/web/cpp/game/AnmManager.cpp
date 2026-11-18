@@ -8,7 +8,7 @@ void AnmManager::reset_vm(AnmVm& vm) {
     const Vec3 offset = vm.entity_offset;
     const u32 pool_index = vm.pool_index;
     const i32 layer = vm.layer;
-    std::memset(static_cast<void*>(&vm), 0, sizeof vm);
+    vm.clear();
     vm.entity_offset = offset;
     vm.pool_index = pool_index;
     vm.layer = layer;
@@ -59,11 +59,12 @@ void reset_tail(AnmVm& vm) {
     vm.sprite_mapper = 0;
     vm.unknown_5ec = 0;
     vm.world_rotation = Vec3{};
+    vm.sprite_source_slot = -1;   // 移植附加字段：上一任 VM 的精灵来源不能带到新脚本
 }
 
 // 0x45f020：模板初始化
 void init_template(AnmFile& file, AnmVm& vm, int script) {
-    if (file.scripts[script] == nullptr) { std::memset(static_cast<void*>(&vm), 0, sizeof vm); return; }
+    if (file.scripts[script] == nullptr) { vm.clear(); return; }
     AnmManager::reset_vm(vm);
     vm.template_script = i16(script);
     vm.flags_lo &= 0xffffe7ffu;
@@ -204,7 +205,7 @@ void AnmManager::init_script(AnmFile& file, AnmVm& vm, int script) {
     if (script < 0 || u32(script) >= file.scripts.size() || file.scripts[u32(script)] == nullptr) {
         // 原版 memset(vm, 0, 0x5fc)：脚本缺失时整个 VM 清零；宿主指针是移植附加字段，保留以免精灵映射钩子解引用空指针
         void* owner = vm.owner;
-        std::memset(static_cast<void*>(&vm), 0, sizeof vm);
+        vm.clear();
         vm.owner = owner;
         return;
     }
