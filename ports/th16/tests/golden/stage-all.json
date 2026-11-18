@@ -1,0 +1,143 @@
+{
+ "$comment": "tools/oracle/game-oracle.py --enemies --bullets --items --lasers --bombs --lives 8 --refill-lives（Unicorn 直跑 th16.exe v1.00a）第 2..7 面各一组机体 × 子季节 × 难度的 6000 帧对拍：持续射击 + 向上移动，第 1500 / 3000 帧按一次炸弹。九组 FNV-1a 64 摘要与 harness game-digest 同口径（含全部音效的 GameMenu 快照 menu 摘要）。",
+ "cases": [
+  {
+   "name": "st2-easy-reimu-winter-shoot-bomb-6000",
+   "stage": 2,
+   "shot": 0,
+   "season": 3,
+   "difficulty": 0,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "88bb837e7650e97e",
+    "enemies": "a2e2502958bb1bc5",
+    "enemy_vms": "6df415a8c8490c83",
+    "bullets": "a088e7c60cc400ab",
+    "items": "df3fb75091d8bb4c",
+    "spell": "e8d11f41d724b84c",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "6c3adc30e6da2d2c",
+    "menu": "87a4cc749dd6fe77"
+   }
+  },
+  {
+   "name": "st3-lunatic-aya-autumn-shoot-bomb-6000",
+   "stage": 3,
+   "shot": 2,
+   "season": 2,
+   "difficulty": 3,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "01297e455303e5ef",
+    "enemies": "95b2524a4db74ba9",
+    "enemy_vms": "2d54ba57c43058fd",
+    "bullets": "3e6310b42917077d",
+    "items": "5dfe3dfb143a96bb",
+    "spell": "69356db8f51f9032",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "a39e84f700229080",
+    "menu": "448e8da86ed8c0e9"
+   }
+  },
+  {
+   "name": "st4-normal-reimu-spring-shoot-bomb-6000",
+   "stage": 4,
+   "shot": 0,
+   "season": 0,
+   "difficulty": 1,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "1e58eea8d297daa9",
+    "enemies": "f7448f9bab0a8d3a",
+    "enemy_vms": "041ef3218988a4dd",
+    "bullets": "d27157f117ca19fa",
+    "items": "7ea66cf744f13b60",
+    "spell": "923e554277acab3c",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "256cd9f187bee83c",
+    "menu": "690275c764086deb"
+   }
+  },
+  {
+   "name": "st5-hard-cirno-summer-shoot-bomb-6000",
+   "stage": 5,
+   "shot": 1,
+   "season": 1,
+   "difficulty": 2,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "8fae1e802c26c477",
+    "enemies": "8722b2688e73a7b2",
+    "enemy_vms": "a0ffd04d24712287",
+    "bullets": "19dc786870d80906",
+    "items": "4338c2c020565bc3",
+    "spell": "8d283f00d0f8e538",
+    "lasers": "c7bc3e73a0e1ad49",
+    "bombs": "cba6815e32b78b88",
+    "menu": "df0fe350552278ce"
+   }
+  },
+  {
+   "name": "st6-normal-reimu-spring-shoot-bomb-6000",
+   "stage": 6,
+   "shot": 0,
+   "season": 0,
+   "difficulty": 1,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "c066476ef6e82d41",
+    "enemies": "894c404986733b52",
+    "enemy_vms": "ef8cdd2a7a353825",
+    "bullets": "f5f4ce792b631061",
+    "items": "2b32c3961e891bd2",
+    "spell": "fa99a3b5352072f3",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "2602003856476308",
+    "menu": "48adddbcb23ff881"
+   }
+  },
+  {
+   "name": "st7-extra-marisa-doyou-shoot-bomb-6000",
+   "stage": 7,
+   "shot": 3,
+   "season": 4,
+   "difficulty": 4,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "de63d3991ad58e0b",
+    "enemies": "481fbe0f97e11634",
+    "enemy_vms": "cfa21a5469b1c96d",
+    "bullets": "b626a4122dcb3794",
+    "items": "c8bd50fa53a3756d",
+    "spell": "c34affb914511b8c",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "e4579455767c6fd9",
+    "menu": "615417f3d9eb51a9"
+   }
+  }
+ ]
+}
