@@ -672,6 +672,15 @@ class GameOracle(Oracle):
         if self.run_draw:
             # 0x43b520 → 0x46b900：九锚点四边形顶点缓冲（mode 8 DrawPrimitive 的流源）与批量顶点缓冲初值
             self.call(0x46B900)
+            # 0x43ba40：Supervisor 的绘制链节点（0x401730 建节点、flags |= 2、+0x24 = &DAT_004c10d0、0x4013b0 登记）。
+            # 1 = 0x43d140 清屏 + 设备状态缓存复位 + UI 相机；其余只在 DAT_004c127c（场地 RT，v1.00a 从不建立）非空时动作，
+            # 0x38 = 0x43d820 回切后台缓冲并清屏、0x55 = 0x43d870 清相机抖动偏移
+            for fn, priority in ((0x43D140, 1), (0x43D400, 0xE), (0x43D2F0, 0xF), (0x43D5A0, 0x19), (0x43D4A0, 0x1A),
+                                 (0x43D6F0, 0x2B), (0x43D640, 0x2C), (0x43D820, 0x38), (0x43D7C0, 0x39), (0x43D870, 0x55)):
+                node = self.call(0x401730, args=(fn,))
+                uc.mem_write(node + 4, struct.pack('<I', self.u32(node + 4) | 2))
+                uc.mem_write(node + 0x24, struct.pack('<I', 0x4C10D0))
+                self.call(0x4013B0, args=(node, priority))
         # 0x43b520（Supervisor 初始化）：清色、相机 0x43cb10、DAT_004a6dc8（0x88）、4 个装载幕 VM
         uc.mem_write(DAT_GAME_SPEED, struct.pack('<f', 1.0))
         uc.mem_write(DAT_BG_COLOR, struct.pack('<I', 0xFF000000))
