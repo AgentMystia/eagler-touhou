@@ -1,0 +1,240 @@
+// th16 EffectManager 实现——按 th16.exe v1.00a 逐函数还原（地址见各函数头）。
+// 充能环（种类 1）的随机量走 DAT_004a6d88（回放同步 RNG），调用顺序与原版逐一对应；
+// x87 乘加（r × π、200 + r × 200）在 double 内完成后单次舍入到 float（与扩展精度结果一致）。
+#include "Effect.hpp"
+
+#include "Motion.hpp"
+#include "Rng.hpp"
+
+#include <cstring>
+
+namespace th16 {
+namespace {
+
+constexpr float kPi = 3.1415927410125732f;  // 0x494588
+
+// DAT_004a2250：效果种类表（update / draw / delete / interrupt 回调下标，+0x5d4 / +0x5d8）
+struct EffectKind {
+    i16 anm_index;   // 0 = effect.anm（+0xc）/ 1 = bullet.anm（+0x10）
+    i16 script;      // host == 0 时生成的脚本号
+    i32 callbacks[6];
+};
+constexpr EffectKind kKindTable[EffectManager::kKinds] = {
+    {0, 0, {1, 1, 1, 1, 0, 0}},  // 0x4071a0 过场
+    {0, 0, {2, 2, 2, 2, 1, 1}},  // 0x405670 充能环
+    {0, 0, {3, 3, 3, 3, 0, 0}},  // 0x406510 爆散粒子
+    {0, 0, {3, 3, 3, 3, 0, 0}},  // 0x406930 爆散粒子（变体）
+};
+
+// 回调下标 → 种类（update 表 DAT_004919e8：1 → 0x407330，2 → 0x405700，3 → 0x406690，4 → 0x46a0b0 ANM 模式 10）
+constexpr int kRingCallback = 2;
+
+inline float mul_pi(float r) noexcept { return float(double(r) * double(kPi)); }
+inline float scale_f(float r, float k) noexcept { return float(double(r) * double(k)); }
+inline float base_scale_f(float base, float r, float k) noexcept { return float(double(base) + double(r) * double(k)); }
+
+inline Vec3 add(const Vec3& a, const Vec3& b) noexcept { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
+inline Vec3 sub(const Vec3& a, const Vec3& b) noexcept { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
+inline Vec3 mul(const Vec3& a, float k) noexcept { return {a.x * k, a.y * k, a.z * k}; }
+
+}  // namespace
+
+void EffectManager::create(AnmManager& animations, AnmFile* effect, AnmFile* bullet) {
+    animations_ = &animations;
+    effect_anm = effect;
+    bullet_anm = bullet;
+    cursor = 0;
+    std::memset(ids, 0, sizeof ids);
+    animations.hooks = this;
+}
+
+// 更新链 0x1f（0x418ab0）：清掉已消亡的 id
+void EffectManager::sweep() {
+    for (u32& id : ids) {
+        if (id != 0 && animations_->find(id) == nullptr) id = 0;
+    }
+}
+
+// 0x40e6c0
+i32 EffectManager::allocate_slot() {
+    // 原版逐字：返回游标旧值，但检查的是游标新值所指的槽——新槽为空或其 VM 仍活着即返回；死 id 清零后再找
+    for (int tries = 0; tries < kIdSlots; ++tries) {
+        const u32 previous = cursor;
+        cursor = (cursor + 1) & 0x3ffu;
+        if (ids[cursor] == 0 || animations_->find(ids[cursor]) != nullptr) return i32(previous);
+        ids[cursor] = 0;
+    }
+    return -1;
+}
+
+// 0x41aa00
+u32 EffectManager::register_id(u32 id) {
+    const i32 slot = allocate_slot();
+    if (slot < 0) return 0;
+    ids[slot] = id;
+    return u32(slot) | 0x80000000u;
+}
+
+// 0x418af0
+u32 EffectManager::attach(i32 kind, AnmVm* host) {
+    if (kind < 0 || kind >= kKinds || kKindTable[kind].script < 0) return 0;
+    const EffectKind& k = kKindTable[kind];
+    u32 id = 0;
+    AnmVm* vm = host;
+    if (vm == nullptr) {
+        AnmFile* file = k.anm_index == 0 ? effect_anm : bullet_anm;
+        if (file == nullptr) return 0;
+        id = animations_->spawn(*file, k.script, -1, &vm);
+        if (animations_->find(id) == nullptr) { id = 0; vm = nullptr; }
+    }
+    if (vm == nullptr) return 0;
+    switch (kind) {
+        case 1: ring_init(*vm); break;
+        default: break;  // 种类 0 / 2 / 3 的 init（0x4071a0 / 0x406510 / 0x406930）随其使用场景接入
+    }
+    vm->update_callback = k.callbacks[0];
+    vm->draw_callback = k.callbacks[1];
+    vm->delete_callback = k.callbacks[2];
+    vm->interrupt_callback = k.callbacks[3];
+    std::memcpy(vm->unknown_5d4, &k.callbacks[4], sizeof(i32));
+    std::memcpy(vm->unknown_5d4 + 4, &k.callbacks[5], sizeof(i32));
+    return host != nullptr ? host->id : id;
+}
+
+// 0x40e730
+u32 EffectManager::spawn(i32 kind, const Vec3& /*pos*/) {
+    const i32 slot = allocate_slot();
+    if (slot < 0) return 0;
+    ids[slot] = attach(kind, nullptr);
+    return u32(slot) | 0x80000000u;
+}
+
+int EffectManager::update(AnmVm& vm) {
+    switch (vm.update_callback) {
+        case kRingCallback: return ring_update(vm);
+        default: return 0;
+    }
+}
+
+void EffectManager::deleted(AnmVm& vm) {
+    if (vm.delete_callback == kRingCallback) ring_deleted(vm);
+}
+
+void EffectManager::interrupted(AnmVm& vm, i32 value) {
+    if (vm.interrupt_callback == kRingCallback) ring_interrupted(vm, value);
+}
+
+// ---------------------------------------------------------------------------------------------
+// 种类 1：充能环
+
+// 0x405670
+void EffectManager::ring_init(AnmVm& vm) {
+    auto* ring = new Ring();
+    ring->timer.reset();
+    vm.vertex_buffer = ring;
+    vm.vertex_buffer_size = 0x193c;
+    vm.vertex_buffer_free = [](void* p) { delete static_cast<Ring*>(p); };
+}
+
+// 0x405700：光点全部消亡时返回 -1（VM 随之删除）
+int EffectManager::ring_update(AnmVm& vm) {
+    auto* ring = static_cast<Ring*>(vm.vertex_buffer);
+    if (ring == nullptr) return -1;
+    AnmManager& anm = *animations_;
+    Rng& rng = anm.visual_rng;
+
+    ring->center = vm.entity_offset;
+    ring->source = add(vm.entity_offset, polar(vm.rotation.z, 300.0f));
+    ring->target = add(vm.entity_offset, polar(vm.float_vars2[2] + vm.rotation.z, 150.0f));
+
+    const i32 cur = ring->timer.current;
+    if (cur != ring->timer.previous && cur < 50 && effect_anm != nullptr) {
+        static constexpr int kScripts[4] = {0x99, 0x99, 0x99, 0x9a};
+        for (int k = 0; k < 4; ++k) ring->ids[cur][k] = anm.spawn(*effect_anm, kScripts[k], -1);
+        u8 color[4];
+        std::memcpy(color, vm.color, 4);
+        for (int k = 0; k < 4; ++k) {
+            AnmVm* spawned = anm.find(ring->ids[cur][k]);
+            if (spawned == nullptr) { ring->ids[cur][k] = 0; continue; }
+            if (k == 3) { for (int c = 0; c < 3; ++c) color[c] = u8(0x2c - color[c]); }
+            std::memcpy(spawned->color, color, 4);
+            spawned->int_vars[0] = vm.int_vars[0];
+        }
+    }
+
+    const float slow = AnmManager::root_slowdown(vm);
+    int live = 0;
+    u32* flat_ids = &ring->ids[0][0];
+    for (int i = 0; i < 200; ++i) {
+        AnmVm* dot = anm.find(flat_ids[i]);
+        if (dot == nullptr) { flat_ids[i] = 0; continue; }
+        dot->slowdown = slow;
+        if (ring->state[i] == 0) {
+            float a = mul_pi(rng.signed_unit());
+            float r = scale_f(rng.unit(), 150.0f);
+            Vec3 start = add(ring->source, polar(a, r));
+            a = mul_pi(rng.signed_unit());
+            r = scale_f(rng.unit(), 50.0f);
+            Vec3 end = add(ring->target, polar(a, r));
+            const Vec3 leg = sub(end, start);
+            Vec3 n1 = add(normalize3(leg), normalize3(sub(ring->center, end)));
+            const float len1 = base_scale_f(200.0f, rng.unit(), 200.0f);
+            n1 = mul(normalize3(n1), len1);
+            const float len2 = base_scale_f(100.0f, rng.unit(), 100.0f);
+            const Vec3 n2 = mul(normalize3(leg), len2);
+            // 0x406240：模式 8 贝塞尔（start → end，切线 n2 / n1）
+            dot->pos_interp.end_time = vm.int_vars[0];
+            dot->pos_interp.mode = 8;
+            dot->pos_interp.initial = start;
+            dot->pos_interp.goal = end;
+            dot->pos_interp.bezier1 = n2;
+            dot->pos_interp.bezier2 = n1;
+            dot->pos_interp.timer.reset();
+            ring->pos[i] = end;
+            ring->dir[i] = n1;
+            ring->state[i] = 1;
+        } else if (vm.int_vars[0] + 1 <= dot->age.current && ring->state[i] == 1) {
+            float a = mul_pi(rng.signed_unit());
+            float r = scale_f(rng.unit(), 20.0f);
+            const Vec3 goal = add(vm.entity_offset, polar(a, r));
+            a = mul_pi(rng.signed_unit());
+            r = scale_f(rng.unit(), 20.0f);
+            const Vec3 tangent = polar(a, r);
+            dot->pos_interp.end_time = vm.int_vars[0];
+            dot->pos_interp.mode = 8;
+            dot->pos_interp.initial = ring->pos[i];
+            dot->pos_interp.goal = goal;
+            dot->pos_interp.bezier1 = ring->dir[i];
+            dot->pos_interp.bezier2 = tangent;
+            dot->pos_interp.timer.reset();
+            ring->state[i] = 2;
+        }
+        ++live;
+    }
+    if (live == 0) return -1;
+    ring->timer.tick(anm.game_speed);
+    return 0;
+}
+
+// 0x405ed0：删除时停掉尚存的光点
+void EffectManager::ring_deleted(AnmVm& vm) {
+    auto* ring = static_cast<Ring*>(vm.vertex_buffer);
+    if (ring == nullptr) return;
+    u32* flat_ids = &ring->ids[0][0];
+    for (int i = 0; i < 200; ++i) {
+        AnmVm* dot = animations_->find(flat_ids[i]);
+        if (dot == nullptr) { flat_ids[i] = 0; continue; }
+        dot->flags_lo &= ~1u;
+        dot->ins_offset = -1;
+    }
+}
+
+// 0x405f20：中断 1 → 计时器一次跳过 300 帧（停止继续生成光点）
+void EffectManager::ring_interrupted(AnmVm& vm, i32 value) {
+    if (value != 1) return;
+    auto* ring = static_cast<Ring*>(vm.vertex_buffer);
+    if (ring == nullptr) return;
+    ring->timer.advance(300.0f, animations_->game_speed);
+}
+
+}  // namespace th16
