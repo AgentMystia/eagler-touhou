@@ -91,7 +91,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"chain-alloc", 0x401730, "game/Chain.cpp ChainManager::create"},
     {"update-chain-insert", 0x401300, "game/Chain.cpp ChainManager::insert_sorted（含 init 回调）"},
     {"draw-chain-insert", 0x4013B0, "game/Chain.cpp ChainManager::insert_sorted"},
-    {"update-chain-walk", 0x401460, "game/Chain.cpp ChainManager::run_update（0=Remove 3/4/5=Break 6=Restart）"},
+    {"update-chain-walk", 0x401460, "game/Chain.cpp ChainManager::run_update（回调前记后继 +0x50；0=Remove 3/4/5=Break 6=Restart 7=Destroy 调 +0x10 删除回调）"},
     {"draw-chain-walk", 0x4015A0, "game/Chain.cpp ChainManager::run_draw"},
     {"chain-remove", 0x4017A0, "game/Chain.cpp ChainManager::remove"},
     {"frame-clock", 0x45A8A0, "game/FrameClock.hpp FrameClock::begin_frame（1/60 累加；浏览器按 rAF 折算步数）"},

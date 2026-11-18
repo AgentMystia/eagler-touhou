@@ -49,22 +49,40 @@ void ChainManager::insert_sorted(std::vector<std::unique_ptr<ChainEntry>>& list,
 }
 
 i32 ChainManager::run_list(std::vector<std::unique_ptr<ChainEntry>>& list) {
+    auto index_of = [&list](const ChainEntry* target) -> i32 {
+        for (size_t k = 0; k < list.size(); ++k)
+            if (list[k].get() == target) return i32(k);
+        return -1;
+    };
     i32 ran = 0;
-    for (size_t i = 0; i < list.size();) {
+    size_t i = 0;
+    while (i < list.size()) {
         ChainEntry* e = list[i].get();
         if (e == nullptr || !e->callback || (e->flags & kFlagEnabled) == 0) {
             ++i;
             continue;
         }
+        ChainEntry* next = i + 1 < list.size() ? list[i + 1].get() : nullptr;
         const ChainResult r = e->callback();
+        bool restart = false;
         switch (r) {
         case ChainResult::Remove:
-            list.erase(list.begin() + i32(i));
+            remove(e);
+            e = nullptr;
+            ++ran;
             break;
+        case ChainResult::Destroy: {
+            // 删除回调通常会把本条（及配对的绘制链）从链表摘掉并释放
+            std::function<void()> destroy = std::move(e->on_destroy);
+            if (destroy) destroy();
+            else remove(e);
+            e = nullptr;
+            ++ran;
+            break;
+        }
         case ChainResult::Restart:
-            i = 0;
-            ran = 0;
-            continue;
+            restart = true;
+            break;
         case ChainResult::BreakExit:
             return 1;
         case ChainResult::BreakOk:
@@ -74,8 +92,23 @@ i32 ChainManager::run_list(std::vector<std::unique_ptr<ChainEntry>>& list) {
         case ChainResult::Continue:
         default:
             ++ran;
-            ++i;
             break;
+        }
+        if (restart) {
+            i = 0;
+            ran = 0;
+            continue;
+        }
+        const i32 next_index = next != nullptr ? index_of(next) : -1;
+        if (next_index >= 0) {
+            i = size_t(next_index);
+        } else if (next == nullptr) {
+            // 后继原本为空：若回调在尾部追加了条目，原版同样不在本帧执行
+            break;
+        } else {
+            // 后继被回调删除：从当前项之后继续（0x4017a0 会把 +0x50 挪到被删项的后继）
+            const i32 self_index = e != nullptr ? index_of(e) : -1;
+            i = self_index >= 0 ? size_t(self_index + 1) : i;
         }
     }
     return ran > 0 ? 1 : 0;
