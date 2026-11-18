@@ -41,6 +41,7 @@ struct GameGlobals {
     i32 rank = 0;                // DAT_004a57bc：ECL -9960 / 弹幕 617–622 按秩选参
     i32 graze = 0;               // DAT_004a57c0：本局擦弹数
     i32 graze_total = 0;         // DAT_004a57c4：累计擦弹（含续关）
+    i32 miss_count = 0;          // DAT_004a57cc：被弹次数（0x443cd0 +1，上限 999999）
 
     // 得分（0x43e080 累加，上限 999999999）与分数 extend（0x43ddd0 阈值表 DAT_00491880 / Extra DAT_004917c4）
     i32 score = 0;               // DAT_004a57b0

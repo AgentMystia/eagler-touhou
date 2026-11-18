@@ -230,6 +230,7 @@ bool GameSession::create_player() {
         game.player.update(animations, globals, game_input, game.world, animations.file(8), geometry, supervisor.game_speed);
         harvest_player_sfx();
         game.player.sfx_stop_queue.clear();
+        game.player.gui_events.clear();
         return ChainResult::Continue;
     }, 0x16, true);
     player_draw_chain_ = chains.create([this]() -> ChainResult {
@@ -350,6 +351,10 @@ bool GameSession::enter_game() {
         }
         game.enemies_live = true;
         game.player.enemies = &game.enemies;
+        game.player.items = game.items.get();
+        game.player.effects = &effects;
+        game.player.bullet_manager = game.bullets.get();
+        game.player.global_game_speed = &supervisor.game_speed;
         enemy_update_chain_ = chains.create([this]() -> ChainResult {
             if (game.enemies_live) {
                 game.enemies.sfx_queue.clear();

@@ -2,9 +2,12 @@
 
 #include "AnmManager.hpp"
 #include "AnmRenderer.hpp"
+#include "Bullet.hpp"
+#include "Effect.hpp"
 #include "Enemy.hpp"
 #include "GameGlobals.hpp"
 #include "Input.hpp"
+#include "Item.hpp"
 #include "Spellcard.hpp"
 
 #include <cmath>
@@ -16,6 +19,8 @@ namespace {
 // DAT_00492c20：方向 → (dx, dy)
 constexpr i32 kDirectionTable[9][2] = {{0, 0}, {0, -1}, {0, 1}, {-1, 0}, {1, 0}, {-1, -1}, {1, -1}, {-1, 1}, {1, 1}};
 // DAT_00492c00 / DAT_00492c10：子机脚本 / 满火力附加脚本（按机体）；DAT_00492be0：子季节子机脚本（按季节）
+constexpr float kPi = 3.1415927410125732f;      // 0x494588
+constexpr float kHalfPi = 1.5707963705062866f;  // 0x494534
 constexpr int kOptionScript[4] = {8, 7, 11, 11};
 constexpr int kOptionFrontScript[4] = {9, 8, 12, 13};
 constexpr int kSubOptionScript[5] = {1, 1, 1, 18, 1};
@@ -274,6 +279,74 @@ void Player::hit(AnmManager& manager, AnmFile* effect_anm) {
     manager.run(vm);
 }
 
+void Player::die(AnmManager& manager, GameGlobals& globals, AnmFile* effect_anm) {
+    // 0x443cd0
+    if (effects != nullptr && effect_anm != nullptr) {
+        const i32 slot = effects->allocate_slot();
+        if (slot != -1) effects->ids[slot] = manager.spawn_effect(*effect_anm, 0x1c, -1, pos, 0.0f);
+    }
+    globals.lives = globals.lives - 1;
+    globals.bombs = 3;
+    gui_events.push_back(2);                            // 0x42c390(3, bomb_fragments)
+    if (globals.lives >= 0) gui_events.push_back(1);    // 0x42c280(lives, life_fragments)
+    gui_events.push_back(2);                            // 0x42c390(bombs, bomb_fragments)
+    state = kRespawnWait;
+    state_timer.reset();
+    invincible.set(0xb4);
+    manager.init_from_template(*anm, vm, 0);
+    vm.update_callback = 0;
+    vm.time_callback = 0;
+    manager.run(vm);
+    for (PlayerOption& o : options) {
+        o.active = 0;
+        manager.interrupt(o.vm, 1);
+        manager.interrupt(o.vm_front, 1);
+    }
+    option_count = 0;
+    if (spellcard != nullptr && (spellcard->flags & Spellcard::kActive) != 0) {
+        if (spellcard->timer.current < 0x3c) {
+            if (enemies != nullptr && enemies->bomb_active) spellcard->flags |= Spellcard::kBombUsed;
+        } else {
+            spellcard->bonus = 0;
+            spellcard->flags &= ~(Spellcard::kBonusAvailable | Spellcard::kBombUsed);
+        }
+    }
+    if (enemies != nullptr) {
+        enemies->counters[0] = enemies->counters[0] + 1;   // DAT_004a6dc0+0x3c（ECL -9949）
+        enemies->counters[2] = 0;                          // +0x44（ECL -9947）
+    }
+    if (globals.miss_count < 999999) globals.miss_count = globals.miss_count + 1;
+}
+
+void Player::scatter_death_items(AnmManager& manager, GameGlobals& globals) {
+    // 0x442560 case 2、第 3 帧：火力 -= 每级 / 2（不低于一级），自机正上方起 7 枚火力道具（角 base-π/8 起每枚 +π/28）速度 3
+    globals.power = globals.power - globals.power_per_level / 2;
+    if (globals.power < globals.power_per_level) globals.power = globals.power_per_level;
+    const float dy = (pos.y - 224.0f) - pos.y;
+    const float dx = 0.0f - pos.x;
+    const float base = (dy == 0.0f && dx == 0.0f) ? kHalfPi : atan2_f(dy, dx);
+    for (int i = 0; i < 7; ++i) {
+        const float angle = ((float(i) * kPi) / 28.0f + base) - 0.39269909f;
+        if (items != nullptr) items->spawn(kItemPower, pos, angle, 3.0f, 0);
+    }
+    setup_options(manager, globals);
+}
+
+void Player::respawn(AnmManager& manager, GameGlobals& globals) {
+    // 0x442560 case 2 尾：状态 0（入场），DAT_004a5788 = 1.0，复活圆伤害源（半径 32、每帧 +16、30 帧、伤害 0x96），
+    // Bomb 回 3，pos 副本 = pos，回到 (0, 480)，无敌 0x118、状态计时清零
+    (void)manager;
+    state = kEnter;
+    if (global_game_speed != nullptr) *global_game_speed = 1.0f;
+    alloc_circle_damage_source(pos, 32.0f, 16.0f, 0x1e, 0x96);
+    globals.bombs = 3;
+    gui_events.push_back(2);                            // 0x42c390(3, bomb_fragments)
+    pos_copy = pos;
+    set_position(0.0f, 480.0f);
+    invincible.set(0x118);
+    state_timer.reset();
+}
+
 int Player::collide_body(AnmManager& manager, AnmFile* effect_anm, const Vec3& enemy_pos, float half_size,
                          bool dialogue, bool probe) {
     // 0x4439e0
@@ -448,7 +521,12 @@ void Player::update(AnmManager& manager, GameGlobals& globals, const InputState&
         fixed_y = 0xf000 - (state_timer.current * 0x2800) / 0x3c;
         pos.y = float(fixed_y) * kFixedToFloat;
         for (PlayerOption& o : options) o.snap = 1;
-        // 0x431a70(pos_copy/pos, 0, 1|0)：道具吸引；0x416d20(pos, 0)：消弹——Item/Bullet 管理器接入时补
+        if (state_timer.current < 0x1e) {
+            // 0x431a70(pos_copy, 0, 1)：激光管理器按半径 (t×512)/30+64 切断——LaserManager 接入时补
+        } else if (bullet_manager != nullptr) {
+            bullet_manager->cancel_radius(pos, 640.0f, 0, true);   // 0x416d20
+        }
+        // 0x431a70(pos_copy / pos, 0, 0)：激光管理器——LaserManager 接入时补
         if (state_timer.current > 0x3b) {
             state = kNormal;
             state_timer.set(0);
@@ -459,10 +537,26 @@ void Player::update(AnmManager& manager, GameGlobals& globals, const InputState&
         // 0x40dda0 / 0x40db20：炸弹可用判定与发动（输入位 2 / 0x800）——Bomb 管理器接入时补
         move(manager, game_input, world, effect_anm, game_speed);
         break;
-    case kRespawnWait:
-    case kState3:
     case kDying:
-        // 被弹 → 复活流程依赖 Item / Effect / Gui 管理器，随之接入
+        if (state_timer.current <= 7) {
+            // 决死：Bomb（输入位 2）/ 季节解放（0x800）可用时 0x40db20 发动并经 0x444070 回到状态 1（计时 0x3c）——Bomb 接入时补
+            break;
+        }
+        die(manager, globals, effect_anm);
+        [[fallthrough]];
+    case kRespawnWait:
+        if (state_timer.current == 3) scatter_death_items(manager, globals);
+        if (state_timer.current > 0x1d) {
+            if (globals.lives < 0 && state_timer.current == 0x1e) {
+                // 0x43f350：续关 / 结束画面（Pause 管理器 DAT_004a6ef4）；此处只记录请求并照常推进计时
+                game_over_pending = true;
+            } else {
+                respawn(manager, globals);
+            }
+        }
+        break;
+    case kState3:
+        // 第 0xf 帧 0x431af0(1)：激光全部终止——LaserManager 接入时补
         break;
     default:
         break;
@@ -634,6 +728,34 @@ i32 Player::alloc_damage_source(const Vec3& pos, float angle, i32 lifetime, i32 
     d.size_y = size_y;
     d.angle = wrap_angle(angle);
     d.angular_speed = 0.0f;
+    d.timer.set(lifetime);
+    d.damage = damage;
+    d.f78 = 0;
+    d.f7c = 9999999;
+    d.f80 = 1;
+    d.kind = 0;
+    d.f84 = 0;
+    last_damage_index = i;
+    return i + 1;
+}
+
+i32 Player::alloc_circle_damage_source(const Vec3& pos, float radius, float growth, i32 lifetime, i32 damage) {
+    // 0x4449b0：与 0x444b20 同样环形找空位；flags |= 3（bit1 = 圆判定，半径 f04 每帧 += f08）；角度 / 尺寸字段不写
+    i32 i = last_damage_index;
+    for (int tries = 0;; ++tries) {
+        i = i + 1 < kDamageSourceCount ? i + 1 : 0;
+        if ((damage_sources[i].flags & 1u) == 0) break;
+        if (tries >= 0xff) {
+            last_damage_index = i;
+            return i + 1;
+        }
+    }
+    DamageSource& d = damage_sources[i];
+    d.flags = (d.flags & ~4u) | 3u;
+    d.motion = MotionState{};
+    d.motion.pos = pos;
+    d.f04 = radius;
+    d.f08 = growth;
     d.timer.set(lifetime);
     d.damage = damage;
     d.f78 = 0;
