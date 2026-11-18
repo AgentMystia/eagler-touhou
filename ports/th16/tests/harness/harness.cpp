@@ -571,6 +571,9 @@ int main(int argc, char** argv) {
             };
         }
 
+        const char* dump_layers_env = std::getenv("TH16_DUMP_LAYERS");
+        const int dump_layers_frame = dump_layers_env != nullptr ? std::atoi(dump_layers_env) : 0;
+
         constexpr size_t kSnapshotBytes = 0x568;
         u64 digest = 0xcbf29ce484222325ull;
         u64 enm_digest = 0xcbf29ce484222325ull;
@@ -705,6 +708,18 @@ int main(int argc, char** argv) {
             device.begin_frame();
             if (!session.logic_step()) return fail(session.failure.c_str());
             if (draw_out != nullptr && f + 1 >= draw_from) device.write_frame(draw_out, f + 1);
+            // TH16_DUMP_LAYERS=<frame>（1 起）：该帧绘制后把各层的 VM 列到 stderr（层 / 槽 / 脚本 / 精灵 / 渲染模式 / 位置 /
+            // 颜色 / 标志），用于和 oracle 的 draw 记录逐 VM 对账
+            if (dump_layers_frame == f + 1) {
+                for (int layer = 0; layer < AnmManager::kLayerCount; ++layer) {
+                    for (const AnmVm* vm = session.animations.layer_chain(layer); vm != nullptr; vm = vm->layer_next) {
+                        std::fprintf(stderr, "layer=%02x id=%u slot=%d script=%d sprite=%d/%d mode=%d pos=(%g,%g,%g) "
+                                     "color=%02x%02x%02x%02x flags=%08x/%08x\n", layer, vm->id, vm->file_slot, vm->script_index,
+                                     vm->sprite_index, vm->sprite_source_slot, vm->render_mode(), double(vm->pos.x), double(vm->pos.y), double(vm->pos.z),
+                                     vm->color[3], vm->color[2], vm->color[1], vm->color[0], vm->flags_lo, vm->flags_hi);
+                    }
+                }
+            }
             if (!session.game_live) {
                 scene_exit = i32(session.supervisor.current);
                 exit_frame = f + 1;
