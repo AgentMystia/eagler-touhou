@@ -14,7 +14,7 @@
 //
 // 与相邻管理器的交互：
 //   - BulletManager：消弹道具转化（0x416a00 convert_cancel_item）、擦弹结算（0x444cf0 graze）、
-//                    Ex 0x2000 激光转弹幕（0x414da0 shoot）、Ex 0x8000000 弹幕派生激光（laser_requests）。
+//                    Ex 0x2000 激光转弹幕（0x414da0 shoot）、Ex 0x8000000 弹幕派生激光（spawn_from_bullet）。
 //   - Player：激光线段与自机判定（0x443af0：外框 16 倍判定半径算擦弹、内框 1 倍算被弹 → 0x443f10）。
 //   - EffectManager：矩形消弹（炸弹）生成的消散特效 VM 经 0x41aa00 登记到特效槽。
 #pragma once
@@ -272,8 +272,8 @@ public:
     i32 spawn_infinite(const InfiniteLaserArgs& args);
     i32 spawn_curve(const CurveLaserArgs& args);
     i32 spawn_beam(const BeamLaserArgs& args);
-    // 0x413860 Ex 0x8000000 内联段：消费 BulletManager::laser_requests（弹幕派生激光）
-    void consume_bullet_requests();
+    // 0x413860 Ex 0x8000000 内联段：弹幕派生激光（BulletManager::on_laser_request 当场回调）
+    void spawn_from_bullet(const BulletLaserRequest& req);
 
     // 0x41aa40：按句柄查找活动激光（id == 0 或未命中返回 nullptr）
     Laser* find_by_id(i32 id) noexcept;

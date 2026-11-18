@@ -84,7 +84,6 @@ void BulletManager::reset() {
     iterate_current_ = nullptr;
     iterate_next_ = nullptr;
     sfx_queue.clear();
-    laser_requests.clear();
 }
 
 void BulletManager::push_front_active(Bullet& b) {
@@ -1024,7 +1023,7 @@ void BulletManager::run_ex(Bullet& b, float gs) {
                     const i32 next_index = b.ex_index + 1;
                     req.next = b.ex[(next_index < 18) ? next_index : 17];
                     std::memcpy(req.ex, b.ex, sizeof req.ex);
-                    laser_requests.push_back(req);
+                    if (on_laser_request) on_laser_request(req);
                     b.ex_index = next_index + 1;
                     const bool cancel_after = (st.a == 0) ? (st.d != 0) : ((u32(st.d) & 0x10000u) != 0);
                     if (cancel_after) cancel_bullet(b, 0);

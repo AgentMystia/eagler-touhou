@@ -14,6 +14,7 @@
 
 #include "AnmVm.hpp"
 #include "Types.hpp"
+#include <functional>
 #include <vector>
 
 namespace th16 {
@@ -232,8 +233,9 @@ struct Bullet {
     i16 color = 0;              // +0x1476
 };
 
-// Ex 0x8000000 激光生成请求（a==0 直线 0x431130 / a==1 照射 0x431860）。弹幕更新链 0x1c 内记录解析后的
-// 参数，同帧由 LaserManager::consume_bullet_requests 消费；原版在槽满（0x200）时同样跳过生成，只推进 Ex 下标。
+// Ex 0x8000000 激光生成请求（a==0 直线 0x431130 / a==1 照射 0x431860）。0x413860 在弹幕更新内当场建激光，
+// 其生成音效排在随后的消弹音效之前，故 BulletManager 通过 on_laser_request 即时回调 LaserManager::spawn_from_bullet；
+// 原版在槽满（0x200）时同样跳过生成，只推进 Ex 下标。
 struct BulletLaserRequest {
     i32 kind = 0;              // 0 直线 / 1 照射
     Vec3 pos;                  // 弹当前坐标
@@ -267,7 +269,7 @@ public:
     std::vector<i32> sfx_queue;         // 0x45e1f0 音效登记（发射 / Ex 变换 / 擦弹 0x2a / 消弹 0x47）
     std::vector<i32>* sfx_sink = nullptr;
     void play_sfx(i32 id) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(id); }
-    std::vector<BulletLaserRequest> laser_requests; // Ex 0x8000000 调用序（宿主每帧取走）
+    std::function<void(const BulletLaserRequest&)> on_laser_request;  // Ex 0x8000000 → LaserManager::spawn_from_bullet
     bool spellcard_active = false;      // DAT_004a6db0->0x78 bit0（Spellcard 管理器接入前由宿主同步）
     bool season_release_active = false; // DAT_004a6da4->0x30 == 1（季节解放中；消弹模式 4 附加掉落）
     i32 season_release_item = 0;        // DAT_004a6da4->0xd8（解放附加道具 = 该值 + 8）

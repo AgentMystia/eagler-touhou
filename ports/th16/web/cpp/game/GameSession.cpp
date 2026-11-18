@@ -455,9 +455,6 @@ bool GameSession::enter_game(i32 replay_mode) {
             if (game.bullets_live && !game.chains_suspended && ((game.flags | (game.flags >> 2)) & 1u) == 0) {
                 sync_bomb_state();
                 game.bullets->update(supervisor.game_speed, (game.flags & 0x400u) != 0);
-                // Ex 0x8000000 在 0x413860 内直接建激光（同帧挂入激光链尾，下一帧起推进）
-                if (game.lasers_live) game.lasers->consume_bullet_requests();
-                else game.bullets->laser_requests.clear();
                 // 被弹（0x443f10）在弹幕链内登记的自机音效本帧即生效
                 if (game.player_live) harvest_player_sfx();
             }
@@ -509,6 +506,10 @@ bool GameSession::enter_game(i32 replay_mode) {
         game.lasers->sfx_sink = &sfx_events;
         game.lasers_live = true;
         game.player.laser_manager = game.lasers.get();
+        // Ex 0x8000000 在 0x413860 内当场建激光（同帧挂入激光链尾，下一帧起推进）
+        game.bullets->on_laser_request = [this](const BulletLaserRequest& req) {
+            if (game.lasers_live) game.lasers->spawn_from_bullet(req);
+        };
         laser_update_chain_ = chains.create([this]() -> ChainResult {
             // 0x4316b0：GameManager 装载中（bit2）/ 结束位（bit0 经 >>2 映射）/ 0x400 冻结时跳过；bit1 时以速度 0 推进
             if (game.lasers_live && !game.chains_suspended && ((game.flags | (game.flags >> 2)) & 1u) == 0 &&
