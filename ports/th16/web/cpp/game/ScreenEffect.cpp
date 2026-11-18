@@ -1,4 +1,4 @@
-// th16 ScreenEffect kind 1——原版 0x45cd30。
+// th16 ScreenEffect kind 1（0x45cd30 震动）与淡入淡出 kind（0x45c900）。
 #include "ScreenEffect.hpp"
 
 namespace th16 {
@@ -38,6 +38,18 @@ bool screen_shake_step(ScreenShake& shake, Rng& game_rng, float window_scale, fl
         out.offset_scaled.y = -(window_scale * amp);
         break;
     }
+    return true;
+}
+
+bool screen_fade_step(ScreenFade& fade, i32 post_load_frames, bool game_frozen, float game_speed) {
+    if (post_load_frames != 0) return false;
+    const i32 d = fade.duration;
+    if (d != 0) {
+        fade.alpha = fade.timer.current < d ? i32(double(fade.timer.current_f) * 255.0 / double(float(d))) : 0xff;
+        if (fade.alpha < 0) fade.alpha = 0;
+    }
+    if (fade.timer.current >= d + 2) return false;
+    if (!game_frozen) fade.timer.tick(game_speed);
     return true;
 }
 

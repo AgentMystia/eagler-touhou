@@ -6,7 +6,8 @@
 //   0x409e50  更新：清抖动位移、facing 归一化、0x40aed0 面 VM 推进、0x40b3b0 脚本、相机写回全局、层精灵 VM 推进
 //   0x40b3b0  STD 脚本解释（ins 0..20），之后推进四组插值与 rockingMode 摄像机晃动
 //   0x409f90  绘制（优先级 3）：相机 → 雾 → 清场地矩形 → 逐层 0x40af70（层精灵 0x40c280 + 实例四边形）
-//   0x40a410  绘制（优先级 6）：以关卡相机绘制 ANM 层 0x20 / 0x21
+//   0x40a410  绘制（优先级 6）：以关卡相机绘制 ANM 层 0x20 / 0x21；尾部推进结束计时 +0x66c8（换关：0x40c0d0 给上一关
+//             置 bit1 + 0x1e 帧，0x40c210 给新关置 bit2 + 0x3c 帧），归零时 bit1 → bit3（0x42d7b0 据此析构上一关）
 //
 // 相机结构（0x12c 字节，与全局 0x4c168c 同布局）按 dword 下标：
 //   0 pos  3 facing  6 up  9 facing_norm  0xc right  0xf pos_offset  0x12 facing_offset  0x15 fov
@@ -58,9 +59,9 @@ public:
 
     StdFile std;
     StageCamera camera;
-    // DAT_004c168c：0x409e50 每帧脚本与插值之后整体抄出的全局相机副本（ANM 变量 10016..10021 读它；
-    // 首次更新前保持默认值——原版此处为上一关 / 上一局残留，仅影响第 0 帧的读取）
-    StageCamera camera_global;
+    // DAT_004c168c：0x409e50 每帧脚本与插值之后整体抄出的全局相机副本（ANM 变量 10016..10021 读它）。
+    // 由 GameSession 持有：换关期间上一关与新关先后写入，新关在 bit2 且计时 ≥ 0x3c 的首帧不更新，全局仍为上一关的值
+    StageCamera* camera_global = nullptr;
     AnmFile* anm = nullptr;      // +0x66b4
     i32 stage_number = 0;        // +0x66dc
 
@@ -82,6 +83,7 @@ public:
 
     u32 flags = 1;               // +0x66c4：bit0 绘制启用  bit1 结束中  bit2 结束淡出  bit3 隐藏
     Timer end_timer;             // +0x66c8
+    u32 tint = 0x808080;         // +0x3350：0x409e50 每帧写 0x808080；最高字节（+0x3353）为绘制侧闪白标志
     i32 frame = 0;               // +0x66e0
     i32 drawn_instances = 0;     // +0x66b8
     i32 culled_instances = 0;    // +0x66bc
@@ -95,6 +97,10 @@ public:
     void start(AnmManager& manager);
     // 0x409e50
     void update(AnmManager& manager, float game_speed, const Rng* visual_rng = nullptr);
+    // 0x40a410 尾部（绘制链 6 中唯一改动逻辑状态的部分）：结束计时倒数（0x40d490），归零时 bit1 → bit3 并清 bit1 / bit2
+    void end_timer_step(float game_speed);
+    // 0x40c0d0 后半：上一关结束——bit1、计时 0x1e；0x40c210：新关淡入——bit2、计时 0x3c
+    void begin_end(i32 frames, u32 flag);
     // 0x40b2f0 / ins 19：对全部面 VM 与层精灵 VM 挂中断并立即推进
     void interrupt(AnmManager& manager, i32 value);
     // 0x43c940 的 eye / at：eye = pos + pos_offset，at = eye + facing_norm
