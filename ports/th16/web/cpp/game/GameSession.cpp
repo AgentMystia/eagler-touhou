@@ -384,6 +384,7 @@ void GameSession::register_game_chains() {
     game_update_chain_ = chains.create([this]() -> ChainResult {
         return game.update(animations, globals, supervisor.game_speed) ? ChainResult::Continue : ChainResult::BreakExit;
     }, 0xf, true);
+    game.game_input = &game_input;
     game.on_screen_fade = [this](i32 kind, i32 duration, u32 color) { create_screen_fade(kind, duration, color); };
     game.on_previous_stage_destroyed = [this](StageManager& stage) {
         if (previous_stage_update_chain_) { chains.remove(previous_stage_update_chain_); previous_stage_update_chain_ = nullptr; }

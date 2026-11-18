@@ -44,7 +44,8 @@ void GameManager::reset_for_stage(AnmManager& manager, GameGlobals& globals) {
     // 0x42cb00 Laser 复位：LaserManager 接入时补
     globals.game_frame = 0;
     globals.stage_frame = 0;
-    // 0x448eb0 Replay 关卡段起点：Replay 接入时补
+    // 0x448eb0：Replay 链启用、0x449120 游戏输入状态清零；关卡段记录本体 Replay 接入时补
+    if (game_input != nullptr) *game_input = InputState{};
     if (enemies_live) {
         if (!enemies.spawn_main()) {
             // 生成失败时置装载失败位；上层会在 failure 中看到 enemies.error

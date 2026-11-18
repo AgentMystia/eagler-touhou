@@ -30,6 +30,7 @@
 //                                              → 直接进入场景 7（GameSession::start_game_direct），逐帧 JSON：Player 规范字段（含射击计时、冷却表、
 //                                                自机弹 ×live、伤害源 ×live、本帧 sfx）+ 自机 VM 0x568 字节
 //                                                （与 tools/oracle/game-oracle.py 快照同结构；enemies/dialogue 为未移植管理器的 PlayerWorld 桩输入）
+//                                                环境变量 TH16_FRAMES_FROM=<n>：只输出第 n 帧（1 起）起的快照（长程跑只看换关附近，避免 GB 级 JSON）
 //   harness game-digest <...同上...>              → 同一状态流的 FNV-1a 64（tests/golden/player.json，game-oracle.py --digest 同口径）
 #include "../../web/cpp/game/Archive.hpp"
 #include "../../web/cpp/game/AnmManager.hpp"
@@ -581,6 +582,9 @@ int main(int argc, char** argv) {
         };
 
         if (!digest_only) std::printf("{\"stage\":%d,\"shot\":%d,\"season\":%d,\"frames\":[", stage, shot, season);
+        int frames_from = 1;
+        if (const char* env = std::getenv("TH16_FRAMES_FROM")) frames_from = std::atoi(env);
+        bool first_printed = true;
         i32 held = 0;
         i32 enemy_hold = -1;
         i32 dialogue_hold = -1;
@@ -763,14 +767,15 @@ int main(int argc, char** argv) {
                                      u32(g.enemy_bonus_pending), u32(g.enemy_bonus), u32(g.spell_id)};
                 for (u32 v : words) feed_spell_u32(v);
             }
-            if (digest_only) continue;
+            if (digest_only || f + 1 < frames_from) continue;
 
             std::printf("%s{\"frame\":%d,\"stage\":%d,\"game_frame\":%d,\"stage_frame\":%d,\"input\":[%u,%u],\"power\":%d,\"season_gauge\":%d,"
                         "\"enemy_count\":%d,\"dialogue\":%d,\"rng\":[%u,%u],\"game_rng\":[%u,%u],\"player\":{",
-                        f == 0 ? "" : ",", f + 1, g.stage, g.game_frame, g.stage_frame, session.game_input.held, session.game_input.pressed,
+                        first_printed ? "" : ",", f + 1, g.stage, g.game_frame, g.stage_frame, session.game_input.held, session.game_input.pressed,
                         g.power, g.season_gauge, session.game.world.enemy_count, session.game.world.dialogue ? 1 : 0,
                         u32(session.animations.visual_rng.seed), session.animations.visual_rng.calls,
                         u32(session.animations.game_rng.seed), session.animations.game_rng.calls);
+            first_printed = false;
             size_t at = player_begin;
             std::printf("\"state\":%d,", i32(w[at])); at += 1;
             print_words("pos", w, at, 3); at += 3; std::printf(",");

@@ -3,7 +3,8 @@
 // 0x41a6d0 damage_accum 在无敌分支也累加、0x423050 子敌机继承 I0..I3/F0..F3/F4..F7、
 // 0x409e50 相机副本 DAT_004c168c（ANM 变量 10016..10021）与 DAT_004c1790 entity_offset_delta、
 // 0x407a50 AnmVm 尾段重置、0x4178a0 Spellcard 初始标志；以及 Gui 对话（0x429ff0 / 0x429b20 / 0x42a1d0）、
-// ECL 518 / 519 / 554 与长按快进（DAT_004a5244 累计按住帧数）。
+// ECL 518 / 519 / 554 与长按快进（DAT_004a5244 累计按住帧数）；以及过关换关全链路
+// （0x42e150 → 0x43ce10 case 0xc → 0x42d200 / 0x42cb60 → 0x42dc50 / 0x40c0d0 / 0x40c210 → 0x42dee0 → 二面）。
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
@@ -17,8 +18,8 @@ const dat = process.env.TH16_DAT ?? resolve(monorepo, 'games/th16/original/th16.
 const needDat = {skip: !existsSync(dat) && 'original th16.dat not present'};
 const golden = JSON.parse(readFileSync(resolve(here, 'golden/stage-run.json'), 'utf8'));
 
-function run(args) {
-  return execFileSync(harness, args, {encoding: 'utf8', maxBuffer: 1 << 30});
+function run(args, env = {}) {
+  return execFileSync(harness, args, {encoding: 'utf8', maxBuffer: 1 << 30, env: {...process.env, ...env}});
 }
 
 function argsFor(command, c) {
@@ -39,11 +40,17 @@ for (const c of golden.cases) {
   });
 
   test(`stage run checkpoints match oracle: ${c.name}`, needDat, () => {
-    const frames = JSON.parse(run(argsFor('game-run', c))).frames;
-    assert.equal(frames.length, c.frames);
+    // frames_from：长程用例只取尾段快照（TH16_FRAMES_FROM），避免 GB 级 JSON
+    const from = c.frames_from ?? 1;
+    const frames = JSON.parse(run(argsFor('game-run', c), from > 1 ? {TH16_FRAMES_FROM: String(from)} : {})).frames;
+    assert.equal(frames.length, c.frames - from + 1);
     for (const [frame, want] of Object.entries(c.checkpoints)) {
-      const f = frames[Number(frame) - 1];
+      const f = frames[Number(frame) - from];
       assert.equal(f.frame, Number(frame));
+      if (want.stage !== undefined) assert.equal(f.stage, want.stage, `frame ${frame} 关卡号 DAT_004a5790`);
+      if (want.game_frame !== undefined) assert.equal(f.game_frame, want.game_frame, `frame ${frame} DAT_004a579c`);
+      if (want.stage_frame !== undefined) assert.equal(f.stage_frame, want.stage_frame, `frame ${frame} DAT_004a57a0`);
+      if (want.input) assert.deepEqual(f.input, want.input, `frame ${frame} 游戏输入 held / pressed`);
       if (want.rng) assert.deepEqual(f.rng, want.rng, `frame ${frame} 视觉 RNG`);
       if (want.game_rng) assert.deepEqual(f.game_rng, want.game_rng, `frame ${frame} 游戏 RNG`);
       if (want.enemy_count !== undefined) assert.equal(f.enemies.count, want.enemy_count, `frame ${frame} 敌机数`);

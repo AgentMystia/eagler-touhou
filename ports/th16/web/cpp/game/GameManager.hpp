@@ -25,6 +25,7 @@
 #include "Bullet.hpp"
 #include "Enemy.hpp"
 #include "Gui.hpp"
+#include "Input.hpp"
 #include "Item.hpp"
 #include "Player.hpp"
 #include "Stage.hpp"
@@ -76,6 +77,8 @@ public:
     bool chains_suspended = false;
     // DAT_004a6d98+0x19248（AsciiManager 的 "Loading" VM，0x41a390 生成）：首帧 / 0x42dee0 中断 1 并清零
     u32 loading_vm = 0;
+    // DAT_004a52c8 族（GameSession::game_input）：0x448eb0 → 0x449120 在关卡起点整体清零（下一帧 pressed = held）
+    InputState* game_input = nullptr;
     // 0x45d150(kind, duration, color)：GameSession 登记 ScreenEffect 链 0x13
     std::function<void(i32, i32, u32)> on_screen_fade;
     // 0x4099a0 之后：GameSession 卸载上一关背景 ANM 槽
