@@ -271,6 +271,13 @@ int AnmRenderer::draw_vm(AnmVm& vm) {
     case AnmRenderMode::PolygonOutline:
     case AnmRenderMode::PolygonRing:
         return draw_polygon(vm, AnmRenderMode(mode));
+    case AnmRenderMode::Rect:
+    case AnmRenderMode::GradientRect:
+    case AnmRenderMode::OutlinedRect:
+    case AnmRenderMode::OutlinedGradientRect:
+    case AnmRenderMode::Line:
+    case AnmRenderMode::RectOutline:
+        return draw_rectangle(vm, AnmRenderMode(mode));
     default:
         if (mode < 32) ++unimplemented_modes[mode];
         return 0;
@@ -561,6 +568,115 @@ int AnmRenderer::draw_polygon(AnmVm& vm, AnmRenderMode mode) {
     prepare_untextured_draw();
     device->draw(topology, VertexLayout::ScreenColor, primitives, vertices.data(), sizeof(ScreenColorVertex));
     return 0;
+}
+
+namespace {
+
+// 0x468c70 / 0x469330 / 0x468fc0 共用：锚点 0 居中、1 从原点向正方向、2 向负方向
+void anchor_extent(u32 anchor, float size, float& from, float& to) {
+    if (anchor == 1) { from = 0.0f; to = size; }
+    else if (anchor == 2) { from = -size; to = 0.0f; }
+    else { from = size * -0.5f; to = size * 0.5f; }
+}
+
+// 0x469570：描边底色——alpha 减半（(c >> 1) & 0x7f000000），RGB 不变
+u32 half_alpha(u32 color) { return ((color >> 1) & 0x7f000000u) | (color & 0x00ffffffu); }
+
+}  // namespace
+
+void AnmRenderer::submit_rectangle(float x, float y, float width, float height, float rotation, u32 c1, u32 c2,
+                                   u32 anchor_x, u32 anchor_y) {
+    flush();
+    const float c = float(std::cos(rotation)), s = float(std::sin(rotation));
+    float left, right, top, bottom;
+    anchor_extent(anchor_x, width, left, right);
+    anchor_extent(anchor_y, height, top, bottom);
+    auto corner = [&](float dx, float dy, u32 color) {
+        return ScreenColorVertex{(dx * c - dy * s) + x, dx * s + dy * c + y, 0.0f, 1.0f, color};
+    };
+    const ScreenColorVertex quad[4] = {
+        corner(left, top, c1), corner(right, top, c2), corner(left, bottom, c1), corner(right, bottom, c2),
+    };
+    set_depth_write(false);
+    prepare_untextured_draw();
+    device->draw(Topology::Strip, VertexLayout::ScreenColor, 2, quad, sizeof(ScreenColorVertex));
+}
+
+int AnmRenderer::draw_rectangle(AnmVm& vm, AnmRenderMode mode) {
+    // 0x468490 mode 0x10 / 0x14.. 分支：宽高 = 精灵尺寸 × scale，随父旋转与缩放（ins_507 除外），再乘窗口缩放
+    float rotation = vm.rotation.z;
+    float width = vm.sprite_size.x * vm.scale.x;
+    float height = vm.sprite_size.y * vm.scale.y;
+    const Vec3 origin = geometry_.world_position(vm);
+    if (vm.parent != nullptr && (vm.flags_hi & AnmVm::kHiDetached) == 0) {
+        width *= vm.parent->scale.x;
+        height *= vm.parent->scale.y;
+        rotation += vm.parent->rotation.z;
+    }
+    apply_vm_state(vm);
+    const u32 scale_mode = vm.flags_hi & AnmVm::kHiScaleModeMask;
+    if (scale_mode == 0x100000u) { width *= geometry_.window_scale; height *= geometry_.window_scale; }
+    else if (scale_mode == 0x200000u) {
+        width = geometry_.window_scale * 0.5f * width;
+        height = geometry_.window_scale * 0.5f * height;
+    }
+    // 顶点色直接取 VM 的 color / color2（不经色调与父色调制）；"第二色" 按渐变位（ins_423）选 color2
+    const u32 color = pack_color(vm.color);
+    const u32 color2 = pack_color(vm.color2);
+    const u32 color_by_mode = (vm.flags_lo & AnmVm::kColorModeMask) == 0 ? color : color2;
+    const u32 anchor_x = (vm.flags_lo & AnmVm::kAnchorXMask) >> 21;
+    const u32 anchor_y = (vm.flags_lo & AnmVm::kAnchorYMask) >> 23;
+
+    switch (mode) {
+    case AnmRenderMode::Rect:
+        submit_rectangle(origin.x, origin.y, width, height, rotation, color, color, anchor_x, anchor_y);
+        return 0;
+    case AnmRenderMode::GradientRect:
+        submit_rectangle(origin.x, origin.y, width, height, rotation, color, color2, anchor_x, anchor_y);
+        return 0;
+    case AnmRenderMode::OutlinedRect:
+    case AnmRenderMode::OutlinedGradientRect: {
+        const u32 c2 = mode == AnmRenderMode::OutlinedRect ? color : color2;
+        submit_rectangle(origin.x, origin.y, width + 1.0f, height + 1.0f, rotation, half_alpha(color), half_alpha(c2),
+                         anchor_x, anchor_y);
+        submit_rectangle(origin.x, origin.y, width, height, rotation, color, c2, anchor_x, anchor_y);
+        return 0;
+    }
+    case AnmRenderMode::Line: {
+        // 0x469330：只沿 X 延伸的两点线段，旋转后平移到 VM 位置
+        flush();
+        const float c = float(std::cos(rotation)), s = float(std::sin(rotation));
+        float from, to;
+        anchor_extent(anchor_x, width, from, to);
+        const ScreenColorVertex line[2] = {
+            {from * c + origin.x, from * s + origin.y, 0.0f, 1.0f, color},
+            {to * c + origin.x, to * s + origin.y, 0.0f, 1.0f, color_by_mode},
+        };
+        set_depth_write(false);
+        prepare_untextured_draw();
+        device->draw(Topology::Lines, VertexLayout::ScreenColor, 1, line, sizeof(ScreenColorVertex));
+        return 0;
+    }
+    default: {
+        // 0x468fc0：左上 → 右上 → 右下 → 左下 → 左上 的线段带；上边两角与左下取 color，右侧取第二色
+        flush();
+        const float c = float(std::cos(rotation)), s = float(std::sin(rotation));
+        float left, right, top, bottom;
+        anchor_extent(anchor_x, width, left, right);
+        anchor_extent(anchor_y, height, top, bottom);
+        auto corner = [&](float dx, float dy, u32 col) {
+            return ScreenColorVertex{(dx * c - dy * s) + origin.x, dx * s + dy * c + origin.y, 0.0f, 1.0f, col};
+        };
+        const ScreenColorVertex outline[5] = {
+            corner(left, top, color), corner(right, top, color_by_mode), corner(right, bottom, color_by_mode),
+            corner(left, bottom, color), corner(left, top, color),
+        };
+        set_depth_write(false);
+        prepare_untextured_draw();
+        device->draw(Topology::LineStrip, VertexLayout::ScreenColor, 4, outline, sizeof(ScreenColorVertex));
+        return 0;
+    }
+    }
 }
 
 void AnmRenderer::draw_layer(int layer) {
