@@ -594,6 +594,7 @@ int main(int argc, char** argv) {
             if (dialogue_hold >= 0) session.game.world.dialogue = dialogue_hold != 0;
             session.injected_input = u32(held);
             if (refill_lives >= 0 && session.globals.lives < refill_lives) session.globals.lives = refill_lives;
+            trace_state.current = f + 1;
             if (!session.logic_step()) return fail(session.failure.c_str());
 
             const Player& pl = session.game.player;
@@ -764,9 +765,9 @@ int main(int argc, char** argv) {
             }
             if (digest_only) continue;
 
-            std::printf("%s{\"frame\":%d,\"game_frame\":%d,\"stage_frame\":%d,\"input\":[%u,%u],\"power\":%d,\"season_gauge\":%d,"
+            std::printf("%s{\"frame\":%d,\"stage\":%d,\"game_frame\":%d,\"stage_frame\":%d,\"input\":[%u,%u],\"power\":%d,\"season_gauge\":%d,"
                         "\"enemy_count\":%d,\"dialogue\":%d,\"rng\":[%u,%u],\"game_rng\":[%u,%u],\"player\":{",
-                        f == 0 ? "" : ",", f + 1, g.game_frame, g.stage_frame, session.game_input.held, session.game_input.pressed,
+                        f == 0 ? "" : ",", f + 1, g.stage, g.game_frame, g.stage_frame, session.game_input.held, session.game_input.pressed,
                         g.power, g.season_gauge, session.game.world.enemy_count, session.game.world.dialogue ? 1 : 0,
                         u32(session.animations.visual_rng.seed), session.animations.visual_rng.calls,
                         u32(session.animations.game_rng.seed), session.animations.game_rng.calls);
