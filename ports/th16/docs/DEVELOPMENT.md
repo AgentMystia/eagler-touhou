@@ -60,6 +60,22 @@ oracle 只桩掉堆分配、档案读取、D3D 纹理（按 THTX 头尺寸回报
 
 `tools/run-harness.mjs` 对 stdout/stderr 的 `fd_write` 用 JS 同步写出：Node 22 自带 uvwasi 在输出到文件或 `/dev/null` 时会段错误（同一 wasm 在 wasmtime 下正常）。
 
+### 绘制调用流 oracle
+
+渲染侧的对拍单位是"每次 Clear / 绘制时生效的设备状态 + 顶点字节"，不比较冗余的 SetRenderState 调用次数：
+
+```bash
+# 原版：--draw 让每帧按 0x45a8a0 顺序跑绘制链，D3D 调用由 tools/oracle/d3d-recorder.py 录成 JSON Lines
+toolchains/venv/bin/python ports/th16/tools/oracle/game-oracle.py games/th16/original/th16.exe artifacts/th16/dat 820 \
+    /tmp/st1.json --stage 1 --shot 1 --season 2 --difficulty 1 --lives 8 --draw --draw-out /tmp/st1.draw.jsonl --draw-from 800
+# 移植版：game-draw 与 game-run 同参，末尾加 <out.jsonl> [from_frame]，用 tests/harness/RecordingDevice.hpp 录同口径数据
+tests/build/harness game-draw ../../games/th16/original/th16.dat 1 1 2 820 "" "" "" 1 -1 8 0 0 /tmp/st1.port.jsonl 800
+# 对拍：目标 / 视口 / 清屏参数 / 图元 / 顶点格式 / 顶点字 / 渲染状态子集 / 世界格式的矩阵；退出码 1 表示有差异
+python3 tools/oracle/draw-compare.py /tmp/st1.draw.jsonl /tmp/st1.port.jsonl --frames 800-820
+```
+
+`scene-boot` / `anm-draw` 也经 RecordingDevice 输出可读的 `quad` 行（屏幕四边形直接取顶点，世界四边形按 world·view·projection 投影并算线性顶点雾）。XYZRHW 顶点不经 TnL，原版从不关 TEXTURETRANSFORMFLAGS 而移植版对屏幕批显式关掉，draw-compare 对屏幕格式不比较该位。
+
 ## 页面壳
 
 `web/sdl-runtime/th16.html` 把 `assets/th16.dat` 整档 fetch 进 MEMFS `/assets/th16.dat`，C++ `Archive` 按名解密/LZSS 解码——与原版读档路径同构，不预解包。`python3 web/sdl-runtime/serve.py` 提供 no-store 服务。观测面：`mod._th16_frame()`、`mod._th16_phase()`、`mod._sdl_stats()`。
