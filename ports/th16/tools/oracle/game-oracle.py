@@ -86,6 +86,7 @@ class GameOracle(Oracle):
         self.replay_slot = replay_slot
         self.debug = debug
         self.enemy_snap = False  # --enemies：每帧敌人快照（不进 digest，Enemy 移植阶段的对照）
+        self.bullet_snap = False # --bullets：每帧敌弹快照（BulletManager 链表）
         self.ecl_trace = None
         self.run_draw = False   # --draw：也跑绘制链（需 D3DXVec3ProjectArray 等桩，待渲染/裁剪阶段接入）
         self.import_log = []
@@ -106,6 +107,7 @@ class GameOracle(Oracle):
             self.replaced[addr] = (0, lambda o: None)
         self.replaced[0x45ED00] = (0x0C, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0))  # 声音线程请求（BGM 装载/播放）thiscall 3 args
         self.replaced[0x45E1F0] = (4, self.on_sfx)                                       # 音效登记（DAT_004d9e2c 队列；RET 4）→ 只记录 (id, 调用方)
+        self.replaced[0x45E150] = (8, self.on_sfx)                                       # 无声像变体（被弹 0x443f10、弹幕 Ex 音效；RET 8）
         self.sfx_log = []
         self.replaced[0x4792A8] = (0, self.on_vsprintf)                                  # __stdio_common_vsprintf（CRT 需 FLS/线程数据）
         self.replaced[0x459240] = (0x20, lambda o: None)                                 # GDI 文字 → 纹理像素（无逻辑副作用）
@@ -654,6 +656,35 @@ class GameOracle(Oracle):
             node = self.u32(node + 4)
         return out
 
+    def bullet_snapshot(self):
+        """BulletManager（DAT_004a6dac）：+0x40 count，+0x70 活动链表（节点在 Bullet+0x10）。"""
+        bm = self.u32(0x4A6DAC)
+        if not bm:
+            return None
+        out = {'count': self.i32(bm + 0x40), 'bullets': []}
+        node = self.u32(bm + 0x70)
+        while node:
+            b = self.u32(node)
+            out['bullets'].append({
+                'index': self.i32(b + 0xC48),
+                'flags': self.u32(b + 0x20),
+                'state': struct.unpack('<H', self.uc.mem_read(b + 0xC72, 2))[0],
+                'type': struct.unpack('<h', self.uc.mem_read(b + 0x1474, 2))[0],
+                'color': struct.unpack('<h', self.uc.mem_read(b + 0x1476, 2))[0],
+                'pos': self.words(b + 0xC20, 3),
+                'vel': self.words(b + 0xC2C, 3),
+                'speed': self.u32(b + 0xC38),
+                'angle': self.u32(b + 0xC3C),
+                'hitbox': self.words(b + 0xC40, 2),
+                'scale': self.u32(b + 0x141C),
+                'ex_index': self.i32(b + 0xC60),
+                'ex_flags': self.u32(b + 0xC68),
+                'timer': self.timer(b + 0x144C),
+                'sprite_id': self.i32(b + 0x48),
+            })
+            node = self.u32(node + 4)
+        return out
+
     def player_snapshot(self):
         """Player（DAT_004a6ef8，0x2c828 字节）规范字段；与 harness `game-run` 输出一一对应。"""
         p = self.u32(DAT_PLAYER)
@@ -740,9 +771,13 @@ class GameOracle(Oracle):
             # 其它管理器尚未移植时 harness 的外部状态输入（PlayerWorld）：不进 digest
             'enemy_count': self.i32(self.u32(0x4A6DC0) + 0x18C) if self.u32(0x4A6DC0) else 0,
             'dialogue': self.i32(self.u32(0x4A6DCC) + 0x1C8) if self.u32(0x4A6DCC) else 0,
+            # DAT_004a6d88（回放同步 RNG）：种子与调用计数（调试对拍用；不进 digest）
+            'rng': [struct.unpack('<H', self.uc.mem_read(0x4A6D88, 2))[0], self.u32(0x4A6D8C)],
         }
         if self.enemy_snap:
             snap['enemies'] = self.enemy_snapshot()
+        if self.bullet_snap:
+            snap['bullets'] = self.bullet_snapshot()
         if sm:
             snap['stage'] = {'frame': self.i32(sm + 0x66E0), 'ins': self.i32(sm + 0x20), 'flags': self.u32(sm + 0x66C4)}
         return snap
@@ -817,6 +852,25 @@ def enemy_digest(frames, digest=0xCBF29CE484222325):
     return digest
 
 
+def bullet_digest(frames, digest=0xCBF29CE484222325):
+    mask = (1 << 64) - 1
+    def feed(data):
+        nonlocal digest
+        for b in data:
+            digest = ((digest ^ b) * 0x100000001B3) & mask
+    for f in frames:
+        bu = f.get('bullets') or {'count': 0, 'bullets': []}
+        lst = bu.get('bullets') or []
+        words = [f['frame'], bu['count'], len(lst)]
+        feed(b''.join(struct.pack('<I', w & 0xFFFFFFFF) for w in words))
+        for b in lst:
+            bw = ([b['index'], b['flags'], b['state'], b['type'], b['color']] +
+                  b['pos'] + b['vel'] + [b['speed'], b['angle']] + b['hitbox'] +
+                  [b['scale'], b['ex_index'], b['ex_flags']] + b['timer'][:3] + [b['sprite_id']])
+            feed(b''.join(struct.pack('<I', w & 0xFFFFFFFF) for w in bw))
+    return digest
+
+
 def parse_input(spec):
     events = {}
     if spec:
@@ -847,12 +901,14 @@ def main():
     ap.add_argument('--debug', action='store_true')
     ap.add_argument('--draw', action='store_true', help='每帧也跑绘制链 0x4015a0（实验）')
     ap.add_argument('--enemies', action='store_true', help='每帧附敌人快照（EnemyManager 链表）')
+    ap.add_argument('--bullets', action='store_true', help='每帧附敌弹快照（BulletManager 链表）')
     ap.add_argument('--replay-slot', type=int, default=-1, help='DAT_004a57c8（默认 -1 走 MainFront；0 走 MainBossSpell）')
     ap.add_argument('--trace-ecl', default='', help='把每条执行的 ECL 指令 (frame, enemy, sub, pc, time, ins_time, op) 写到此文件')
     a = ap.parse_args()
     o = GameOracle(pathlib.Path(a.exe), a.dat_dir, a.stage, a.shot, a.season, a.difficulty, a.seed, a.debug, a.replay_slot)
     o.run_draw = a.draw
     o.enemy_snap = a.enemies
+    o.bullet_snap = a.bullets
     if a.trace_ecl:
         o.enable_ecl_trace()
     o.boot()
@@ -873,8 +929,11 @@ def main():
                                                'input': a.input, 'frames': frames}, separators=(',', ':')))
     if a.trace_ecl:
         pathlib.Path(a.trace_ecl).write_text(json.dumps(o.ecl_trace, separators=(',', ':')))
-    print('game-oracle: %d frames → %s digest=%016x enemies=%016x errors=%s' % (
-        a.frames, a.out, frame_digest(frames), enemy_digest(frames) if a.enemies else 0, notes[:3]))
+    print('game-oracle: %d frames → %s digest=%016x enemies=%016x bullets=%016x errors=%s' % (
+        a.frames, a.out, frame_digest(frames),
+        enemy_digest(frames) if a.enemies else 0,
+        bullet_digest(frames) if a.bullets else 0,
+        notes[:3]))
     return 0
 
 
