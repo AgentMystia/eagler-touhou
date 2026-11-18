@@ -34,18 +34,31 @@ void AnmManager::reset_vm(AnmVm& vm) {
 
 namespace {
 
-// 0x407a50：spawn 前清 0x538.. 尾部并重建链表结点
+// 0x407a50：spawn 前清 0x538..0x5fc 尾部（保留 layer / pool_index / entity_offset）并重建链表结点。
+// 逐字段清零而非按原版字节范围 memset：64 位宿主（测试 harness）下指针字段把尾部撑开，字节偏移不再对应。
 void reset_tail(AnmVm& vm) {
-    const Vec3 offset = vm.entity_offset;
-    const u32 pool_index = vm.pool_index;
-    const i32 layer = vm.layer;
-    std::memset(reinterpret_cast<u8*>(&vm) + 0x538, 0, 0xc4);
-    vm.layer = layer;
-    vm.entity_offset = offset;
-    vm.pool_index = pool_index;
+    vm.id = 0;
+    vm.time = Timer{};
+    vm.age = Timer{};
     vm.world_node = {&vm, nullptr, nullptr, nullptr};
     vm.sibling_node = {&vm, nullptr, nullptr, nullptr};
     vm.children = {&vm, nullptr, nullptr, nullptr};
+    vm.delete_node = {nullptr, nullptr, nullptr, nullptr};
+    vm.layer_next = nullptr;
+    vm.root = nullptr;
+    vm.parent = nullptr;
+    vm.slowdown = 0;
+    vm.vertex_buffer = nullptr;
+    vm.vertex_buffer_size = 0;
+    vm.time_callback = 0;
+    vm.update_callback = 0;
+    vm.draw_callback = 0;
+    vm.delete_callback = 0;
+    vm.interrupt_callback = 0;
+    std::memset(vm.unknown_5d4, 0, sizeof vm.unknown_5d4);
+    vm.sprite_mapper = 0;
+    vm.unknown_5ec = 0;
+    vm.world_rotation = Vec3{};
 }
 
 // 0x45f020：模板初始化
