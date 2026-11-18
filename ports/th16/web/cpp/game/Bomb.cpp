@@ -13,6 +13,7 @@
 #include "Effect.hpp"
 #include "Enemy.hpp"
 #include "GameGlobals.hpp"
+#include "Gui.hpp"
 #include "Laser.hpp"
 #include "Player.hpp"
 #include "Spellcard.hpp"
@@ -81,7 +82,7 @@ void Bomb::start() {
         globals.bombs -= 1;
         if (globals.bombs < 0) globals.bombs = 0;
         else if (globals.bombs > 8) globals.bombs = 8;
-        ctx.gui_events.push_back(2);   // 0x42c390(bombs, bomb_fragments)
+        if (ctx.gui != nullptr) ctx.gui->refresh_bombs_display(globals.bombs, globals.bomb_fragments);   // 0x42c390
     }
     // 符卡进行 60 帧以后才发动的炸弹记为「符卡中用过」（取得失败），60 帧内发动不算
     const Spellcard& spell = *ctx.spellcard;
@@ -113,7 +114,7 @@ void Bomb::start() {
         if (globals.season_gauge_max < 0) globals.season_gauge = globals.season_gauge_max;
     }
     player.setup_options(*ctx.animations, globals);   // 0x4440e0：子机数随量表变化
-    ctx.gui_events.push_back(3);                        // 0x42c600 季节量表显示
+    if (ctx.gui != nullptr) ctx.gui->refresh_season_gauge();   // 0x42c600
 }
 
 // 0x40dd00（更新链 0x18 / 0x19）

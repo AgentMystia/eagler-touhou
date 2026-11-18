@@ -345,7 +345,7 @@ void GameMenu::continue_game() {
     g.lives = kContinueLives;
     g.life_fragments = 0;
     g.bombs = kContinueBombs;
-    ctx.gui->refresh_bombs_display();
+    ctx.gui->refresh_bombs_display(kContinueBombs, g.bomb_fragments);
     g.power = 0;
     g.bomb_fragments = 0;
     if (g.power_max < 0) g.power = g.power_max;
@@ -357,13 +357,13 @@ void GameMenu::continue_game() {
             g.power += add;
             if (g.power > g.power_max) {
                 g.power = g.power_max;
-                gui_events.push_back(2);   // 0x42bcf0(0, 2) 满火力弹出
+                ctx.gui->show_notice(Gui::Notice::FullPower, 0);   // 0x42bcf0(0, 2)
             }
         }
     }
     ctx.player->setup_options(*ctx.animations, g);
-    ctx.gui->refresh_lives_display();
-    ctx.gui->refresh_bombs_display();
+    ctx.gui->refresh_lives_display(g.lives, g.life_fragments);
+    ctx.gui->refresh_bombs_display(g.bombs, g.bomb_fragments);
     g.continues = g.continues + 1 > kMaxContinues ? kMaxContinues : g.continues + 1;
     g.score = 0;
     --g.continues_left;

@@ -6,6 +6,7 @@
 #include "AnmManager.hpp"
 #include "Enemy.hpp"
 #include "GameGlobals.hpp"
+#include "Gui.hpp"
 #include "Player.hpp"
 #include "Stage.hpp"
 #include "StageTable.hpp"
@@ -33,8 +34,6 @@ void Spellcard::reset() {
     state = 0;
     boss_pos = Vec3{};
     sfx_queue.clear();
-    gui_events.clear();
-    gui_timer_events.clear();
 }
 
 void Spellcard::destroy() {
@@ -65,7 +64,7 @@ void Spellcard::start(i32 spell_id, const char* spell_name, i32 limit, i32 anm_i
     name[sizeof(name) - 1] = '\0';
     flags = (flags & ~(kSurvival | kNoTimeout | kTimedOut)) | (kActive | kBonusAvailable);
     // 成绩文件（DAT_004a6f0c）符卡挑战计数与名字登记：ScoreFile 接入时补（非回放模式写入）
-    gui_timer_events.push_back(2);  // 0x4175d0：Gui+0x94 / +0x98 计时 VM 中断 2
+    if (gui != nullptr) gui->set_boss_timer_style(Gui::TimerStyle::Spell);   // 0x4175d0
     state = 1;
     flags &= ~(kBombUsed | kTiming);
 
@@ -170,21 +169,14 @@ void Spellcard::end() {
     if (animations != nullptr) animations->kill(vm_ids[0]);
     vm_ids[0] = 0;
     flags &= ~kBombUsed;
-    gui_timer_events.push_back(3);  // 0x417650
+    if (gui != nullptr) gui->set_boss_timer_style(Gui::TimerStyle::Normal);   // 0x417650
     if (animations != nullptr) animations->kill(vm_ids[4]);
     vm_ids[4] = 0;
     if ((flags & kBonusAvailable) == 0) {
-        gui_events.push_back({0, 1});
+        if (gui != nullptr) gui->show_notice(Gui::Notice::SpellFailed, 0);
     } else {
-        if (globals != nullptr) {
-            // 0x43e080：每次 extend 另有 Gui 0x42c280 残机显示、音效 0x11、0x42bcf0(0, 4)
-            const i32 extends = globals->add_score(bonus);
-            for (i32 i = 0; i < extends; ++i) {
-                play_sfx(0x11);
-                gui_events.push_back({0, 4});
-            }
-        }
-        gui_events.push_back({bonus, 0});
+        if (globals != nullptr) globals->add_score(bonus, [this] { if (gui != nullptr) gui->celebrate_extend(); });   // 0x43e080
+        if (gui != nullptr) gui->show_notice(Gui::Notice::SpellBonus, bonus);
         // 成绩文件符卡取得计数：ScoreFile 接入时补
         play_sfx(0x2e);
     }

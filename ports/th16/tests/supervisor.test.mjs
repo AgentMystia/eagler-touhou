@@ -198,14 +198,18 @@ test('game start flow: Normal / Cirno / Autumn → scene 7 with stage 1, title d
   assert.ok(started.quads.length > 0, 'leaf particles (ascii.anm mode 8) still falling right after the switch');
   // 加上新游戏在装载期（0x4440e0）就生成的子机 VM：pl02.anm（槽 9，琪露诺脚本 7）
   // 槽 0 = text.anm（画面合成的渲染目标拷贝）、槽 4 = st01wl.anm（关卡背景）不算在内
+  // 槽 5 = front.anm HUD 边框、槽 6 = st01logo.anm 关卡标题（都由 0x426d70 在 Gui 首帧生成；标题脚本 1 在层 0x17，
+  // 340 帧后自删）：原版 game-oracle --draw 切场后第 1 帧就有 tex[5,0] n=8 与 tex[6,1] 的四边形，故也在允许之列
   const leaves = started.quads.filter(l => / slot=2 entry=/.test(l));
   const others = started.quads.filter(l => !/ slot=(0|2|4) entry=/.test(l));
   assert.ok(leaves.length > 0, 'leaf particles still present');
-  assert.ok(others.length > 0 && others.every(l => / slot=9 entry=/.test(l)), 'only ascii.anm leaves + player option (pl02.anm) remain: ' + others.slice(0, 3).join(' | '));
+  assert.ok(others.length > 0 && others.every(l => / slot=(5|6|9) entry=/.test(l)), 'only ascii.anm leaves + HUD frame (front.anm) + stage logo (st01logo.anm) + player option (pl02.anm) remain: ' + others.filter(l => !/ slot=(5|6|9) entry=/.test(l)).slice(0, 3).join(' | '));
+  assert.ok(others.some(l => / slot=6 entry=1 /.test(l)), 'stage logo title (script 1) drawn from the first game frame, as in the original');
+  assert.ok(others.some(l => / slot=5 entry=0 /.test(l)), 'HUD frame (front.anm) drawn from the first game frame, as in the original');
   assert.ok(leaves.every(l => / zw=1 /.test(l)), 'mode 8 writes Z (0x43c530)');
   assert.deepEqual(started.events.at(-1), ['scene', '7']);
   const settled = parse(run(['scene-boot', dat, String(season + 2 + 0x28 + 2 + 16), script]));
-  assert.ok(settled.quads.filter(l => !/ slot=(0|4) entry=/.test(l)).every(l => / slot=9 entry=/.test(l)), 'emitter (interrupt 1 → ins_1 after 14 frames) and its leaves are gone; only the player option remains');
+  assert.ok(settled.quads.filter(l => !/ slot=(0|4) entry=/.test(l)).every(l => / slot=(5|6|9) entry=/.test(l)), 'emitter (interrupt 1 → ins_1 after 14 frames) and its leaves are gone; only the HUD, the stage logo and the player option remain');
   assert.ok(settled.quads.length > 0, 'player option VM keeps drawing');
 });
 

@@ -8,6 +8,7 @@
 #include "Effect.hpp"
 #include "Enemy.hpp"
 #include "GameGlobals.hpp"
+#include "Gui.hpp"
 #include "Input.hpp"
 #include "Item.hpp"
 #include "Laser.hpp"
@@ -150,7 +151,7 @@ void Player::reset(AnmManager& manager, GameGlobals& globals) {
     flags &= ~0x9u;
     kill_vm(manager, focus_vm);
     kill_vm(manager, effect_vm);
-    // 0x42c280(DAT_004a6dcc, 残机, 残机碎片)：Gui 残机显示——Gui 接入时补
+    if (gui != nullptr) gui->refresh_lives_display(globals.lives, globals.life_fragments);   // 0x42c280
     interrupt_options(manager);
     setup_options(manager, globals);
     flags &= ~kFlagNoShot;
@@ -298,9 +299,11 @@ void Player::die(AnmManager& manager, GameGlobals& globals, AnmFile* effect_anm)
     }
     globals.lives = globals.lives - 1;
     globals.bombs = 3;
-    gui_events.push_back(2);                            // 0x42c390(3, bomb_fragments)
-    if (globals.lives >= 0) gui_events.push_back(1);    // 0x42c280(lives, life_fragments)
-    gui_events.push_back(2);                            // 0x42c390(bombs, bomb_fragments)
+    if (gui != nullptr) {
+        gui->refresh_bombs_display(3, globals.bomb_fragments);
+        if (globals.lives >= 0) gui->refresh_lives_display(globals.lives, globals.life_fragments);
+        gui->refresh_bombs_display(globals.bombs, globals.bomb_fragments);
+    }
     state = kRespawnWait;
     state_timer.reset();
     invincible.set(0xb4);
@@ -351,7 +354,7 @@ void Player::respawn(AnmManager& manager, GameGlobals& globals) {
     if (global_game_speed != nullptr) *global_game_speed = 1.0f;
     alloc_circle_damage_source(pos, 32.0f, 16.0f, 0x1e, 0x96);
     globals.bombs = 3;
-    gui_events.push_back(2);                            // 0x42c390(3, bomb_fragments)
+    if (gui != nullptr) gui->refresh_bombs_display(3, globals.bomb_fragments);
     pos_copy = pos;
     set_position(0.0f, 480.0f);
     invincible.set(0x118);
@@ -1248,8 +1251,11 @@ i32 Player::apply_damage_sources(AnmManager& manager, GameGlobals& globals, cons
     }
     if (total > sht.damage_cap) total = sht.damage_cap;
     if (!probe && total != 0) {
-        const i32 extends = globals.add_score(total / 10 + 10);
-        for (i32 i = 0; i < extends; ++i) play_sfx(0x11);
+        // 0x43e080：extend 时的残机显示 / 音效 0x11 / 弹出都在 Gui 侧（无 Gui 时只有音效）
+        globals.add_score(total / 10 + 10, [this] {
+            if (gui != nullptr) gui->celebrate_extend();
+            else play_sfx(0x11);
+        });
     }
     return total;
 }

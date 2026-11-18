@@ -144,7 +144,6 @@ public:
     std::vector<i32> sfx_queue;                 // 0x45e150
     struct BgmEvent { i32 kind; i32 track; std::string name; };   // 0x45ed00(kind, track, name)
     std::vector<BgmEvent> bgm_events;
-    std::vector<i32> gui_events;                // 0x42c280 残机 / 0x42c390 炸弹 / 0x42bcf0 弹出显示
 
     GameMenuContext ctx;
 
