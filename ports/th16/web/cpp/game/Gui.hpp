@@ -105,8 +105,11 @@ public:
     Timer clear_timer;               // +0x1b0：过关奖励显示计时（0x42c070 复位；0x42d7b0 < 0x78 时暂停游戏推进）
     i32 displayed_score = 0;         // +0x170：HUD 显示分（0x42bc10 逐帧逼近 DAT_004a57b0）
     i32 score_step = 0;              // +0x174
-    i32 boss_timer_display = -1;     // +0x1d0
-    i32 boss_timer_shown = -1;       // +0x1d8
+    i32 boss_timer_display = -1;     // +0x1d0：Boss 剩余秒数（0x425010 每帧写；-1 = 无）
+    i32 boss_timer_fraction = 0;     // +0x1d4：百分秒
+    i32 boss_timer_shown = -1;       // +0x1d8：上一帧显示的秒数（变化时换数字、≤4 / ≤1 秒警告音）
+    u32 boss_timer_vms[2]{};         // +0x94 / +0x98：十位 / 个位数字 VM（0x426d70 HUD 初始化时建）
+    const u32* game_flags = nullptr; // GameManager+0x88（bit16 关卡切换中不显示计时）
 
     // 宿主绑定
     AnmManager* animations = nullptr;
@@ -167,6 +170,9 @@ public:
     // 0x42b610 / 0x42b820：暂停 / 续关菜单打开与关闭时隐藏 / 显示对话的全部 VM（flags_lo bit1 及其子树）
     void hide_dialogue();
     void show_dialogue();
+    void update_boss_timer();        // 0x427cf0 中段：Boss 剩余秒数显示 / 警告音 0xb / 0xc
+    enum class TimerDigitMove { Aside, Back, Reset };
+    void move_timer_digit(u32 vm, TimerDigitMove move);
     // 0x42c580 / 0x42c5c0：同上，针对 HUD 根 VM（+0x12c）；HUD VM 在渲染阶段建立，之前为空操作
     void hide_hud();
     void show_hud();

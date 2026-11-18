@@ -732,7 +732,15 @@ const std::string* Enemy::time_interrupt() {
         if (interrupts[slot].life_threshold >= 0 && interrupts[slot].time_threshold >= 1) break;
     }
     EnemyInterrupt& it = interrupts[slot];
-    // Boss 位（0x800000）：Gui+0x1d0/+0x1d4 的剩余秒数显示由 Gui 接入时补（纯显示）
+    if ((flags & 0x800000u) != 0 && manager != nullptr && manager->gui != nullptr) {
+        // Boss：Gui 显示的剩余秒数 / 百分秒（上限 99），到 2 秒 / 5 秒时 Gui 播报警音
+        i32 remaining = it.time_threshold - life_timer.current;
+        i32 seconds = remaining / 0x3c;
+        i32 fraction = ((remaining % 0x3c) * 100) / 0x3c;
+        if (seconds > 99) seconds = fraction = 99;
+        manager->gui->boss_timer_display = seconds;
+        manager->gui->boss_timer_fraction = fraction;
+    }
     if (life_timer.current < it.time_threshold) return nullptr;
     life = it.life_threshold;
     it.life_threshold = -1;
@@ -2167,6 +2175,9 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
         }
         case 630:  // case 0x8d：背景 STD 脚本跳到标签（0x40c040）
             if (manager && manager->stage) manager->stage->jump_to_label(iarg(0));
+            return 0;
+        case 642:  // case 0x8e：EnemyManager+0x88 bit0 = 参数（隐藏 Boss 血条 / 计时）
+            if (manager) manager->hud_hidden = (u32(iarg(0)) & 1u) != 0;
             return 0;
         case 901: case 902:
             // DebugSkipFunc / DebugSkipStopFunc 标记：0x422d70 表把 901 / 902 映到默认分支，原版即空操作

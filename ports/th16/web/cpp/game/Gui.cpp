@@ -339,6 +339,7 @@ void Gui::update(float game_speed) {
         clear_timer.speed_slot = 0;
         clear_timer.tick(game_speed);
     }
+    update_boss_timer();
     if (!dialogue) return;
     if (!run_dialogue(game_speed)) {
         Msg& m = *dialogue;
@@ -346,6 +347,66 @@ void Gui::update(float game_speed) {
         return;
     }
     destroy_dialogue();
+}
+
+// 0x427cf0 中段：Boss 剩余时间数字。隐藏条件：无 Boss / 未计时 / ECL 642 隐藏 / 对话中 / 关卡切换中。
+// flags_1ac bit9 = 数字已因自机靠近而移位，bit10 = 刚从隐藏恢复（下一次显示前先复位到原位）
+void Gui::update_boss_timer() {
+    const bool hidden = enemies == nullptr || boss_timer_display < 0 || enemies->boss_slot(0) == nullptr || enemies->hud_hidden ||
+                        dialogue != nullptr || (game_flags != nullptr && (*game_flags & 0x10000u) != 0);
+    if (hidden) {
+        for (u32 id : boss_timer_vms)
+            if (AnmVm* vm = animations != nullptr ? animations->find(id) : nullptr) AnmManager::hide_tree(*vm);
+        flags_1ac = (flags_1ac & ~0x200u) | 0x400u;
+        return;
+    }
+    for (u32 id : boss_timer_vms)
+        if (AnmVm* vm = animations != nullptr ? animations->find(id) : nullptr) AnmManager::show_tree(*vm);
+    const bool flipped = spellcard_flags != nullptr && (*spellcard_flags & 0x100u) != 0;
+    const float player_y = player != nullptr ? player->pos.y : 0.0f;
+    const u32 shift_state = flags_1ac & 0x600u;
+    if (shift_state == 0) {
+        if ((!flipped && player_y < 128.0f) || (flipped && player_y > 320.0f)) {
+            flags_1ac = (flags_1ac & ~0x400u) | 0x200u;
+            for (u32 vm : boss_timer_vms) move_timer_digit(vm, TimerDigitMove::Aside);
+        }
+    } else if (shift_state == 0x200) {
+        const bool keep_aside = (flipped || player_y >= 160.0f) && (!flipped || player_y <= 288.0f);
+        if (!keep_aside) {
+            for (u32 vm : boss_timer_vms) move_timer_digit(vm, TimerDigitMove::Back);
+            flags_1ac &= ~0x600u;
+        }
+    } else {
+        for (u32 vm : boss_timer_vms) move_timer_digit(vm, TimerDigitMove::Reset);
+        flags_1ac &= ~0x600u;
+    }
+    const i32 seconds = boss_timer_display;
+    if (seconds < boss_timer_shown) {
+        if (seconds < 2) {
+            for (u32 vm : boss_timer_vms) if (animations != nullptr) animations->interrupt(vm, 9);
+            play_sfx(0xc);
+        } else if (seconds < 5) {
+            for (u32 vm : boss_timer_vms) if (animations != nullptr) animations->interrupt(vm, 8);
+            play_sfx(0xb);
+        }
+    } else if (boss_timer_shown < seconds) {
+        for (u32 vm : boss_timer_vms) if (animations != nullptr) animations->interrupt(vm, 7);
+    }
+    if (seconds != boss_timer_shown && animations != nullptr) {
+        // 0x46f410：按 VM 所属 ANM 文件换精灵（front.anm 0xef 起为数字 0..9）
+        if (front != nullptr) {
+            if (AnmVm* tens = animations->find(boss_timer_vms[0])) anm_set_sprite(*front, *tens, seconds / 10 + 0xef);
+            if (AnmVm* ones = animations->find(boss_timer_vms[1])) anm_set_sprite(*front, *ones, seconds % 10 + 0xef);
+        }
+    }
+    boss_timer_shown = seconds;
+}
+
+// 0x42c8f0 / 0x42c8c0 / 0x42c890（+ 0x418440 / 0x418470）：计时数字移位。数字 VM 随 HUD（0x426d70）接入，
+// 此前 id 为 0，这里只保留状态机
+void Gui::move_timer_digit(u32 vm, TimerDigitMove move) {
+    (void)vm;
+    (void)move;
 }
 
 // 0x42a1d0
