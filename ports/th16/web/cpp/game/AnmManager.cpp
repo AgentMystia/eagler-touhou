@@ -324,10 +324,11 @@ u32 AnmManager::spawn_vm(AnmFile& file, int script, int layer, const Vec3& offse
     return front ? insert_world_front(*vm) : insert_world_back(*vm);
 }
 
-// 0x418fe0
-u32 AnmManager::spawn_ui(AnmFile& file, int script) {
+// 0x418fe0 / 0x42c920
+u32 AnmManager::spawn_ui(AnmFile& file, int script, AnmVm** out_vm) {
     ++spawn_count;
     AnmVm* vm = allocate();
+    if (out_vm != nullptr) *out_vm = vm;
     init_from_template(file, *vm, script);
     vm->flags_hi |= 0x400u;
     vm->entity_offset = {};
@@ -472,6 +473,18 @@ void AnmManager::interrupt(u32 id, i32 value) {
         if (n->owner->interrupt_callback != 0 && hooks != nullptr) hooks->interrupted(*n->owner, value);
         n->owner->pending_interrupt = value;
     }
+}
+
+// 0x4174d0（及 0x42c280 / 0x42c600 等处的内联展开）
+void AnmManager::request_interrupt(AnmVm& vm, i32 value) {
+    if (vm.interrupt_callback != 0 && hooks != nullptr) hooks->interrupted(vm, value);
+    vm.pending_interrupt = value;
+}
+
+// 0x42c890 / 0x418440 / 0x418470：置中断后立刻跑一帧，让 VM 当帧就切到中断分支
+void AnmManager::interrupt_now(AnmVm& vm, i32 value) {
+    request_interrupt(vm, value);
+    run(vm);
 }
 
 // 0x46f130

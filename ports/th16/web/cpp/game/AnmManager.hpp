@@ -84,8 +84,9 @@ public:
     // 0x426160：同上但挂到世界链表头、creation_flags = 2（自机满火力附加 VM 等）
     u32 spawn_front(AnmFile& file, int script, int layer, AnmVm** out_vm = nullptr);
     // 0x418fe0：UI 链表 VM（暂停 / 续关菜单、截屏框）：不改 layer、creation_flags = 4、挂到 UI 链表尾，
-    // 插入后清 flags_hi 的 0x4000 | 0x8000。UI 链表由更新链 9（0x46e740 → 0x46e490）推进，暂停期间照常运行
-    u32 spawn_ui(AnmFile& file, int script);
+    // 插入后清 flags_hi 的 0x4000 | 0x8000。UI 链表由更新链 9（0x46e740 → 0x46e490）推进，暂停期间照常运行。
+    // 0x42c920（HUD 残机 / 炸弹格）是同一流程外加 out_vm 出参
+    u32 spawn_ui(AnmFile& file, int script, AnmVm** out_vm = nullptr);
     // 以上三者及 0x41dcb0 op 307/315/338、0x41bb50 朝向切换等内联展开的公共形：
     // 池取 → 模板复制 → flags_hi |= 0x400 → layer（≥0 才设；<0x18 时 flags_hi=(hi&~0x80000)|0x40400）
     // → entity_offset / rotation.z → 首帧 run → creation_flags → 插入世界链表（front/back）
@@ -109,6 +110,10 @@ public:
     void interrupt(u32 id, i32 value);
     // 0x46f130：同上，但随即对每个 VM 调一次 run（0x45f980）
     void interrupt_now(u32 id, i32 value);
+    // 0x4174d0：已持有 VM 指针时只给这一个 VM 挂中断（不含子 VM）；HUD 残机格 / Boss 计时数字等常驻 VM 用
+    void request_interrupt(AnmVm& vm, i32 value);
+    // 0x42c890 / 0x418440 / 0x418470：request_interrupt 后立刻 run 一帧
+    void interrupt_now(AnmVm& vm, i32 value);
 
     // 0x45f980：单 VM 推进；返回非零表示应删除
     int run(AnmVm& vm);
