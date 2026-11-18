@@ -501,6 +501,7 @@ int main(int argc, char** argv) {
         u64 enm_digest = 0xcbf29ce484222325ull;
         u64 bul_digest = 0xcbf29ce484222325ull;
         u64 vm_digest = 0xcbf29ce484222325ull;
+        u64 item_digest = 0xcbf29ce484222325ull;
         auto feed = [&](const u8* p, size_t n) { for (size_t i = 0; i < n; ++i) { digest ^= p[i]; digest *= 0x100000001b3ull; } };
         auto feed_vm_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { vm_digest ^= u8(v >> (8 * i)); vm_digest *= 0x100000001b3ull; } };
         // 敌人 ANM VM（oracle enemy_vm_snapshot 同口径）：[槽, 脚本, 精灵, entity_offset×3, pos×3, rotation.z, flags_lo, flags_hi, 年龄]
@@ -518,6 +519,8 @@ int main(int argc, char** argv) {
         auto feed_u32 = [&](u32 v) { u8 b[4] = {u8(v), u8(v >> 8), u8(v >> 16), u8(v >> 24)}; feed(b, 4); };
         auto feed_enm = [&](const u8* p, size_t n) { for (size_t i = 0; i < n; ++i) { enm_digest ^= p[i]; enm_digest *= 0x100000001b3ull; } };
         auto feed_bul_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { bul_digest ^= u8(v >> (8 * i)); bul_digest *= 0x100000001b3ull; } };
+        auto feed_item_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { item_digest ^= u8(v >> (8 * i)); item_digest *= 0x100000001b3ull; } };
+        auto item_vm_color = [](const AnmVm& vm) { return u32(vm.color[0]) | (u32(vm.color[1]) << 8) | (u32(vm.color[2]) << 16) | (u32(vm.color[3]) << 24); };
         auto feed_enm_u32 = [&](u32 v) { u8 b[4] = {u8(v), u8(v >> 8), u8(v >> 16), u8(v >> 24)}; feed_enm(b, 4); };
         auto timer3 = [&](const Timer& t, std::vector<u32>& w) { w.push_back(u32(t.previous)); w.push_back(u32(t.current)); w.push_back(bits(t.current_f)); };
         auto vec3 = [&](const Vec3& v, std::vector<u32>& w) { w.push_back(bits(v.x)); w.push_back(bits(v.y)); w.push_back(bits(v.z)); };
@@ -676,6 +679,26 @@ int main(int argc, char** argv) {
                     for (u32 v : words) feed_bul_u32(v);
                 }
             }
+            // 道具 + 资源（game-oracle.py item_digest 同口径）：[frame, active, spawned, 资源 10 字] + 每道具 24 字
+            {
+                const ItemManager* im = session.game.items_live ? session.game.items.get() : nullptr;
+                const u32 head[] = {u32(f + 1), u32(im ? im->active_count : 0), u32(im ? im->spawn_count : 0),
+                                    u32(g.score), u32(g.lives), u32(g.bombs), u32(g.bomb_fragments), u32(g.point_value),
+                                    u32(g.point_items), u32(g.collect_sum), u32(g.collect_count), u32(g.collect_indicator),
+                                    u32(g.bomb_fragment_items)};
+                for (u32 v : head) feed_item_u32(v);
+                if (im) for (const Item& it : im->items) {
+                    if (it.state == 0) continue;
+                    const u32 words[] = {u32(it.index), u32(it.state), u32(it.type), u32(it.type_copy),
+                                         bits(it.pos.x), bits(it.pos.y), bits(it.pos.z),
+                                         bits(it.velocity.x), bits(it.velocity.y), bits(it.velocity.z),
+                                         bits(it.speed), bits(it.angle), bits(it.attract_speed), u32(it.counter), u32(it.flag),
+                                         u32(it.timer.previous), u32(it.timer.current), bits(it.timer.current_f),
+                                         u32(it.vm.script_index), u32(it.vm.sprite_index), it.vm.flags_lo, item_vm_color(it.vm),
+                                         u32(it.vm2.script_index), u32(it.vm2.sprite_index), it.vm2.flags_lo};
+                    for (u32 v : words) feed_item_u32(v);
+                }
+            }
             if (digest_only) continue;
 
             std::printf("%s{\"frame\":%d,\"game_frame\":%d,\"stage_frame\":%d,\"input\":[%u,%u],\"power\":%d,\"season_gauge\":%d,"
@@ -793,12 +816,40 @@ int main(int argc, char** argv) {
                 }
                 std::printf("]}");
             }
+            {
+                // 道具（game-oracle.py item_snapshot 同口径）：按池下标顺序列出 state != 0 的槽
+                const ItemManager* im = session.game.items_live ? session.game.items.get() : nullptr;
+                std::printf(",\"items\":{\"active\":%d,\"spawned\":%d,\"point_counter\":[%d,%d],\"scale\":%u,\"items\":[",
+                            im ? im->active_count : 0, im ? im->spawn_count : 0, im ? im->point_active : 0, im ? im->serial : 0,
+                            bits(im ? im->attract_scale : 1.0f));
+                bool first_item = true;
+                if (im) for (const Item& it : im->items) {
+                    if (it.state == 0) continue;
+                    std::printf("%s{\"index\":%d,\"state\":%d,\"type\":%d,\"type2\":%d,\"pos\":[%u,%u,%u],\"vel\":[%u,%u,%u],"
+                                "\"speed\":%u,\"angle\":%u,\"timer\":[%d,%d,%u,%d,%u],\"attract_speed\":%u,\"counter\":%d,\"serial\":%d,"
+                                "\"flag\":%d,\"vm\":[%d,%d,%u,%u,%d,%d,%u]}",
+                                first_item ? "" : ",", it.index, it.state, it.type, it.type_copy,
+                                bits(it.pos.x), bits(it.pos.y), bits(it.pos.z), bits(it.velocity.x), bits(it.velocity.y), bits(it.velocity.z),
+                                bits(it.speed), bits(it.angle), it.timer.previous, it.timer.current, bits(it.timer.current_f),
+                                it.timer.speed_slot, it.timer.flags, bits(it.attract_speed), it.counter, it.serial, it.flag,
+                                it.vm.script_index, it.vm.sprite_index, it.vm.flags_lo,
+                                u32(it.vm.color[0]) | (u32(it.vm.color[1]) << 8) | (u32(it.vm.color[2]) << 16) | (u32(it.vm.color[3]) << 24),
+                                it.vm2.script_index, it.vm2.sprite_index, it.vm2.flags_lo);
+                    first_item = false;
+                }
+                std::printf("]},\"resources\":{\"score\":%d,\"extend_index\":%d,\"lives\":%d,\"life_fragments\":%d,\"bombs\":%d,"
+                            "\"bomb_fragments\":%d,\"point_value\":%d,\"point_value_max\":%d,\"point_items\":%d,\"graze\":%d,"
+                            "\"collect\":[%d,%d,%d,%d],\"collect_pos\":[%u,%u,%u]}",
+                            g.score, g.extend_index, g.lives, g.life_fragments, g.bombs, g.bomb_fragments, g.point_value,
+                            g.point_value_max, g.point_items, g.graze, g.collect_sum, g.collect_count, g.collect_indicator,
+                            g.bomb_fragment_items, bits(g.collect_pos.x), bits(g.collect_pos.y), bits(g.collect_pos.z));
+            }
             std::printf("}");
         }
         if (digest_only)
-            std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx enemies=%016llx bullets=%016llx enemy_vms=%016llx\n",
+            std::printf("stage=%d shot=%d season=%d frames=%d digest=%016llx enemies=%016llx bullets=%016llx enemy_vms=%016llx items=%016llx\n",
                         stage, shot, season, frames, (unsigned long long)digest, (unsigned long long)enm_digest,
-                        (unsigned long long)bul_digest, (unsigned long long)vm_digest);
+                        (unsigned long long)bul_digest, (unsigned long long)vm_digest, (unsigned long long)item_digest);
         else std::printf("]}\n");
         return 0;
     }
