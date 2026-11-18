@@ -2458,8 +2458,11 @@ void EnemyManager::reset() {
     if (animations != nullptr) {
         for (int slot = 10; slot < 16; ++slot) animations->kill_file(slot);
     }
+    // 每只敌机经 0x41ba10 → 0x41ade0 析构：摘链并让存活计数（+0x18c）-1
     for (auto& e : enemies) {
-        if (e) e->destroy();
+        if (!e) continue;
+        e->destroy();
+        if (enemy_count > 0) --enemy_count;
     }
     enemies.clear();
     for (u32& id : boss_ids) id = 0;
@@ -2535,7 +2538,8 @@ void EnemyManager::update(float game_speed) {
         if (!e) { it = enemies.erase(it); continue; }
         if ((e->flags & 0x2000000u) != 0 || !e->update(game_speed)) {
             e->destroy();
-            it = enemies.erase(it);
+            enemies.erase(it);
+            it = next;
             if (enemy_count > 0) --enemy_count;
             continue;
         }
