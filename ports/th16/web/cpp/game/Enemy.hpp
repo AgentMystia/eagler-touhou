@@ -49,12 +49,20 @@ public:
     Vec3 hurtbox;               // EnemyInf+0x11c（op 501）
     Timer invuln;               // EnemyInf+0x3ffc（生成时 = 2）
     Timer life_timer;           // 年龄计时（生成时 current=0x3c）
-    i32 life = 0;               // EnemyInf+0x1498 / ECL -9985
-    i32 life_max = 0;
+    i32 life = 0;               // EnemyInf+0x3f74 / Enemy+0x5180 / ECL -9954
+    i32 life_max = 0;           // +0x3f78 / +0x5184
+    i32 life_budget = 0;        // +0x3f80 / +0x518c（符卡 7 倍血量池）
+    i32 phase_life = 0;         // +0x3f84 / +0x5190
+    u32 life_flags = 0;         // +0x3f8c / +0x5198（bit0 = 符卡 7 倍减伤）
     i32 anm_slot = 0;           // +0x264
-    i32 drop_timer = 0;         // +0x4050（op 1000）
-    i32 drop_interval = 0;
-    i32 drop_type = 0;
+    bool has_main_vm = false;   // +0x124 非零标记
+    Timer season_drop_timer;    // EnemyInf+0x403c / Enemy+0x5248（op 1000 限时季节掉落计时）
+    i32 season_drop_duration = 0x3c; // +0x4050 / +0x525c（op 1000 arg0）
+    i32 season_drop_max = 0;    // +0x3fd0 / +0x51dc（op 1000 arg1）
+    i32 season_drop_min = 1;    // +0x4054 / +0x5260（op 1000 arg2）
+    i32 hit_flash_timer = 0;    // +0x3ff0（受击闪烁/音效节流 4 帧）
+    i32 hit_sfx = -1;           // +0x3ff8
+    i32 death_sfx = -1;         // +0x3fe4 / +0x51f0（(id & 1) + 3）
     i32 boss_slot = -1;
     float rate = 0;             // +0x14f0
     Vec2 sprite_size{};         // EnemyInf+0x3f58..0x3f5c（op 306 slot=0 时置 32×32）
@@ -101,6 +109,7 @@ public:
     float global_floats[8]{};   // +0x1c..0x38（-9922..-9915）
     i32 counters[3]{};          // +0x3c..0x44（-9949..-9947）
     u32 boss_ids[3]{};          // +0x80..0x88
+    std::vector<i32> sfx_queue; // Enemy 触发的 0x45e1f0 音效（受击 0x22/0x23、死亡 3/4）
     AnmManager* animations = nullptr;
     GameGlobals* globals = nullptr;
     Player* player = nullptr;

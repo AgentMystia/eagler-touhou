@@ -62,6 +62,8 @@ public:
 
     // 0x406380：生成脚本 VM（挂到世界链表尾），返回 id；out_vm 可取 VM 指针
     u32 spawn(AnmFile& file, int script, int layer, AnmVm** out_vm = nullptr);
+    // 0x40e5c0：同 0x406380，但在首帧 run 前设 entity_offset 与 rotation.z
+    u32 spawn_effect(AnmFile& file, int script, int layer, const Vec3& pos, float rotation_z = 0.0f);
     // 0x426160：同上但挂到世界链表头、creation_flags = 2（自机满火力附加 VM 等）
     u32 spawn_front(AnmFile& file, int script, int layer, AnmVm** out_vm = nullptr);
     // 0x46f1c0：按 id 标记 VM 待删（flags_hi = (flags_hi & ~0x40) | 0x20），并递归 0x46f220 其子树；0x4000000 位保护

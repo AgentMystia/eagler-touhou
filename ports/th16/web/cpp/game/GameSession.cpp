@@ -272,8 +272,10 @@ bool GameSession::enter_game() {
             return false;
         }
         game.enemies_live = true;
+        game.player.enemies = &game.enemies;
         enemy_update_chain_ = chains.create([this]() -> ChainResult {
             if (game.enemies_live) {
+                game.enemies.sfx_queue.clear();
                 game.enemies.update(supervisor.game_speed);
                 if (sync_enemy_count) game.world.enemy_count = game.enemies.enemy_count;
                 if (!game.enemies.error.empty()) {
