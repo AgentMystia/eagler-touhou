@@ -1049,8 +1049,25 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             return 0;
         }
         case 516: if (manager) manager->sfx_queue.push_back(iarg(0)); return 0;  // case 0x3d
-        case 517:  // case 0x3e：0x45d150(1, …) 画面震动（ScreenEffect，仅视觉且用 game_rng）——渲染侧接入时补
-            (void)iarg(0); (void)iarg(1); (void)iarg(2);
+        case 517: {  // case 0x3e：0x45d150(1, duration, from, to) 画面震动（每帧消耗两次 game_rng）
+            const i32 to = iarg(2), from = iarg(1), duration = iarg(0);
+            if (manager) manager->shake_requests.push_back({duration, from, to});
+            return 0;
+        }
+        case 540: {  // case 0x51：Gui+0x188（Boss 血条分段数）——Gui 接入时补
+            (void)iarg(0);
+            return 0;
+        }
+        case 547:  // case 0x58：全局游戏速度 DAT_004a5788
+            if (manager && manager->global_game_speed) *manager->global_game_speed = farg(0);
+            else (void)farg(0);
+            return 0;
+        case 554:  // case 0x5f：0x42c240 Boss 登场标题 VM（Gui+0x178 front.anm 脚本 0；无逻辑副作用）——Gui 接入时补
+            return 0;
+        case 567:  // case 0x6c：符卡布局上下翻转位（Spellcard kFlipped）
+            if (manager && manager->spellcard)
+                manager->spellcard->flags ^= ((u32(iarg(0)) << 8) ^ manager->spellcard->flags) & Spellcard::kFlipped;
+            else (void)iarg(0);
             return 0;
         case 524: {  // case 0x45：阶段编号（DAT_004a5798 / Gui+0xa8），奖励归属重置
             const i32 v = iarg(0);
