@@ -1,5 +1,8 @@
 #include "GameSession.hpp"
 
+#include <algorithm>
+#include <memory>
+
 #include <vector>
 
 namespace th16 {
@@ -359,6 +362,7 @@ bool GameSession::enter_game() {
         enemy_update_chain_ = chains.create([this]() -> ChainResult {
             if (game.enemies_live) {
                 game.enemies.sfx_queue.clear();
+                game.enemies.shake_requests.clear();
                 if (game.bullets_live) {
                     game.bullets->game_speed = supervisor.game_speed;
                     game.bullets->sfx_queue.clear();
@@ -371,6 +375,8 @@ bool GameSession::enter_game() {
                     game.bullets->sfx_queue.clear();
                 }
                 if (sync_enemy_count) game.world.enemy_count = game.enemies.enemy_count;
+                for (const auto& request : game.enemies.shake_requests) create_screen_shake(request);
+                game.enemies.shake_requests.clear();
                 if (!game.enemies.error.empty()) {
                     failure = game.enemies.error;
                     return ChainResult::BreakExit;
@@ -423,6 +429,26 @@ bool GameSession::enter_game() {
     return true;
 }
 
+// 0x45d150(1, duration, from, to) + 0x45d1a0：更新链 0x13（0x45cd30）、绘制链 0x54；计时结束返回 7 → 0x45d130 自删
+void GameSession::create_screen_shake(const EnemyManager::ShakeRequest& request) {
+    auto shake = std::make_shared<ScreenShake>();
+    shake->duration = request.duration;
+    shake->amp_from = request.amp_from;
+    shake->amp_to = request.amp_to;
+    shake->timer.reset();
+    ChainEntry* entry = chains.create([this, shake]() -> ChainResult {
+        return screen_shake_step(*shake, animations.game_rng, geometry.window_scale, supervisor.game_speed, screen_shake)
+                   ? ChainResult::Continue
+                   : ChainResult::Destroy;
+    }, 0x13, true);
+    entry->on_destroy = [this, entry]() {
+        shake_chains_.erase(std::remove(shake_chains_.begin(), shake_chains_.end(), entry), shake_chains_.end());
+        chains.remove(entry);
+    };
+    shake_chains_.push_back(entry);
+    chains.enable(entry);
+}
+
 void GameSession::leave_game() {
     // 0x42d200：摘链、释放管理器；关卡背景 ANM 槽回收
     if (game_update_chain_) { chains.remove(game_update_chain_); game_update_chain_ = nullptr; }
@@ -434,6 +460,9 @@ void GameSession::leave_game() {
     if (item_draw_chain_) { chains.remove(item_draw_chain_); item_draw_chain_ = nullptr; }
     if (item_draw_season_chain_) { chains.remove(item_draw_season_chain_); item_draw_season_chain_ = nullptr; }
     if (spellcard_update_chain_) { chains.remove(spellcard_update_chain_); spellcard_update_chain_ = nullptr; }
+    for (ChainEntry* shake : shake_chains_) chains.remove(shake);
+    shake_chains_.clear();
+    screen_shake = ScreenShakeOffset{};
     if (replay_record_chain_) { chains.remove(replay_record_chain_); replay_record_chain_ = nullptr; }
     if (player_update_chain_) { chains.remove(player_update_chain_); player_update_chain_ = nullptr; }
     if (player_draw_chain_) { chains.remove(player_draw_chain_); player_draw_chain_ = nullptr; }

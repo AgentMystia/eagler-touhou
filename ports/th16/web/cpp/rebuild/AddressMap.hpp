@@ -207,7 +207,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"enemy-interrupt-time", 0x425010, "game/Enemy.cpp Enemy::time_interrupt（超时切子程序 + Spellcard 超时标志 / 奖励）"},
     {"enemy-kill-all", 0x41D900, "game/Enemy.cpp EnemyManager::kill_all（op 525；0x41da30 op 551 按 anm_layer；0x41db70 op 571）"},
     {"enemy-destroy", 0x41BA10, "game/Enemy.cpp Enemy::destroy（移出时杀全部绑定 VM 子树）"},
-    {"enemy-ecl-dispatch", 0x41DCB0, "game/Enemy.cpp Enemy::execute（敌方操作码 ≥300：生成 300..305/309..312/321、ANM 302..340、运动 400/401/404..407/412、属性 500..517/520..527/535..543/546..552/556/561..572、弹幕 600..641、掉落 1000/1001）"},
+    {"enemy-ecl-dispatch", 0x41DCB0, "game/Enemy.cpp Enemy::execute（敌方操作码 ≥300：生成 300..305/309..312/321、ANM 302..340、运动 400..447 全族、属性 500..517/520..528/535..543/546..552/554/556/561..572、弹幕 600..641、掉落 1000/1001）"},
     {"enemy-anm-op-303", 0x423260, "game/Enemy.cpp Enemy::execute case 303（按槽重绑 VM）"},
     {"enemy-anm-op-319", 0x4233A0, "game/Enemy.cpp Enemy::execute case 319/325..337（主 VM 脚本族 / 朝向）"},
     {"enemy-anm-direction", 0x41BB50, "game/Enemy.cpp Enemy::sync_sprite_direction（flags&0x100000 按 delta.x 切朝向脚本）"},
@@ -228,6 +228,10 @@ constexpr AddressAnchor kAnchors[] = {
     {"spellcard-gui-timer-end", 0x417650, nullptr},    // 同上中断 3
     {"spellcard-timing", 0x417BC0, nullptr},           // 成绩文件符卡练习计次：ScoreFile 接入时补
     {"spellcard-draw", 0x417D70, nullptr},             // 绘制链 0xc：名牌 / 倒计时文字（渲染侧）
+    // —— ScreenEffect（0x45d150 kind 1 画面震动：更新链 0x13、绘制链 0x54）——
+    {"screen-effect-create", 0x45D150, "game/GameSession.cpp GameSession::create_screen_shake（0x45d1a0 kind 1 登记更新链 0x13；ECL 517 经 EnemyManager::shake_requests 在敌机链之后创建）"},
+    {"screen-shake-update", 0x45CD30, "game/ScreenEffect.cpp screen_shake_step（计时、线性振幅、game_rng %3 ×2 决定 x/y 符号、DAT_004c1788 / DAT_004c1530 输出；到时返回 7）"},
+    {"screen-effect-destroy", 0x45D130, "game/Chain.cpp ChainManager::run_list（ChainResult::Destroy → on_destroy 摘除两条链）"},
     {"enemy-spawn-op", 0x423050, "game/Enemy.cpp Enemy::execute case 300..305（相对/绝对/镜像生成子敌人）"},
     {"enemy-var-get", 0x423810, "game/Enemy.cpp Enemy::integer / Enemy::floating（-10000..-9902 变量读取）"},
     {"enemy-var-int-dst", 0x423F80, "game/Enemy.cpp Enemy::integer_destination"},
