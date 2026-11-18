@@ -21,11 +21,13 @@ constexpr i32 kBonusByDifficulty[5] = {500000, 1000000, 1500000, 2000000, 100000
 
 // 0x4178a0
 void Spellcard::reset() {
+    // 0x4178a0：整块清零（`*_Dst |= 2` 落在 +0 的链表字段而非 +0x78 标志）；0x417700 末尾 Timer::reset（previous = -1）
     for (u32& id : vm_ids) id = 0;
     timer = Timer{};
+    timer.reset();
     std::memset(name, 0, sizeof(name));
     id = 0;
-    flags = kBonusAvailable;
+    flags = 0;
     bonus = bonus_initial = time_limit = 0;
     capture_count = 0;
     state = 0;
