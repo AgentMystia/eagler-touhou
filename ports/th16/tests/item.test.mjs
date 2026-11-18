@@ -130,3 +130,28 @@ test('item: 收点线吸引态 4（0x42fbc1）——首个吸引帧 89、吸引�
   const states = new Set(frames.flatMap(f => f.items.items.map(i => i.state)));
   assert.deepEqual([...states].sort(), [1, 3, 4, 6]);
 });
+
+test('player: 被弹 → 决死猶予 8 帧 → 0x443cd0 死亡结算 → 第 3 帧散出 7 枚火力道具 → 第 0x1e 帧 0x4449b0 复活圆伤害源并回到 (0, 480) 入场', needDat, () => {
+  const c = golden.cases[2];
+  const frames = gameRun(c, 940).frames;
+  // 第 892 帧被弹（状态 4、无敌 6 帧），决死猶予计时 > 7 后第 901 帧状态 2：残机 2→1、无敌 0xb4-1、Bomb 回 3
+  const hitFrame = frames.findIndex(f => f.player.state === 4);
+  assert.equal(hitFrame + 1, 892);
+  assert.equal(frames[900].player.state, 2);
+  assert.equal(frames[899].resources.lives, 2);
+  assert.equal(frames[900].resources.lives, 1);
+  assert.equal(frames[900].player.invincible[1], 179);
+  assert.equal(frames[900].resources.bombs, 3);
+  // 第 904 帧（状态 2 计时 3）：火力 112 → 100（-每级/2 = -12），7 枚火力道具从自机位置以速度 3 扇形散出
+  assert.equal(frames[902].power, 112);
+  assert.equal(frames[903].power, 100);
+  assert.equal(frames[903].items.spawned - frames[902].items.spawned, 7);
+  const scattered = frames[903].items.items.filter(i => i.index >= 592 && i.index <= 598);
+  assert.equal(scattered.length, 7);
+  assert.ok(scattered.every(i => i.type === 1 && i.state === 1));
+  // 第 931 帧复活：状态 0、y = 480 起入场、无敌 0x118-1；复活圆伤害源使得分连续增长
+  assert.equal(frames[930].player.state, 0);
+  assert.equal(f32(frames[930].player.pos[1]), 480);
+  assert.equal(frames[930].player.invincible[1], 279);
+  assert.ok(frames[934].resources.score > frames[930].resources.score);
+});
