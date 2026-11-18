@@ -114,6 +114,9 @@ public:
     // ---- 绘制 ----
     // 0x468490：返回 0 已处理，-1 跳过（不可见 / 删除中 / 模式未实现）
     int draw_vm(AnmVm& vm);
+    // 0x465c40 + 0x465280(…, 1)：不经 0x468490 分派、不看可见位，直接按 mode 0 像素对齐入批
+    // （AsciiManager 字形 / Item 得分弹出的字形 VM 走这条路）
+    int draw_screen_sprite(AnmVm& vm);
     // 0x46e750：遍历一层绘制链
     void draw_layer(int layer);
     // 未实现的 render mode 计数（按模式号），对拍时据此发现缺口
