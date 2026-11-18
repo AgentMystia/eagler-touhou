@@ -78,6 +78,9 @@ python3 tools/oracle/draw-compare.py /tmp/st1.draw.jsonl /tmp/st1.port.jsonl --f
 前四个顶点；oracle 侧每项带 `[0x地址]`，即 DrawPrimitiveUP 发生时正在运行的绘制链回调（0x4015a0 链游标处的钩子记录），
 因为批量顶点是惰性出批，归因可能落到下一条链。移植版再配 `TH16_DUMP_LAYERS=<帧>` 把该帧各图层链上的 VM
 （槽 / 脚本 / 精灵及其来源槽 / 渲染模式 / 位置 / 颜色 / 标志）打印到 stderr，逐 VM 对账。
+尚未移植的子系统用 `--skip-textures 2`（AnmFile 槽号，2 = ascii.anm 文字）在两侧同时剔除其绘制，其余操作就能逐条对位；
+不能按链地址剔除，因为链回调里的出批会把上一层的残批记在它名下。注意被剔除的子系统若切相机（如 AsciiManager 的
+0x408ef0 切到场地相机再切回 UI 相机），紧随其后出批的那条绘制在移植版会记到不同的视口，这类差异要等该子系统移植后才消失。
 
 `scene-boot` / `anm-draw` 也经 RecordingDevice 输出可读的 `quad` 行（屏幕四边形直接取顶点，世界四边形按 world·view·projection 投影并算线性顶点雾）。XYZRHW 顶点不经 TnL，原版从不关 TEXTURETRANSFORMFLAGS 而移植版对屏幕批显式关掉，draw-compare 对屏幕格式不比较该位。
 
