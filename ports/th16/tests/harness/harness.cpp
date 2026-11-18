@@ -1000,6 +1000,12 @@ int main(int argc, char** argv) {
             } else {
                 std::printf(",\"msg\":null");
             }
+            if (const StageManager* sm = session.game.stage.get()) {
+                // 背景脚本位置（game-oracle.py stage_vm 同口径：ins 为字节偏移）
+                const i32 ins_offset = (sm->ins_index >= 0 && sm->ins_index < i32(sm->std.script.size()))
+                                           ? i32(sm->std.script[size_t(sm->ins_index)].offset) : -1;
+                std::printf(",\"stage_vm\":{\"frame\":%d,\"ins\":%d,\"flags\":%u}", sm->frame, ins_offset, sm->flags);
+            }
             std::printf("}");
         }
         if (digest_only)

@@ -258,6 +258,7 @@ bool GameSession::create_stage() {
     stage->camera_global = &stage_camera;
     game.stage = std::move(stage);
     game.stage_live = true;
+    game.enemies.stage = game.stage.get();
     animations.camera_pos = &stage_camera.pos;
     animations.camera_pos_offset = &stage_camera.pos_offset;
     animations.camera_facing_norm = &stage_camera.facing_norm;
@@ -296,6 +297,7 @@ bool GameSession::create_enemies() {
     game.enemies.lasers = game.lasers.get();
     game.enemies.effects = &effects;
     game.enemies.spellcard = &spellcard;
+    game.enemies.stage = game.stage.get();
     game.player.spellcard = &spellcard;
     if (!game.enemies.create(game.entry->ecl_name, globals, game.player_live ? &game.player : nullptr,
                              animations.visual_rng, animations, u8(1u << (globals.difficulty & 31)))) {

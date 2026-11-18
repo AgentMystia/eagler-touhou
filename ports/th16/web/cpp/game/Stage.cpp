@@ -436,6 +436,20 @@ void StageManager::begin_end(i32 frames, u32 flag) {
     flags |= flag;
 }
 
+void StageManager::jump_to_label(i32 label) {
+    for (size_t i = 0; i < std.script.size(); ++i) {
+        const StdInstruction& ins = std.script[i];
+        if (ins.opcode != 16 || ins.arg_i(0) != label) continue;
+        ins_index = i32(i);
+        const i32 t = ins.time;
+        if ((timer.flags & 1) == 0) { timer.current = 0; timer.previous = -999999; timer.current_f = 0; timer.speed_slot = 0; timer.flags |= 1; }
+        timer.current = t;
+        timer.previous = t - 1;
+        timer.current_f = float(t);
+        return;
+    }
+}
+
 void StageManager::interrupt(AnmManager& manager, i32 value) {
     // 0x40b2f0（interrupt_callback 表 DAT_00491b0c 全空）
     for (AnmVm& vm : face_vms) {

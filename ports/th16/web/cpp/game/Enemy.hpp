@@ -20,6 +20,7 @@ struct AnmVm;
 class Archive;
 class EffectManager;
 class Gui;
+class StageManager;
 class ItemManager;
 class LaserManager;
 struct GameGlobals;
@@ -255,6 +256,7 @@ public:
     bool release_active = false;// DAT_004a6da4+0x30 == 1（季节解放接入前恒 false）
     const PlayerWorld* world = nullptr;  // Gui+0x1c8 != 0 的镜像（对话中伤害为 0、不判体碰撞；ECL 518 当帧即生效）
     Gui* gui = nullptr;                  // DAT_004a6dcc：ECL 518 / 519 / 554
+    StageManager* stage = nullptr;       // DAT_004a6da0：ECL 630 背景脚本标签跳转（换关后由 GameSession 重新绑定）
     bool dialogue_active() const noexcept;
     std::vector<i32> sfx_queue; // Enemy 触发的 0x45e1f0 音效（受击 0x22/0x23、死亡 3/4）
     // ECL 517 → 0x45d150(1, duration, from, to)：宿主在敌机链之后登记为链 0x13 的 ScreenShake（下一帧起生效）
