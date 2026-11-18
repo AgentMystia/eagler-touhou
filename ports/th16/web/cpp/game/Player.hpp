@@ -25,7 +25,10 @@ namespace th16 {
 class AnmManager;
 class AnmRenderer;
 struct AnmFile;
+class BulletManager;
+class EffectManager;
 class EnemyManager;
+class ItemManager;
 struct GameGlobals;
 struct InputState;
 struct Rng;
@@ -174,8 +177,14 @@ public:
     i32 option_cooldown[16] = {};                      // +0x165f8：.sht 类型 2 弹按子机 [opt-1 (+8 子季节)] 记录发射时火力等级
     std::vector<i32> sfx_queue;                        // 0x45e1f0 音效登记（宿主每帧取走）
     std::vector<i32> sfx_stop_queue;                   // 不射击时对 0x1e / 0x37 的停止标记（DAT_004d9e5c = -1）
+    std::vector<i32> gui_events;                       // Gui 接入前的占位：1 = 残机显示 0x42c280，2 = Bomb 显示 0x42c390
+    bool game_over_pending = false;                    // 0x43f350：残机 < 0 且复活等待第 0x1e 帧（续关 / 结束画面待接）
     EnemyManager* enemies = nullptr;                   // DAT_004a6dc0（追踪弹索敌 0x425240 用）
     Spellcard* spellcard = nullptr;                    // DAT_004a6db0（被弹时的取得标志更新）
+    ItemManager* items = nullptr;                      // DAT_004a6ddc（被弹后 0x430960 散出火力 / 得点道具）
+    EffectManager* effects = nullptr;                  // DAT_004a6db8（被弹特效 0x1c 登记入 id 表）
+    BulletManager* bullet_manager = nullptr;           // DAT_004a6dac（入场态 0x416d20 半径 640 消弹）
+    float* global_game_speed = nullptr;                // DAT_004a5788（复活时置回 1.0）
 
     // 0x441c60 + 0x440fb0：资源已由调用方装入；返回 false 表示 .sht 缺失
     bool init(AnmManager& manager, GameGlobals& globals, AnmFile* player_anm, AnmFile* sub_player_anm,
@@ -191,6 +200,9 @@ public:
     void prepare_draw();
     // 0x443f10：被弹——音效 2、effect.anm 脚本 0x1d、符卡取得标志、状态 4（决死猶予）、无敌 6 帧、主 VM 重播脚本 0
     void hit(AnmManager& manager, AnmFile* effect_anm);
+    // 0x443cd0：决死猶予结束——effect.anm 脚本 0x1c 登记入 EffectManager、残机 -1、Bomb 回 3、状态 2、无敌 0xb4、
+    //   主 VM 重播脚本 0、子机全部中断 1、符卡取得标志、EnemyManager 计数器 0 +1 / 2 清零、miss 计数
+    void die(AnmManager& manager, GameGlobals& globals, AnmFile* effect_anm);
     // 0x4439e0：敌机体碰撞。half_size = 敌机 hurtbox.x × 0.5；返回 0 未触 / 1 被弹 / 2 擦弹圈内（或 probe / 对话中）
     //   判定半径 .sht hitbox（flags & 0x10 时 × scale × 3.6）；擦弹圈 = max(40, half_size / 2.5)
     int collide_body(AnmManager& manager, AnmFile* effect_anm, const Vec3& enemy_pos, float half_size,
@@ -223,6 +235,9 @@ private:
     void fire_sets(AnmManager& manager, GameGlobals& globals, i32 frame, i32 frame2);  // 0x445470
     bool spawn_bullet(AnmManager& manager, GameGlobals& globals, u32 shot_id);          // 0x445360 → 0x444e10
     i32 alloc_damage_source(const Vec3& pos, float angle, i32 lifetime, i32 damage, float size_x, float size_y);  // 0x444b20
+    i32 alloc_circle_damage_source(const Vec3& pos, float radius, float growth, i32 lifetime, i32 damage);        // 0x4449b0
+    void respawn(AnmManager& manager, GameGlobals& globals);               // 0x442560 case 2 尾：状态 0、复活圆伤害源、回到 (0, 480)
+    void scatter_death_items(AnmManager& manager, GameGlobals& globals);  // 0x442560 case 2 第 3 帧：火力减半级、7 枚火力道具扇形散出
     void tick_bullets(AnmManager& manager, const AnmRenderer& geometry, float game_speed);  // 0x4456d0
     void release_bullet(PlayerBullet& b);                                 // 池项失活 + 伤害源 bit0 清零
     i32 hit_bullet_default(AnmManager& manager, PlayerBullet& b);         // 0x445e20

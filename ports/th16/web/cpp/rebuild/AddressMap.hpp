@@ -132,7 +132,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"player-set-pos", 0x440E40, "game/Player.cpp Player::set_position"},
     {"player-reset", 0x441740, "game/Player.cpp Player::reset（0x42dc50 首帧）"},
     {"player-options-interrupt", 0x440DC0, "game/Player.cpp Player::interrupt_options"},
-    {"player-update", 0x442560, "game/Player.cpp Player::update（0x443720 更新链 0x16 入口）"},
+    {"player-update", 0x442560, "game/Player.cpp Player::update（0x443720 更新链 0x16 入口；状态 0 入场 0x416d20 半径 640 消弹 / 1 正常 / 2 复活等待：第 3 帧 scatter_death_items、第 0x1e 帧 respawn 或 0x43f350 / 4 决死猶予 > 7 帧 → die）"},
     {"player-move", 0x441CF0, "game/Player.cpp Player::move"},
     {"player-options-tick", 0x442380, "game/Player.cpp Player::update_options"},
     {"player-options-setup", 0x4440E0, "game/Player.cpp Player::setup_options"},
@@ -307,6 +307,8 @@ constexpr AddressAnchor kAnchors[] = {
     {"anm-set-layer", 0x406D80, "game/AnmVm.cpp anm_set_layer"},
     {"anm-spawn-vm", 0x406380, "game/AnmManager.cpp AnmManager::spawn_vm（spawn / spawn_effect / spawn_front 共用）"},
     {"anm-replace-script", 0x46F440, "game/Enemy.cpp Enemy::resolve_hits（旧 VM 停止，同文件 script 新建）"},
+    {"player-death", 0x443CD0, "game/Player.cpp Player::die（决死猶予结束：effect 0x1c 登记、残机 -1、Bomb 回 3、状态 2、无敌 0xb4、子机中断 1、符卡标志、EnemyManager 计数器、miss 计数）"},
+    {"player-respawn-source", 0x4449B0, "game/Player.cpp Player::alloc_circle_damage_source（flags|3 圆伤害源：半径 f04 每帧 += f08）"},
     // —— ItemManager（DAT_004a6ddc，0x1c972ec 字节；更新链 0x1d、绘制链 0x21 / 0x13）——
     {"item-manager-create", 0x42F440, "game/Item.cpp ItemManager::create（0x42f0b0 更新 / 0x42f260 绘制回调；sprite_mapper 不挂道具）"},
     {"item-manager-reset", 0x4184A0, "game/Item.cpp ItemManager::reset（普通池 600 / 得点池 0x1000 按槽号头插空闲链，最高槽先出）"},
@@ -330,7 +332,6 @@ constexpr AddressAnchor kAnchors[] = {
     // —— 未定位 ——
     {"laser-manager", 0x4314A0, nullptr},
     {"player-laser-create", 0x446200, nullptr},  // 魔理沙激光（回调 2：0x446260 / 0x446870）
-    {"player-death", 0x443CD0, nullptr},     // 被弹结算（状态 4 → 2）
     {"season-system", 0, nullptr},  // th16 特有：季节槽/季节解放
 };
 
