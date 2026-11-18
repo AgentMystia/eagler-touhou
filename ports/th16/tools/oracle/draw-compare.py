@@ -265,8 +265,15 @@ def main():
     ap.add_argument('--max-report', type=int, default=20)
     ap.add_argument('--ignore-state', default='', help='逗号分隔的忽略状态键')
     ap.add_argument('--dump', choices=('oracle', 'port'), help='不比较，只按帧列出一侧的绘制操作')
+    ap.add_argument('--skip-textures', default='',
+                    help='逗号分隔的 AnmFile 槽号（如 2 = ascii.anm）：两侧都丢弃用这些槽贴图的绘制操作，'
+                         '用于暂未移植的子系统。按链地址过滤不可行：链回调里的出批会把上一层残批也记在它名下')
     a = ap.parse_args()
     ignore_state = set(filter(None, a.ignore_state.split(',')))
+    skip_textures = {int(x, 0) for x in filter(None, a.skip_textures.split(','))}
+
+    def keep(op):
+        return op['op'] != 'draw' or op['texture'][0] not in skip_textures
     oracle, port = load_jsonl(a.oracle), load_jsonl(a.port)
     frames = sorted(set(oracle) & set(port)) if a.dump is None else sorted(oracle if a.dump == 'oracle' else port)
     if a.frames:
@@ -287,11 +294,11 @@ def main():
         rec = oracle[frame]
         for call in rec.get('prefix', []):
             st.apply(call)
-        ops_o = st.fold(rec['calls'])
+        ops_o = [op for op in st.fold(rec['calls']) if keep(op)]
         if frame not in port or frame < frames[0]:
             continue
         ops_p = port[frame]['ops']
-        ops_p = [op for op in ops_p if op['op'] in ('clear', 'draw')]
+        ops_p = [op for op in ops_p if op['op'] in ('clear', 'draw') and keep(op)]
         n = min(len(ops_o), len(ops_p))
         frame_bad = 0
         for i in range(n):
