@@ -560,6 +560,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"distortion-grid-copy", 0x418F40, "game/Distortion.cpp DistortionGrid::copy_to_strips（条带 s 第 r 对顶点 = 网格 (s, r)、(s+1, r)）"},
     {"distortion-draw-callback", 0x418C60, "game/Distortion.cpp distortion_draw_callback（绘制钩子表 DAT_00491b2c[4]：母 VM 绘制前抄顶点；AnmRenderer::draw_vm 分发）"},
     {"enemy-distortion-update", 0x41CBD0, "game/Enemy.cpp Enemy::update_distortion（半径 += 2×速度至目标；重铺半边长 r+20 的网格；圈内强度 s=(r²−d²)/r² 着色向白、径向外推 32s + sin 相位 × 8s；节点截到场地开区间后重算 UV；相位 π/16 / π/32 × 速度推进）"},
+    {"game-extra-difficulty", 0x42CB60, "game/GameSession.cpp GameSession::create_player（新游戏段：第 7 关难度 < 4 抬到 4）"},
 };
 
 }  // namespace th16::rebuild
