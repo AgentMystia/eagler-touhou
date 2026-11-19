@@ -297,6 +297,22 @@ test('Option screen (0x44c570): cancel to Quit then back to main menu', needDat,
   assert.ok(out.events.some(e => e[0] === 'option'));
 });
 
+test('Key Config (0x44e930): from Option then cancel back to Option', needDat, () => {
+  const t = MAIN + 1;
+  const downs = Array.from({length: 6}, (_, i) => `${t + i * 2}:${DOWN}`);
+  const confirmAt = t + 12 + 2;
+  const optReady = confirmAt + 30;
+  // Option 上 ↓↓ 到 KeyConfig(2) 确定 → Key Config；取消两段退出回 Option
+  const out = parse(run(['scene-boot', dat, String(optReady + 80), [
+    ...downs, `${confirmAt}:${Z}`,
+    `${optReady}:${DOWN}`, `${optReady + 2}:${DOWN}`, `${optReady + 4}:${Z}`,
+    `${optReady + 40}:${X}`, `${optReady + 42}:${X}`,
+  ].join(',')]));
+  assert.ok(out.events.some(e => e[0] === 'key-config'));
+  assert.ok(out.events.some(e => e[0] === 'screen' && e[1] === '3'));
+  assert.equal(out.header.screen, 3);
+});
+
 test('Option screen: ←/→ adjust BGM, Default restores 100/80', needDat, () => {
   const t = MAIN + 1;
   const downs = Array.from({length: 6}, (_, i) => `${t + i * 2}:${DOWN}`);
