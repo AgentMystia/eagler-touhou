@@ -113,6 +113,7 @@ public:
     i32 spell_slot_ids[5] = {-2, -2, -2, -2, -2};  // +0x5dd0：当前列表槽对应符卡 id
     u32 spell_name_vms[5] = {};      // +0x740：符卡名文字 VM（title.anm 0xd2+i）
     ScoreFile* scores = nullptr;     // 0x456060 解锁判定
+    const u32* config_flags = nullptr;   // DAT_004c1800（bit13：退出改为停在场景 2）
     // 0x44a850：任一机体在 Easy..Lunatic 有未续关通关（主菜单 Extra 项可选）
     bool extra_unlocked() const { return scores != nullptr && scores->extra_unlocked(); }
     bool shot_extra_unlocked(i32 shot) const { return scores != nullptr && scores->shot_extra_unlocked(shot); }        // 0x44a800

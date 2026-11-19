@@ -20,7 +20,8 @@ namespace th16 {
 enum class SceneId : i32 {
     Invalid = -1,
     Boot = 1,     // 0x43ce10 case 0→1 后的当前态
-    Quit = 2,     // 0x44af80 case 2：DAT_004c17c4 = 2（或 3，DAT_004c1800 bit13）
+    Halt = 2,     // DAT_004c1800 bit13 时的“退出”：0x43ce10 无 case 2，只把 current 置 2，场景对象原样留着
+    Exit = 3,     // 0x43ce10 case 3：0x43b950 全部销毁并返回 4（主循环退出进程）
     Title = 4,    // DAT_004c17c4 = 4（0x43b290）
     Game = 7,     // 0x450af0 / 0x450ef0 case 3：DAT_004c17c4 = 7
     NextStage = 0xc,  // 0x42e150 过关：DAT_004c17c4 = 0xc → 0x43ce10 case 0xc 销毁 / 重建 GameManager 后 current 回到 7
@@ -60,6 +61,10 @@ public:
     // 若 requested != current 则切换并返回 true（调用方执行 enter/leave）
     bool consume_switch(SceneId& out_leave, SceneId& out_enter) {
         if (requested == SceneId::Invalid || requested == current) return false;
+        if (requested == SceneId::Halt) {
+            current = requested;
+            return false;
+        }
         out_leave = current;
         out_enter = requested;
         current = requested;

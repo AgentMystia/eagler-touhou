@@ -139,17 +139,24 @@ test('title menu: confirm Game Start → sub 4, SFX 7, Difficulty(5) after 0x13 
   assert.deepEqual(ui(enter.events), [['sfx', '7'], ['screen', '5']]);
 });
 
-test('title menu: cancel (X|Esc) jumps to Quit with SFX 9; cancel on Quit confirms Quit → scene 2 request', needDat, () => {
+test('title menu: cancel (X|Esc) jumps to Quit with SFX 9; cancel on Quit confirms Quit → scene 3 (exit) request', needDat, () => {
   const t = MAIN + 1;
   const esc = parse(run(['scene-boot', dat, String(t + 3), `${t}:${ESC}`]));
   assert.equal(esc.header.cursor, 9);
   assert.equal(esc.header.sub, 2);
   assert.deepEqual(ui(esc.events), [['sfx', '9']]);
   const quit = parse(run(['scene-boot', dat, String(t + 27), `${t}:${ESC},${t + 2}:${X}`]));
-  assert.equal(quit.header.scene, 2, 'Supervisor consumed DAT_004c17c4 = 2');
-  assert.equal(quit.header.quit, 1);
+  assert.equal(quit.header.scene, 3, '0x44af80 case 2 requests DAT_004c17c4 = 3 when DAT_004c1800 bit13 is clear');
+  assert.equal(quit.header.quit, 1, '0x43ce10 case 3 tears down and returns 4');
   assert.equal(quit.header.title_live, 0, 'title object destroyed on scene switch');
-  assert.deepEqual(ui(quit.events), [['sfx', '9'], ['sfx', '9'], ['screen', '2'], ['scene', '2']]);
+  assert.deepEqual(ui(quit.events), [['sfx', '9'], ['sfx', '9'], ['screen', '2'], ['scene', '3']]);
+  assert.deepEqual(quit.events.filter(e => e[0] === 'bgm-op').at(-1), ['bgm-op', '3'], '0x43c440 stops the BGM (op 3)');
+  // DAT_004c1800 bit13：请求 2，0x43ce10 无 case 2，只把当前场景记为 2，标题对象留着并每帧重发
+  const halt = parse(run(['scene-boot', dat, String(t + 27), `${t}:${ESC},${t + 2}:${X}`, 'cfg=0x2000']));
+  assert.equal(halt.header.scene, 2);
+  assert.equal(halt.header.quit, 0);
+  assert.equal(halt.header.title_live, 1);
+  assert.ok(ui(halt.events).filter(e => e[0] === 'scene' && e[1] === '2').length > 1, 'case 2 re-requests every frame');
 });
 
 test('title menu: per-item target screens (0x44b5f0 case 4)', needDat, () => {
