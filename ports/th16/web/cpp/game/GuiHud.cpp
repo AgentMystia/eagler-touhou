@@ -354,8 +354,9 @@ void Gui::update_boss_bars() {
             const float s = sin_f(angle);
             const float c = cos_f(angle);
             marker_z = boss->pos.z + marker_z;
-            marker->entity_offset = Vec3{(s * 0.0f - c * kBossBarMarkerRadius) + center.x,
-                                         (s * kBossBarMarkerRadius + c * 0.0f) + center.y, marker_z};
+            // 0x42865b：x = cos·0 − sin·112 + cx，y = cos·112 + sin·0 + cy（Ghidra 把两个 CRT 返回值标反了）
+            marker->entity_offset = Vec3{(c * 0.0f - s * kBossBarMarkerRadius) + center.x,
+                                         (c * kBossBarMarkerRadius + s * 0.0f) + center.y, marker_z};
         }
         // 自机贴近 Boss：整套中断 3（淡出）；离开到 96 以外：中断 2（恢复）
         if (player != nullptr) {
