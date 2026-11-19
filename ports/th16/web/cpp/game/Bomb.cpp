@@ -9,6 +9,7 @@
 #include "Bomb.hpp"
 
 #include "AnmManager.hpp"
+#include "Ascii.hpp"
 #include "Bullet.hpp"
 #include "Effect.hpp"
 #include "Enemy.hpp"
@@ -132,17 +133,36 @@ void Bomb::update(float game_speed) {
     timer.tick(game_speed);
 }
 
-// 0x40da70 → vtable[2]（恒返回 1）→ 0x40de30：解放奖励飘字。文字由渲染侧按 popup_* 字段绘制（Ascii "+%d"，
-// 颜色按 popup_level 查 {0x60606060, 0xa0b0b080, 0xb0b8b880, 0xc0c0c080, 0xd0d0d080, 0xe0e0e080, 0xffffff30}）
-void Bomb::prepare_draw(float game_speed) {
+// 0x40da70 → vtable[2]（恒返回 1）→ 0x40de30：解放奖励飘字。
+// 解放结束把 popup_timer 设为 0xb4，这里在绘制链上倒数：前 120 帧什么都不画，最后 60 帧（< 0x3d）在自机上方 32 处
+// 画 "+奖励"；奖励数值与位置在第一次进入显示段时冻结（shown_bonus < 0 为哨兵），之后自机再动飘字也不跟。
+// 颜色按解放等级查表（等级 0 灰 … 6 白）；文字用场地组 / 中号字 / 水平居中 / 底对齐，画完把样式恢复默认。
+void Bomb::draw_popup(AsciiManager& text, float game_speed) {
+    static constexpr u32 kPopupColorByLevel[7] = {
+        0x60606060, 0xa0b0b080, 0xb0b8b880, 0xc0c0c080, 0xd0d0d080, 0xe0e0e080, 0xffffff30,
+    };
     if (popup_timer.current < 1) {
         shown_bonus = -1.0f;
         return;
     }
-    if (popup_timer.current < 0x3d && shown_bonus < 0.0f) {
-        shown_bonus = release_bonus;
-        popup_pos = ctx.player->pos;
-        popup_pos.y -= 32.0f;
+    if (popup_timer.current < 0x3d) {
+        if (shown_bonus < 0.0f) {
+            shown_bonus = release_bonus;
+            popup_pos = ctx.player->pos;
+            popup_pos.y -= 32.0f;
+        }
+        text.style.color = kPopupColorByLevel[popup_level];
+        text.style.group = AsciiManager::Group::Field;
+        text.style.font = AsciiManager::Font::Medium;
+        text.style.h_align = AsciiManager::HAlign::Center;
+        text.style.v_align = AsciiManager::VAlign::Bottom;
+        // 原版 asm（0x40df08 的 0x66666667 魔数除 10 再 ×10）把奖励截到十位——Ghidra 反编译文本漏掉了这一步
+        text.printf(popup_pos, "+%d", (i32(shown_bonus) / 10) * 10);
+        text.style.color = 0xffffffff;
+        text.style.font = AsciiManager::Font::Default;
+        text.style.group = AsciiManager::Group::Ui;
+        text.style.h_align = AsciiManager::HAlign::Left;
+        text.style.v_align = AsciiManager::VAlign::Top;
     }
     popup_timer.speed_slot = 0;
     popup_timer.untick(game_speed);

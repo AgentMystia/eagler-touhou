@@ -57,7 +57,7 @@ function recordPort(golden, lastFrame, fromFrame) {
   const c = golden.config;
   try {
     execFileSync(harness, ['game-draw', dat, String(c.stage), String(c.shot), String(c.season), String(lastFrame + 1),
-      c.input, '', '', String(c.difficulty), '-1', String(c.lives), '0', '0', out, String(fromFrame)],
+      c.input, '', '', String(c.difficulty), '-1', String(c.lives), String(c.refill ?? 0), '0', out, String(fromFrame)],
     {encoding: 'utf8', maxBuffer: 1 << 28});
     const frames = {};
     for (const line of readFileSync(out, 'utf8').split('\n')) {
@@ -90,4 +90,8 @@ test('draw structure: stage 1 Reimu / Spring Easy, frames 800–820 and 1000–1
 
 test('draw structure: stage 1 Cirno / Autumn Normal, first 8 frames after load (HUD frame, logo, loading text camera switch)', needDat, () => {
   assert.equal(checkGolden('draw-st1-boot'), 8);
+});
+
+test('draw structure: stage 1 Reimu / Autumn Normal season release, frames 1030–1110 incl. the "+10" release bonus text (0x40de30)', needDat, () => {
+  assert.equal(checkGolden('draw-st1-release'), 81);
 });

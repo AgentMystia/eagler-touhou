@@ -37,6 +37,7 @@
 namespace th16 {
 
 class AnmManager;
+class AsciiManager;
 class BulletManager;
 class EffectManager;
 class EnemyManager;
@@ -91,8 +92,8 @@ public:
     void start();
     // 0x40dd00（更新链 0x18 / 0x19）
     void update(float game_speed);
-    // 0x40da70 → 0x40de30（绘制链 0x28 / 0x29）：解放奖励飘字计时只在绘制链里推进
-    void prepare_draw(float game_speed);
+    // 0x40da70 → 0x40de30（绘制链 0x28 / 0x29）：解放奖励飘字 "+N" 入 AsciiManager 队列，其计时只在绘制链里推进
+    void draw_popup(AsciiManager& text, float game_speed);
     // 0x42e150 过关：炸弹仍在发动时调 vtable+0x14（只有灵梦有实质动作）
     void on_stage_clear() { if (active) on_stage_end(); }
 
@@ -251,7 +252,7 @@ private:
 };
 
 // ---------------------------------------------------------------------------------------------
-// 0x40d890 / 0x40da90：两只对象的创建与释放；GameSession 把链 0x18 / 0x19 / 0x28 / 0x29 接到 update_* / prepare_draw_*
+// 0x40d890 / 0x40da90：两只对象的创建与释放；GameSession 把链 0x18 / 0x19 / 0x28 / 0x29 接到 update_* / draw_*
 class BombManager {
 public:
     // 0x40d890：按 globals.shot + shot_aux 建主炸弹、按 globals.season 建解放；原版失败路径（new 失败）不会发生
@@ -265,8 +266,8 @@ public:
 
     void update_main(float game_speed) { if (main_) main_->update(game_speed); }
     void update_release(float game_speed) { if (release_) release_->update(game_speed); }
-    void prepare_draw_main(float game_speed) { if (main_) main_->prepare_draw(game_speed); }
-    void prepare_draw_release(float game_speed) { if (release_) release_->prepare_draw(game_speed); }
+    void draw_main(AsciiManager& text, float game_speed) { if (main_) main_->draw_popup(text, game_speed); }
+    void draw_release(AsciiManager& text, float game_speed) { if (release_) release_->draw_popup(text, game_speed); }
 
     bool main_active() const { return main_ && main_->active == 1; }
     bool release_active() const { return release_ && release_->active == 1; }
