@@ -266,6 +266,12 @@ int AnmRenderer::draw_vm(AnmVm& vm) {
         geometry_.rotated_corners(vm, corners);
         return submit_screen_quad(vm, *sprite, corners, false);
     }
+    case AnmRenderMode::ProjectedQuad: {
+        if (!has_alpha || sprite == nullptr || camera_ == nullptr) return -1;
+        float corners[4][2], depth;
+        if (!geometry_.projected_corners(vm, *camera_, corners, depth)) return -1;
+        return submit_screen_corners(vm, *sprite, corners, depth, false);
+    }
     case AnmRenderMode::World:
         if (!has_alpha || sprite == nullptr) return -1;
         return draw_world_quad(vm, *sprite);
@@ -332,11 +338,21 @@ int AnmRenderer::draw_host_strip(AnmVm& vm, const ScreenColorUvVertex* vertices,
 }
 
 int AnmRenderer::submit_screen_quad(AnmVm& vm, const AnmRuntimeSprite& sprite, float corners[4][2], bool pixel_align) {
-    // 0x465c40 / 0x4660b0 末尾：加位置；0x465280 开头：加绘制偏移（抖动）
+    // 0x465c40 / 0x4660b0 末尾：加位置
     const Vec3 origin = geometry_.world_position(vm);
     for (int i = 0; i < 4; ++i) {
-        corners[i][0] = corners[i][0] + origin.x + draw_offset_x_;
-        corners[i][1] = corners[i][1] + origin.y + draw_offset_y_;
+        corners[i][0] = corners[i][0] + origin.x;
+        corners[i][1] = corners[i][1] + origin.y;
+    }
+    return submit_screen_corners(vm, sprite, corners, vm.entity_offset.z + vm.pos.z + vm.pos2.z, pixel_align);
+}
+
+int AnmRenderer::submit_screen_corners(AnmVm& vm, const AnmRuntimeSprite& sprite, float corners[4][2], float z,
+                                       bool pixel_align) {
+    // 0x465280 开头：加绘制偏移（抖动）
+    for (int i = 0; i < 4; ++i) {
+        corners[i][0] = corners[i][0] + draw_offset_x_;
+        corners[i][1] = corners[i][1] + draw_offset_y_;
     }
     if (pixel_align) {
         // ROUND(x) − 0.5：四角对齐到像素中心（cvtss2si 就近取偶）
@@ -350,7 +366,6 @@ int AnmRenderer::submit_screen_quad(AnmVm& vm, const AnmRuntimeSprite& sprite, f
         corners[3][0] = corners[1][0];
         corners[3][1] = corners[2][1];
     }
-    const float z = vm.entity_offset.z + vm.pos.z + vm.pos2.z;
     for (int i = 0; i < 4; ++i) vm.drawn_corners[i] = {corners[i][0], corners[i][1], z};
 
     // UV：基 UV + 滚动，uv_scale 缩放宽 / 高分量

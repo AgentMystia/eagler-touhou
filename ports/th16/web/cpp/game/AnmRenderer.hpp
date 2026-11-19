@@ -54,7 +54,7 @@ enum class AnmRenderMode : u32 {
     RotatedQuad = 1,       // 屏幕空间、绕 Z 旋转
     Quad = 2,              // 屏幕空间、不对齐
     RotatedQuad2 = 3,      // 同 1（历史别名）
-    ScreenCheckQuad = 4,   // 0x466390 过滤后同 1
+    ProjectedQuad = 4,     // 0x466390：世界坐标投影到屏幕、按投影像素长缩放的旋转四边形（3D 粒子）
     Mode5 = 5, Mode6 = 6, Mode7 = 7,
     World = 8,             // 世界空间固定管线四边形（关卡背景、3D 粒子）
     VertexBuffer = 9,      // 0x4681f0：宿主自备顶点缓冲
@@ -159,6 +159,8 @@ private:
     const AnmRuntimeSprite* sprite_of(const AnmVm& vm) const;
     // 0x465280：mode 0..3 四角 → 像素对齐 / UV / 顶点色 / 视口剔除 / 入批
     int submit_screen_quad(AnmVm& vm, const AnmRuntimeSprite& sprite, float corners[4][2], bool pixel_align);
+    // 0x465280：四角已含位置；加绘制偏移、可选像素对齐、UV、视口剔除、顶点色后入批
+    int submit_screen_corners(AnmVm& vm, const AnmRuntimeSprite& sprite, float corners[4][2], float z, bool pixel_align);
     // 0x467410
     int draw_world_quad(AnmVm& vm, const AnmRuntimeSprite& sprite);
     // 0x468490 mode 0x11..0x13 分支 + 0x469640 / 0x469a00 / 0x469bd0

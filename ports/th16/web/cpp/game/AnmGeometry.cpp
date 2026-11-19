@@ -106,6 +106,51 @@ void AnmGeometry::rotated_corners(const AnmVm& vm, float out[4][2]) const {
     }
 }
 
+bool AnmGeometry::projected_corners(const AnmVm& vm, const Camera& camera, float out[4][2], float& depth) const {
+    // 位置只取 pos + entity_offset + pos2（不经 0x406a70），用当前相机 D3DXVec3Project 到屏幕
+    const float world[3] = {
+        vm.entity_offset.x + vm.pos.x + vm.pos2.x,
+        vm.entity_offset.y + vm.pos.y + vm.pos2.y,
+        vm.entity_offset.z + vm.pos.z + vm.pos2.z,
+    };
+    // 两次 D3DXVec3Project 都以 world = 平移(位置)：先投原点，再投相机 right 单位向量
+    const float origin[3] = {0.0f, 0.0f, 0.0f};
+    float sx, sy, sz, rhw;
+    camera.project_translated(world, origin, sx, sy, sz, rhw);
+    if (sz < 0.0f || sz > 1.0f) return false;
+    // 两点屏幕距离 = 一世界单位的像素长，取其一半作尺寸系数
+    const float right_axis[3] = {camera.right.x, camera.right.y, camera.right.z};
+    float rx, ry, rz, rrhw;
+    camera.project_translated(world, right_axis, rx, ry, rz, rrhw);
+    const float pixels_per_unit = std::sqrt((rx - sx) * (rx - sx) + (ry - sy) * (ry - sy) + (rz - sz) * (rz - sz));
+    const float k = pixels_per_unit * 0.5f;
+    const float width = vm.sprite_size.x * k * vm.scale.x * vm.scale2.x;
+    const float height = vm.sprite_size.y * k * vm.scale.y * vm.scale2.y;
+
+    const float angle = anm_world_rotation(const_cast<AnmVm&>(vm)).z;
+    const float c = std::cos(angle), s = std::sin(angle);
+    // 锚点：0 居中、1 左/上对齐、2 右/下对齐；3 在原版里读到的是未初始化的 sin 值，照搬
+    float left, right, top, bottom;
+    switch ((vm.flags_lo >> 21) & 3u) {
+    case 0: left = width * -0.5f; right = width * 0.5f; break;
+    case 1: left = 0.0f; right = width; break;
+    case 2: left = -width; right = 0.0f; break;
+    default: left = right = s; break;
+    }
+    switch ((vm.flags_lo >> 23) & 3u) {
+    case 0: top = height * -0.5f; bottom = height * 0.5f; break;
+    case 1: top = 0.0f; bottom = height; break;
+    case 2: top = -height; bottom = 0.0f; break;
+    default: top = bottom = s; break;
+    }
+    out[0][0] = left * c - top * s + sx;      out[0][1] = top * c + left * s + sy;
+    out[1][0] = right * c - top * s + sx;     out[1][1] = top * c + right * s + sy;
+    out[2][0] = left * c - bottom * s + sx;   out[2][1] = bottom * c + left * s + sy;
+    out[3][0] = right * c - bottom * s + sx;  out[3][1] = bottom * c + right * s + sy;
+    depth = sz;
+    return true;
+}
+
 bool AnmGeometry::vm_corners(const AnmVm& vm, float out[4][3]) const {
     float corners[4][2];
     switch (vm.render_mode()) {

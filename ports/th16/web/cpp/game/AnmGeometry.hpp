@@ -7,12 +7,14 @@
 //   0x406c40  pos + entity_offset + pos2 → 0x406a70
 //   0x465c40  轴对齐四角（锚点 × 精灵尺寸 − anchor_offset，× 窗口缩放，× scale·scale2（含父））+ 位置
 //   0x4660b0  带 Z 旋转的四角（0x464dd0 世界旋转）
+//   0x466390  mode 4：世界坐标经当前相机投影成屏幕点，按"一单位 right 向量投影后的像素长"缩放的旋转四角
 //   0x468c00  VM 四角的屏幕坐标（自机子弹出界判定）
 //
 // 屏幕几何常量来自 Supervisor 每帧写入的全局：DAT_004d9d34 窗口缩放（0x45b280，默认 1.0）、
 // DAT_004d9d50/54 场地偏移 = (w/2, (h-448)/2)、DAT_004d9d48/4c = (w/2, 16×缩放)（0x43cb10 / 0x43d140）。
 #pragma once
 #include "AnmVm.hpp"
+#include "Camera.hpp"
 #include "Types.hpp"
 
 namespace th16 {
@@ -34,6 +36,8 @@ struct AnmGeometry {
     void axis_corners(const AnmVm& vm, float out[4][2]) const;
     // 0x4660b0 的四角偏移（不含位置）
     void rotated_corners(const AnmVm& vm, float out[4][2]) const;
+    // 0x466390：mode 4 的屏幕四角（已含位置）与投影深度；投影深度不在 [0, 1] 内返回 false（原版返回 -1 不画）
+    bool projected_corners(const AnmVm& vm, const Camera& camera, float out[4][2], float& depth) const;
     // 0x468c00：mode 0/2/3 轴对齐、mode 1 带旋转；其它模式不写并返回 false
     bool vm_corners(const AnmVm& vm, float out[4][3]) const;
 };
