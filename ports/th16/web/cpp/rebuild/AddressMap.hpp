@@ -378,7 +378,9 @@ constexpr AddressAnchor kAnchors[] = {
     {"title-spell-practice", 0x4553D0, nullptr}, // 画面 0x11
     {"title-draw", 0x44B530, nullptr},       // 标题绘制链 0x45
     {"score-file", 0x4497E0, nullptr},       // scoreth16.dat 读写
-    {"replay-file", 0x4403C5, nullptr},      // th16_%.2d.rpy
+    {"replay-file", 0x4403C5, "game/ReplayFile.cpp 路径格式 th16_%.2d.rpy / replay/%s（宿主拼路径）"},
+    {"replay-load", 0x448C10, "game/ReplayFile.cpp ReplayFile::open（t16r 头、双重 0x402220、LZSS、段表）"},
+    {"replay-playback-step", 0x448130, "game/ReplayFile.cpp replay_playback_step + GameSession 记录链 mode==1"},
     {"ver-file", 0x43B480, nullptr},         // th16_%.4x%c.ver
     {"music-fmt", 0x43AEAE, nullptr},        // ../../bgm/thbgm.fmt
     // —— EffectManager（DAT_004a6db8）——
