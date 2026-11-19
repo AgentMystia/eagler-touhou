@@ -1,6 +1,7 @@
 #include "Application.hpp"
 
 #include <cstdio>
+#include <cstring>
 
 #if defined(__EMSCRIPTEN__) || defined(TH16_HAS_SDL)
 #include <SDL3/SDL.h>
@@ -60,6 +61,14 @@ bool Application::initialize(const char* archive_path) {
     if (initialized) return true;
     if (!read_file(archive_path, archive_bytes)) { failure = std::string("cannot read ") + archive_path; return false; }
     if (!session.open(archive_bytes.data(), u32(archive_bytes.size()))) { failure = session.failure; return false; }
+    // 0x44af80 demo 路径相对游戏目录：demo/demoN.rpy（与 th16.dat 同级）
+    if (const char* slash = std::strrchr(archive_path, '/')) {
+        session.demo_directory.assign(archive_path, slash);
+    } else if (const char* slash = std::strrchr(archive_path, '\\')) {
+        session.demo_directory.assign(archive_path, slash);
+    } else {
+        session.demo_directory = ".";
+    }
     graphics.animations = &session.animations;
     if (!graphics.initialize()) { failure = graphics.error; return false; }
 
