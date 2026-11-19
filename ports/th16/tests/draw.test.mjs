@@ -112,6 +112,14 @@ test('draw structure: stage 3 Normal spell 26 curve lasers (0x438750 strips via 
   assert.equal(checkGolden('draw-st3-curve-laser'), 101);
 });
 
+test('draw structure: stage 1 Normal STD ins 17 stage distortion (0x40c4a0 kind 1 via draw hook 4) + enemy main VMs on layer 8 (0x41b580 anm_layer_offset = 1), frames 4200–4400', needDat, () => {
+  assert.equal(checkGolden('draw-st1-distortion'), 201);
+});
+
+test('draw structure: stage 4 Normal st04 background (mode 8 texture-matrix cache 0x467b0d) + mode 4 projected leaf particles (0x466390, camera right = facing_norm × up), frames 2–300', needDat, () => {
+  assert.equal(checkGolden('draw-st4-leaves'), 299);
+});
+
 test('draw structure: stage 5 Normal spell 46 line lasers (0x433720 beam / tip / origin VMs) + boss distortion grid, frames 400–500', needDat, () => {
   assert.equal(checkGolden('draw-st5-line-laser'), 101);
 });

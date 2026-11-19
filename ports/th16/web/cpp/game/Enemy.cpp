@@ -351,7 +351,8 @@ bool Enemy::init(EnemyManager& mgr, EclProgram& prog, const char* sub, const Ene
     std::memset(vm_ids, 0, sizeof vm_ids);
     for (int i = 0; i < kVmSyncSlots; ++i) { vm_offsets[i] = Vec3{}; vm_parent_slot[i] = -1; }
     anm_slot = anm_slot_main = main_script = main_script_base = sprite_direction = 0;
-    anm_layer = anm_layer_offset = 0;
+    anm_layer = 0;
+    anm_layer_offset = 1;  // 0x41b580：+0x1488（EnemyInf+0x27c）= 1，主 VM 默认落在层 8（1 + 7），ECL 552 可改
     delta = Vec3{};
     vm_rotation = 0;
     death_anm_slot = 0;
