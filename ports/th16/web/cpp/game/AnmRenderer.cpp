@@ -483,7 +483,9 @@ int AnmRenderer::draw_world_quad(AnmVm& vm, const AnmRuntimeSprite& sprite) {
     bind_sprite_texture(sprite);
 
     // 纹理矩阵（D3DTTFF_COUNT2：平移在第 3 行）：u' = u × uv_scale.x × sprite_matrix[0] + (u0 + scroll.x)
-    if (texture_matrix_sprite_ != &sprite || vm.uv_scroll.x != 0.0f || vm.uv_scroll.y != 0.0f ||
+    // 同一精灵连续绘制时只在"有滚动 / 缩放"时重发；原版 0x467b0d 把 uv_scroll.x 查了两遍而漏查 uv_scroll.y，
+    // 只竖向滚动的后续 VM 会沿用上一个 VM 的矩阵（st04 背景两种滚速共用一张矩阵），照搬
+    if (texture_matrix_sprite_ != &sprite || vm.uv_scroll.x != 0.0f ||
         vm.uv_scale.x != 1.0f || vm.uv_scale.y != 1.0f) {
         texture_matrix_sprite_ = &sprite;
         float texture[16];
