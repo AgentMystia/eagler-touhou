@@ -152,6 +152,23 @@ void Gui::set_offset(u32& id, const Vec3& pos) {
     if (AnmVm* vm = find_or_clear(id)) vm->entity_offset = pos;
 }
 
+void Gui::dialogue_text_follow(AnmVm& vm) {
+    Msg* m = dialogue.get();
+    if (m == nullptr || geometry == nullptr) return;
+    AnmVm* box = find_or_clear(m->box_vm);
+    if (box == nullptr) return;
+    AnmVm* child = AnmManager::find_child(*box, m->box_index + 0xb4, 0);
+    if (child == nullptr) return;
+    Vec3 p = geometry->world_position(*child);
+    const float inv = 2.0f / geometry->window_scale;
+    p.x = inv * p.x;
+    if (m->side < 1) p.x = p.x - 36.0f;
+    else if (1.0f <= child->scale.x) p.x = p.x + 26.0f;
+    else p.x = (child->scale.x * 32.0f - 6.0f) + p.x;
+    p.y = inv * p.y;
+    vm.entity_offset = p;
+}
+
 void Gui::draw_text(Msg& m, u32& id, const char* text, u32 color, u32 shadow, i32 font, i32 x, i32 y) {
     AnmVm* vm = find_or_clear(id);
     m.text_requests.push_back({vm != nullptr ? vm->id : 0u, std::string(text), color, shadow, font, x, y});

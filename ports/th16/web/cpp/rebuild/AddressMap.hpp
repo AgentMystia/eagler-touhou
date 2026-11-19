@@ -344,7 +344,11 @@ constexpr AddressAnchor kAnchors[] = {
     {"effect-attach", 0x418AF0, nullptr},    // ins_508：EffectManager（DAT_004a6db8）按效果种类表 DAT_004a2250 挂 update/draw 回调（effect.anm 155–196 依赖）
     {"effect-ring-update", 0x405700, nullptr}, // 效果种类 1 的 update 回调（DAT_004919e8[2]）：环形顶点缓冲 + 生成 effect.anm 0x99
     {"anm-load-file", 0x46D020, nullptr},    // AnmManager::load_file(slot, name)：从档案读 .anm 并进 bank（同步等待装载线程）
-    {"anm-draw-mode5+", 0x466820, nullptr},  // mode 6 投影 + 手动雾色；mode 5 0x4671b0 / mode 7 0x467200 / 0xb 0x4686a2 待还原
+    {"anm-draw-mode5+", 0x466820, nullptr},  // mode 6 投影 + 手动雾色
+    // —— 绘制钩子表 DAT_00491b2c（draw_vm 可见性检查之前按 vm.draw_callback 分派）——
+    {"anm-draw-hook-burst", 0x406860, "game/AnmRenderer.cpp AnmRenderer::draw_burst_lines（钩子 3：EffectManager::burst_geometry 取 64 点折线 + 顶点色，0x469890 出批后以无贴图 XYZRHW|DIFFUSE 线带绘制 count−1 段；count < 1 时原版的 −1 段 DrawPrimitiveUP 被设备拒绝，这里直接不画）"},
+    {"anm-draw-hook-noop", 0x405EC0, "game/AnmRenderer.cpp AnmRenderer::draw_vm（钩子 2：xor eax,eax; ret 空函数，充能环只靠更新钩子 0x405700）"},
+    {"anm-draw-hook-text-follow", 0x42B5F0, "game/Gui.cpp Gui::dialogue_text_follow（钩子 5 → 0x42b480：文字 VM 绘制前按文字框子 VM 0xb4+下标的屏幕位置重定 entity_offset；右侧展开中 scale.x·32−6，不同于更新尾段的 (scale.x+0.125)·32−6）"},；mode 5 0x4671b0 / mode 7 0x467200 / 0xb 0x4686a2 待还原
     {"title-has-clear", 0x44A850, nullptr},  // 任一难度通关记录 → Extra 可选（当前恒 0：无存档）
     {"title-difficulty-cleared", 0x44A8E0, nullptr}, // 某难度四项记录齐全（难度面板 0x9e+d 标记）
     {"title-extra-unlocked", 0x44A800, nullptr}, // 机体是否解锁 Extra
