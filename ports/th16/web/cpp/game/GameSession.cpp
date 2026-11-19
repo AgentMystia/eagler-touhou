@@ -583,7 +583,7 @@ bool GameSession::create_player() {
     globals.point_value = i32((double(float(globals.point_value_initial)) / 100.0) * 100.0);
     if (mode == 2) { globals.lives = 0; globals.bombs = 0; }
     else if (mode == 0) globals.lives = 2;
-    else globals.lives = 9;
+    else globals.lives = globals.practice_lives == 0 ? 9 : globals.practice_lives - 1;
     // 剩余续关数（DAT_00492278 按难度：Extra 无续关）
     static constexpr i32 kContinues[6] = {5, 5, 5, 5, 0, 0};
     globals.continues_left = kContinues[diff];

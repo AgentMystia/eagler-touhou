@@ -117,7 +117,12 @@ void Gui::refresh_lives_display(i32 lives, i32 fragments) {
     if (life_vms[0] == nullptr || animations == nullptr || globals == nullptr) return;
     i32 lit = 0;
     if (lives > 0) {
-        for (; lit < lives; ++lit) animations->request_interrupt(*life_vms[lit], 2);
+        // 原版按指针自 +0x54 连续走 lives 格、不设上限：练习 9 残机（0x42cb60 DAT_004a5bf8 == 0）时第 9 格落在 +0x74 =
+        // bomb_vms[0]（随后 0x42c390 立即改写）。这里显式按同一内存次序写，不越过数组
+        for (; lit < lives && lit < kResourceSlots; ++lit) animations->request_interrupt(*life_vms[lit], 2);
+        for (i32 over = kResourceSlots; over < lives && over - kResourceSlots < kResourceSlots; ++over) {
+            if (AnmVm* vm = bomb_vms[over - kResourceSlots]) animations->request_interrupt(*vm, 2);
+        }
         if (lives > 7) return;
     }
     // 第 lives 格按碎片数分段点亮：中断 7 + 碎片×5 / 本级 extend 所需碎片

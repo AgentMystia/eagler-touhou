@@ -406,6 +406,34 @@ test('practice: stage unlock reads +0x51a5 (reached flag of cursor+1 for shot×d
   assert.ok(out.events.some(e => e[0] === 'bgm-fade'));
 });
 
+test('practice start: DAT_004a5bf8 digit key held on confirm (0x450ef0) sets starting lives = n-1, else 9 (0x42cb60); HUD 0x42c280 survives 9 lives', needDat, () => {
+  const t = MAIN + 1;
+  const diff = t + 2 + AFTER_MAIN;
+  const shot = diff + AFTER_DIFF;
+  const season = shot + AFTER_SHOT;
+  const stage = season + AFTER_SEASON_PRACTICE;
+  const script = [`${t}:${DOWN}`, `${t + 2}:${Z}`, `${diff}:${Z}`, `${shot}:${Z}`, `${season}:${Z}`, `${stage}:${Z}`].join(',');
+  const probe = parse(run(['scene-boot', dat, String(stage), script]));
+  const reach = `reach=${probe.header.shot},${probe.header.difficulty},1`;
+  const gameFrame = stage + 0x28 + 4;
+  // 练习关卡确认到 Game 场景首帧 0x42cb60：无数字键 → 9 残机；原版 0x42c280 第 9 格越过 +0x54..+0x70 落到 bomb_vms[0]
+  const plain = parse(run(['scene-boot', dat, String(gameFrame), script, reach]));
+  assert.equal(plain.header.scene, 7, 'practice stage started');
+  assert.equal(plain.header.mode, 1);
+  assert.equal(plain.header.practice_lives, 0);
+  assert.equal(plain.header.lives, 9);
+  // DIK_3（0x04）在确认帧按住 → DAT_004a5bf8 = 3 → 2 残机；前一帧按住不算（0x402130 在确认当帧快照）
+  const three = parse(run(['scene-boot', dat, String(gameFrame), script, reach, `dik=${stage}:0x04`]));
+  assert.equal(three.header.practice_lives, 3);
+  assert.equal(three.header.lives, 2);
+  const early = parse(run(['scene-boot', dat, String(gameFrame), script, reach, `dik=${stage - 1}:0x04`]));
+  assert.equal(early.header.lives, 9);
+  // 多键同时按住取最小数字（原版按 1..9 顺序 goto）；DIK_1 → 0 残机
+  const both = parse(run(['scene-boot', dat, String(gameFrame), script, reach, `dik=${stage}:0x0a,${stage}:0x02`]));
+  assert.equal(both.header.practice_lives, 1);
+  assert.equal(both.header.lives, 0);
+});
+
 test('Option screen (0x44c570): cancel to Quit then back to main menu', needDat, () => {
   const t = MAIN + 1;
   const downs = Array.from({length: 6}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Option (7)

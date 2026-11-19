@@ -131,7 +131,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"title-difficulty", 0x44FE20, "game/TitleScene.cpp TitleScene::update_difficulty（DAT_004a6f1c == 4 按上次难度同帧确认 → LAB_004501a0 enter_shot_select）"},
     {"title-shot", 0x4502C0, "game/TitleScene.cpp TitleScene::update_shot（DAT_004a6f1c == 4 同帧确认 → LAB_004509e1 enter_season_select）"},
     {"title-season", 0x450AF0, "game/TitleScene.cpp TitleScene::update_season（case 3 请求场景 7；练习 / DAT_004a6f1c == 4 → LAB_00450d8f enter_practice_stage）"},
-    {"title-stage", 0x450EF0, "game/TitleScene.cpp TitleScene::update_stage（练习关卡；确定解锁读 +0x51a5 = practice[机体][难度*8+光标+1].reached）"},
+    {"title-stage", 0x450EF0, "game/TitleScene.cpp TitleScene::update_stage（练习关卡；确定解锁读 +0x51a5 = practice[机体][难度*8+光标+1].reached；确认帧 0x402130 快照 DIK_1..9 → DAT_004a5bf8 = GameGlobals::practice_lives，0x42cb60 初始残机 = 其值-1 / 未按 9）"},
     {"title-item-interrupt-run", 0x44A700, "game/TitleScene.cpp TitleScene::item_interrupt_now"},
     {"title-item-interrupt", 0x44A680, "game/TitleScene.cpp TitleScene::item_interrupt"},
     {"title-child-id", 0x44A790, "game/TitleScene.cpp TitleScene::child_id"},
@@ -564,7 +564,7 @@ constexpr AddressAnchor kAnchors[] = {
     // —— Gui HUD（GuiHud.cpp；tests/draw 对拍 game-oracle.py --draw，ascii 文字另见 AsciiManager）——
     {"gui-hud-init", 0x426D70, "game/GuiHud.cpp Gui::init_hud（边框 / 残机炸弹 16 格 / 计时数字 / 关卡标题 / 演示横幅 / Boss 指示 / 一面提示 / 难度标签·徽章 / 新局面板·季节图标 / 量表）"},
     {"gui-spawn-ui-vm", 0x42C920, "game/AnmManager.cpp AnmManager::spawn_ui(out_vm)（残机 / 炸弹格：UI 链表 VM 并回传指针）"},
-    {"gui-lives-display", 0x42C280, "game/GuiHud.cpp Gui::refresh_lives_display（8 槽；--lives > 8 会越界，故长程对拍用 --refill-lives）"},
+    {"gui-lives-display", 0x42C280, "game/GuiHud.cpp Gui::refresh_lives_display（8 槽；原版按指针连续走 lives 格，练习 9 残机时第 9 格落到 +0x74 = bomb_vms[0]，移植按同一内存次序显式写；--lives > 8 的 oracle 快照同理，长程对拍用 --refill-lives）"},
     {"gui-bombs-display", 0x42C390, "game/GuiHud.cpp Gui::refresh_bombs_display（整数 → 中断 1、碎片 → 中断 2 + 精灵 0x5b+碎片、空 → 中断 4）"},
     {"gui-season-gauge", 0x42C600, "game/GuiHud.cpp Gui::refresh_season_gauge（0x43df20 比例 → 面板子 VM 0x73 $F0 / 0x74 等级精灵）"},
     {"gui-season-gauge-fraction", 0x43DF20, "game/GameGlobals.hpp GameGlobals::season_gauge_fraction（等级 ≥ 6 → 1，否则 (量表 - 阈值) / 本级步长）"},

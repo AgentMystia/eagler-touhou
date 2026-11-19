@@ -1957,11 +1957,11 @@ int main(int argc, char** argv) {
         const Supervisor& sup = session.supervisor;
         const TitleScene& title = session.title;
         const GameGlobals& g = session.globals;
-        std::printf("scene=%d boot_frames=%u title_live=%d screen=%d sub=%d cursor=%d difficulty=%d shot=%d season=%d stage=%d mode=%d quit=%d bgm=%u se=%u update_chains=%u draw_chains=%u quads=%zu\n",
+        std::printf("scene=%d boot_frames=%u title_live=%d screen=%d sub=%d cursor=%d difficulty=%d shot=%d season=%d stage=%d mode=%d quit=%d bgm=%u se=%u update_chains=%u draw_chains=%u quads=%zu lives=%d bombs=%d practice_lives=%d\n",
                     int(sup.current), sup.boot_frames, sup.title_menu_live ? 1 : 0, title.screen, title.sub, title.cursor.index,
                     g.difficulty, g.shot, g.season, g.stage, g.mode(), session.quit_requested ? 1 : 0,
                     unsigned(g.bgm_volume), unsigned(g.se_volume),
-                    session.chains.update_count(), session.chains.draw_count(), quads.size());
+                    session.chains.update_count(), session.chains.draw_count(), quads.size(), g.lives, g.bombs, g.practice_lives);
         std::printf("spell group=%d list=%d entry=%d shot=%d slots=%d,%d,%d,%d,%d return=%d,%d,%d origin=%d replay_slot=%d\n",
                     title.spell_group, title.spell_list_index, title.spell_entry_index, title.spell_shot_cursor.index,
                     title.spell_slot_ids[0], title.spell_slot_ids[1], title.spell_slot_ids[2], title.spell_slot_ids[3],

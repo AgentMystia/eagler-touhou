@@ -18,6 +18,9 @@ struct GameGlobals {
     i32 last_difficulty = 1;     // DAT_0049f274
     i32 last_shot = 0;           // DAT_004a6f24
     i32 last_practice_stage = -1;// DAT_004a2974
+    // DAT_004a5bf8：练习关卡确认时（0x450ef0）按住的数字键 1..9（0x402130 快照，首个命中），0 = 未按；
+    // 0x42cb60 练习初始残机 = 非零 ? 其值-1 : 9
+    i32 practice_lives = 0;
     i32 demo_saved_difficulty = 0;// DAT_004a59c0：idle demo 触发时保存，回标题还原
     i32 spell_return_group = -1; // DAT_004a2970：符卡练习返回时还原的分组（0x4553d0 读后置 -1）
     i32 spell_return_list = -1;  // DAT_0049f2dc：…列表槽（0x455900）
