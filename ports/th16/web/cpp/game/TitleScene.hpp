@@ -27,6 +27,7 @@
 namespace th16 {
 
 struct HelpScreen;  // GameMenu.hpp：标题 Manual / 暂停 Manual 共用
+struct ScoreFile;
 
 class TitleScene {
 public:
@@ -74,6 +75,9 @@ public:
     i32 music_scroll = 0;            // +0x5a44 窗口首项（可见约 10 条）
     MenuCursor spell_shot_cursor;    // +0x5cec：符卡练习机体副光标
     i32 spell_group = 0;             // +0x5dc4：选中的分组（确认后带入列表）
+    i32 spell_list_index = 0;        // +0x5dc8：列表确认的槽（带入 0x13）
+    i32 spell_slot_ids[5] = {-2, -2, -2, -2, -2};  // +0x5dd0：当前列表槽对应符卡 id
+    ScoreFile* scores = nullptr;     // 0x456060 解锁判定
     MenuCursor score_shot_cursor;    // +0xfc：Player Data 机体（count 5）
     MenuCursor score_page_cursor;    // +0x1d4：成绩翻页
     i32 key_bind_slot = -1;          // Key Config：正在捕获的槽 0..4；-1=无

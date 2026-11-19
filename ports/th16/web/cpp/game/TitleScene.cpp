@@ -1,6 +1,8 @@
 #include "TitleScene.hpp"
 #include "GameMenu.hpp"
 #include "ReplayFile.hpp"
+#include "ScoreFile.hpp"
+#include "SpellPracticeTable.hpp"
 
 #include <cstdio>
 
@@ -1244,15 +1246,15 @@ void TitleScene::update_score(AnmManager& anm, const InputState& input) {
 }
 
 // 0x455d50：符卡列表（count 4；确定开战；取消 → 画面 0x13）
-// 0x455900：分组内符卡列表（确定 → 0x13 / 取消 → 0x11）。条目表 0x4560b0 随后补全。
+// 0x455900：分组内符卡列表（确定 → 0x13 / 取消 → 0x11）。0x4560b0 填 id，0x456060 解锁。
 void TitleScene::update_spell_list(AnmManager& anm, const InputState& input) {
-    static constexpr i32 kGroupCounts[7] = {2, 3, 4, 3, 6, 9, 0xd};
     switch (sub) {
     case 0: {
         const i32 g = spell_group < 0 ? 0 : (spell_group > 6 ? 6 : spell_group);
-        cursor.count = kGroupCounts[g];
+        cursor.count = SpellPracticeTable::group_count(g);
         cursor.wrap = true;
         cursor.set(0);
+        SpellPracticeTable::fill_slot_ids(g, cursor.index, spell_slot_ids);
         if (title_file && vm[0x6b] == 0) spawn_into(anm, 0x6b, *title_file, 0x6b);  // +0x46c
         if (title_file && vm[0xd8] == 0) spawn_into(anm, 0xd8, *title_file, 0xd8);  // +0x620
         set_sub(1);
@@ -1275,6 +1277,7 @@ void TitleScene::update_spell_list(AnmManager& anm, const InputState& input) {
         if (edge & InputState::kDown) cursor.move(1);
         if (cursor.index != prev) {
             sfx(10);
+            SpellPracticeTable::fill_slot_ids(spell_group, cursor.index, spell_slot_ids);
             if (vm[0xd8]) {
                 anm.interrupt_now(vm[0xd8], 3);
                 anm.interrupt(vm[0xd8], to_short(cursor.index + 7));
@@ -1293,9 +1296,16 @@ void TitleScene::update_spell_list(AnmManager& anm, const InputState& input) {
             break;
         }
         if (input.pressed & InputState::kConfirmMask) {
+            // 0x456060：未解锁 → sfx 0x10，不进下一页
+            if (scores != nullptr && !SpellPracticeTable::unlocked(spell_group, cursor.index, *scores)) {
+                sfx(0x10);
+                break;
+            }
             if (vm[0xd8]) anm.interrupt(vm[0xd8], 6);
             set_sub(3);
             sfx(7);
+            spell_list_index = cursor.index;
+            SpellPracticeTable::fill_slot_ids(spell_group, cursor.index, spell_slot_ids);
         }
         break;
     }
