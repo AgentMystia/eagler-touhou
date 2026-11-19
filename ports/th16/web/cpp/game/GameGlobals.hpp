@@ -55,6 +55,28 @@ struct GameGlobals {
     u8 option_flags = 0;  // DAT_004c12c8
     // DAT_004c12cc：输入相关配置；bit9(0x200)=自动低速（射击且火力≥10 时记录链并上 Shift）
     u32 input_config = 0;
+    // 标题 Key Config 键位表（TitleScene+0x5b34 起 6×i16；0x44f710 写入、冲突对调）
+    // 下标：0 Shot / 1 Bomb / 2 Slow / 3 Skip / 4 Release / 5 保留
+    static constexpr int kKeyBindCount = 6;
+    i16 key_binds[kKeyBindCount] = {0x2c, 0x2d, 0x2a, 0x1d, 0x2e, 0};  // Z X LShift LCtrl C
+    // 0x44f710：写入 scancode；若其它槽已占用则对调
+    void assign_key_bind(int slot, i16 scancode) {
+        if (slot < 0 || slot >= kKeyBindCount) return;
+        if (key_binds[slot] == scancode) return;
+        for (int i = 0; i < kKeyBindCount; ++i) {
+            if (i == slot) continue;
+            if (key_binds[i] == scancode) key_binds[i] = key_binds[slot];
+        }
+        key_binds[slot] = scancode;
+    }
+    void reset_key_binds() {
+        key_binds[0] = 0x2c;
+        key_binds[1] = 0x2d;
+        key_binds[2] = 0x2a;
+        key_binds[3] = 0x1d;
+        key_binds[4] = 0x2e;
+        key_binds[5] = 0;
+    }
     // 0x42cb60 新开局自成绩文件取本机体 × 难度的最高分（无成绩文件时 0x4497e0 默认 100000）与其续关数；
     // 0x42bc10 每帧以 Gui 显示分越过时更新并置 flags bit2；换关 0x42cb60 另取 max(最高分, 当前分)
     i32 hiscore = 100000;        // DAT_004a59b8
