@@ -268,6 +268,8 @@ constexpr AddressAnchor kAnchors[] = {
     {"screen-fade-draw", 0x45C990, "game/GameSession.cpp GameSession::create_screen_fade 绘制链回调（kind 2 / 3：不改视口，直接 0x45c690 填满场地渲染目标）"},
     {"screen-fade-draw-fullscreen", 0x45C860, "game/GameSession.cpp GameSession::create_screen_fade 绘制链回调（kind 0 / 5：先出批并 SetViewport(0,0,后备缓冲宽高) 再 0x45c690）"},
     {"screen-fill-quad", 0x45C690, "game/AnmRenderer.cpp AnmRenderer::draw_screen_fill（出批；TSS SELECTARG1 / DIFFUSE、DESTBLEND INVSRCALPHA；FVF 0x44 四顶点条带 (0,0)-(w,h) 色 alpha<<24|color；随后清顶点格式 / 纹理矩阵 / 纹理键缓存、blend 缓存置 0xa、TSS 回 MODULATE / TEXTURE；纹理与 DESTBLEND 不恢复）"},
+    {"screen-fade-hold-step", 0x45CAC0, "game/ScreenEffect.cpp screen_fade_hold_step（kind 9：alpha 恒 0xff，t ≥ duration 自删）"},
+    {"screen-fade-hold-draw", 0x45CB50, "game/GameSession.cpp create_screen_fade kind 9 绘制链（不改视口，直接 0x45c690）"},
     {"screen-shake-update", 0x45CD30, "game/ScreenEffect.cpp screen_shake_step（计时、线性振幅、game_rng %3 ×2 决定 x/y 符号、DAT_004c1788 / DAT_004c1530 输出；到时返回 7）"},
     {"screen-effect-destroy", 0x45D130, "game/Chain.cpp ChainManager::run_list（ChainResult::Destroy → on_destroy 摘除两条链）"},
     {"enemy-spawn-op", 0x423050, "game/Enemy.cpp Enemy::execute case 300..305 / 309..312 / 321（相对/绝对/镜像生成子敌人；参数块附带生成者 EnemyInf+0x28c..0x2b8 寄存器）"},
@@ -351,7 +353,7 @@ constexpr AddressAnchor kAnchors[] = {
     // —— 绘制钩子表 DAT_00491b2c（draw_vm 可见性检查之前按 vm.draw_callback 分派）——
     {"anm-draw-hook-burst", 0x406860, "game/AnmRenderer.cpp AnmRenderer::draw_burst_lines（钩子 3：EffectManager::burst_geometry 取 64 点折线 + 顶点色，0x469890 出批后以无贴图 XYZRHW|DIFFUSE 线带绘制 count−1 段；count < 1 时原版的 −1 段 DrawPrimitiveUP 被设备拒绝，这里直接不画）"},
     {"anm-draw-hook-noop", 0x405EC0, "game/AnmRenderer.cpp AnmRenderer::draw_vm（钩子 2：xor eax,eax; ret 空函数，充能环只靠更新钩子 0x405700）"},
-    {"anm-draw-hook-transition", 0x4073A0, nullptr},   // 钩子 1：效果种类 0 只能经 ECL 334 / 0x40e730 建出，th16 全部 .ecl 无 334 → 数据不可达
+    {"anm-draw-hook-transition", 0x4073A0, "game/Effect.cpp EffectManager::transition_draw（钩子 1：种类 0 过场；标题 0x418ba0 创建并 0x46f0b0 中断 7）"}
     {"anm-draw-hook-ring-fan", 0x46A330, nullptr},     // 钩子 6：ANM 渲染模式 10（0x469e20 / 0x46a0b0 / 0x468350 扇面），全部 .anm 无 302(10) → 数据不可达
     {"anm-draw-hook-text-follow", 0x42B5F0, "game/Gui.cpp Gui::dialogue_text_follow（钩子 5 → 0x42b480：文字 VM 绘制前按文字框子 VM 0xb4+下标的屏幕位置重定 entity_offset；右侧展开中 scale.x·32−6，不同于更新尾段的 (scale.x+0.125)·32−6）"},；mode 5 0x4671b0 / mode 7 0x467200 / 0xb 0x4686a2 待还原
     {"title-has-clear", 0x44A850, nullptr},  // 任一难度通关记录 → Extra 可选（当前恒 0：无存档）
