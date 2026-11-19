@@ -368,6 +368,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"title-demo", 0x44AF80, "game/TitleScene.cpp TitleScene::tick_idle_demo（0x708 无输入 → flags bit6 + scene 0xd；demo 下标 %3）"},
     {"title-option", 0x44C570, "game/TitleScene.cpp TitleScene::update_option（BGM/SE 音量、Default、取消两段退出）"},
     {"title-replay", 0x451750, "game/TitleScene.cpp TitleScene::update_replay（25×3 槽、关卡选择、场景 0xd）"},
+    {"title-manual", 0x4545A0, "game/TitleScene.cpp TitleScene::update_manual（0x42ea30 HelpScreen，scroll=112）"},
     {"title-loading-text", 0x41A390, "game/GameSession.cpp GameSession::spawn_loading_vm（ascii.anm 0x11；位置 = 2 × (XMM1, XMM2) 寄存器传参，0x42d274 传 480 / 392 → (960, 784)，Ghidra 漏掉这两个寄存器实参）"},
     {"effect-transition-init", 0x4071A0, "game/Effect.cpp EffectManager::transition_init"},
     {"effect-transition-update", 0x407330, "game/Effect.cpp EffectManager::transition_update"},

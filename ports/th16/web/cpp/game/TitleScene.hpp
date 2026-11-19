@@ -25,6 +25,8 @@
 
 namespace th16 {
 
+struct HelpScreen;  // GameMenu.hpp：标题 Manual / 暂停 Manual 共用
+
 class TitleScene {
 public:
     enum Screen : i32 {
@@ -66,19 +68,30 @@ public:
     i32 last_replay_slot = 0;        // DAT_004a6f28：再次进入时恢复
     std::string replay_directory;    // 宿主：th16_XX.rpy 所在目录
     std::string pending_replay_path; // 确认播放：GameSession case 0xd 装载
+    HelpScreen* help = nullptr;      // DAT_004a6dd8：标题 Manual 0x4545a0
     GameGlobals* globals = nullptr;
     std::vector<Event> events;       // SFX / 画面 / 场景请求 / 过场效果（供 harness 断言）
     // GameSession 注入：0x45d150 淡入淡出 / 0x41a390 Loading + 0x418ba0 过场
     std::function<void(i32 kind, i32 duration, u32 color)> on_screen_fade;
     std::function<void()> on_transition_effect;
+    std::function<AnmFile*()> load_help_anm;  // 0x42e760：help.anm
 
     void activate(AnmFile* title, AnmFile* title_v, AnmFile* ascii, GameGlobals& g) {
+        close_help();
+        auto fade = on_screen_fade;
+        auto transition = on_transition_effect;
+        auto help_loader = load_help_anm;
+        auto replay_dir = replay_directory;
         *this = TitleScene{};
         title_file = title;
         title_v_file = title_v;
         ascii_file = ascii;
         globals = &g;
         screen = kNone;
+        on_screen_fade = std::move(fade);
+        on_transition_effect = std::move(transition);
+        load_help_anm = std::move(help_loader);
+        replay_directory = std::move(replay_dir);
     }
     bool live() const { return title_file != nullptr; }
 
@@ -86,6 +99,7 @@ public:
     void update(AnmManager& anm, const InputState& input);
     // 主菜单空闲 demo 门控（0x708 / bit6 / 下标 %3）；供单测与 update 共用
     void tick_idle_demo(const InputState& input);
+    void close_help();  // 释放标题 Manual 的 HelpScreen
 
 private:
     // 0x44a560 / 0x44a5e0
@@ -112,6 +126,7 @@ private:
     void update_stage(AnmManager& anm, const InputState& input);         // 0x450ef0
     void update_option(AnmManager& anm, const InputState& input);        // 0x44c570
     void update_replay(AnmManager& anm, const InputState& input);        // 0x451750
+    void update_manual(AnmManager& anm, const InputState& input);        // 0x4545a0
     void update_stub(AnmManager& anm, const InputState& input);          // 待还原画面：取消回上层
     void request_game(i32 stage, i32 table);                             // DAT_004c17c4 = 7 等
     void transition_effect();                                            // 0x41a390 + 0x418ba0
