@@ -67,3 +67,15 @@ test('ending-smoke: ExtraEnding goes straight to title', needDat, () => {
   assert.equal(header.title_live, 1);
   assert.equal(header.scene, 4);
 });
+
+test('ending-script: mash through staff returns to title', needDat, () => {
+  // staff 时刻到 ~2940；边沿确认跳过等待后约 3140 帧剧本结束 → 场景 4
+  const inject = Array.from({length: 3140}, (_, i) => i % 2 === 0 ? `${i}:0x1` : null).filter(Boolean);
+  const out = run(['ending-smoke', dat, '3140', 'noskip=1', 'diff=1', ...inject]);
+  assert.ok(out.includes('event staff'));
+  assert.ok(out.includes('event end'));
+  assert.match(out, /finished=1/);
+  assert.match(out, /scene=4/);
+  assert.match(out, /title_live=1/);
+  assert.match(out, /msg=staff2\.msg/);
+});
