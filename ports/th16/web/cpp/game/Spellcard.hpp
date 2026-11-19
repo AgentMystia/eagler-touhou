@@ -82,6 +82,8 @@ struct Spellcard {
     void start(i32 spell_id, const char* spell_name, i32 limit, i32 anm_index);
     // 0x417930
     void update(float game_speed);
+    // 0x417bc0：帧泵侧实时计时（QPC）；无墙钟时结束写入 timed_frames，time_record 保持 0 → HUD 999.99
+    void tick_realtime();
     // 0x4182f0
     void end();
     // 0x417d70（绘制链 0xc）：符卡进行中在名牌 VM（ascii.anm 1）旁入队奖励分（或已失去奖励的 "$"）与取得 / 挑战数

@@ -516,6 +516,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"anm-draw-screen-sprite", 0x465C40, "game/AnmRenderer.cpp AnmRenderer::draw_screen_sprite（轴对齐四角 + submit_screen_quad 像素对齐，不判可见位）"},
     {"msg-text-draw", 0x46D990, "game/TextPaint.cpp text_paint_vm（对话行：取精灵矩形、置 flags_lo bit0、入队 text_into_texture；GDI 写入由宿主刷）"},
     {"spell-name-text-draw", 0x46DAB0, "game/TextPaint.cpp text_paint_vm_centered（符卡名居中；Spellcard::start 调用）"},
+    {"spell-realtime", 0x417BC0, "game/Spellcard.cpp Spellcard::tick_realtime（帧泵侧；无 QPC 时 time_record=0→HUD 999.99）"},
     {"text-gdi-blit", 0x459240, "sdl/FontPainter.cpp FontPainter::blit（0x459240：字号表 DAT_00491b68、阴影 TextOut、D3DXLoadSurfaceFromMemory → 纹理脏矩形）"},
     {"stage-clear", 0x42E150, "game/Gui.cpp Gui::stage_clear（MSG op 21 / 0x429ff0(-2)：非练习 0x42c070 奖励、0x42ca80 子机收拢、普通模式 1..5 面场景请求 0xc + 关卡号 +1 + 练习解锁位；练习 0x43f500；6·Extra 面 flags 0x4000 + 残机 × 5 + 残弹 奖励 + 通关记录；回放 0x43f240）"},
     {"game-manager-ending", 0x42D7B0, "game/GameManager.cpp GameManager::update（flags 0x4000：+0xb0 过 0x17b → 场景 0xf / 0x10；回放 → 0x43f240）"},
