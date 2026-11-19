@@ -401,6 +401,8 @@ constexpr AddressAnchor kAnchors[] = {
     {"title-stage-scores", 0x4513C0, "game/TitleScene.cpp draw_stage_practice_scores（Stage 1..6 练习最高分）"},
     {"title-player-data-draw", 0x453030, "game/TitleScene.cpp draw_player_data（Player Data 排行榜 Ascii）"},
     {"title-replay-list-draw", 0x451D50, "game/TitleScene.cpp draw_replay_list（Replay 页 25 槽 Ascii）"},
+    {"title-name-entry", 0x4532F0, "game/TitleScene.cpp update_name_entry（title_origin=3 → 画面 0xe）"},
+    {"title-name-entry-draw", 0x4538B0, "game/TitleScene.cpp draw_player_data（通关登记榜）"},
     {"score-file", 0x4497E0, nullptr},       // scoreth16.dat 读写
     {"replay-file", 0x4403C5, "game/ReplayFile.cpp 路径格式 th16_%.2d.rpy / replay/%s（宿主拼路径）"},
     {"replay-load", 0x448C10, "game/ReplayFile.cpp ReplayFile::open（t16r 头、双重 0x402220、LZSS、段表）"},

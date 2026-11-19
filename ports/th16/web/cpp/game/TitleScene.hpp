@@ -35,7 +35,8 @@ class TitleScene {
 public:
     enum Screen : i32 {
         kNone = 0, kMainMenu = 1, kFinished = 2, kOption = 3, kKeyConfig = 4, kDifficulty = 5, kShot = 6,
-        kSeason = 7, kStage = 8, kScore = 0xa, kReplay = 0xb, kMusicRoom = 0xd, kManual = 0x10,
+        kSeason = 7, kStage = 8, kScore = 0xa, kReplay = 0xb, kMusicRoom = 0xd,
+        kNameEntry = 0xe, kNameConfirm = 0xf, kManual = 0x10,
         kSpellPractice = 0x11, kSpellList = 0x12, kSpellShot = 0x13, kSpellStart = 0x14,
     };
     static constexpr i32 kVmTable = 0x150;
@@ -87,6 +88,11 @@ public:
     MenuCursor score_page_cursor;    // +0x1d4：成绩翻页
     i32 key_bind_slot = -1;          // Key Config：正在捕获的槽 0..4；-1=无
     i32 pending_scancode = -1;       // 宿主注入下一键（≥0 时 0x44f710 写入）
+    char name_entry[9] = "        "; // +0x5a48：通关名字输入缓冲
+    i32 name_cursor = 0;             // +0x5a54：名字光标
+    i32 name_pick = 0;               // +0x5a5c：字符表光标
+    i32 name_rank = -1;              // 插入排名（<0 未入榜）
+    i32 name_no_rank = 0;            // +0x5a58：1=未入榜
     GameGlobals* globals = nullptr;
     std::vector<Event> events;       // SFX / 画面 / 场景请求 / 过场效果（供 harness 断言）
     // GameSession 注入：0x45d150 淡入淡出 / 0x41a390 Loading + 0x418ba0 过场
@@ -164,6 +170,7 @@ private:
     void update_spell_shot(AnmManager& anm, const InputState& input);    // 0x456a20（条目/机体；非 Extra→0x14）
     void update_spell_start(AnmManager& anm, const InputState& input);   // 0x455d50（最终确认开战）
     void update_score(AnmManager& anm, const InputState& input);         // 0x452330 Player Data
+    void update_name_entry(AnmManager& anm, const InputState& input);    // 0x4532f0 通关名字输入
     void update_key_config(AnmManager& anm, const InputState& input);    // 0x44e930
     void update_stub(AnmManager& anm, const InputState& input);          // 待还原画面：取消回上层
     void request_game(i32 stage, i32 table);                             // DAT_004c17c4 = 7 等

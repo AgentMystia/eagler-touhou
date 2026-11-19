@@ -498,6 +498,12 @@ test('Spell List lock (0x456060): confirm locked slot plays sfx 16', needDat, ()
   assert.equal(out.header.screen, 0x12, 'stays on list when locked');
 });
 
+test('title_origin=3: name-entry screen 0xe (0x4532f0)', needDat, () => {
+  const out = parse(run(['scene-boot', dat, String(MENU_LIVE + 20), 'skip', 'origin=3']));
+  assert.equal(out.header.screen, 0xe);
+  assert.ok(out.events.some(e => e[0] === 'name-entry'));
+});
+
 test('Player Data (0x452330): cancel returns to the main menu', needDat, () => {
   const t = MAIN + 1;
   const downs = Array.from({length: 4}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Score/Player Data(5)
