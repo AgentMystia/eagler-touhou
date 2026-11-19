@@ -54,6 +54,8 @@ public:
         i32 count = 0;
     };
     static bool burst_geometry(const AnmVm& vm, BurstGeometry& out);
+    // 0x4073a0（绘制钩子 1）：按 mode 可能先画一张单色条带，再 0x468490 画 4 个面板与覆盖 VM
+    static void transition_draw(AnmVm& vm, class AnmRenderer& renderer, u32 width, u32 height);
 
     AnmFile* effect_anm = nullptr;   // +0x0c
     AnmFile* bullet_anm = nullptr;   // +0x10
@@ -76,6 +78,17 @@ private:
     int ring_update(AnmVm& vm);               // 0x405700
     void ring_deleted(AnmVm& vm);              // 0x405ed0
     void ring_interrupted(AnmVm& vm, i32 v);   // 0x405f20
+
+    // 0x4071a0 分配的 0x1df4 字节缓冲：4 个面板 VM（脚本 3..6）+ 覆盖 VM（脚本 0xc5）+ mode / 帧计数
+    struct Transition {
+        AnmVm panels[4];             // +0x000
+        AnmVm overlay;               // +0x17f0
+        i32 mode = 0;                // +0x1dec：中断 7/8/9/10 写入
+        i32 frames = 0;              // +0x1df0：每帧 +1
+    };
+    void transition_init(AnmVm& vm);                 // 0x4071a0
+    int transition_update(AnmVm& vm);                // 0x407330
+    void transition_interrupted(AnmVm& vm, i32 v);   // 0x407900
 
     // 0x406510 / 0x406930 分配的 0x318 字节缓冲：64 个光点（位置 + 颜色）、当前发射角与计时
     struct Burst {

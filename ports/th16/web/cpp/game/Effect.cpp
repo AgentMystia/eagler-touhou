@@ -2,6 +2,7 @@
 // 充能环（种类 1）的随机量走 DAT_004a6d88（回放同步 RNG），调用顺序与原版逐一对应；
 // x87 乘加（r × π、200 + r × 200）在 double 内完成后单次舍入到 float（与扩展精度结果一致）。
 #include "Effect.hpp"
+#include "AnmRenderer.hpp"
 
 #include "Motion.hpp"
 #include "Rng.hpp"
@@ -27,6 +28,7 @@ constexpr EffectKind kKindTable[EffectManager::kKinds] = {
 };
 
 // 回调下标 → 种类（update 表 DAT_004919e8：1 → 0x407330，2 → 0x405700，3 → 0x406690，4 → 0x46a0b0 ANM 模式 10）
+constexpr int kTransitionCallback = 1;  // 0x407330 / 0x4073a0 / 空 / 0x407900
 constexpr int kRingCallback = 2;
 constexpr int kBurstCallback = 3;   // delete / interrupt 回调 0x406910 / 0x406920 为空函数
 
@@ -90,10 +92,11 @@ u32 EffectManager::attach(i32 kind, AnmVm* host, const Vec3& pos) {
     }
     if (vm == nullptr) return 0;
     switch (kind) {
+        case 0: transition_init(*vm); break;
         case 1: ring_init(*vm); break;
         case 2: burst_init(*vm, pos, true); break;
         case 3: burst_init(*vm, pos, false); break;
-        default: break;  // 种类 0 的 init（0x4071a0 过场）随其使用场景接入
+        default: break;
     }
     vm->update_callback = k.callbacks[0];
     vm->draw_callback = k.callbacks[1];
@@ -114,6 +117,7 @@ u32 EffectManager::spawn(i32 kind, const Vec3& pos) {
 
 int EffectManager::update(AnmVm& vm) {
     switch (vm.update_callback) {
+        case kTransitionCallback: return transition_update(vm);
         case kRingCallback: return ring_update(vm);
         case kBurstCallback: return burst_update(vm);
         default: return 0;
@@ -121,11 +125,13 @@ int EffectManager::update(AnmVm& vm) {
 }
 
 void EffectManager::deleted(AnmVm& vm) {
+    // 种类 0 的 delete 回调下标 1 对应空 / 仅依赖 vertex_buffer_free；种类 1 走 ring_deleted
     if (vm.delete_callback == kRingCallback) ring_deleted(vm);
 }
 
 void EffectManager::interrupted(AnmVm& vm, i32 value) {
-    if (vm.interrupt_callback == kRingCallback) ring_interrupted(vm, value);
+    if (vm.interrupt_callback == kTransitionCallback) transition_interrupted(vm, value);
+    else if (vm.interrupt_callback == kRingCallback) ring_interrupted(vm, value);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -312,6 +318,129 @@ int EffectManager::burst_update(AnmVm& vm) {
     burst->timer.speed_slot = 0;
     burst->timer.tick(animations_->game_speed);
     return 0;
+}
+
+
+// 0x4071a0：过场种类 init——4 个面板（effect.anm 脚本 3..6）+ 覆盖（脚本 0xc5），中心 (320, 240)
+void EffectManager::transition_init(AnmVm& vm) {
+    auto* tr = new Transition{};
+    vm.vertex_buffer = tr;
+    vm.vertex_buffer_size = 0x1df4;
+    vm.vertex_buffer_free = [](void* p) { delete static_cast<Transition*>(p); };
+    vm.flags_hi &= 0xfff3ffffu;
+    anm_set_layer(vm, 0x28);
+    if (effect_anm == nullptr || animations_ == nullptr) return;
+    for (int i = 0; i < 4; ++i) {
+        AnmVm& panel = tr->panels[i];
+        animations_->init_from_template(*effect_anm, panel, i + 3);
+        panel.root = nullptr;
+        panel.parent = nullptr;
+        animations_->run(panel);
+        panel.entity_offset = {320.0f, 240.0f, 0.0f};
+    }
+    tr->mode = 0;
+    vm.flags_hi = (vm.flags_hi & 0xff93ffffu) | 0x100000u;
+    anm_set_layer(vm, 0x28);
+    for (int i = 0; i < 4; ++i) tr->panels[i].entity_offset = {320.0f, 240.0f, 0.0f};
+    animations_->init_from_template(*effect_anm, tr->overlay, 0xc5);
+    tr->overlay.root = nullptr;
+    tr->overlay.parent = nullptr;
+    animations_->run(tr->overlay);
+}
+
+// 0x407330
+int EffectManager::transition_update(AnmVm& vm) {
+    auto* tr = static_cast<Transition*>(vm.vertex_buffer);
+    if (tr == nullptr || animations_ == nullptr) return 0;
+    int stopped = 0;
+    for (int i = 0; i < 4; ++i) {
+        if (animations_->run(tr->panels[i]) != 0) ++stopped;
+    }
+    if (stopped > 3) return 1;
+    animations_->run(tr->overlay);
+    ++tr->frames;
+    return 0;
+}
+
+// 0x407900
+void EffectManager::transition_interrupted(AnmVm& vm, i32 value) {
+    auto* tr = static_cast<Transition*>(vm.vertex_buffer);
+    if (tr == nullptr || animations_ == nullptr || effect_anm == nullptr) return;
+    switch (value) {
+    case 1:
+        for (int i = 0; i < 4; ++i) {
+            animations_->init_from_template(*effect_anm, tr->panels[i], i + 7);
+            tr->panels[i].root = nullptr;
+            tr->panels[i].parent = nullptr;
+            animations_->run(tr->panels[i]);
+        }
+        return;
+    case 7:
+        tr->mode = 0;
+        anm_set_layer(vm, 0x1e);
+        vm.flags_hi = (vm.flags_hi & 0xff93ffffu) | 0x100000u;
+        break;
+    case 8:
+        tr->mode = 1;
+        anm_set_layer(vm, 0x17);
+        vm.flags_hi = (vm.flags_hi & 0xff9bffffu) | 0x180000u;
+        break;
+    case 9:
+        tr->mode = 0;
+        anm_set_layer(vm, 0x24);
+        vm.flags_hi = (vm.flags_hi & 0xff93ffffu) | 0x100000u;
+        break;
+    case 10:
+        tr->mode = 3;
+        anm_set_layer(vm, 0x1e);
+        vm.flags_hi = (vm.flags_hi & 0xff93ffffu) | 0x100000u;
+        break;
+    default:
+        return;
+    }
+    for (int i = 0; i < 4; ++i) tr->panels[i].entity_offset = {320.0f, 240.0f, 0.0f};
+}
+
+
+// 0x4073a0（绘制钩子 1）
+void EffectManager::transition_draw(AnmVm& vm, AnmRenderer& renderer, u32 width, u32 height) {
+    auto* tr = static_cast<Transition*>(vm.vertex_buffer);
+    if (tr == nullptr || renderer.device == nullptr) return;
+    // 原版：mode==2，或 mode==0 且后缓冲格式 == D3DFMT_A8R8G8B8(0x15)；移植的 RT 恒为等价 32 位色
+    const bool clear_first = tr->mode == 2 || tr->mode == 0;
+    if (clear_first) {
+        renderer.flush();
+        using namespace touhou::graphics;
+        PipelineState& p = renderer.device->pipeline();
+        p.depthTest = false;
+        p.blend = true;
+        p.separateAlphaBlend = true;
+        p.sourceBlend = BlendFactor::One;
+        p.blendEquation = BlendEquation::Add;
+        p.sourceAlphaBlend = BlendFactor::One;
+        p.destinationAlphaBlend = BlendFactor::Zero;
+        p.alphaBlendEquation = BlendEquation::Add;
+        p.alpha.operation = p.color.operation = ColorOperation::First;
+        p.alpha.first = p.color.first = {ArgumentSource::Diffuse};
+        float x0 = 0, y0 = 0, x1 = float(width), y1 = float(height);
+        if (tr->mode == 2) { x0 = 112.0f; y0 = 16.0f; x1 = 512.0f; y1 = 464.0f; }
+        const ScreenColorVertex quad[4] = {
+            {x0, y0, 0, 1, 0}, {x1, y0, 0, 1, 0}, {x0, y1, 0, 1, 0}, {x1, y1, 0, 1, 0},
+        };
+        renderer.device->draw(Topology::Strip, VertexLayout::ScreenColor, 2, quad, sizeof(ScreenColorVertex));
+        p.depthTest = true;
+        p.alpha.operation = p.color.operation = ColorOperation::Multiply;
+        p.alpha.first = p.color.first = {ArgumentSource::Texture};
+        p.destinationBlend = BlendFactor::InverseSourceAlpha;
+        p.sourceAlphaBlend = BlendFactor::One;
+        p.destinationAlphaBlend = BlendFactor::Zero;
+    }
+    for (int i = 0; i < 4; ++i) renderer.draw_vm(tr->panels[i]);
+    if (clear_first) {
+        renderer.device->pipeline().separateAlphaBlend = false;
+        renderer.draw_vm(tr->overlay);
+        renderer.flush();
+    }
 }
 
 }  // namespace th16
