@@ -73,6 +73,13 @@ enum class AnmRenderMode : u32 {
     RectOutline = 0x1b,    // 0x468fc0：矩形线框（线段带 5 点）
 };
 
+// 绘制钩子表 DAT_00491b2c 中由其它子系统实现的项：AnmRenderer::draw_vm 在可见性检查之前按 vm.draw_callback 回调
+struct AnmDrawHooks {
+    virtual ~AnmDrawHooks() = default;
+    // 钩子 5（0x42b5f0 → 0x42b480）：对话文字 VM 在绘制前按文字框子 VM 的当前屏幕位置重定 entity_offset
+    virtual void dialogue_text_follow(AnmVm& vm) = 0;
+};
+
 class AnmRenderer {
 public:
     using PipelineState = touhou::graphics::PipelineState;
@@ -80,6 +87,7 @@ public:
     AnmRenderer(AnmManager& manager, const AnmGeometry& geometry) : manager_(manager), geometry_(geometry) {}
 
     RenderDevice* device = nullptr;   // 为空 = 无绘制（逻辑 harness）
+    AnmDrawHooks* draw_hooks = nullptr;   // Gui（钩子 5）
     std::string error;
 
     // ---- 相机（DAT_004c17b8 / DAT_004c17bc）----
@@ -174,6 +182,8 @@ private:
     void prepare_untextured_draw();
     // 0x464f10
     void apply_vm_state(const AnmVm& vm);
+    // 0x406860 + 0x469890（绘制钩子 3）：爆散粒子折线——VM 世界位置 + 各光点偏移、顶点色，XYZRHW|DIFFUSE 线带
+    void draw_burst_lines(AnmVm& vm);
     // 0x465280 / 0x467410 共用：纹理 key 变化时出批并绑定
     void bind_sprite_texture(const AnmRuntimeSprite& sprite);
     // 0x465a80 内：ALPHAOP / COLOROP = MODULATE（只设一次）

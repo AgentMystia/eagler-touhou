@@ -281,6 +281,15 @@ void EffectManager::burst_init(AnmVm& vm, const Vec3& pos, bool orange) {
     }
 }
 
+bool EffectManager::burst_geometry(const AnmVm& vm, BurstGeometry& out) {
+    const auto* burst = static_cast<const Burst*>(vm.vertex_buffer);
+    if (vm.draw_callback != kBurstCallback || burst == nullptr) return false;
+    out.points = burst->pos;
+    out.colors = burst->color;
+    out.count = burst->timer.current;
+    return true;
+}
+
 // 0x406690：每帧放出第 n 个光点（速度 4 + [0,5)，方向 = 上一方向 + [-π,π)/5），同时把已放出的光点透明度 -0x10；
 // 第 64 帧返回 1 → VM 删除
 int EffectManager::burst_update(AnmVm& vm) {

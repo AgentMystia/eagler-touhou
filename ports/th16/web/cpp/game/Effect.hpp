@@ -47,6 +47,14 @@ public:
     // 种类 2 / 3 经此路径时按原版读到 VM 头部三个字——没有脚本这样做，这里按零向量处理
     void attach_effect(i32 kind, AnmVm& vm) override { attach(kind, &vm, Vec3{}); }
 
+    // 0x406860（绘制钩子 3）读取的爆散粒子折线：已放出的 count 个光点（相对 VM 世界位置）与各自颜色
+    struct BurstGeometry {
+        const Vec2* points = nullptr;
+        const u8 (*colors)[4] = nullptr;
+        i32 count = 0;
+    };
+    static bool burst_geometry(const AnmVm& vm, BurstGeometry& out);
+
     AnmFile* effect_anm = nullptr;   // +0x0c
     AnmFile* bullet_anm = nullptr;   // +0x10
     u32 cursor = 0;                  // +0x18
