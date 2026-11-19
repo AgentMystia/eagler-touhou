@@ -165,6 +165,7 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
     case kOption: update_option(anm, input); break;
     case kReplay: update_replay(anm, input); break;
     case kManual: update_manual(anm, input); break;
+    case kMusicRoom: update_music(anm, input); break;
     case kKeyConfig: update_stub(anm, input); break;
     default: update_stub(anm, input); break;
     }
@@ -1005,7 +1006,85 @@ void TitleScene::update_manual(AnmManager& anm, const InputState& input) {
     }
 }
 
-// 待还原画面（Key Config / Player Data / Music Room / Spell Practice）
+void TitleScene::parse_music_cmt(const char* text, size_t len) {
+    music_tracks.clear();
+    if (text == nullptr || len == 0) return;
+    size_t i = 0;
+    while (i < len) {
+        size_t line = i;
+        while (i < len && text[i] != '\n' && text[i] != '\r') ++i;
+        if (i > line && text[line] == '@') {
+            std::string path(text + line + 1, text + i);
+            while (!path.empty() && (path.back() == ' ' || path.back() == '\t')) path.pop_back();
+            if (!path.empty()) music_tracks.push_back(path);
+        }
+        if (i < len && text[i] == '\r') ++i;
+        if (i < len && text[i] == '\n') ++i;
+    }
+}
+
+// 0x4546f0：Music Room（曲目列表导航 / 确定播 BGM / 取消回主菜单并恢复 th16_01）
+void TitleScene::update_music(AnmManager& anm, const InputState& input) {
+    switch (sub) {
+    case 0: {
+        if (vm[kLeafEmitter] == 0 && ascii_file) spawn_into(anm, kLeafEmitter, *ascii_file, kLeafEmitterScript);
+        if (title_file) spawn_into(anm, 0x6e, *title_file, 0x6e);  // +0x478
+        if (music_tracks.empty()) {
+            for (int n = 1; n <= 17; ++n) {
+                char buf[32];
+                std::snprintf(buf, sizeof(buf), "bgm/th16_%02d", n);
+                music_tracks.emplace_back(buf);
+            }
+        }
+        cursor.count = i32(music_tracks.size());
+        cursor.wrap = true;
+        cursor.set(0);
+        music_scroll = 0;
+        set_sub(1);
+        events.push_back({"music", i32(music_tracks.size())});
+        break;
+    }
+    case 1:
+        if (timer > 4) set_sub(2);
+        break;
+    case 2: {
+        const i32 prev = cursor.index;
+        const u32 edge = input.pressed | input.repeat;
+        if (edge & InputState::kUp) cursor.move(-1);
+        if (edge & InputState::kDown) cursor.move(1);
+        if (cursor.index != prev) {
+            sfx(10);
+            if (cursor.index < music_scroll) music_scroll = cursor.index;
+            else if (cursor.index >= music_scroll + 10) music_scroll = cursor.index - 9;
+        }
+        if (input.pressed & InputState::kConfirmMask) {
+            if (cursor.index >= 0 && cursor.index < i32(music_tracks.size())) {
+                events.push_back({"bgm", cursor.index});
+                // 路径事件：用正数下标；具体名由 harness 侧查 music_tracks
+            }
+        }
+        if (input.pressed & InputState::kCancelMask) {
+            sfx(9);
+            set_sub(3);
+        }
+        break;
+    }
+    case 3:
+        if (timer > 9) {
+            dismiss(anm, 0x6e);
+            dismiss(anm, kLeafEmitter);
+            set_screen(kMainMenu);
+            cursor.pop();
+            events.push_back({"bgm-default", 1});  // FUN_0043c370(0,"th16_01")
+            events.push_back({"screen", screen});
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+// 待还原画面（Key Config / Player Data / Spell Practice）
 void TitleScene::update_stub(AnmManager& anm, const InputState& input) {
     (void)anm;
     if (sub == 0) {

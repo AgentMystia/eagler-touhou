@@ -69,6 +69,8 @@ public:
     std::string replay_directory;    // 宿主：th16_XX.rpy 所在目录
     std::string pending_replay_path; // 确认播放：GameSession case 0xd 装载
     HelpScreen* help = nullptr;      // DAT_004a6dd8：标题 Manual 0x4545a0
+    std::vector<std::string> music_tracks;  // musiccmt.txt 的 @bgm/... 路径
+    i32 music_scroll = 0;            // +0x5a44 窗口首项（可见约 10 条）
     GameGlobals* globals = nullptr;
     std::vector<Event> events;       // SFX / 画面 / 场景请求 / 过场效果（供 harness 断言）
     // GameSession 注入：0x45d150 淡入淡出 / 0x41a390 Loading + 0x418ba0 过场
@@ -100,6 +102,7 @@ public:
     // 主菜单空闲 demo 门控（0x708 / bit6 / 下标 %3）；供单测与 update 共用
     void tick_idle_demo(const InputState& input);
     void close_help();  // 释放标题 Manual 的 HelpScreen
+    void parse_music_cmt(const char* text, size_t len);  // musiccmt.txt → music_tracks
 
 private:
     // 0x44a560 / 0x44a5e0
@@ -127,6 +130,7 @@ private:
     void update_option(AnmManager& anm, const InputState& input);        // 0x44c570
     void update_replay(AnmManager& anm, const InputState& input);        // 0x451750
     void update_manual(AnmManager& anm, const InputState& input);        // 0x4545a0
+    void update_music(AnmManager& anm, const InputState& input);         // 0x4546f0
     void update_stub(AnmManager& anm, const InputState& input);          // 待还原画面：取消回上层
     void request_game(i32 stage, i32 table);                             // DAT_004c17c4 = 7 等
     void transition_effect();                                            // 0x41a390 + 0x418ba0
