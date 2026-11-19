@@ -1339,6 +1339,10 @@ void TitleScene::update_spell_shot(AnmManager& anm, const InputState& input) {
         cursor.count = 5;
         cursor.wrap = true;
         cursor.set(0);
+        // 列表槽 id < 0 的项禁用（0x440c00）
+        for (int i = 0; i < 5; ++i) {
+            if (spell_slot_ids[i] < 0) cursor.disable(i);
+        }
         set_sub(1);
         events.push_back({"spell-shot", spell_group});
         [[fallthrough]];
