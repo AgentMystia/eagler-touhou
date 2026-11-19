@@ -21,6 +21,7 @@
 #include "GameManager.hpp"
 #include "GameMenu.hpp"
 #include "Replay.hpp"
+#include "ReplayFile.hpp"
 #include "ScoreFile.hpp"
 #include "ScreenCompositor.hpp"
 #include "TextPaint.hpp"
@@ -84,6 +85,9 @@ public:
     bool begin_boot();                 // 0x43adc0：ascii + sig，注册启动幕绘制链，请求 Title
     // 跳过启动幕/标题直接进入场景 7（harness）：装启动 bank 后按 globals（stage/shot/season/difficulty）装载关卡
     bool start_game_direct();
+    // 0x448c10：装入回放文件；随后 enter_game(1) / start_game_direct 走回放输入链
+    bool load_replay(const u8* bytes, u32 size);
+    bool load_replay_file(const char* path);
     // 0x43b290：AsciiManager 的更新链 4 与绘制链 0x51 / 0x35 / 0x42 在启动幕装载完成时一起打开
     void enable_ascii_chains();
     // 0x43ce10 case 0xa / 0xb / 0xe / 0x13：GameMenu 重开 / Extra 续关——0x42d200 按请求决定快速重开（bit0）或整体销毁，
@@ -108,6 +112,9 @@ private:
     ChainEntry* replay_draw_chain_ = nullptr;         // 0x47（0x448e90 → 0x4482f0 回放 FPS 文字）
     i32 replay_ff_counter_ = 0;                      // ReplayManager+0x20c：快进 Restart 计数（%8）
     u8 replay_fps_byte_ = 60;                        // ReplayManager+0x208：最近测得帧率（记录链每 30 帧写）
+    ReplayFile replay_file_;                         // 0x448c10 展开后的回放
+    ReplayPlaybackCursor replay_cursor_;             // 当前关卡段读指针（+0xc8 / +0xd8）
+    bool replay_file_loaded_ = false;
     ChainEntry* player_update_chain_ = nullptr;
     ChainEntry* player_draw_chain_ = nullptr;
     ChainEntry* enemy_update_chain_ = nullptr;
@@ -142,6 +149,7 @@ private:
     bool activate_title_menu();
     void leave_title();
     bool enter_game(i32 replay_mode = 0);  // 0x43ce10 case 7 → 0x42d700(回放标志) + 0x42cb60（同步装载）
+    bool bind_loaded_replay_();            // 0x448c10 成功后：选段、记 RNG 种子、复位游标
     bool next_stage();     // 0x43ce10 case 0xc：0x42d780 → 0x42d200（bit1）；0x42d700 + 0x42cb60 换关装载
     void leave_game();     // 0x42d200
     // 0x42cb60 子步骤：0x409db0 Stage（STD + 背景 ANM 槽 3 + (stage & 1)，链 0x11）/ 0x41b340 ECL（链 0x1a）/

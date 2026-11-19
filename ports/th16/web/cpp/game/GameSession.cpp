@@ -28,6 +28,46 @@ bool GameSession::open(const u8* bytes, u32 size) {
     return true;
 }
 
+bool GameSession::load_replay(const u8* bytes, u32 size) {
+    replay_file_loaded_ = false;
+    replay_cursor_ = ReplayPlaybackCursor{};
+    if (!replay_file_.open(bytes, size)) {
+        failure = replay_file_.error;
+        return false;
+    }
+    return bind_loaded_replay_();
+}
+
+bool GameSession::load_replay_file(const char* path) {
+    replay_file_loaded_ = false;
+    replay_cursor_ = ReplayPlaybackCursor{};
+    if (!replay_file_.open_file(path)) {
+        failure = replay_file_.error;
+        return false;
+    }
+    return bind_loaded_replay_();
+}
+
+bool GameSession::bind_loaded_replay_() {
+    replay_file_loaded_ = true;
+    replay_cursor_ = ReplayPlaybackCursor{};
+    for (i32 i = 0; i < i32(replay_file_.stages.size()); ++i) {
+        if (replay_file_.stages[size_t(i)].stage == i16(globals.stage)) {
+            replay_cursor_.stage_index = i;
+            break;
+        }
+    }
+    if (!replay_file_.stages.empty()) {
+        const auto& seg = replay_file_.stages[size_t(replay_cursor_.stage_index)];
+        animations.visual_rng.seed = seg.rng_seed;
+        animations.visual_rng.calls = 0;
+        animations.game_rng.seed = seg.rng_seed;
+        animations.game_rng.calls = 0;
+        if (!seg.fps.empty()) replay_fps_byte_ = seg.fps[0];
+    }
+    return true;
+}
+
 AnmResource* GameSession::resource(const char* name) {
     for (size_t i = 0; i < resource_names_.size(); ++i)
         if (resource_names_[i] == name) return resources_[i].get();
@@ -303,9 +343,18 @@ bool GameSession::create_player() {
     replay_ff_counter_ = 0;
     replay_fps_byte_ = 60;
     replay_record_chain_ = chains.create([this]() -> ChainResult {
-        // 回放模式走 0x448130（输入从录像取）；记录模式走 0x447fd0（抄 held）。文件 I/O 接入前：
-        // 回放侧只推进 +0x20c 供 0x448e40 取模；记录侧仍抄输入并每 30 帧记帧率 60。
+        // 回放 0x448e30→0x448130：从段缓冲取 6 字节；记录 0x448e20→0x447fd0：抄 held。
         if (game.mode == 1) {
+            u32 held = 0, aux0 = 0, aux1 = 0;
+            u8 fps = replay_fps_byte_;
+            if (replay_file_loaded_) {
+                replay_playback_step(replay_file_, replay_cursor_, held, aux0, aux1, fps);
+                replay_fps_byte_ = fps;
+                game_input.held = held & 0xffffu;
+                // 原版另写 DAT_004a52d4 / DAT_004a52d8（aux）；边沿仍走 commit
+                game_input.commit();
+                supervisor.input.held = (supervisor.input.held & ~0xffffu) | (held & 0xffffu);
+            }
             ++replay_ff_counter_;
             return ChainResult::Continue;
         }
