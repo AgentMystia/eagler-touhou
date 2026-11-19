@@ -125,6 +125,13 @@ public:
     MenuCursor score_difficulty_cursor;
     static constexpr i32 kScoreShotLabel = 0xa7;        // title.anm 0xa7 + 机体（+0x55c）
     static constexpr i32 kScoreDifficultyLabel = 0xaf;  // title.anm 0xaf + 难度（+0x57c）
+    // 0x402130 宿主键盘快照（DIK 下标，bit7 = 按下）；空 = 窗口无焦点（原版清零并返回 0）
+    const u8* keyboard_state = nullptr;
+    // Player Data 隐藏键序：DAT_004dfd60 本帧 / DAT_004dfe60 上帧键盘、DAT_004dfa44 进度、DAT_004dfa40 计时（进程全局）
+    u8 secret_keys[256] = {};
+    u8 secret_prev_keys[256] = {};
+    i32 secret_progress = 0;
+    i32 secret_timer = 0;
     MenuCursor score_page_cursor;
     i32 key_bind_slot = -1;          // Key Config：正在捕获的槽 0..4；-1=无
     i32 pending_scancode = -1;       // 宿主注入下一键（≥0 时 0x44f710 写入）
@@ -247,6 +254,7 @@ private:
     void update_score(AnmManager& anm, const InputState& input);         // 0x452330 Player Data
     void refresh_score_spell_page(AnmManager& anm);                       // 0x452c30
     void dismiss_score_page_rows(AnmManager& anm);
+    void update_score_secret(const InputState& input);                    // 0x452330 机体 3 × 难度 4 段
     void update_name_entry(AnmManager& anm, const InputState& input);    // 0x4532f0 通关名字输入
     void update_name_confirm(AnmManager& anm, const InputState& input);  // 0x453c10 通关存回放
     void begin_name_input();                                             // 名字缓冲 ← last_name，字符表光标初值

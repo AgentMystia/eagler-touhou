@@ -667,6 +667,30 @@ test('Player Data (0x452330 / 0x452c30 / 0x453030): spell pages per difficulty, 
   assert.ok(texts(seen).every(l => / color=efefef /.test(l)));
 });
 
+test('Player Data secret (0x452330 / 0x402130 / 0x44a930): Marisa × Extra, typing ILOVEBEER unlocks everything', needDat, () => {
+  const t = MAIN + 1;
+  const downs = Array.from({length: 4}, (_, i) => `${t + i * 2}:${DOWN}`);
+  const ready = t + 8 + 2 + 30;
+  const nav = [...downs, `${t + 10}:${Z}`, `${ready}:${RIGHT}`, `${ready + 2}:${RIGHT}`, `${ready + 4}:${RIGHT}`,
+    `${ready + 6}:${DOWN}`, `${ready + 8}:${DOWN}`, `${ready + 10}:${DOWN}`];
+  const word = [0x17, 0x26, 0x18, 0x2f, 0x12, 0x30, 0x12, 0x12, 0x13];
+  const typed = keys => 'dik=' + keys.map((k, i) => `${ready + 12 + i * 2}:${k}`).join(',');
+  const done = ready + 12 + word.length * 2;
+  const unlocked = run(['scene-boot', dat, String(done + 6), [...nav, `${done + 2}:${Z}`].join(','), typed(word), 'text']);
+  const out = parse(unlocked);
+  assert.equal(out.header.cursor, 3, 'Marisa');
+  assert.deepEqual(out.events.filter(e => e[0] === 'score-unlock'), [['score-unlock', '1']]);
+  assert.ok(out.events.some(e => e[0] === 'sfx' && e[1] === '17'));
+  // 0x44a930 合计块挑战次数 +1 → Extra 符卡页 10 行都按“见过”画（efefef，本机体 0/0）
+  const rows = unlocked.split('\n').filter(l => l.startsWith('text '));
+  assert.equal(rows.length, 10);
+  assert.ok(rows.every(l => / color=efefef /.test(l) && /    0\/   0\]$/.test(l)));
+  // 中途按了别的字母（A）就从头来
+  const wrong = [...word.slice(0, 4), 0x1e, ...word.slice(4)];
+  const reset = parse(run(['scene-boot', dat, String(done + 6), nav.join(','), typed(wrong)]));
+  assert.equal(reset.events.filter(e => e[0] === 'score-unlock').length, 0);
+});
+
 test('chain-demo: priority order, Remove, Restart, enable/disable', () => {
   assert.equal(run(['chain-demo']).trim(), 'BCCA|CA|CD r=1,1,1 count=3');
 });
