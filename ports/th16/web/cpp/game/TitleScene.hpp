@@ -16,6 +16,7 @@
 #pragma once
 #include "AnmManager.hpp"
 #include "GameGlobals.hpp"
+#include "GameMenu.hpp"
 #include "Input.hpp"
 #include "MenuCursor.hpp"
 #include "TextPaint.hpp"
@@ -90,9 +91,18 @@ public:
     i32 pending_scancode = -1;       // 宿主注入下一键（≥0 时 0x44f710 写入）
     char name_entry[9] = "        "; // +0x5a48：通关名字输入缓冲
     i32 name_cursor = 0;             // +0x5a54：名字光标
-    i32 name_pick = 0;               // +0x5a5c：字符表光标
-    i32 name_rank = -1;              // 插入排名（<0 未入榜）
     i32 name_no_rank = 0;            // +0x5a58：1=未入榜
+    MenuCursor name_pick;            // +0x5a5c：字符表光标（count 0x5b，wrap）
+    i32 name_pick_prev = 0;          // +0x5a60
+    i32 name_rank = -1;              // 0x43e250 插入名次（同时写入 cursor；<0 未入榜）
+    // 画面 0xf（0x453c10）：通关后存回放
+    bool save_slot_live[25] = {};    // +0x5b50：th16_01..25.rpy 头是否读到
+    ReplaySummary save_slots[25];    // 槽头摘要（0x447ef0）
+    i32 save_slot_choice = 0;        // +0x5b48：确认的槽（0 起）
+    std::function<bool(int slot, ReplaySummary& out)> read_replay_slot;   // 0x447ef0
+    std::function<bool(int slot, const char* name)> write_replay_slot;    // 0x448400
+    std::function<ReplaySummary()> current_replay_summary;                // DAT_004a6f08 本局回放头
+    std::function<void()> on_replay_full_run;                             // 0x4483b0(1)：重取时间戳、关卡记 8
     GameGlobals* globals = nullptr;
     std::vector<Event> events;       // SFX / 画面 / 场景请求 / 过场效果（供 harness 断言）
     // GameSession 注入：0x45d150 淡入淡出 / 0x41a390 Loading + 0x418ba0 过场
@@ -106,7 +116,15 @@ public:
         auto transition = on_transition_effect;
         auto help_loader = load_help_anm;
         auto replay_dir = replay_directory;
+        auto read_slot = std::move(read_replay_slot);
+        auto write_slot = std::move(write_replay_slot);
+        auto current_summary = std::move(current_replay_summary);
+        auto full_run = std::move(on_replay_full_run);
         *this = TitleScene{};
+        on_replay_full_run = std::move(full_run);
+        read_replay_slot = std::move(read_slot);
+        write_replay_slot = std::move(write_slot);
+        current_replay_summary = std::move(current_summary);
         title_file = title;
         title_v_file = title_v;
         ascii_file = ascii;
@@ -131,6 +149,10 @@ public:
     void draw_player_data(AsciiManager& ascii);
     // 0x451d50：Replay 列表 Ascii（page×25 槽）
     void draw_replay_list(AsciiManager& ascii);
+    // 0x4538b0：画面 0xe 本机体×难度 10 条排名 + 入榜行名字输入
+    void draw_name_entry_ranks(AsciiManager& ascii);
+    // 0x4541b0：画面 0xf 回放槽列表（sub 2）/ 选中槽滑入 + 名字输入（sub 3）
+    void draw_name_confirm(AsciiManager& ascii);
     // 0x4560b0：按难度填 +0x5dd0、刷 +0x740 名 VM（Nothing / No.%3d / ？？？）
     void refresh_spell_slot_names(AnmManager& anm);
     // 主菜单空闲 demo 门控（0x708 / bit6 / 下标 %3）；供单测与 update 共用
@@ -171,6 +193,14 @@ private:
     void update_spell_start(AnmManager& anm, const InputState& input);   // 0x455d50（最终确认开战）
     void update_score(AnmManager& anm, const InputState& input);         // 0x452330 Player Data
     void update_name_entry(AnmManager& anm, const InputState& input);    // 0x4532f0 通关名字输入
+    void update_name_confirm(AnmManager& anm, const InputState& input);  // 0x453c10 通关存回放
+    void begin_name_input();                                             // 名字缓冲 ← last_name，字符表光标初值
+    void navigate_name_pick(const InputState& input);                    // 13 列字符表上下左右
+    // 确认键落一个字符 / 空格 / 退格；返回 false = 退格时已在行首（原版直接 return，不播 7）
+    bool apply_name_pick();
+    void draw_name_input(AsciiManager& ascii, float x, float y);         // 名字 + "_" + 字符表（0x4538b0 / 0x4541b0 共用段）
+    void print_rank_row(AsciiManager& ascii, float y, i32 rank, i32 shot, i32 diff);  // 0x453030 / 0x4538b0 行格式
+    void print_replay_row(AsciiManager& ascii, float y, i32 slot, const ReplaySummary& s, const char* stage);
     void update_key_config(AnmManager& anm, const InputState& input);    // 0x44e930
     void update_stub(AnmManager& anm, const InputState& input);          // 待还原画面：取消回上层
     void request_game(i32 stage, i32 table);                             // DAT_004c17c4 = 7 等

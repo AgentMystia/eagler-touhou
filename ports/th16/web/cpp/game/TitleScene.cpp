@@ -144,9 +144,13 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
             if (decor) anm.interrupt_now(decor, 3);
             set_screen(kDifficulty);
         } else if (origin == 3) {
-            // 通关回标题：名字输入 / 排名登记（0x4532f0）
-            globals->title_origin = 1;
+            // 通关回标题：压栈主光标后落入 case 0xe 名字输入 / 排名登记（0x4532f0）
+            cursor.count = 10;
+            cursor.set(0);
+            cursor.push();
             set_screen(kNameEntry);
+            globals->title_origin = 1;
+            update_name_entry(anm, input);
         } else {
             globals->title_origin = 1;
             set_screen(kMainMenu);
@@ -179,7 +183,7 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
     case kSpellStart: update_spell_start(anm, input); break;
     case kScore: update_score(anm, input); break;
     case kNameEntry: update_name_entry(anm, input); break;
-    case kNameConfirm: update_stub(anm, input); break;  // 0x4541b0 确认页：先走 stub 回上层
+    case kNameConfirm: update_name_confirm(anm, input); break;
     case kKeyConfig: update_key_config(anm, input); break;
     default: update_stub(anm, input); break;
     }
@@ -315,7 +319,8 @@ void TitleScene::draw(AsciiManager& ascii) {
     switch (screen) {
     case kStage: draw_stage_practice_scores(ascii); break;  // 0x4513c0
     case kScore: draw_player_data(ascii); break;            // 0x453030
-    case kNameEntry: draw_player_data(ascii); break;        // 0x4538b0：通关登记榜（与 Player Data 同行格式）
+    case kNameEntry: draw_name_entry_ranks(ascii); break;   // 0x4538b0
+    case kNameConfirm: draw_name_confirm(ascii); break;     // 0x4541b0
     case kReplay: draw_replay_list(ascii); break;           // 0x451d50
     case kSpellList:
     case kSpellShot:
@@ -364,18 +369,58 @@ void TitleScene::draw_stage_practice_scores(AsciiManager& ascii) {
     ascii.style.shadow = false;
 }
 
-void TitleScene::draw_player_data(AsciiManager& ascii) {
-    // 0x453030 / 0x4538b0：sub==2 时打 10 条排名（Player Data page0 或通关登记）
-    if (sub != 2) return;
-    if (scores == nullptr) return;
-    if (screen == kScore && score_page_cursor.index != 0) return;
+namespace {
+// gmtime 拆分（UTC）：原版排名 / 回放列表的 年 / 月 / 日 / 时 / 分
+struct ClockFields { i32 year, month, day, hour, minute; };
+ClockFields clock_fields(i64 sec) {
+    const i64 days = sec / 86400;
+    const i32 tod = int(sec % 86400);
+    i64 z = days + 719468;
+    const i64 era = (z >= 0 ? z : z - 146096) / 146097;
+    const i64 doe = z - era * 146097;
+    const i64 yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    const i64 doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const i64 mp = (5 * doy + 2) / 153;
+    const i32 day = i32(doy - (153 * mp + 2) / 5 + 1);
+    const i32 month = i32(mp < 10 ? mp + 3 : mp - 9);
+    const i32 year = i32(yoe + era * 400 + (month <= 2 ? 1 : 0));
+    return {year, month, day, tod / 3600, (tod / 60) % 60};
+}
 
+// 名字输入字符表（0x492840）；下标 0x58 / 0x59 / 0x5a 为空格 / 退格 / 结束，绘制时换成 ascii 字形 0x81 / 0x7f / 0x80
+constexpr const char* kNameChars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-=.,!?@:;[]()_/{}|~^#$%&*   ";
+constexpr i32 kNameCols = 13;
+constexpr i32 kNameCharCount = 0x5b;
+constexpr i32 kNameSpace = 0x58, kNameBack = 0x59, kNameEnd = 0x5a;
+constexpr u32 kRowHighlight = 0xffffff00u, kRowNormal = 0xff808080u;
+}  // namespace
+
+void TitleScene::print_rank_row(AsciiManager& ascii, float y, i32 rank, i32 shot, i32 diff) {
     static constexpr const char* kSeasonShort[5] = {"Sp", "Sm", "At", "Wt", "Fl"};
     static constexpr const char* kStageShort[8] = {"tst", "St1", "St2", "St3", "St4", "St5", "St6", "Ex "};
+    const ScoreEntry& e = scores->ranks[shot][diff][rank];
+    if (e.time == 0) {
+        ascii.printf(Vec3{22.0f, y, 0.0f}, "%2d  %s  %9ld%d  ----/--/-- --:-- Season  Stage -  ---%%",
+                     rank + 1, e.name, long(e.score), int(e.continues));
+        return;
+    }
+    const ClockFields t = clock_fields(e.time);
+    const char* season = (e.season >= 0 && e.season < 5) ? kSeasonShort[e.season] : "--";
+    const char* stage = (e.stage >= 0 && e.stage < 8) ? kStageShort[e.stage] : "-- ";
+    ascii.printf(Vec3{22.0f, y, 0.0f}, "%2d  %s  %9ld%d  %.4d/%.2d/%.2d %.2d:%.2d %s  %s  %2.1f%%",
+                 rank + 1, e.name, long(e.score), int(e.continues),
+                 t.year, t.month, t.day, t.hour, t.minute, season, stage, double(e.slowdown));
+}
 
-    const i32 shot = (screen == kNameEntry && globals != nullptr) ? (globals->shot + globals->shot_aux)
-                                                                  : score_shot_cursor.index;
-    const i32 diff = (screen == kNameEntry && globals != nullptr) ? globals->difficulty : cursor.index;
+void TitleScene::draw_player_data(AsciiManager& ascii) {
+    // 0x453030：sub==2 时打 10 条排名（Player Data page0）
+    if (sub != 2) return;
+    if (scores == nullptr) return;
+    if (score_page_cursor.index != 0) return;
+
+    const i32 shot = score_shot_cursor.index;
+    const i32 diff = cursor.index;
     if (shot < 0 || shot >= ScoreFile::kAllShotsBlock) return;
     if (diff < 0 || diff >= ScoreFile::kDifficulties) return;
 
@@ -384,34 +429,7 @@ void TitleScene::draw_player_data(AsciiManager& ascii) {
     ascii.style.group = AsciiManager::Group::Ui;
     for (int rank = 0; rank < ScoreFile::kRanks; ++rank) {
         ascii.style.color = (~u32(rank * 0x10)) | 0xffffff00u;
-        const ScoreEntry& e = scores->ranks[shot][diff][rank];
-        if (e.time == 0) {
-            ascii.printf(Vec3{22.0f, y, 0.0f},
-                         "%2d  %s  %9ld%d  ----/--/-- --:-- Season  Stage -  ---%%",
-                         rank + 1, e.name, long(e.score), int(e.continues));
-        } else {
-            // UTC 拆年/月/日/时/分（与 CRT gmtime 列表口径一致）
-            const i64 sec = e.time;
-            const i64 days = sec / 86400;
-            const i32 tod = int(sec % 86400);
-            const i32 hour = tod / 3600;
-            const i32 minute = (tod / 60) % 60;
-            i64 z = days + 719468;
-            const i64 era = (z >= 0 ? z : z - 146096) / 146097;
-            const i64 doe = z - era * 146097;
-            const i64 yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-            const i64 doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-            const i64 mp = (5 * doy + 2) / 153;
-            const i32 day = i32(doy - (153 * mp + 2) / 5 + 1);
-            const i32 month = i32(mp < 10 ? mp + 3 : mp - 9);
-            const i32 year = i32(yoe + era * 400 + (month <= 2 ? 1 : 0));
-            const char* season = (e.season >= 0 && e.season < 5) ? kSeasonShort[e.season] : "--";
-            const char* stage = (e.stage >= 0 && e.stage < 8) ? kStageShort[e.stage] : "-- ";
-            ascii.printf(Vec3{22.0f, y, 0.0f},
-                         "%2d  %s  %9ld%d  %.4d/%.2d/%.2d %.2d:%.2d %s  %s  %2.1f%%",
-                         rank + 1, e.name, long(e.score), int(e.continues),
-                         year, month, day, hour, minute, season, stage, double(e.slowdown));
-        }
+        print_rank_row(ascii, y, rank, shot, diff);
         y += 18.0f;
     }
 
@@ -420,6 +438,93 @@ void TitleScene::draw_player_data(AsciiManager& ascii) {
     ascii.printf(Vec3{328.0f, 378.0f, 0.0f}, "    %5d", int(scores->clears[shot][diff]));
     ascii.printf(Vec3{328.0f, 396.0f, 0.0f}, "%3d:%.2d:%.2d", 0, 0, 0);
     ascii.printf(Vec3{328.0f, 414.0f, 0.0f}, "    %5d", int(scores->no_continue_clears[shot][diff]));
+    ascii.style.shadow = false;
+}
+
+void TitleScene::draw_name_input(AsciiManager& ascii, float x, float y) {
+    ascii.style.color = 0xffffffffu;
+    ascii.printf(Vec3{x, y, 0.0f}, "%s", name_entry);
+    float ux = float(name_cursor * 9) + x;
+    if (name_cursor == 8) ux -= 9.0f;
+    ascii.style.color = kRowHighlight;
+    ascii.printf(Vec3{ux, y, 0.0f}, "_");
+    ascii.style.color = 0xffffffffu;
+    Vec3 cell{212.0f, 360.0f, 0.0f};
+    for (i32 i = 0; i < kNameCharCount; ++i) {
+        ascii.style.color = name_pick.index == i ? kRowHighlight : kRowNormal;
+        const int glyph = i < kNameSpace ? int(kNameChars[i]) : i == kNameSpace ? 0x81 : i == kNameBack ? 0x7f : 0x80;
+        ascii.printf(cell, "%c", glyph);
+        if (i % kNameCols == kNameCols - 1) {
+            cell.x = 212.0f;
+            cell.y += 16.0f;
+        } else {
+            cell.x += 18.0f;
+        }
+    }
+    ascii.style.color = 0xffffffffu;
+}
+
+void TitleScene::draw_name_entry_ranks(AsciiManager& ascii) {
+    // 0x4538b0：入榜时当前名次白、其余 0xff808040；未入榜按名次渐变（同 0x453030）。原版不复位影子标志
+    if (sub != 2 || scores == nullptr || globals == nullptr) return;
+    const i32 shot = globals->shot + globals->shot_aux;
+    const i32 diff = globals->difficulty;
+    if (shot < 0 || shot >= ScoreFile::kAllShotsBlock) return;
+    if (diff < 0 || diff >= ScoreFile::kDifficulties) return;
+
+    ascii.style.shadow = true;
+    float y = 160.0f;
+    for (i32 rank = 0; rank < ScoreFile::kRanks; ++rank) {
+        if (name_no_rank == 0) ascii.style.color = cursor.index == rank ? 0xffffffffu : 0xff808040u;
+        else ascii.style.color = (~u32(rank * 0x10)) | 0xffffff00u;
+        print_rank_row(ascii, y, rank, shot, diff);
+        y += 18.0f;
+    }
+    if (name_no_rank == 0) draw_name_input(ascii, 58.0f, float(cursor.index) * 18.0f + 160.0f);
+}
+
+void TitleScene::print_replay_row(AsciiManager& ascii, float y, i32 slot, const ReplaySummary& s, const char* stage) {
+    // 0x4541b0 行：.rdata 0x491970 机体 / 0x491950 难度全名 / 0x4918f0 关卡（下标 8 = "All"）
+    static constexpr const char* kShot[4] = {"Reimu  ", "Cirno  ", "Aya    ", "Marisa "};
+    static constexpr const char* kDiff[6] = {"Easy   ", "Normal ", "Hard   ", "Lunatic", "Extra  ", "O.D.   "};
+    static constexpr const char* kStage[9] = {"tst", "St1", "St2", "St3", "St4", "St5", "St6", "Ex ", "All"};
+    const i32 shot_i = s.shot + s.shot_aux;
+    const char* shot = (shot_i >= 0 && shot_i < 4) ? kShot[shot_i] : "";
+    const char* diff = (s.difficulty >= 0 && s.difficulty < 6) ? kDiff[s.difficulty] : "";
+    if (stage == nullptr) stage = (s.stage >= 0 && s.stage < 9) ? kStage[s.stage] : "";
+    const ClockFields t = clock_fields(s.timestamp);
+    ascii.printf(Vec3{58.0f, y, 0.0f}, "No.%.2d %s %.2d/%.2d/%.2d %.2d:%.2d %s %s %s %2.1f%%", slot, s.name,
+                 t.year % 100, t.month, t.day, t.hour, t.minute, shot, diff, stage, double(s.slow_rate));
+}
+
+void TitleScene::draw_name_confirm(AsciiManager& ascii) {
+    // 0x4541b0
+    if (sub == 2) {
+        ascii.style.shadow = true;
+        float y = 80.0f;
+        for (i32 i = 0; i < 0x19; ++i) {
+            ascii.style.color = cursor.index == i ? kRowHighlight : kRowNormal;
+            if (save_slot_live[i]) {
+                print_replay_row(ascii, y, i + 1, save_slots[i], nullptr);
+            } else {
+                ascii.printf(Vec3{58.0f, y, 0.0f}, "No.%.2d -------- --/--/-- --:-- ------- ------- --- ---%%", i + 1);
+            }
+            y += 15.0f;
+        }
+    } else if (sub == 3) {
+        float y = 240.0f;
+        if (timer < 10) {
+            const float from = float(save_slot_choice * 15 + 0x50);
+            y = ((10.0f - float(timer)) * (from - 240.0f)) / 10.0f + 240.0f;
+        }
+        ReplaySummary current = current_replay_summary ? current_replay_summary() : ReplaySummary{};
+        std::memcpy(current.name, ScoreFile::kDefaultName, 9);
+        print_replay_row(ascii, y, save_slot_choice + 1, current, "All");
+        if (timer >= 10) draw_name_input(ascii, 112.0f, 240.0f);
+    } else {
+        return;
+    }
+    ascii.style.color = 0xffffffffu;
     ascii.style.shadow = false;
 }
 
@@ -1969,101 +2074,227 @@ void TitleScene::update_key_config(AnmManager& anm, const InputState& input) {
     }
 }
 
+void TitleScene::begin_name_input() {
+    name_pick.set(0);
+    name_pick.count = kNameCharCount;
+    name_pick.wrap = true;
+    std::memcpy(name_entry, scores != nullptr ? scores->last_name : ScoreFile::kDefaultName, 9);
+    if (std::strcmp(name_entry, ScoreFile::kDefaultName) != 0) name_pick.move(-1);
+    i32 len = 8;
+    while (len > 0 && name_entry[len - 1] == ' ') --len;
+    name_cursor = len;
+}
+
+void TitleScene::navigate_name_pick(const InputState& input) {
+    const u32 edge = input.pressed | input.repeat;
+    name_pick_prev = name_pick.index;
+    if (edge & InputState::kUp) name_pick.move(-kNameCols);
+    if (edge & InputState::kDown) name_pick.move(kNameCols);
+    if (edge & InputState::kLeft) name_pick.move(name_pick.index % kNameCols == 0 ? kNameCols - 1 : -1);
+    if (edge & InputState::kRight) name_pick.move(name_pick.index % kNameCols == kNameCols - 1 ? -(kNameCols - 1) : 1);
+    if (name_pick_prev != name_pick.index) sfx(10);
+}
+
+bool TitleScene::apply_name_pick() {
+    const i32 pick = name_pick.index;
+    if (pick <= kNameSpace) {
+        const char c = pick < kNameSpace ? kNameChars[pick] : ' ';
+        if (name_cursor < 8) {
+            name_entry[name_cursor] = c;
+            if (++name_cursor > 7) name_pick.set(kNameEnd);
+        } else {
+            name_entry[name_cursor - 1] = c;
+        }
+    } else if (pick == kNameBack) {
+        if (name_cursor == 0) return false;
+        --name_cursor;
+        name_entry[name_cursor] = ' ';
+    }
+    return true;
+}
+
 // 0x4532f0：通关回标题的名字输入 / 排名登记
 void TitleScene::update_name_entry(AnmManager& anm, const InputState& input) {
-    static constexpr const char* kNameChars =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-=.,!?@:;[]()_/{}|~^#$%&*   ";
-    static constexpr int kCols = 13;
-    static constexpr int kSpace = 0x58, kBack = 0x59, kEnd = 0x5a;
-
     switch (sub) {
     case 0: {
-        std::memcpy(name_entry, ScoreFile::kDefaultName, 9);
-        if (scores != nullptr) std::memcpy(name_entry, scores->last_name, 9);
-        name_cursor = 0;
-        while (name_cursor < 8 && name_entry[name_cursor] != ' ' && name_entry[name_cursor] != '\0') ++name_cursor;
-        name_pick = 0;
-        name_no_rank = 0;
+        cursor.count = 0x1e;
+        events.push_back({"bgm-name-entry", 0});  // FUN_0043c370(0,"th128_08")
+        if (vm[kLeafEmitter] == 0 && ascii_file) spawn_into(anm, kLeafEmitter, *ascii_file, kLeafEmitterScript);
+        if (title_file) spawn_into(anm, 0x6f, *title_file, 0x6f);
+        set_sub(1);
+        const i32 shot = globals != nullptr ? globals->shot + globals->shot_aux : 0;
+        const i32 diff = globals != nullptr ? globals->difficulty : 0;
+        if (title_file) spawn_into(anm, shot + 0xa7, *title_file, shot + 0xa7);
+        if (title_file) spawn_into(anm, diff + 0xaf, *title_file, diff + 0xaf);
+        if (anm.find(vm[kDecor61]) == nullptr && title_file) {
+            spawn_into(anm, kDecor61, *title_file, kDecor61);
+            anm.interrupt_now(vm[kDecor61], 3);
+        }
         name_rank = -1;
         if (scores != nullptr && globals != nullptr) {
-            const i32 shot = globals->shot + globals->shot_aux;
-            name_rank = scores->insert_rank(shot, globals->difficulty, u32(globals->score),
-                                            u8(globals->stage), u8(globals->continues), globals->season, 0,
-                                            /*time*/ 1);
-            if (name_rank < 0) name_no_rank = 1;
+            // 0x43e250 期间 DAT_004a5790 = 8（入榜关卡记 "All"），之后关卡 / 关卡表复位
+            name_rank = scores->insert_rank(shot, diff, u32(globals->score), 8, u8(globals->continues),
+                                            globals->season, 0, 0);
+            globals->stage = 0;
+            globals->stage_copy = 0;
         }
-        if (title_file && vm[0x6f] == 0) spawn_into(anm, 0x6f, *title_file, 0x6f);
-        set_sub(1);
+        if (name_rank < 0) {
+            cursor.set(-1);
+            name_no_rank = 1;
+        } else {
+            timer = 0;
+            cursor.set(name_rank);
+            begin_name_input();
+            name_no_rank = 0;
+        }
         events.push_back({"name-entry", name_rank});
         [[fallthrough]];
     }
     case 1:
-        if (timer > 10) set_sub(2);
+        if (timer > 6) set_sub(2);
         break;
-    case 2: {
-        const u32 edge = input.pressed | input.repeat;
-        const i32 prev = name_pick;
-        if (edge & InputState::kUp) name_pick = (name_pick + 0x5b - kCols) % 0x5b;
-        if (edge & InputState::kDown) name_pick = (name_pick + kCols) % 0x5b;
-        if (edge & InputState::kLeft) {
-            if (name_pick % kCols == 0) name_pick += kCols - 1;
-            else --name_pick;
-        }
-        if (edge & InputState::kRight) {
-            if (name_pick % kCols == kCols - 1) name_pick -= kCols - 1;
-            else ++name_pick;
-        }
-        if (name_pick != prev) sfx(10);
-        if (input.pressed & InputState::kCancelMask) {
-            if (name_cursor > 0) {
-                --name_cursor;
-                name_entry[name_cursor] = ' ';
-                sfx(9);
-            }
-            break;
-        }
-        if ((input.pressed & InputState::kConfirmMask) == 0) break;
-        if (name_pick < kSpace) {
-            if (name_cursor >= 8) name_entry[7] = kNameChars[name_pick];
-            else {
-                name_entry[name_cursor] = kNameChars[name_pick];
-                ++name_cursor;
-            }
-            sfx(7);
-        } else if (name_pick == kSpace) {
-            if (name_cursor >= 8) name_entry[7] = ' ';
-            else {
-                name_entry[name_cursor] = ' ';
-                ++name_cursor;
-            }
-            sfx(7);
-        } else if (name_pick == kBack) {
-            if (name_cursor > 0) {
-                --name_cursor;
-                name_entry[name_cursor] = ' ';
-                sfx(9);
-            }
-        } else if (name_pick == kEnd) {
-            name_entry[8] = '\0';
-            if (scores != nullptr) {
-                std::memcpy(scores->last_name, name_entry, 9);
-                if (name_rank >= 0 && globals != nullptr) {
-                    const i32 shot = globals->shot + globals->shot_aux;
-                    ScoreEntry& e = scores->ranks[shot][globals->difficulty][name_rank];
-                    std::memcpy(e.name, name_entry, 9);
+    case 2:
+        if (name_no_rank == 0) navigate_name_pick(input);
+        if (input.pressed & InputState::kConfirmMask) {
+            if (name_no_rank == 0) {
+                if (name_pick.index == kNameEnd) {
+                    name_entry[8] = '\0';
+                    if (scores != nullptr && globals != nullptr && name_rank >= 0) {
+                        ScoreEntry& e = scores->ranks[globals->shot + globals->shot_aux][globals->difficulty][name_rank];
+                        std::memcpy(e.name, name_entry, 9);
+                    }
+                    if (scores != nullptr) std::memcpy(scores->last_name, name_entry, 9);
+                    events.push_back({"name-done", name_rank});
+                    set_sub(3);
+                } else if (!apply_name_pick()) {
+                    break;
                 }
+            } else {
+                set_sub(3);
             }
-            sfx(0x11);
-            events.push_back({"name-done", name_rank});
+            sfx(7);
+        }
+        if (input.pressed & InputState::kCancelMask) {
+            if (name_no_rank != 0) {
+                set_sub(3);
+                sfx(7);
+                break;
+            }
+            if (name_cursor != 0) {
+                sfx(9);
+                --name_cursor;
+                name_entry[name_cursor] = ' ';
+            }
+        }
+        break;
+    case 3:
+        if (timer > 5) {
+            const i32 shot = globals != nullptr ? globals->shot + globals->shot_aux : 0;
+            const i32 diff = globals != nullptr ? globals->difficulty : 0;
+            dismiss(anm, 0x6f);
+            dismiss(anm, shot + 0xa7);
+            dismiss(anm, diff + 0xaf);
             if (globals != nullptr && globals->continues == 0) {
                 set_screen(kNameConfirm);
-            } else {
-                set_screen(kMainMenu);
+                events.push_back({"screen", screen});
+                break;
             }
+            dismiss(anm, kLeafEmitter);
+            cursor.pop();
+            set_screen(kMainMenu);
+            events.push_back({"bgm-default", 1});  // FUN_0043c370(0,"th16_01")
             events.push_back({"screen", screen});
         }
         break;
+    default:
+        break;
     }
+}
+
+// 0x453c10：未续关通关后存回放（25 槽列表 → 名字输入 → 0x448400 写 th16_%.2d.rpy）
+void TitleScene::update_name_confirm(AnmManager& anm, const InputState& input) {
+    switch (sub) {
+    case 0:
+        cursor.count = 0x19;
+        cursor.set(0);
+        if (globals != nullptr) {
+            globals->stage = 8;
+            globals->stage_copy = 8;
+        }
+        for (i32 i = 0; i < 0x19; ++i) {
+            save_slots[i] = ReplaySummary{};
+            save_slot_live[i] = read_replay_slot && read_replay_slot(i + 1, save_slots[i]);
+        }
+        if (anm.find(vm[kDecor61]) == nullptr && title_file) {
+            spawn_into(anm, kDecor61, *title_file, kDecor61);
+            anm.interrupt_now(vm[kDecor61], 3);
+        }
+        if (title_file) spawn_into(anm, 0x70, *title_file, 0x70);
+        set_sub(1);
+        events.push_back({"replay-save", 0});
+        [[fallthrough]];
+    case 1:
+        if (timer > 6) set_sub(2);
+        break;
+    case 2: {
+        const u32 edge = input.pressed | input.repeat;
+        prev_cursor = cursor.index;
+        if (edge & InputState::kUp) cursor.move(-1);
+        if (edge & InputState::kDown) cursor.move(1);
+        if (prev_cursor != cursor.index) sfx(10);
+        if (input.pressed & InputState::kCancelMask) {
+            set_sub(4);
+            sfx(9);
+        } else if (input.pressed & InputState::kConfirmMask) {
+            save_slot_choice = cursor.index;
+            if (on_replay_full_run) on_replay_full_run();  // 0x4483b0(1)
+            begin_name_input();
+            sfx(7);
+            set_sub(3);
+        }
+        break;
+    }
+    case 3:
+        navigate_name_pick(input);
+        if (input.pressed & InputState::kConfirmMask) {
+            if (name_pick.index == kNameEnd) {
+                sfx(0x11);
+                name_entry[8] = '\0';
+                const i32 slot = cursor.index + 1;
+                if (write_replay_slot) write_replay_slot(slot, name_entry);
+                save_slots[cursor.index] = ReplaySummary{};
+                save_slot_live[cursor.index] = read_replay_slot && read_replay_slot(slot, save_slots[cursor.index]);
+                if (scores != nullptr) std::memcpy(scores->last_name, name_entry, 9);
+                events.push_back({"replay-saved", slot});
+                set_sub(2);
+            } else if (!apply_name_pick()) {
+                break;
+            }
+            sfx(7);
+        }
+        if ((input.pressed & InputState::kCancelMask) == 0) break;
+        if (name_cursor != 0) {
+            sfx(9);
+            --name_cursor;
+            name_entry[name_cursor] = ' ';
+            break;
+        }
+        set_sub(2);
+        break;
+    case 4:
+        if (timer > 5) {
+            dismiss(anm, 0x70);
+            dismiss(anm, kLeafEmitter);
+            set_screen(kMainMenu);
+            cursor.pop();
+            events.push_back({"bgm-default", 1});  // FUN_0043c370(0,"th16_01")
+            events.push_back({"screen", screen});
+            for (i32 i = 0; i < 0x19; ++i) {
+                save_slot_live[i] = false;
+                save_slots[i] = ReplaySummary{};
+            }
+        }
+        break;
     default:
         break;
     }

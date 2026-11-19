@@ -266,6 +266,17 @@ bool GameSession::activate_title_menu() {
     title.scores = &scores;
     title.text_paints = &text_into_texture;
     title.replay_directory = demo_directory;
+    title.read_replay_slot = [this](int slot, ReplaySummary& out) {
+        return !demo_directory.empty() && ReplayRecording::slot_summary(demo_directory.c_str(), slot, out);
+    };
+    // 0x448400 写失败（目录不可写 / 本局无记录段）时原版只是不落盘，标题照常回到槽列表
+    title.write_replay_slot = [this](int slot, const char* name) {
+        if (demo_directory.empty()) return false;
+        return replay_recording_.write_slot(demo_directory.c_str(), slot, name, globals.score,
+                                            frame_timer.slow_rate());
+    };
+    title.current_replay_summary = [this]() { return replay_recording_.summary(); };
+    title.on_replay_full_run = [this]() { replay_recording_.mark_full_run(i32(std::time(nullptr))); };
     title.on_screen_fade = [this](i32 kind, i32 duration, u32 color) { create_screen_fade(kind, duration, color); };
     title.on_transition_effect = [this]() {
         // 0x41a390 + 0x418ba0 + 0x46f0b0(..., 7)：Loading VM、过场种类 0、中断 7
@@ -313,6 +324,7 @@ bool GameSession::enter_ending(bool extra) {
     // Extra 通关：0x43ce10 case 0x10 直接回标题（DAT_004a6f1c = 3），不建结局对象
     if (extra) {
         leave_ending();
+        globals.title_origin = 3;  // → TitleScene 画面 0xe 名字输入
         supervisor.request(SceneId::Title);
         supervisor.current = supervisor.requested = SceneId::Title;
         return enter_title_assets() && activate_title_menu();
@@ -354,7 +366,9 @@ bool GameSession::enter_ending(bool extra) {
     ending_update_chain_ = chains.create([this]() -> ChainResult {
         if (!ending_live) return ChainResult::Continue;
         if (ending.update(supervisor.input)) {
+            // 0x4196c0 剧本结束请求场景 0x10 → 0x43ce10 case 0x10：0x4196a0 析构后 DAT_004a6f1c = 3
             leave_ending();
+            globals.title_origin = 3;
             supervisor.request(SceneId::Title);
         }
         return ChainResult::Continue;

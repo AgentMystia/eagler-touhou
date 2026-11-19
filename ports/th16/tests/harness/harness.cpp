@@ -172,11 +172,15 @@ int main(int argc, char** argv) {
         bool extra = false;
         bool noskip = false;
         i32 difficulty = 1;
+        i32 score = 0;
+        const char* replay_dir = nullptr;
         std::unordered_map<int, u32> inject;
         for (int a = 4; a < argc; ++a) {
             if (std::strncmp(argv[a], "extra=", 6) == 0) extra = std::atoi(argv[a] + 6) != 0;
             else if (std::strncmp(argv[a], "noskip=", 7) == 0) noskip = std::atoi(argv[a] + 7) != 0;
             else if (std::strncmp(argv[a], "diff=", 5) == 0) difficulty = std::atoi(argv[a] + 5);
+            else if (std::strncmp(argv[a], "score=", 6) == 0) score = std::atoi(argv[a] + 6);
+            else if (std::strncmp(argv[a], "replay_dir=", 11) == 0) replay_dir = argv[a] + 11;
             else {
                 int f = 0; u32 bits = 0;
                 if (std::sscanf(argv[a], "%d:%x", &f, &bits) == 2) inject[f] = bits;
@@ -190,6 +194,8 @@ int main(int argc, char** argv) {
         session.globals.shot = 0;
         session.globals.shot_aux = 0;
         session.globals.difficulty = difficulty;
+        session.globals.score = score;
+        if (replay_dir != nullptr) session.demo_directory = replay_dir;
         session.supervisor.request(extra ? SceneId::ExtraEnding : SceneId::Ending);
         // 先进一步以创建 Ending，再关烟雾短路（noskip 测 staff 全链）
         for (int f = 0; f < frames; ++f) {
@@ -198,15 +204,21 @@ int main(int argc, char** argv) {
             if (!session.logic_step()) { std::fprintf(stderr, "%s\n", session.failure.c_str()); return 1; }
             if (noskip) session.ending.smoke_skip = false;
         }
-        std::printf("scene=%d ending_live=%d ending_index=%d finished=%d title_live=%d color=%x lines=%d "
-                    "paints=%d bgm=%s msg=%s\n",
+        std::printf("scene=%d ending_live=%d ending_index=%d finished=%d title_live=%d title_screen=%d "
+                    "title_origin=%d color=%x lines=%d paints=%d bgm=%s msg=%s\n",
                     int(session.supervisor.current), session.ending_live ? 1 : 0, session.ending.ending_index,
                     session.ending.finished ? 1 : 0, session.supervisor.title_menu_live ? 1 : 0,
+                    int(session.title.screen), session.globals.title_origin,
                     session.ending.text_color, session.ending.lines_written, session.ending.text_paint_count,
                     session.ending.last_bgm.empty() ? "-" : session.ending.last_bgm.c_str(),
                     session.ending.msg_name.c_str());
         if (!session.ending.last_text.empty()) std::printf("text_bytes=%zu\n", session.ending.last_text.size());
         for (const char* e : session.ending.events) std::printf("event %s\n", e);
+        std::printf("last_name=[%s] rank0=[%s]\n", session.scores.last_name,
+                    session.scores.ranks[session.globals.shot + session.globals.shot_aux][difficulty][0].name);
+        for (const TitleScene::Event& e : session.title.events) {
+            std::printf("title %s %d\n", e.kind, e.value);
+        }
         return 0;
     }
     if (command == "title-demo-idle") {

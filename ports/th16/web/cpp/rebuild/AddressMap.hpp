@@ -401,8 +401,11 @@ constexpr AddressAnchor kAnchors[] = {
     {"title-stage-scores", 0x4513C0, "game/TitleScene.cpp draw_stage_practice_scores（Stage 1..6 练习最高分）"},
     {"title-player-data-draw", 0x453030, "game/TitleScene.cpp draw_player_data（Player Data 排行榜 Ascii）"},
     {"title-replay-list-draw", 0x451D50, "game/TitleScene.cpp draw_replay_list（Replay 页 25 槽 Ascii）"},
-    {"title-name-entry", 0x4532F0, "game/TitleScene.cpp update_name_entry（title_origin=3 → 画面 0xe）"},
-    {"title-name-entry-draw", 0x4538B0, "game/TitleScene.cpp draw_player_data（通关登记榜）"},
+    {"title-name-entry", 0x4532F0, "game/TitleScene.cpp update_name_entry（title_origin=3 → 画面 0xe：th128_08、0x43e250 入榜（关卡记 8）、13 列字符表、End 写名次与 last_name；未续关 → 0xf）"},
+    {"title-name-entry-draw", 0x4538B0, "game/TitleScene.cpp draw_name_entry_ranks（10 条排名：入榜名次白 / 其余 0xff808040；入榜行名字输入 x=58）"},
+    {"title-replay-save", 0x453C10, "game/TitleScene.cpp update_name_confirm（画面 0xf：25 槽 0x447ef0 → 0x4483b0(1) 关卡记 8 → 名字输入 → 0x448400 存 th16_%.2d.rpy；取消回主菜单 th16_01）"},
+    {"title-replay-save-draw", 0x4541B0, "game/TitleScene.cpp draw_name_confirm（sub2 槽列表 x=58 行距 15；sub3 选中行 10 帧滑到 y=240 + 名字输入 x=112，关卡名恒 \"All\"）"},
+    {"replay-mark-full-run", 0x4483B0, "game/ReplayRecording.cpp ReplayRecording::mark_full_run（重取时间戳；参数非 0 → 用户块 +0x90 = 参数 + 7）"},
     {"score-file", 0x4497E0, nullptr},       // scoreth16.dat 读写
     {"replay-file", 0x4403C5, "game/ReplayFile.cpp 路径格式 th16_%.2d.rpy / replay/%s（宿主拼路径）"},
     {"replay-load", 0x448C10, "game/ReplayFile.cpp ReplayFile::open（t16r 头、双重 0x402220、LZSS、段表）"},
