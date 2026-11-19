@@ -498,7 +498,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"bomb-usable", 0x40DDA0, "game/Bomb.cpp Bomb::usable（主：残弹 ≥ 1；解放：季节等级 ≥ 1 且冷却计时 ≥ 0；双方未发动、无对话、场上有敌机）"},
     {"bomb-start", 0x40DB20, "game/Bomb.cpp Bomb::start（残弹 -1 / 季节量表结算：夏·土用只扣当前档、其它清零；符卡计时 > 0x3b 记 started_in_spell；音效 0x2c / 0x4d；0x4440e0 重建子机）"},
     {"bomb-update", 0x40DD00, "game/Bomb.cpp Bomb::update（计时 < 0 先推进冷却；on_update 非零即失活）"},
-    {"bomb-draw", 0x40DA70, "game/Bomb.cpp Bomb::prepare_draw（→ 0x40de30 解放奖励飘字：计时 ≤ 0x3c 时定格显示值与位置，只在绘制链里回退）"},
+    {"bomb-draw", 0x40DA70, "game/Bomb.cpp Bomb::draw_popup（→ 0x40de30 解放奖励飘字 \"+N\" 经 AsciiManager 场地组 / 中号字 / 居中底对齐、颜色按等级查表；计时 ≤ 0x3c 时定格显示值与位置，只在绘制链里回退）"},
     {"bomb-release-finish", 0x40E040, "game/Bomb.cpp Bomb::finish_release（飘字 0xb4、计时 -45 冷却）"},
     {"bomb-reimu", 0x410D10, "game/Bomb.cpp ReimuBomb::on_start（0x4109d0 八枚阴阳玉 45° 等分绕自机）/ 0x410de0 on_update（0x410550 轨道 → 直飞索敌、0x410ae0 引爆 128 消弹 + 64 圆伤害源）/ 0x411280 on_cancel（timer%8==i 的玉 64 消弹）/ 0x411320 过关 / 0x410bb0 释放数组"},
     {"bomb-cirno", 0x40F070, "game/Bomb.cpp CirnoBomb::on_start（pl02 脚本 10 / 0xd、包络震动 (0,8,300,0x1e)、圆伤害源 (16,2.667,0x3c) 与 t=0x3c 时 (176,0.1103,0x122)）/ 0x40f240 on_update / 0x40f4c0 on_cancel（半径 t<0x3d ? t*160/60+16 : (t-60)*32/290+176）"},

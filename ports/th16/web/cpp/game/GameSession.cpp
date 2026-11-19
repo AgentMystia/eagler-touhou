@@ -852,11 +852,11 @@ void GameSession::create_bombs() {
         return ChainResult::Continue;
     }, 0x19, true);
     bomb_draw_chain_ = chains.create([this]() -> ChainResult {
-        game.bombs.prepare_draw_main(supervisor.game_speed);
+        game.bombs.draw_main(ascii, supervisor.game_speed);
         return ChainResult::Continue;
     }, 0x28, false);
     release_draw_chain_ = chains.create([this]() -> ChainResult {
-        game.bombs.prepare_draw_release(supervisor.game_speed);
+        game.bombs.draw_release(ascii, supervisor.game_speed);
         return ChainResult::Continue;
     }, 0x29, false);
     chains.enable(bomb_update_chain_);
