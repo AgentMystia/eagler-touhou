@@ -20,6 +20,7 @@
 #include "GameGlobals.hpp"
 #include "GameManager.hpp"
 #include "GameMenu.hpp"
+#include "Replay.hpp"
 #include "ScoreFile.hpp"
 #include "ScreenCompositor.hpp"
 #include "TextPaint.hpp"
@@ -105,6 +106,8 @@ private:
     ChainEntry* replay_record_chain_ = nullptr;       // 0x10（0x448e20 → 0x447fd0 记录）
     ChainEntry* replay_playback_chain_ = nullptr;     // 0x22（0x448e40：回放中按住射击则 Restart 整条更新链快进）
     ChainEntry* replay_draw_chain_ = nullptr;         // 0x47（0x448e90 → 0x4482f0 回放 FPS 文字）
+    i32 replay_ff_counter_ = 0;                      // ReplayManager+0x20c：快进 Restart 计数（%8）
+    u8 replay_fps_byte_ = 60;                        // ReplayManager+0x208：最近测得帧率（记录链每 30 帧写）
     ChainEntry* player_update_chain_ = nullptr;
     ChainEntry* player_draw_chain_ = nullptr;
     ChainEntry* enemy_update_chain_ = nullptr;
