@@ -32,6 +32,8 @@
 //                                                （与 tools/oracle/game-oracle.py 快照同结构；enemies/dialogue 为未移植管理器的 PlayerWorld 桩输入）
 //                                                环境变量 TH16_FRAMES_FROM=<n>：只输出第 n 帧（1 起）起的快照（长程跑只看换关附近，避免 GB 级 JSON）
 //   harness game-digest <...同上...>              → 同一状态流的 FNV-1a 64（tests/golden/player.json，game-oracle.py --digest 同口径）
+//   harness screen-fade <kind> <duration> <color> <frames> [hold_or_flag]
+//                                              → 每行 "frame alpha alive"（kind 4/6/7/9 步进；与 tools/oracle 对拍）
 #include "../../web/cpp/game/Archive.hpp"
 #include "../../web/cpp/game/AnmManager.hpp"
 #include "../../web/cpp/game/AnmGeometry.hpp"
@@ -44,6 +46,7 @@
 #include "../../web/cpp/game/Input.hpp"
 #include "../../web/cpp/game/Laser.hpp"
 #include "../../web/cpp/game/Rng.hpp"
+#include "../../web/cpp/game/ScreenEffect.hpp"
 #include "../../web/cpp/game/Stage.hpp"
 #include "../../web/cpp/game/StageTable.hpp"
 #include "../../web/cpp/game/Std.hpp"
@@ -111,6 +114,40 @@ int main(int argc, char** argv) {
         Rng a{seed}, b{seed}, c{seed};
         for (int i = 0; i < steps; ++i)
             std::printf("%u %u %u\n", bits(a.unit()), bits(b.signed_unit()), bits(c.angle()));
+        return 0;
+    }
+    if (command == "screen-fade" && argc >= 6) {
+        // kind 4 / 6 / 7 / 9 更新函数对拍：每行 frame alpha alive
+        const i32 kind = i32(std::atoi(argv[2]));
+        const i32 duration = i32(std::atoi(argv[3]));
+        const u32 color = u32(std::strtoul(argv[4], nullptr, 0));
+        const int frames = std::atoi(argv[5]);
+        const i32 extra = argc >= 7 ? i32(std::atoi(argv[6])) : (kind == 4 ? 1 : 0);
+        ScreenFade fade;
+        fade.kind = kind;
+        fade.duration = duration;
+        fade.timer.reset();
+        if (kind == 4) {
+            fade.color = u32(extra);
+            fade.color_aux = (color & 0xffffffu) | 0xff000000u;
+            fade.alpha = 0xff;
+        } else if (kind == 6 || kind == 7) {
+            fade.color = color;
+            fade.mode_flag = extra;
+        } else if (kind == 9) {
+            fade.color = color;
+            fade.alpha = 0xff;
+        } else {
+            return fail("screen-fade: kind must be 4/6/7/9");
+        }
+        for (int f = 0; f < frames; ++f) {
+            bool alive = true;
+            if (kind == 4) alive = screen_fade_from_aux_step(fade, 0, 1.0f);
+            else if (kind == 6 || kind == 7) alive = screen_fade_half_step(fade, 1.0f);
+            else alive = screen_fade_hold_step(fade, 0, 1.0f);
+            std::printf("%d %d %d\n", f, fade.alpha, alive ? 1 : 0);
+            if (!alive) break;
+        }
         return 0;
     }
     if (command == "chain-demo") {
