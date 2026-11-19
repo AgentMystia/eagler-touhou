@@ -198,7 +198,17 @@ void Spellcard::tick_realtime() {
     time_record = encode_spell_time(duration);
     timing_scratch = 0;
     flags &= ~kTiming;
+    if (!replay_playback) {
+        if (record_time) record_time(capture_count, time_record);
+    } else {
+        time_record = replay_time ? replay_time(capture_count) : 0;
+        if (spell_time_invalid(time_record)) time_record = 0x6ad1584;
+    }
     ++capture_count;
+}
+
+bool Spellcard::spell_time_invalid(i32 value) {
+    return value / 100000 - 0x16 != ((value / 100) % 1000 + 0x3a6) % 1000 + (value % 100 + 0x43) % 100;
 }
 
 // 0x4182f0

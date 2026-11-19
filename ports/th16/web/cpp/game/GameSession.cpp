@@ -122,6 +122,25 @@ const ReplayStageSegment* GameSession::current_replay_segment_() const {
     return seg.header.size() == ReplayFile::kStageHeaderSize ? &seg : nullptr;
 }
 
+i32 GameSession::replay_spell_time_(i32 index) const {
+    // 0x417bc0：DAT_004a6f08 +0xd4 + DAT_004a5790 × 0x28 段头 +0x240 + 计次 × 4（无越界检查，超出 0x14 槽读进段头后的输入）
+    if (!replay_file_loaded_ || index < 0) return 0;
+    for (const ReplayStageSegment& seg : replay_file_.stages) {
+        if (seg.stage != i16(globals.stage) || seg.header.size() != ReplayFile::kStageHeaderSize) continue;
+        const size_t offset = size_t(kSpellTimeOffset) + size_t(index) * 4;
+        u8 bytes[4]{};
+        for (size_t k = 0; k < 4; ++k) {
+            const size_t at = offset + k;
+            if (at < seg.header.size()) bytes[k] = seg.header[at];
+            else if (at - seg.header.size() < seg.inputs.size()) bytes[k] = seg.inputs[at - seg.header.size()];
+        }
+        i32 value = 0;
+        std::memcpy(&value, bytes, 4);
+        return value;
+    }
+    return 0;
+}
+
 void GameSession::replay_stage_start_() {
     Player& player = game.player;
     // 0x448eb0：+0x20c 清零（两种模式）；回放时 +0x214 才切到本关段并从段首读，记录时才开新段
@@ -820,6 +839,8 @@ void GameSession::bind_spellcard() {
     spellcard.scores = &scores;
     spellcard.replay_playback = game.mode == 1;   // ReplayManager+0xc 由 0x447e20(GameManager+0xac) 赋值
     spellcard.text_paints = &text_into_texture;
+    spellcard.record_time = [this](i32 index, i32 value) { replay_recording_.set_spell_time(index, value); };
+    spellcard.replay_time = [this](i32 index) { return replay_spell_time_(index); };
     game.gui.spellcard_flags = &spellcard.flags;
     game.gui.spellcard = &spellcard;
     if (spellcard_update_chain_ == nullptr) {

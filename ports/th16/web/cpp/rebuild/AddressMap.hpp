@@ -270,7 +270,8 @@ constexpr AddressAnchor kAnchors[] = {
     {"spellcard-ecl-start-op", 0x41DCB0, "game/Enemy.cpp Enemy::execute case 522/528/537..539（case 0x43：指令偏移 32 处 XOR 解密符卡名（key 0x77 步 7 / +0x10）、537..539 加难度偏移、life_flags |= 1 与 7 倍血量池）"},
     {"spellcard-gui-timer-start", 0x4175D0, "game/Spellcard.cpp Spellcard::start → Gui::set_boss_timer_style(Spell)（计时数字中断 2）"},
     {"spellcard-gui-timer-end", 0x417650, nullptr},    // 同上中断 3
-    {"spellcard-timing", 0x417BC0, nullptr},           // 实时（QueryPerformanceCounter）取得用时 → +0x90 / +0xa4；oracle 不跑主循环，恒 0
+    {"spellcard-timing", 0x417BC0, "game/Spellcard.cpp Spellcard::tick_realtime（墙钟取得用时 → +0x90 / +0xa4；记录局 record_time → ReplayRecording::set_spell_time 写本关段头 +0x240 + 计次×4，回放局 replay_time → GameSession::replay_spell_time_ 读回；oracle 不跑主循环，恒 0）"},
+    {"spellcard-time-check", 0x417530, "game/Spellcard.cpp Spellcard::spell_time_invalid（+0xa4 校验：/100000 − 0x16 ≠ 秒解码 + 百分秒解码 → 回放读回值改 0x6ad1584）"},
     {"spellcard-draw", 0x417D70, "game/Spellcard.cpp Spellcard::draw_text（绘制链 0xc：名牌 VM 透明度、字体 2 组 2；奖励 \"%8d\" / 已失 \"$\"；取得 / 挑战 \"%.2d/%.2d\"、≥100 次 \"99+\" / \"MASTER\"）"},
     {"spellcard-records", 0x417F00, "game/ScoreFile.hpp ScoreFile::record_spell_attempt / record_spell_capture（机体块 +0x8d8 + id×0x9c：名字、挑战 +0x88 / 取得 +0x80 [符卡练习 +4]；合计块 4 同步；回放不计；0x4182f0 取得）"},
     // —— ScreenEffect（0x45d150：kind 0..9；更新链 0x13、绘制链 0xa / 0x54）——

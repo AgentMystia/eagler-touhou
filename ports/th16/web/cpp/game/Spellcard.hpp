@@ -12,6 +12,7 @@
 //             倒计时 VM 删；kBonusAvailable → 0x43e080 加分 + Gui 0x42bcf0(bonus, 0) + 成绩文件取得计数 + 音效 0x2e，
 //             否则 Gui 0x42bcf0(0, 1)；kTimedOut → 音效 0x45
 #pragma once
+#include <functional>
 #include <vector>
 
 #include "AnmVm.hpp"
@@ -77,6 +78,9 @@ struct Spellcard {
     ScoreFile* scores = nullptr;        // DAT_004a6f0c：符卡挑战 / 取得记录
     bool replay_playback = false;       // DAT_004a6f08+0xc == 1（= GameManager+0xac）：回放中不写记录
     std::vector<TextIntoTextureRequest>* text_paints = nullptr;  // 0x46dab0 入队（GameSession::text_into_texture）
+    // 0x417bc0 结束：记录局写本关段头 +0x240 + 计次 × 4；回放局从同槽读回 +0xa4
+    std::function<void(i32 index, i32 value)> record_time;
+    std::function<i32(i32 index)> replay_time;
 
     // 0x4178a0：memset 0 后 flags |= 2
     void reset();
@@ -90,6 +94,8 @@ struct Spellcard {
     void tick_realtime();
     // 编码秒.百分秒 → +0xa4（与 GuiHud::decode_spell_time 互逆）
     static i32 encode_spell_time(double seconds);
+    // 0x417530：+0xa4 校验位不符 → true（回放读回的用时被篡改时改记 0x6ad1584）
+    static bool spell_time_invalid(i32 value);
     // 0x4182f0
     void end();
     // 0x417d70（绘制链 0xc）：符卡进行中在名牌 VM（ascii.anm 1）旁入队奖励分（或已失去奖励的 "$"）与取得 / 挑战数
