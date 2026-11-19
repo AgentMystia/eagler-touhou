@@ -399,6 +399,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"ending-destroy", 0x419450, "game/GameSession.cpp leave_ending"},
     {"title-draw", 0x44B530, "game/TitleScene.cpp TitleScene::draw（分派 0x4513c0 / 0x456d50…）"},
     {"title-stage-scores", 0x4513C0, "game/TitleScene.cpp draw_stage_practice_scores（Stage 1..6 练习最高分）"},
+    {"title-player-data-draw", 0x453030, "game/TitleScene.cpp draw_player_data（Player Data 排行榜 Ascii）"},
     {"score-file", 0x4497E0, nullptr},       // scoreth16.dat 读写
     {"replay-file", 0x4403C5, "game/ReplayFile.cpp 路径格式 th16_%.2d.rpy / replay/%s（宿主拼路径）"},
     {"replay-load", 0x448C10, "game/ReplayFile.cpp ReplayFile::open（t16r 头、双重 0x402220、LZSS、段表）"},
