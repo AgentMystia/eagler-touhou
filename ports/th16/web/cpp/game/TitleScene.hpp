@@ -115,8 +115,12 @@ public:
 
     // 0x44af80：每帧由标题更新链（优先级 6）调用
     void update(AnmManager& anm, const InputState& input);
+    // 0x44b530：标题绘制链分派（关卡练习分 / Player Data / Replay / 符卡 SCORE…）
+    void draw(AsciiManager& ascii);
     // 0x456d50：符卡练习 0x12/0x13/0x14 的 SCORE 行（AsciiManager 入队，每帧重打）
     void draw_spell_hud(AsciiManager& ascii);
+    // 0x4513c0：关卡选择画面练习最高分行
+    void draw_stage_practice_scores(AsciiManager& ascii);
     // 0x4560b0：按难度填 +0x5dd0、刷 +0x740 名 VM（Nothing / No.%3d / ？？？）
     void refresh_spell_slot_names(AnmManager& anm);
     // 主菜单空闲 demo 门控（0x708 / bit6 / 下标 %3）；供单测与 update 共用
