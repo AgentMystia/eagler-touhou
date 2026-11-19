@@ -316,6 +316,18 @@ bool GameSession::enter_ending(bool extra) {
     }
     leave_ending();
     // 0x4191f0：continues==0 → 偶下标；装 e0N.msg；成绩见过位；Loading VM ascii 0x11
+    ending.load_ending_anm = [this](int slot, const char* name) -> AnmFile* {
+        AnmResource* res = nullptr;
+        if (!load_anm(name, res) || res == nullptr) return nullptr;
+        return animations.load(slot, *res);
+    };
+    ending.spawn_ending_anm = [this](AnmFile* file, i32 script, i32 /*slot_index*/) -> u32 {
+        if (file == nullptr) return 0;
+        return animations.spawn(*file, script, -1);
+    };
+    ending.kill_ending_anm = [this](u32 vm) {
+        if (vm != 0) animations.kill(vm);
+    };
     ending.begin(globals.shot, globals.shot_aux, globals.continues, &scores, globals.difficulty);
     {
         std::vector<u8> msg;
