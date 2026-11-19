@@ -263,8 +263,11 @@ constexpr AddressAnchor kAnchors[] = {
     {"spellcard-timing", 0x417BC0, nullptr},           // 实时（QueryPerformanceCounter）取得用时 → +0x90 / +0xa4；oracle 不跑主循环，恒 0
     {"spellcard-draw", 0x417D70, "game/Spellcard.cpp Spellcard::draw_text（绘制链 0xc：名牌 VM 透明度、字体 2 组 2；奖励 \"%8d\" / 已失 \"$\"；取得 / 挑战 \"%.2d/%.2d\"、≥100 次 \"99+\" / \"MASTER\"）"},
     {"spellcard-records", 0x417F00, "game/ScoreFile.hpp ScoreFile::record_spell_attempt / record_spell_capture（机体块 +0x8d8 + id×0x9c：名字、挑战 +0x88 / 取得 +0x80 [符卡练习 +4]；合计块 4 同步；回放不计；0x4182f0 取得）"},
-    // —— ScreenEffect（0x45d150 kind 1 画面震动：更新链 0x13、绘制链 0x54）——
-    {"screen-effect-create", 0x45D150, "game/GameSession.cpp GameSession::create_screen_shake（0x45d1a0 kind 1 登记更新链 0x13；ECL 517 经 EnemyManager::shake_requests 在敌机链之后创建）"},
+    // —— ScreenEffect（0x45d150：kind 1 画面震动；kind 0 / 2 / 3 / 5 淡入淡出；更新链 0x13、绘制链 0xa / 0x54）——
+    {"screen-effect-create", 0x45D150, "game/GameSession.cpp GameSession::create_screen_shake / create_screen_fade（0x45d1a0：kind 1 登记更新链 0x13；kind 2 / 3 另登记绘制链 0xa，kind 0 / 5 绘制链 0x54；ECL 517 经 EnemyManager::shake_requests 在敌机链之后创建）"},
+    {"screen-fade-draw", 0x45C990, "game/GameSession.cpp GameSession::create_screen_fade 绘制链回调（kind 2 / 3：不改视口，直接 0x45c690 填满场地渲染目标）"},
+    {"screen-fade-draw-fullscreen", 0x45C860, "game/GameSession.cpp GameSession::create_screen_fade 绘制链回调（kind 0 / 5：先出批并 SetViewport(0,0,后备缓冲宽高) 再 0x45c690）"},
+    {"screen-fill-quad", 0x45C690, "game/AnmRenderer.cpp AnmRenderer::draw_screen_fill（出批；TSS SELECTARG1 / DIFFUSE、DESTBLEND INVSRCALPHA；FVF 0x44 四顶点条带 (0,0)-(w,h) 色 alpha<<24|color；随后清顶点格式 / 纹理矩阵 / 纹理键缓存、blend 缓存置 0xa、TSS 回 MODULATE / TEXTURE；纹理与 DESTBLEND 不恢复）"},
     {"screen-shake-update", 0x45CD30, "game/ScreenEffect.cpp screen_shake_step（计时、线性振幅、game_rng %3 ×2 决定 x/y 符号、DAT_004c1788 / DAT_004c1530 输出；到时返回 7）"},
     {"screen-effect-destroy", 0x45D130, "game/Chain.cpp ChainManager::run_list（ChainResult::Destroy → on_destroy 摘除两条链）"},
     {"enemy-spawn-op", 0x423050, "game/Enemy.cpp Enemy::execute case 300..305 / 309..312 / 321（相对/绝对/镜像生成子敌人；参数块附带生成者 EnemyInf+0x28c..0x2b8 寄存器）"},
@@ -307,14 +310,14 @@ constexpr AddressAnchor kAnchors[] = {
     {"bullet-cancel-scripts", 0x490EC0, "game/Bullet.cpp kCancelScriptByColor（消弹方式 1 的颜色 → 脚本号表）"},
     {"stage-table", 0x4A22D0, "game/StageTable.hpp kStageTable（8 × 0xd4：std/ecl/bgm/msg/logo/曲号）"},
     {"stage-manager-create", 0x409DB0, "game/Stage.cpp StageManager::load（DAT_004a6d9c/a0；更新链 0x11 / 绘制链 3、6）"},
-    {"stage-manager-ctor", 0x4097C0, "game/Stage.cpp StageManager::load（相机默认 pos (0,0,-600) facing (0,300,600) up (0,1,0)）"},
+    {"stage-manager-ctor", 0x4097C0, "game/Stage.cpp StageManager::load（相机先整份抄自全局 0x4c168c —— 上一关的雾色 / 雾距随之继承 —— 再覆盖 pos (0,0,-600) facing (0,300,600) up (0,1,0)、清 pos_offset / facing_offset）"},
     {"std-load", 0x40AC30, "game/Std.cpp StdFile::parse + Stage.cpp load（背景 ANM → 槽 3 + (stage & 1)）"},
     {"std-start", 0x40ADD0, "game/Stage.cpp StageManager::start（先把关卡更新 / 绘制链置启用位——GameManager::on_stage_started；面 VM init_from_template + 首跑；vm_index 顺序分配）"},
     {"stage-update", 0x409E50, "game/Stage.cpp StageManager::update（脚本 → 摇晃 → 面 VM → 相机抄入全局 DAT_004c168c（camera_global，pos_delta 即 DAT_004c1790 entity_offset_delta）→ 层精灵 → 相机矩阵 0x43c940）"},
     {"stage-script", 0x40B3B0, "game/Stage.cpp StageManager::run_script / apply_rocking（param_1 = this+0xc；跳转表 0x40bfbc，0xf/0x10 为空操作）"},
     {"stage-faces-step", 0x40AED0, "game/Stage.cpp StageManager::step_faces（全部 ins_offset<0 时清对象 bit0）"},
     {"stage-interrupt", 0x40B2F0, "game/Stage.cpp StageManager::interrupt（ins 19：arg+7 → 全部面/层 VM）"},
-    {"stage-draw", 0x409F90, "game/Stage.cpp StageManager::draw_background（绘制链 3：相机 0x4c168c、Z 写 / ZFUNC LESSEQUAL、雾参数、以雾色清场地、淡入 ScreenEffect 3 → bit0、色调、层 0..7；无设备时 transition_step 只做逻辑部分）"},
+    {"stage-draw", 0x409F90, "game/Stage.cpp StageManager::draw_background（绘制链 3：相机 0x4c168c、Z 写 / ZFUNC LESSEQUAL、雾参数、以雾色清场地（bit2 且本关帧数 +0x66e0 ≤ 0x21 时透明黑）、淡入 ScreenEffect 3 → bit0、色调、层 0..7；无设备时 transition_step 只做逻辑部分）"},
     {"stage-draw-layer", 0x40AF70, "game/Stage.cpp StageManager::draw_layer（层精灵 → 开雾 → 相机 → 逐实例 0x40a7d0 剔除 / 四边形 entity_offset 与尺寸缩放；雾 mode 8 / 0xf；Z 写 = !(lo & 0x2000)）"},
     {"stage-draw-layer-sprites", 0x40C280, "game/Stage.cpp StageManager::draw_layer_sprites（层精灵 8 个：相机 0x4c168c、抖动偏移、无雾、Z 写关）"},
     {"camera-matrices", 0x43C940, "game/Camera.cpp Camera::look_along_facing（LookAtLH + PerspectiveFovLH zn=30 zf=8000；right = normalize(facing_norm × up)）"},
@@ -355,7 +358,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"title-difficulty-cleared", 0x44A8E0, nullptr}, // 某难度四项记录齐全（难度面板 0x9e+d 标记）
     {"title-extra-unlocked", 0x44A800, nullptr}, // 机体是否解锁 Extra
     {"title-demo", 0x44AF80, nullptr},       // 0x44af80 开头：无输入 0x708 帧后播放 demo 录像（DAT_004a5bf0）
-    {"title-loading-text", 0x41A390, nullptr},  // ascii.anm 0x11（季节确定后 Timer==10）
+    {"title-loading-text", 0x41A390, "game/GameSession.cpp GameSession::spawn_loading_vm（ascii.anm 0x11；位置 = 2 × (XMM1, XMM2) 寄存器传参，0x42d274 传 480 / 392 → (960, 784)，Ghidra 漏掉这两个寄存器实参）"},
     {"effect-spawn-transition", 0x418BA0, nullptr}, // EffectManager 种类 0 过场（DAT_004c12a0，interrupt 7）
     {"bgm-fade", 0x43C470, nullptr},         // 0x45ed00(…,5,…)：BGM 淡出
     {"title-option", 0x44C570, nullptr},     // 画面 3：Option
