@@ -106,7 +106,7 @@ void Gui::end_stage() {
 }
 
 void Gui::clear_stage_bonus() {
-    // 0x42c1b0（+0x124 为 6 / Extra 面残机奖励 VM，结局流程接入时补）
+    // 0x42c1b0：另对 +0x124 发中断 1——该槽只在构造 0x427a20 清零、全程序无写入者，恒为空操作
     if (animations != nullptr) animations->interrupt(clear_bonus_vm, 1);
     flags_1ac &= ~0x100u;
     clear_timer.reset();
