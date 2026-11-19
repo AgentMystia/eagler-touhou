@@ -289,6 +289,7 @@ bool GameSession::activate_title_menu() {
     // 0x44ac54：启用标题更新链（优先级 6 → 0x44af80）
     title_update_chain_ = chains.create([this]() -> ChainResult {
         title.update(animations, supervisor.input);
+        title.draw_spell_hud(ascii);  // 0x456d50：符卡练习 SCORE 行（随更新链入队）
         if (globals.scene_request >= 0) {
             supervisor.request(SceneId(globals.scene_request));
             globals.scene_request = -1;
