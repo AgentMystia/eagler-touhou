@@ -1390,13 +1390,15 @@ void TitleScene::update_spell_shot(AnmManager& anm, const InputState& input) {
     }
 }
 
-// 0x44e930：Key Config（7 项：5 键位 + Default + Quit；真实键捕获待 0x44f710）
+// 0x44e930：Key Config（7 项：5 键位 + Default + Quit）；捕获写入 0x44f710
 void TitleScene::update_key_config(AnmManager& anm, const InputState& input) {
     switch (sub) {
     case 0:
         cursor.count = 7;
         cursor.wrap = true;
         cursor.set(0);
+        key_bind_slot = -1;
+        pending_scancode = -1;
         if (title_file) spawn_into(anm, 2, *title_file, 2);  // +0x2c8 面板脚本 2
         set_sub(1);
         events.push_back({"key-config", 0});
@@ -1440,7 +1442,7 @@ void TitleScene::update_key_config(AnmManager& anm, const InputState& input) {
         }
         if (input.pressed & InputState::kConfirmMask) {
             if (cursor.index == 5) {
-                // Default：恢复键位表（0x44ec60）；端口暂发事件
+                if (globals) globals->reset_key_binds();
                 sfx(7);
                 events.push_back({"key-default", 0});
             } else if (cursor.index == 6) {
@@ -1448,12 +1450,37 @@ void TitleScene::update_key_config(AnmManager& anm, const InputState& input) {
                 sfx(9);
                 set_sub(4);
             } else {
-                // 项 0..4：等待下一键（0x44f710）；暂用占位事件
-                events.push_back({"key-bind", cursor.index});
+                // 项 0..4：进入捕获（0x44f710 等下一键；宿主写 pending_scancode）
+                key_bind_slot = cursor.index;
+                pending_scancode = -1;
+                set_sub(3);
+                events.push_back({"key-bind-wait", key_bind_slot});
             }
         }
         break;
     }
+    case 3:
+        // 捕获中：取消放弃；pending_scancode≥0 → 0x44f710 写入后回列表
+        if (input.pressed & InputState::kCancelMask) {
+            key_bind_slot = -1;
+            pending_scancode = -1;
+            sfx(9);
+            set_sub(2);
+            events.push_back({"key-bind-cancel", 0});
+            break;
+        }
+        if (pending_scancode >= 0 && key_bind_slot >= 0 && globals != nullptr) {
+            const i32 slot = key_bind_slot;
+            const i32 code = pending_scancode;
+            globals->assign_key_bind(slot, i16(code));
+            events.push_back({"key-bind", slot});
+            events.push_back({"key-scancode", code});
+            sfx(7);
+            key_bind_slot = -1;
+            pending_scancode = -1;
+            set_sub(2);
+        }
+        break;
     case 4:
         if (timer > 9) {
             dismiss(anm, 2);

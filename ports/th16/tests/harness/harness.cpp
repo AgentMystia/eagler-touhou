@@ -308,6 +308,19 @@ int main(int argc, char** argv) {
                     double(timer.slow_rate()), timer.window_frames, timer.elapsed_good, timer.elapsed_total);
         return 0;
     }
+    if (command == "key-bind-assign") {
+        // 0x44f710：写入并冲突对调
+        GameGlobals g;
+        g.reset_key_binds();
+        const i16 shot0 = g.key_binds[0];
+        const i16 bomb0 = g.key_binds[1];
+        g.assign_key_bind(0, bomb0);  // Shot ← Bomb 的键 → 对调
+        std::printf("shot=%d bomb=%d swapped=%d\n", int(g.key_binds[0]), int(g.key_binds[1]),
+                    (g.key_binds[0] == bomb0 && g.key_binds[1] == shot0) ? 1 : 0);
+        g.assign_key_bind(2, 0x1e);  // Slow ← A
+        std::printf("slow=%d\n", int(g.key_binds[2]));
+        return (g.key_binds[0] == bomb0 && g.key_binds[1] == shot0 && g.key_binds[2] == 0x1e) ? 0 : 1;
+    }
     if (command == "screen-fade" && argc >= 6) {
         // kind 4 / 6 / 7 / 9 更新函数对拍：每行 frame alpha alive
         const i32 kind = i32(std::atoi(argv[2]));
@@ -1452,12 +1465,25 @@ int main(int argc, char** argv) {
             if (slash != std::string::npos) session.demo_directory.resize(slash);
         }
         struct Key { int frame; u32 bits; };
+        struct ScanInj { int frame; i32 code; };
         std::vector<Key> script;
+        std::vector<ScanInj> scans;
         for (int a = 4; a < argc; ++a) {
             if (std::strcmp(argv[a], "skip") == 0) { session.supervisor.config_flags |= Supervisor::kSkipBootFlags; continue; }
             const char* p = argv[a];
             while (*p) {
                 char* endp = nullptr;
+                // "Sframe:scancode" → 标题 Key Config 捕获注入（TitleScene::pending_scancode）
+                if (*p == 'S' || *p == 's') {
+                    const long frame = std::strtol(p + 1, &endp, 10);
+                    if (endp == p + 1 || *endp != ':') return fail("bad scancode script");
+                    p = endp + 1;
+                    const long code = std::strtol(p, &endp, 0);
+                    scans.push_back({int(frame), i32(code)});
+                    p = endp;
+                    if (*p == ',') ++p;
+                    continue;
+                }
                 const long frame = std::strtol(p, &endp, 10);
                 if (endp == p || *endp != ':') return fail("bad input script");
                 p = endp + 1;
@@ -1475,6 +1501,9 @@ int main(int argc, char** argv) {
         for (int f = 0; f < frames; ++f) {
             session.injected_input = 0;
             for (const Key& k : script) if (k.frame == f) session.injected_input |= k.bits;
+            for (const ScanInj& s : scans) {
+                if (s.frame == f) session.title.pending_scancode = s.code;
+            }
             device.begin_frame();
             if (!session.logic_step()) return fail(session.failure.c_str());
         }

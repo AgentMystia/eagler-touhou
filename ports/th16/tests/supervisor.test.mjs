@@ -313,6 +313,30 @@ test('Key Config (0x44e930): from Option then cancel back to Option', needDat, (
   assert.equal(out.header.screen, 3);
 });
 
+test('Key Config bind (0x44f710): wait → inject scancode', needDat, () => {
+  const t = MAIN + 1;
+  const downs = Array.from({length: 6}, (_, i) => `${t + i * 2}:${DOWN}`);
+  const confirmAt = t + 12 + 2;
+  const optReady = confirmAt + 30;
+  const kcReady = optReady + 40;
+  // 进 Key Config → 确认槽 0 → Sframe 注入 scancode 0x1e
+  const out = parse(run(['scene-boot', dat, String(kcReady + 20), [
+    ...downs, `${confirmAt}:${Z}`,
+    `${optReady}:${DOWN}`, `${optReady + 2}:${DOWN}`, `${optReady + 4}:${Z}`,
+    `${kcReady}:${Z}`,
+    `S${kcReady + 2}:0x1e`,
+  ].join(',')]));
+  assert.ok(out.events.some(e => e[0] === 'key-bind-wait' && e[1] === '0'));
+  assert.ok(out.events.some(e => e[0] === 'key-bind' && e[1] === '0'));
+  assert.ok(out.events.some(e => e[0] === 'key-scancode' && e[1] === String(0x1e)));
+});
+
+test('key-bind-assign 0x44f710 swap', () => {
+  const out = run(['key-bind-assign']);
+  assert.match(out, /swapped=1/);
+  assert.match(out, /slow=30/);
+});
+
 test('Option screen: ←/→ adjust BGM, Default restores 100/80', needDat, () => {
   const t = MAIN + 1;
   const downs = Array.from({length: 6}, (_, i) => `${t + i * 2}:${DOWN}`);

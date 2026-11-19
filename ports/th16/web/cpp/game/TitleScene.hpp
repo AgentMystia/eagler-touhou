@@ -75,6 +75,8 @@ public:
     i32 spell_group = 0;             // +0x5dc4：选中的分组（确认后带入列表）
     MenuCursor score_shot_cursor;    // +0xfc：Player Data 机体（count 5）
     MenuCursor score_page_cursor;    // +0x1d4：成绩翻页
+    i32 key_bind_slot = -1;          // Key Config：正在捕获的槽 0..4；-1=无
+    i32 pending_scancode = -1;       // 宿主注入下一键（≥0 时 0x44f710 写入）
     GameGlobals* globals = nullptr;
     std::vector<Event> events;       // SFX / 画面 / 场景请求 / 过场效果（供 harness 断言）
     // GameSession 注入：0x45d150 淡入淡出 / 0x41a390 Loading + 0x418ba0 过场
