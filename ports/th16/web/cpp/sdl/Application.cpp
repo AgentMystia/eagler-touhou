@@ -106,6 +106,17 @@ bool Application::initialize(const char* archive_path) {
     if (!graphics.initialize()) { failure = graphics.error; return false; }
 
     session.attach_device(&graphics);
+    // 原版 SoundManager（DAT_004d9e10）的 DirectSound 侧：thbgm.dat 与 th16.dat 同目录（0x43adc0 以 "thbgm.dat" 打开）
+    audio.thbgm_path = session.demo_directory + "/thbgm.dat";
+    audio.music_directory = session.demo_directory + "/music";
+    audio.music = &session.music;
+    // 打不开音频时逻辑（命令队列 / 音效队列）照常推进，只是无输出——与 harness 同口径，逐帧行为不变
+    if (audio.initialize(session.archive())) {
+        session.sound.output = &audio.sfx_output();
+        session.music.output = &audio.music_output();
+    } else {
+        std::fprintf(stderr, "th16: audio disabled: %s\n", audio.error.c_str());
+    }
     session.on_loaded = [this](AnmResource& res) -> bool {
         if (!graphics.preload(res)) { failure = graphics.error; session.failure = graphics.error; return false; }
         return true;
@@ -121,6 +132,7 @@ bool Application::step() {
     sample_input();
     if (!session.logic_step()) { failure = session.failure; return false; }
     fonts.flush(graphics, session.animations, session.text_into_texture);
+    audio.pump();
     graphics.present();
     ++frames;
     if (!graphics.error.empty()) failure = graphics.error;
@@ -136,6 +148,7 @@ bool Application::step_at(double wall_seconds) {
         if (!session.logic_step()) { failure = session.failure; return false; }
         fonts.flush(graphics, session.animations, session.text_into_texture);
     }
+    audio.pump();
     graphics.present();
     ++frames;
     if (!graphics.error.empty()) failure = graphics.error;

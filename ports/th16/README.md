@@ -28,7 +28,7 @@ Hidden Star in Four Seasons v1.00a 的网页移植：C++17 / SDL3 / GLES 3.0 / E
 ```bash
 # 构建网页运行时（EMSDK 指向 emsdk 根）
 EMSDK=../../toolchains/emsdk node portable/build.mjs
-# 原版 th16.dat 放入页面壳资源目录（不入库）
+# 原版 th16.dat 放入页面壳资源目录（不入库）；乐曲为 assets/music/<曲名>.ogg（见 docs/DEVELOPMENT.md「音频」）
 ln -s /path/to/th16.dat web/sdl-runtime/assets/th16.dat
 python3 web/sdl-runtime/serve.py 8446   # http://127.0.0.1:8446/sdl-runtime/th16.html
 ```

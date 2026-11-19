@@ -35,6 +35,12 @@ EMSCRIPTEN_KEEPALIVE int th16_initialize() {
 }
 
 EMSCRIPTEN_KEEPALIVE const char* th16_error() { return last_error.c_str(); }
+// 音频观测（AudioDevice::status 文本）
+EMSCRIPTEN_KEEPALIVE const char* th16_audio_status() {
+    static std::string text;
+    text = app ? app->audio.status() : "no app";
+    return text.c_str();
+}
 EMSCRIPTEN_KEEPALIVE unsigned th16_frame() { return app ? app->frames : 0; }
 // 0 = 未初始化，1 = 启动幕，2 = 循环运行中
 EMSCRIPTEN_KEEPALIVE unsigned th16_phase() { return !app || !app->initialized ? 0 : running ? 2 : 1; }

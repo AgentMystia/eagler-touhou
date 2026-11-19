@@ -1,6 +1,7 @@
 // th16 应用：SDL/GLES 宿主——打开 th16.dat，把 GraphicsDevice 挂为 GameSession 的 RenderDevice，
 // 每个逻辑帧由绘制链（0x45a8a0 帧序）直接向设备出图，最后 Present。
 #pragma once
+#include "AudioDevice.hpp"
 #include "FontPainter.hpp"
 #include "GraphicsDevice.hpp"
 #include "../game/FrameClock.hpp"
@@ -14,6 +15,7 @@ namespace th16::sdl {
 class Application {
 public:
     GraphicsDevice graphics;
+    AudioDevice audio;
     FontPainter fonts;
     GameSession session;
     FrameClock clock;
@@ -25,6 +27,7 @@ public:
     Supervisor& supervisor() { return session.supervisor; }
     TitleScene& title() { return session.title; }
 
+    // 打开 th16.dat / 建图形与音频设备 / 装载启动幕。无音频设备（无 SDL 或打不开）不致命：仅静音
     bool initialize(const char* archive_path);
     // 固定一个逻辑步（含绘制链）+ Present（测试/步进用）。返回 false = 致命错误。
     bool step();
