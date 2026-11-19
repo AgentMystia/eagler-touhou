@@ -18,10 +18,22 @@ bool sprite_rect(AnmManager& animations, const AnmVm& vm, i32& left, i32& top, i
     return true;
 }
 
-u32 effective_outline(const AnmVm& vm, u32 outline) {
-    // 0x46d990：flags_hi & 0x1000 → 阴影色清零
-    if ((vm.flags_hi & 0x1000u) != 0) return 0;
-    return outline;
+TextIntoTextureRequest make_request(const AnmVm& vm, u32 color, u32 outline, i32 font, i32 height, const char* text,
+                                    i32 left, i32 top, i32 right, i32 bottom) {
+    TextIntoTextureRequest req;
+    req.vm_id = vm.id;
+    req.text = text;
+    // flags_hi bit12：阴影色清零且不画阴影（param_10 = !bit）
+    req.shadow = (vm.flags_hi & 0x1000u) == 0;
+    req.color = color;
+    req.outline = req.shadow ? outline : 0;
+    req.font = font;
+    req.height = height;
+    req.left = left;
+    req.top = top;
+    req.right = right;
+    req.bottom = bottom;
+    return req;
 }
 
 }  // namespace
@@ -30,31 +42,22 @@ bool text_paint_vm(AnmManager& animations, AnmVm& vm, u32 color, u32 outline, i3
                    const char* text, std::vector<TextIntoTextureRequest>* out) {
     if (text == nullptr) text = "";
     const i32 height = text_font_height(font);
-    // 原版：字号 ∈ [1,8] 时跳过 GDI 写入，但仍置 flags_lo bit0
     i32 left = 0, top = 0, right = 0, bottom = 0;
     const bool have_rect = sprite_rect(animations, vm, left, top, right, bottom, nullptr);
     vm.flags_lo |= 1u;
     if (!have_rect) return false;
+    // 原版：字号 ∈ [1,8] 时跳过 GDI 写入，但仍置 flags_lo bit0
     if (height >= 1 && height < 9) return true;
     if (out == nullptr) return true;
-    TextIntoTextureRequest req;
-    req.vm_id = vm.id;
-    req.text = text;
-    req.color = color;
-    req.outline = effective_outline(vm, outline);
-    req.font = font;
-    req.x = x;
-    req.y = y;
-    req.centered = false;
-    req.left = left;
-    req.top = top;
-    req.right = right;
-    req.bottom = bottom;
+    TextIntoTextureRequest req = make_request(vm, color, outline, font, height < 1 ? 0x11 : height, text, left, top,
+                                              right, bottom);
+    req.x = x * 2;
+    req.spacing = y * 2;
     out->push_back(std::move(req));
     return true;
 }
 
-bool text_paint_vm_centered(AnmManager& animations, AnmVm& vm, u32 color, u32 outline, i32 font, i32 shadow,
+bool text_paint_vm_centered(AnmManager& animations, AnmVm& vm, u32 color, u32 outline, i32 font, i32 spacing,
                             const char* text, std::vector<TextIntoTextureRequest>* out) {
     if (text == nullptr) text = "";
     const i32 height = text_font_height(font);
@@ -64,22 +67,12 @@ bool text_paint_vm_centered(AnmManager& animations, AnmVm& vm, u32 color, u32 ou
     vm.flags_lo |= 1u;
     if (!have_rect) return false;
     if (height >= 1 && height < 9) return true;
-    // 0x46dab0：x = sprite.width − ((font_h*2-1) * char_count)/2 … 由宿主按字形宽度再算；
-    // 这里先把居中意图与阴影开关传出，像素侧用 measure 精算。
     if (out == nullptr) return true;
-    TextIntoTextureRequest req;
-    req.vm_id = vm.id;
-    req.text = text;
-    req.color = color;
-    req.outline = effective_outline(vm, outline);
-    req.font = font;
-    req.x = i32(sprite_w);
-    req.y = shadow;
-    req.centered = true;
-    req.left = left;
-    req.top = top;
-    req.right = right;
-    req.bottom = bottom;
+    TextIntoTextureRequest req = make_request(vm, color, outline, font, height < 1 ? 0x11 : height, text, left, top,
+                                              right, bottom);
+    const u32 half = u32((height * 2 - 1) * i32(req.text.size())) >> 1;
+    req.x = i32(sprite_w - (float(half) + 0.0f));
+    req.spacing = spacing * 2;
     out->push_back(std::move(req));
     return true;
 }

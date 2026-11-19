@@ -64,6 +64,7 @@
 #include "../../web/cpp/game/ScreenEffect.hpp"
 #include "../../web/cpp/game/Stage.hpp"
 #include "../../web/cpp/game/TextPaint.hpp"
+#include "../../web/cpp/game/TextRaster.hpp"
 #include "../../web/cpp/game/StageTable.hpp"
 #include "../../web/cpp/game/Std.hpp"
 #include "../../web/cpp/game/Supervisor.hpp"
@@ -142,6 +143,62 @@ int main(int argc, char** argv) {
         text_paint_vm(animations, vm, 0xffffffu, 0u, 0, 0, 0, "test", &queue);
         std::printf("flag=%u queued=%zu height0=%d height8=%d\n", vm.flags_lo & 1u, queue.size(),
                     text_font_height(0), text_font_height(8));
+        return 0;
+    }
+    if (command == "text-raster") {
+        // 0x459240：合成字形源（每次 TextOut 在 (x, y) 点一个满覆盖像素）记录调用序并给出各遍结果
+        struct DotGlyphs final : TextGlyphSource {
+            bool alt = false;
+            bool meiryo() const override { return alt; }
+            void text_out(TextDib& dib, i32 font, i32 x, i32 y, u32 color, const char* bytes, i32 len) override {
+                std::printf("out font=%d x=%d y=%d color=%06x len=%d [", font, x, y, color, len);
+                for (i32 i = 0; i < len; ++i) std::printf("%02x", u8(bytes[i]));
+                std::printf("]\n");
+                if (x >= 0 && x < TextDib::kWidth && y >= 0 && y < TextDib::kAllocRows)
+                    dib.pixels[size_t(y) * TextDib::kWidth + size_t(x)] =
+                        text_dib_blend(dib.pixels[size_t(y) * TextDib::kWidth + size_t(x)], color, 255);
+            }
+        } glyphs;
+        TextDib dib;
+        std::vector<u16> rect;
+        i32 w = 0, h = 0;
+        auto px = [&](i32 x, i32 y) { return unsigned(dib.pixels[size_t(y) * TextDib::kWidth + size_t(x)]); };
+        TextIntoTextureRequest req;
+        req.text = "AB";
+        req.font = 0;
+        req.height = 17;
+        req.color = 0xc08040;
+        req.outline = 0x102030;
+        req.shadow = true;
+        req.x = 10;
+        req.right = 16;
+        req.bottom = 8;
+        std::printf("case whole-shadow\n");
+        text_raster_paint(req, glyphs, dib, rect, w, h);
+        std::printf("px12_2=%04x px13_2=%04x px13_1=%04x px15_2=%04x rect=%dx%d r12_2=%04x\n", px(12, 2), px(13, 2),
+                    px(13, 1), px(15, 2), w, h, unsigned(rect[2 * w + 12]));
+        std::printf("case spaced\n");
+        req.text = "\x82\xa0\x82\xa2x";
+        req.spacing = 40;
+        text_raster_paint(req, glyphs, dib, rect, w, h);
+        std::printf("case edge\n");
+        req.text = "A";
+        req.spacing = 0;
+        req.shadow = false;
+        req.color = 0xffffff;
+        req.x = -1;
+        text_raster_paint(req, glyphs, dib, rect, w, h);
+        std::printf("px0_2=%04x px1_2=%04x px2_2=%04x px1_1=%04x px0_1=%04x\n", px(0, 2), px(1, 2), px(2, 2), px(1, 1),
+                    px(0, 1));
+        std::printf("case meiryo\n");
+        glyphs.alt = true;
+        req.x = 4;
+        req.font = 0;
+        text_raster_paint(req, glyphs, dib, rect, w, h);
+        std::printf("font0 r0_6=%04x\n", unsigned(rect[size_t(0) * w + 6]));
+        req.font = 2;
+        text_raster_paint(req, glyphs, dib, rect, w, h);
+        std::printf("font2 r2_6=%04x\n", unsigned(rect[size_t(2) * w + 6]));
         return 0;
     }
     if (command == "spell-table") {
@@ -1535,10 +1592,12 @@ int main(int argc, char** argv) {
         std::vector<ScanInj> scans;
         bool unlock_spells = false;
         bool dump_ascii = false;
+        bool dump_text = false;
         i32 title_origin = -1;
         for (int a = 4; a < argc; ++a) {
             if (std::strcmp(argv[a], "skip") == 0) { session.supervisor.config_flags |= Supervisor::kSkipBootFlags; continue; }
             if (std::strcmp(argv[a], "ascii") == 0) { dump_ascii = true; continue; }
+            if (std::strcmp(argv[a], "text") == 0) { dump_text = true; continue; }
             if (std::strcmp(argv[a], "unlock-spells") == 0) { unlock_spells = true; continue; }
             if (std::strncmp(argv[a], "origin=", 7) == 0) { title_origin = std::atoi(argv[a] + 7); continue; }
             const char* p = argv[a];
@@ -1601,6 +1660,13 @@ int main(int argc, char** argv) {
                 std::printf("ascii %.1f %.1f %08x %d [%s]\n", double(e.pos.x), double(e.pos.y), e.color,
                             e.shadow ? 1 : 0, e.text);
             }
+        }
+        if (dump_text) {
+            // 0x459240 实参（逻辑帧入队，harness 不刷像素故累积全部请求）
+            for (const TextIntoTextureRequest& r : session.text_into_texture)
+                std::printf("text font=%d height=%d x=%d spacing=%d shadow=%d color=%06x outline=%06x rect=%d,%d,%d,%d [%s]\n",
+                            r.font, r.height, r.x, r.spacing, r.shadow ? 1 : 0, r.color, r.outline, r.left, r.top,
+                            r.right, r.bottom, r.text.c_str());
         }
         for (const RecordingDevice::QuadSummary& q : quads) RecordingDevice::print_quad(q);
         if (session.game_live && session.game.stage) {

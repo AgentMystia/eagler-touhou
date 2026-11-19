@@ -2,8 +2,7 @@
 // 经 0x459240 写入 ANM 纹理，并置 VM flags_lo bit0（0x530 |= 1）。
 //
 // 逻辑侧：格式化字符串、取精灵像素矩形（AnmRuntimeSprite +0x0c..+0x18）、置标志、入队请求。
-// 像素写入由宿主（sdl::GraphicsDevice / FontPainter）在逻辑帧末执行；无字体时仍置标志并清空矩形，
-// 避免旧字残留。
+// 像素写入在逻辑帧末经 TextRaster（0x459240 的 DIB 管线）+ 宿主字形源执行。
 #pragma once
 #include <functional>
 #include <string>
@@ -17,16 +16,18 @@ namespace th16 {
 class AnmManager;
 struct AnmFile;
 
+// 0x459240 的实参（逻辑侧已算好），外加目标 VM 与精灵像素矩形
 struct TextIntoTextureRequest {
     u32 vm_id = 0;
     std::string text;
-    u32 color = 0xffffff;     // COLORREF：0x00BBGGRR
-    u32 outline = 0;          // 阴影 / 描边 COLORREF；flags_hi bit12 时强制 0
-    i32 font = 0;             // 0..8 → DAT_00491b68 字号
-    i32 x = 0;                // 0x46d990 param_6（调用 0x459240 前 ×2）
-    i32 y = 0;                // 0x46d990 param_7（SJIS 字距 ×2）；0x46dab0 为阴影开关
-    bool centered = false;    // 0x46dab0
-    i32 left = 0, top = 0, right = 0, bottom = 0;  // 精灵像素矩形
+    u32 color = 0xffffff;     // param_4 COLORREF：0x00BBGGRR
+    u32 outline = 0;          // param_5 阴影色；flags_hi bit12 时强制 0
+    i32 font = 0;             // param_8：0..8 → 0x458db0 字体句柄
+    i32 height = 0x11;        // param_3：DAT_00491b68[font]
+    i32 x = 0;                // param_2：起点像素（0x46d990 为 param_6×2；0x46dab0 为居中式）
+    i32 spacing = 0;          // param_9：逐双字节步长（调用方参数 ×2）；0 = 整串 TextOut
+    bool shadow = true;       // param_10：!(flags_hi & 0x1000)
+    i32 left = 0, top = 0, right = 0, bottom = 0;  // param_1：精灵像素矩形（float 截断）
 };
 
 // DAT_00491b68
@@ -40,8 +41,8 @@ inline i32 text_font_height(i32 font) noexcept {
 bool text_paint_vm(AnmManager& animations, AnmVm& vm, u32 color, u32 outline, i32 font, i32 x, i32 y,
                    const char* text, std::vector<TextIntoTextureRequest>* out);
 
-// 0x46dab0：按精灵宽度居中
-bool text_paint_vm_centered(AnmManager& animations, AnmVm& vm, u32 color, u32 outline, i32 font, i32 shadow,
+// 0x46dab0：x = (int)(sprite.width − (u32)((h×2−1)×strlen) >> 1)
+bool text_paint_vm_centered(AnmManager& animations, AnmVm& vm, u32 color, u32 outline, i32 font, i32 spacing,
                             const char* text, std::vector<TextIntoTextureRequest>* out);
 
 }  // namespace th16

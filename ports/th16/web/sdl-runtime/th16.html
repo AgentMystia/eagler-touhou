@@ -52,6 +52,19 @@ try {
   let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
   mod.FS.writeFile('/assets/th16.dat', bytes);
+  // 0x459240 文字：CP932 → Unicode 表按浏览器 Shift_JIS 解码生成；字体文件可选（不入库，放 sdl-runtime/assets/）
+  const decoder = new TextDecoder('shift_jis');
+  const mapping = new Uint16Array(65536);
+  for (let n = 0; n < 65536; ++n) {
+    const v = decoder.decode(n < 256 ? Uint8Array.of(n) : Uint8Array.of(n >> 8, n & 255));
+    mapping[n] = v.length === 1 && v !== '\ufffd' ? v.charCodeAt(0) : 0x30fb;
+  }
+  mod.FS.mkdirTree('/fonts');
+  mod.FS.writeFile('/fonts/cp932.bin', new Uint8Array(mapping.buffer));
+  for (const name of ['msgothic.ttc', 'msmincho.ttc', 'meiryo.ttc']) {
+    const font = await fetch('assets/' + name).catch(() => null);
+    if (font && font.ok) mod.FS.writeFile('/fonts/' + name, new Uint8Array(await font.arrayBuffer()));
+  }
   status('初始化 SDL3 / GLES 3.0…');
   if (!mod._th16_initialize()) throw new Error('初始化失败：' + mod.UTF8ToString(mod._th16_error()));
   document.getElementById('loading').textContent = '';
