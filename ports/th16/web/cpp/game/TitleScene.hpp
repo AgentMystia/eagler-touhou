@@ -121,6 +121,8 @@ public:
     void draw_spell_hud(AsciiManager& ascii);
     // 0x4513c0：关卡选择画面练习最高分行
     void draw_stage_practice_scores(AsciiManager& ascii);
+    // 0x453030：Player Data 排行榜行（page0）
+    void draw_player_data(AsciiManager& ascii);
     // 0x4560b0：按难度填 +0x5dd0、刷 +0x740 名 VM（Nothing / No.%3d / ？？？）
     void refresh_spell_slot_names(AnmManager& anm);
     // 主菜单空闲 demo 门控（0x708 / bit6 / 下标 %3）；供单测与 update 共用

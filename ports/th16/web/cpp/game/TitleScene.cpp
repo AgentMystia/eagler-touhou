@@ -310,6 +310,7 @@ void TitleScene::draw(AsciiManager& ascii) {
     // 0x44b530
     switch (screen) {
     case kStage: draw_stage_practice_scores(ascii); break;  // 0x4513c0
+    case kScore: draw_player_data(ascii); break;            // 0x453030
     case kSpellList:
     case kSpellShot:
     case kSpellStart: draw_spell_hud(ascii); break;         // 0x456d50（0x14 亦走 SCORE）
@@ -354,6 +355,64 @@ void TitleScene::draw_stage_practice_scores(AsciiManager& ascii) {
         y += 18.0f;
     }
     ascii.style.color = 0xffffffffu;
+    ascii.style.shadow = false;
+}
+
+void TitleScene::draw_player_data(AsciiManager& ascii) {
+    // 0x453030：sub==2 且 page==0 时打 10 条排名 + 底部通关/时间统计
+    if (sub != 2) return;
+    if (scores == nullptr) return;
+    if (score_page_cursor.index != 0) return;
+
+    static constexpr const char* kSeasonShort[5] = {"Sp", "Sm", "At", "Wt", "Fl"};
+    static constexpr const char* kStageShort[8] = {"tst", "St1", "St2", "St3", "St4", "St5", "St6", "Ex "};
+
+    const i32 shot = score_shot_cursor.index;
+    const i32 diff = cursor.index;
+    if (shot < 0 || shot >= ScoreFile::kAllShotsBlock) return;
+    if (diff < 0 || diff >= ScoreFile::kDifficulties) return;
+
+    float y = 160.0f;
+    ascii.style.shadow = true;
+    ascii.style.group = AsciiManager::Group::Ui;
+    for (int rank = 0; rank < ScoreFile::kRanks; ++rank) {
+        ascii.style.color = (~u32(rank * 0x10)) | 0xffffff00u;
+        const ScoreEntry& e = scores->ranks[shot][diff][rank];
+        if (e.time == 0) {
+            ascii.printf(Vec3{22.0f, y, 0.0f},
+                         "%2d  %s  %9ld%d  ----/--/-- --:-- Season  Stage -  ---%%",
+                         rank + 1, e.name, long(e.score), int(e.continues));
+        } else {
+            // UTC 拆年/月/日/时/分（与 CRT gmtime 列表口径一致）
+            const i64 sec = e.time;
+            const i64 days = sec / 86400;
+            const i32 tod = int(sec % 86400);
+            const i32 hour = tod / 3600;
+            const i32 minute = (tod / 60) % 60;
+            i64 z = days + 719468;
+            const i64 era = (z >= 0 ? z : z - 146096) / 146097;
+            const i64 doe = z - era * 146097;
+            const i64 yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+            const i64 doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+            const i64 mp = (5 * doy + 2) / 153;
+            const i32 day = i32(doy - (153 * mp + 2) / 5 + 1);
+            const i32 month = i32(mp < 10 ? mp + 3 : mp - 9);
+            const i32 year = i32(yoe + era * 400 + (month <= 2 ? 1 : 0));
+            const char* season = (e.season >= 0 && e.season < 5) ? kSeasonShort[e.season] : "--";
+            const char* stage = (e.stage >= 0 && e.stage < 8) ? kStageShort[e.stage] : "-- ";
+            ascii.printf(Vec3{22.0f, y, 0.0f},
+                         "%2d  %s  %9ld%d  %.4d/%.2d/%.2d %.2d:%.2d %s  %s  %2.1f%%",
+                         rank + 1, e.name, long(e.score), int(e.continues),
+                         year, month, day, hour, minute, season, stage, double(e.slowdown));
+        }
+        y += 18.0f;
+    }
+
+    ascii.style.color = 0xffffffffu;
+    // 底部：通关次数 / 游戏时间占位 / 未续关通关
+    ascii.printf(Vec3{328.0f, 378.0f, 0.0f}, "    %5d", int(scores->clears[shot][diff]));
+    ascii.printf(Vec3{328.0f, 396.0f, 0.0f}, "%3d:%.2d:%.2d", 0, 0, 0);
+    ascii.printf(Vec3{328.0f, 414.0f, 0.0f}, "    %5d", int(scores->no_continue_clears[shot][diff]));
     ascii.style.shadow = false;
 }
 
