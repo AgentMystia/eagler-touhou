@@ -61,7 +61,8 @@ function recordPort(golden, lastFrame, fromFrame) {
     execFileSync(harness, ['game-draw', dat, String(c.stage), String(c.shot), String(c.season), String(lastFrame + 1),
       c.input, '', '', String(c.difficulty), String(c.replay_slot ?? -1), String(c.lives), String(c.refill ?? 0), '0', out,
       String(fromFrame)],
-    {encoding: 'utf8', maxBuffer: 1 << 28});
+    // 绘制流写进 out；stdout 上的逐帧 game-run JSON 不需要（长序列会超过 maxBuffer），直接丢弃
+    {encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'], maxBuffer: 1 << 24});
     const frames = {};
     for (const line of readFileSync(out, 'utf8').split('\n')) {
       if (!line) continue;
@@ -130,6 +131,10 @@ test('draw structure: stage 1 Easy first spellcard start / name text / bonus cou
 
 test('draw structure: stage 1 Easy player death (state 4 → 2 → 0 → 1) and respawn, frames 940–1150', needDat, () => {
   assert.equal(checkGolden('draw-st1-death'), 211);
+});
+
+test('draw structure: stage 1 → 2 transition (kind 5 full-screen fade 0x45c860, clear color reset + Loading VM 0x42d200, inherited fog camera 0x4097c0, kind 3 field fade-in 0x45c990), frames 12100–12300', needDat, () => {
+  assert.equal(checkGolden('draw-st1-stage-transition'), 201);
 });
 
 test('draw structure: stage 4 Normal st04 background (mode 8 texture-matrix cache 0x467b0d) + mode 4 projected leaf particles (0x466390, camera right = facing_norm × up), frames 2–300', needDat, () => {
