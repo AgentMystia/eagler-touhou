@@ -12,6 +12,7 @@
 #include "ScoreFile.hpp"
 #include "Stage.hpp"
 #include "StageTable.hpp"
+#include "TextPaint.hpp"
 
 namespace th16 {
 
@@ -78,8 +79,12 @@ void Spellcard::start(i32 spell_id, const char* spell_name, i32 limit, i32 anm_i
         vm_ids[1] = ascii != nullptr ? anm->spawn(*ascii, 0, -1) : 0;
         vm_ids[2] = text != nullptr ? anm->spawn(*text, 2, -1) : 0;
         vm_ids[3] = ascii != nullptr ? anm->spawn(*ascii, 1, -1) : 0;
-        // 0x46dab0：名字文本写入 text.anm VM 的纹理（渲染侧接入时补）
-        if (anm->find(vm_ids[2]) == nullptr) vm_ids[2] = 0;
+        if (AnmVm* name_vm = anm->find(vm_ids[2])) {
+            // 0x46dab0(AnmManager, name_vm, 0xffffff, 0, font=8, shadow=1, name)
+            text_paint_vm_centered(*anm, *name_vm, 0xffffffu, 0u, 8, 1, name, text_paints);
+        } else {
+            vm_ids[2] = 0;
+        }
     }
     play_sfx(0x21);
 

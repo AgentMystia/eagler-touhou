@@ -27,6 +27,7 @@
 
 #include "AnmRenderer.hpp"
 #include "AnmVm.hpp"
+#include "TextPaint.hpp"
 #include "Types.hpp"
 
 namespace th16 {
@@ -84,7 +85,7 @@ struct Msg {
     i32 unknown_1c0 = 0;        // +0x1c0
     i32 box_index = 0;          // +0x1c4：当前文字框脚本下标（0x42ba30 存，跟随子 VM 0xb4 + 下标）
 
-    // 宿主渲染用：0x46d990 把文字画进 VM 纹理的请求（逻辑无副作用）
+    // 宿主渲染用：0x46d990 把文字画进 VM 纹理的请求（亦入队 GameSession::text_into_texture）
     struct TextRequest { u32 vm_id; std::string text; u32 color; u32 shadow_color; i32 font; i32 x; i32 y; };
     std::vector<TextRequest> text_requests;
 
@@ -207,6 +208,7 @@ public:
     std::vector<i32> sfx_queue;              // 0x45e150：op 11 按键推进 0
     std::vector<i32>* sfx_sink = nullptr;
     void play_sfx(i32 id) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(id); }
+    std::vector<TextIntoTextureRequest>* text_paints = nullptr;  // 0x46d990 入队
     // 0x43c3f0(1, 曲目) / 0x43c470：op 19 切 Boss 曲、op 22 / 27 淡出（Sound 接入前供宿主取走）
     // kind：0 淡出（0x43c470）/ 1 Boss 曲（0x43c3f0）/ 2 直接切曲（0x45ed00(2, 序号)，ECL 518 -1 / -3）
     struct BgmEvent { i32 kind; i32 track; };

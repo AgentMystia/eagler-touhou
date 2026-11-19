@@ -172,6 +172,10 @@ void Gui::dialogue_text_follow(AnmVm& vm) {
 void Gui::draw_text(Msg& m, u32& id, const char* text, u32 color, u32 shadow, i32 font, i32 x, i32 y) {
     AnmVm* vm = find_or_clear(id);
     m.text_requests.push_back({vm != nullptr ? vm->id : 0u, std::string(text), color, shadow, font, x, y});
+    // 0x46d990：COLORREF 与 ANM 色同为 0x00BBGGRR 布局时直接传入；对话色已是该口径
+    if (vm != nullptr && animations != nullptr) {
+        text_paint_vm(*animations, *vm, color, shadow, font, x, y, text, text_paints);
+    }
 }
 
 // 0x429ff0
