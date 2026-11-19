@@ -110,6 +110,28 @@ void ReplayRecording::close_stage(bool append_terminator) {
     stage_open = false;
 }
 
+void ReplayRecording::mark_full_run(i32 time32) {
+    if (user.size() != ReplayFile::kUserSize) user.assign(ReplayFile::kUserSize, 0);
+    timestamp = time32;
+    put_i32(user.data() + 0xc, time32);
+    put_i32(user.data() + 0x90, 8);
+}
+
+ReplaySummary ReplayRecording::summary() const {
+    ReplaySummary out;
+    out.timestamp = timestamp;
+    if (user.size() < ReplayFile::kUserSize) return out;
+    out.spell_practice = (user[0xa] & 2) != 0;
+    out.shot = load_i32(user.data() + 0x84);
+    out.shot_aux = load_i32(user.data() + 0x88);
+    out.difficulty = load_i32(user.data() + 0x8c);
+    out.stage = load_i32(user.data() + 0x90);
+    out.spell_id = load_i32(user.data() + 0x98);
+    out.season = load_i32(user.data() + 0x9c);
+    std::memcpy(&out.slow_rate, user.data() + 0x7c, sizeof(out.slow_rate));
+    return out;
+}
+
 bool ReplayRecording::encode(std::vector<u8>& out, const char* player_name, i32 score, float slow_rate) {
     if (!error.empty()) return false;
     if (stage_open) close_stage(true);

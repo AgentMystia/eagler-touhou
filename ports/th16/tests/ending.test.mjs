@@ -68,6 +68,27 @@ test('ending-smoke: ExtraEnding goes straight to title', needDat, () => {
   assert.equal(header.scene, 4);
 });
 
+test('ExtraEnding → title_origin 3: name entry 0xe (0x4532f0) → replay save 0xf (0x453c10) → main menu', needDat, () => {
+  // 入榜第 1 名：Z 落 'A'，←↑ 到 End（0x5a），Z 结束 → 未续关进 0xf；Z 选槽 1，名字回填后光标在 End，Z 存档，X 回主菜单
+  const out = run(['ending-smoke', dat, '70', 'extra=1', 'diff=4', 'score=900000000',
+    '20:0x1', '22:0x40', '24:0x10', '26:0x1', '50:0x1', '52:0x1', '54:0x2']);
+  const titleEvents = out.split('\n').filter(l => l.startsWith('title ')).map(l => l.slice(6));
+  assert.deepEqual(titleEvents, [
+    'bgm-name-entry 0', 'name-entry 0',
+    'sfx 7', 'sfx 10', 'sfx 10', 'name-done 0', 'sfx 7', 'screen 15',
+    'replay-save 0', 'sfx 7', 'sfx 17', 'replay-saved 1', 'sfx 7',
+    'sfx 9', 'bgm-default 1', 'screen 1',
+  ]);
+  assert.match(out, /last_name=\[A {7}\] rank0=\[A {7}\]/);
+  assert.match(out, /title_screen=1 title_origin=1/);
+});
+
+test('ExtraEnding with no rank: confirm skips straight to replay save', needDat, () => {
+  const out = run(['ending-smoke', dat, '40', 'extra=1', 'diff=4', 'score=0', '20:0x1']);
+  const titleEvents = out.split('\n').filter(l => l.startsWith('title ')).map(l => l.slice(6));
+  assert.deepEqual(titleEvents.slice(0, 5), ['bgm-name-entry 0', 'name-entry -1', 'sfx 7', 'screen 15', 'replay-save 0']);
+});
+
 test('ending-script: mash through staff returns to title', needDat, () => {
   // staff 时刻到 ~2940；边沿确认跳过等待后约 3140 帧剧本结束 → 场景 4
   const inject = Array.from({length: 3140}, (_, i) => i % 2 === 0 ? `${i}:0x1` : null).filter(Boolean);

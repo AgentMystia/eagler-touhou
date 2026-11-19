@@ -38,6 +38,10 @@ struct ReplayRecording {
     bool tick(u16 held, u16 pressed, u16 released, u8 fps_byte);
     // 封口当前关（换关 / 结束前）；可选追加 0xffff 终止三元组（0x448400 非 spell 路径）
     void close_stage(bool append_terminator);
+    // 0x4483b0(1)：通关存档前重取时间戳，用户块 +0x90 = 8（关卡名表 0x4918f0[8] = "All"）
+    void mark_full_run(i32 time32);
+    // 本局用户块的列表摘要（名字栏为空格）
+    ReplaySummary summary() const;
     // 0x448400：写出 th16_XX.rpy（directory 下优先 replay/ 子目录；失败时写 directory 根）
     bool write_slot(const char* directory, int slot, const char* player_name, i32 score, float slow_rate);
     // 结构化 → 文件字节（不含路径）；成功时 out 含头 + 密文 + USER 说明块
