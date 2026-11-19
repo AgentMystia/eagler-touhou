@@ -37,6 +37,8 @@
 //   harness replay-ff <mode> <counter> <held> [gm=1] [loading=0]
 //                                              → 打印 0x448e40 返回码（1 Continue / 6 Restart）
 //   harness replay-fps-color <byte>            → 打印 0x4482f0 颜色（十进制）
+//   harness ending-smoke <th16.dat> <frames> [extra=0] [f:bits,...]
+//                                              → 启动后强制进结局（0xf）或 Extra 回标题（0x10）；报告 ending_live/index/finished/scene
 #include "../../web/cpp/game/Archive.hpp"
 #include "../../web/cpp/game/AnmManager.hpp"
 #include "../../web/cpp/game/AnmGeometry.hpp"
@@ -63,6 +65,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 using namespace th16;
@@ -131,6 +134,36 @@ int main(int argc, char** argv) {
         text_paint_vm(animations, vm, 0xffffffu, 0u, 0, 0, 0, "test", &queue);
         std::printf("flag=%u queued=%zu height0=%d height8=%d\n", vm.flags_lo & 1u, queue.size(),
                     text_font_height(0), text_font_height(8));
+        return 0;
+    }
+    if (command == "ending-smoke" && argc >= 4) {
+        const char* path = argv[2];
+        const int frames = std::atoi(argv[3]);
+        bool extra = false;
+        std::unordered_map<int, u32> inject;
+        for (int a = 4; a < argc; ++a) {
+            if (std::strncmp(argv[a], "extra=", 6) == 0) extra = std::atoi(argv[a] + 6) != 0;
+            else {
+                int f = 0; u32 bits = 0;
+                if (std::sscanf(argv[a], "%d:%x", &f, &bits) == 2) inject[f] = bits;
+            }
+        }
+        std::vector<u8> bytes;
+        if (!read_file(path, bytes)) return 1;
+        GameSession session;
+        if (!session.open(bytes.data(), u32(bytes.size()))) { std::fprintf(stderr, "%s\n", session.failure.c_str()); return 1; }
+        if (!session.begin_boot()) { std::fprintf(stderr, "%s\n", session.failure.c_str()); return 1; }
+        session.globals.shot = 0;
+        session.globals.shot_aux = 0;
+        session.supervisor.request(extra ? SceneId::ExtraEnding : SceneId::Ending);
+        for (int f = 0; f < frames; ++f) {
+            session.injected_input = inject.count(f) ? inject[f] : 0;
+            if (!session.logic_step()) { std::fprintf(stderr, "%s\n", session.failure.c_str()); return 1; }
+        }
+        std::printf("scene=%d ending_live=%d ending_index=%d finished=%d title_live=%d\n",
+                    int(session.supervisor.current), session.ending_live ? 1 : 0, session.ending.ending_index,
+                    session.ending.finished ? 1 : 0, session.supervisor.title_menu_live ? 1 : 0);
+        for (const char* e : session.ending.events) std::printf("event %s\n", e);
         return 0;
     }
     if (command == "title-demo-idle") {

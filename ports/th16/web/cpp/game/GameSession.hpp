@@ -13,6 +13,7 @@
 #include "Ascii.hpp"
 #include "Chain.hpp"
 #include "Effect.hpp"
+#include "EndingScene.hpp"
 #include "ScreenEffect.hpp"
 #include "Spellcard.hpp"
 #include "Input.hpp"
@@ -50,9 +51,11 @@ public:
     ChainManager chains;
     GameGlobals globals;
     TitleScene title;
+    EndingScene ending;            // 场景 0xf：DAT_004a6dbc
     GameManager game;              // 场景 7：DAT_004a6dd4
     GameMenu menu;                 // DAT_004a6ef4（0x43e5a0：新开局时与各管理器一起建，换关沿用，离开游戏时销毁）
     bool menu_live = false;
+    bool ending_live = false;
     ScoreFile scores;              // DAT_004a6f0c（成绩文件读写接入前为默认值）
     u32 config_flags = 0;          // DAT_004c1800（bit4 失焦自动暂停 / bit13 回标题改为退出）
     StageCamera stage_camera;      // DAT_004c168c：当前运行中关卡每帧抄出的全局相机（ANM 变量 10016..10021）
@@ -108,6 +111,7 @@ private:
     ChainEntry* ascii_draw_chains_[3] = {};           // 0x51 / 0x35 / 0x42（0x408090 / 0x4080a0 / 0x4080b0）
     ChainEntry* effect_update_chain_ = nullptr;
     ChainEntry* title_update_chain_ = nullptr;
+    ChainEntry* ending_update_chain_ = nullptr;       // 0x23（0x4191f0 → LAB_004197a0）
     ChainEntry* game_update_chain_ = nullptr;
     ChainEntry* replay_record_chain_ = nullptr;       // 0x10（0x448e20 → 0x447fd0 记录）
     ChainEntry* replay_playback_chain_ = nullptr;     // 0x22（0x448e40：回放中按住射击则 Restart 整条更新链快进）
@@ -156,6 +160,9 @@ private:
     bool bind_loaded_replay_();            // 0x448c10 成功后：选段、记 RNG 种子、复位游标
     bool next_stage();     // 0x43ce10 case 0xc：0x42d780 → 0x42d200（bit1）；0x42d700 + 0x42cb60 换关装载
     void leave_game();     // 0x42d200
+    bool enter_ending(bool extra);  // 0x43ce10 case 0xf / 0x10 → 0x419640；Extra 直接回标题
+    void leave_ending();
+
     // 0x42cb60 子步骤：0x409db0 Stage（STD + 背景 ANM 槽 3 + (stage & 1)，链 0x11）/ 0x41b340 ECL（链 0x1a）/
     // 0x426c10 Gui 关卡部分（logo 槽 6 + 机体 msg）/ 0x4178a0 Spellcard 绑定
     bool create_stage();
