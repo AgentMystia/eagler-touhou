@@ -7,7 +7,9 @@
 // → 插值推进（0x463b30）→ 600 系列几何（0x4632f0）→ 脚本计时 +1。
 #include <cmath>
 #include <cstring>
+#include "AnmGeometry.hpp"
 #include "AnmManager.hpp"
+#include "RenderDevice.hpp"
 
 namespace th16 {
 
@@ -373,6 +375,101 @@ void Timer::rewind(i32 n, float game_speed) noexcept {
         current = i32(current_f);
     }
 }
+
+namespace {
+
+// 0x464d60：x87 cos / sin × 半径后截成 float（与 Motion.cpp 的 polar 同口径：先 double 乘再舍入）
+void polar_into(float* xy, float angle, float radius) noexcept {
+    xy[0] = float(std::cos(double(angle)) * double(radius));
+    xy[1] = float(std::sin(double(angle)) * double(radius));
+}
+
+// 0x4632f0 的半径：外 / 内半径 = scale.y ± scale.x / 2，随父缩放（ins_507 分离除外；原版外半径乘父 scale.x、
+// 内半径乘父 scale.y），再按 ins_313 的 scale mode 乘窗口缩放
+void strip_radii(const AnmVm& vm, float window_scale, float& outer, float& inner) noexcept {
+    const float half = vm.scale.x * 0.5f;
+    outer = vm.scale.y + half;
+    inner = vm.scale.y - half;
+    if (vm.parent != nullptr && (vm.flags_hi & AnmVm::kHiDetached) == 0) {
+        outer = outer * vm.parent->scale.x;
+        inner = inner * vm.parent->scale.y;
+    }
+    const u32 mode = vm.flags_hi & AnmVm::kHiScaleModeMask;
+    if (mode == 0x100000u) { outer = outer * window_scale; inner = inner * window_scale; }
+    else if (mode == 0x200000u) { inner = inner * window_scale * 0.5f; outer = outer * window_scale * 0.5f; }
+}
+
+// 0x4632f0：600 系列条带几何——每帧 VM 更新末尾按当前位置 / 旋转 / 缩放重算宿主顶点缓冲（0x468490 mode 9 / 0xd / 0xe
+// 经 0x4681f0 以 XYZRHW|DIFFUSE|TEX1 三角条带绘制，每采样点外 / 内两个顶点）：
+//   mode 9（ins_600）  整圈环带：$I0 个采样点（首尾重合），起角 = rotation.z，V 沿环累加到 $I1 圈
+//   mode 0xd（ins_601）圆弧带：张角 rotation.x，起角 = rotation.z − rotation.x / 2
+//   mode 0xe（ins_602）圆弧带：起角 = rotation.z（Boss 血条 front.anm 244：38 点、张角 −2π）
+//   mode 0x18 / 0x19（ins_609 / 610）世界空间圆柱带——本作 ANM 未使用，不生成
+// 原版缓冲由 ins_600 族按参数 malloc（$I0 × 0x38 字节，未初始化）；这里在首次生成 / 点数增大时按 $I0 分配，
+// 其余语义相同（点数 < 2 时原版除以 0 得 ±∞ / NaN 角步，此处照算）。
+void generate_strip_geometry(AnmVm& vm, const AnmGeometry& geometry) {
+    const u32 mode = vm.render_mode();
+    if (mode != 9 && mode != 0xd && mode != 0xe) return;
+    const i32 nodes = vm.int_vars[0];
+    if (nodes <= 0) return;
+    const u32 bytes = u32(nodes) * 2u * sizeof(ScreenColorUvVertex);
+    if (vm.vertex_buffer == nullptr || vm.vertex_buffer_size < bytes) {
+        if (vm.vertex_buffer != nullptr && vm.vertex_buffer_free != nullptr) vm.vertex_buffer_free(vm.vertex_buffer);
+        vm.vertex_buffer = new ScreenColorUvVertex[size_t(nodes) * 2];
+        vm.vertex_buffer_size = bytes;
+        vm.vertex_buffer_free = [](void* p) { delete[] static_cast<ScreenColorUvVertex*>(p); };
+    }
+    auto* out = static_cast<ScreenColorUvVertex*>(vm.vertex_buffer);
+    const Vec3 world = geometry.world_position(vm);   // 0x406c40
+    float outer, inner;
+    strip_radii(vm, geometry.window_scale, outer, inner);
+    const float u_outer = vm.uv_scroll.x + vm.uv[0].x;
+    const float u_inner = vm.uv[1].x + vm.uv_scroll.x;
+    u32 color;
+    std::memcpy(&color, vm.color, 4);
+    auto emit = [&](ScreenColorUvVertex* pair, float angle, float v) {
+        pair[0].rhw = 1.0f; pair[0].color = color; pair[0].u = u_outer; pair[0].v = v;
+        polar_into(&pair[0].x, angle, outer);
+        pair[0].z = 0.0f;
+        pair[0].x = pair[0].x + world.x; pair[0].y = world.y + pair[0].y; pair[0].z = pair[0].z + world.z;
+        pair[1].rhw = 1.0f; pair[1].color = color; pair[1].u = u_inner; pair[1].v = v;
+        polar_into(&pair[1].x, angle, inner);
+        pair[1].z = 0.0f;
+        pair[1].x = pair[1].x + world.x; pair[1].y = world.y + pair[1].y; pair[1].z = pair[1].z + world.z;
+    };
+
+    if (mode == 9) {
+        const i32 segments = nodes - 1;
+        const float angle_step = kTwoPi / float(segments);
+        const float v_step = float(vm.int_vars[1]) / float(segments);
+        float angle = vm.rotation.z;
+        float v = 0.0f;
+        for (i32 i = 0; i < segments; ++i) {
+            emit(out + i * 2, angle, vm.uv_scroll.y + v);
+            v = v + v_step;
+            angle = normalize_angle(angle + angle_step);
+        }
+        // 末对 = 首对坐标（闭合），V 取累加到整圈的值
+        out[segments * 2] = out[0];
+        out[segments * 2].v = vm.uv_scroll.y + v;
+        out[segments * 2 + 1] = out[1];
+        out[segments * 2 + 1].v = vm.uv_scroll.y + v;
+        return;
+    }
+    // mode 0xd / 0xe：颜色按 color mode 取 color / color2
+    if ((vm.flags_lo & AnmVm::kColorModeMask) != 0) std::memcpy(&color, vm.color2, 4);
+    float angle = mode == 0xe ? normalize_angle(vm.rotation.z) : normalize_angle(vm.rotation.z - vm.rotation.x * 0.5f);
+    const float angle_step = vm.rotation.x / float(nodes - 1);
+    const float v_step = float(vm.int_vars[1]) / float(nodes - 1);
+    float v = 0.0f;
+    for (i32 i = 0; i < nodes; ++i) {
+        emit(out + i * 2, angle, vm.uv_scroll.y + v);
+        v = v_step + v;
+        angle = normalize_angle(angle + angle_step);
+    }
+}
+
+}  // namespace
 
 struct AnmInterpreter {
     AnmManager& m;
@@ -952,7 +1049,11 @@ struct AnmInterpreter {
         }
         // flags_hi & 0x2000：每帧屏幕 UV 映射（0x468c00）——依赖投影子系统
         step_interps();
-        // 0x4632f0：600 系列顶点几何属于绘制数据，渲染阶段再生成
+        // 0x4632f0：600 系列条带几何（宿主顶点缓冲）
+        {
+            static const AnmGeometry kDefaultGeometry;
+            generate_strip_geometry(vm, m.geometry != nullptr ? *m.geometry : kDefaultGeometry);
+        }
         if (vm.time_callback != 0) {
             // DAT_004c0f44 表：非零槽位可阻止计时
         }

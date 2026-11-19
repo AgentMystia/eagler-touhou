@@ -278,6 +278,13 @@ int AnmRenderer::draw_vm(AnmVm& vm) {
     case AnmRenderMode::Line:
     case AnmRenderMode::RectOutline:
         return draw_rectangle(vm, AnmRenderMode(mode));
+    case AnmRenderMode::VertexBuffer:
+    case AnmRenderMode::VertexBuffer12:
+    case AnmRenderMode::VertexBuffer13:
+    case AnmRenderMode::VertexBuffer14:
+        // 0x4681f0(vm, +0x5b8 缓冲, $I0 × 2)：mode 9 / 0xd / 0xe 的缓冲由 0x4632f0 每帧生成，mode 0xc 由宿主填写
+        if (vm.vertex_buffer == nullptr || vm.int_vars[0] <= 0) return -1;
+        return draw_host_strip(vm, static_cast<const ScreenColorUvVertex*>(vm.vertex_buffer), u32(vm.int_vars[0]) * 2u);
     default:
         if (mode < 32) ++unimplemented_modes[mode];
         return 0;
