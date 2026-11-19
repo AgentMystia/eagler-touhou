@@ -24,6 +24,7 @@
 #include "FrameTimer.hpp"
 #include "Replay.hpp"
 #include "ReplayFile.hpp"
+#include "ReplayGlobals.hpp"
 #include "ReplayRecording.hpp"
 #include "ScoreFile.hpp"
 #include "ScreenCompositor.hpp"
@@ -90,10 +91,12 @@ public:
     bool open(const u8* archive_bytes, u32 size);
     bool begin_boot();                 // 0x43adc0：ascii + sig，注册启动幕绘制链，请求 Title
     // 跳过启动幕/标题直接进入场景 7（harness）：装启动 bank 后按 globals（stage/shot/season/difficulty）装载关卡
-    bool start_game_direct();
-    // 0x448c10：装入回放文件；随后 enter_game(1) / start_game_direct 走回放输入链
+    bool start_game_direct(i32 replay_mode = 0);
+    // 0x448c10：装入回放文件；随后 enter_game(1) / start_game_direct(1) 走回放输入链
     bool load_replay(const u8* bytes, u32 size);
     bool load_replay_file(const char* path);
+    // 0x43ce10 case 0xd / 0x447760(1)：按回放取开局关卡（stage_choice < 0 取首段）与用户块中的机体 / 难度 / 季节
+    void apply_replay_start(i32 stage_choice);
     // 标题 demo 目录（内含 demo/demo1.rpy…）；空则跳过自动装载；亦为 th16_XX.rpy 写出根目录
     std::string demo_directory;
     // 回放槽与成绩文件的读写根目录；空则同 demo_directory（浏览器宿主指向 IDBFS 挂载点）
@@ -182,6 +185,8 @@ private:
     void mark_stage_reached();  // 0x42cb60 +0x519d
     bool enter_game(i32 replay_mode = 0);  // 0x43ce10 case 7 → 0x42d700(回放标志) + 0x42cb60（同步装载）
     bool bind_loaded_replay_();            // 0x448c10 成功后：选段、记 RNG 种子、复位游标
+    const ReplayStageSegment* current_replay_segment_() const;   // 回放中的当前段（段头完整时）
+    void replay_stage_start_();            // 0x448eb0 段头读回（回放）/ 写入（录制）
     bool next_stage();     // 0x43ce10 case 0xc：0x42d780 → 0x42d200（bit1）；0x42d700 + 0x42cb60 换关装载
     void leave_game();     // 0x42d200
     bool enter_ending(bool extra);  // 0x43ce10 case 0xf / 0x10 → 0x419640；Extra 直接回标题

@@ -91,6 +91,7 @@ bool GameSession::load_replay_file(const char* path) {
         failure = replay_file_.error;
         return false;
     }
+    failure.clear();
     return bind_loaded_replay_();
 }
 
@@ -105,13 +106,41 @@ bool GameSession::bind_loaded_replay_() {
     }
     if (!replay_file_.stages.empty()) {
         const auto& seg = replay_file_.stages[size_t(replay_cursor_.stage_index)];
+        // 0x447760(1)：只有 DAT_004a6d88 取段头 +2 的种子；DAT_004a6d80 沿用（换关 0x449030 才两者同置）
         animations.visual_rng.seed = seg.rng_seed;
         animations.visual_rng.calls = 0;
-        animations.game_rng.seed = seg.rng_seed;
-        animations.game_rng.calls = 0;
         if (!seg.fps.empty()) replay_fps_byte_ = seg.fps[0];
     }
     return true;
+}
+
+const ReplayStageSegment* GameSession::current_replay_segment_() const {
+    if (!replay_file_loaded_) return nullptr;
+    const i32 i = replay_cursor_.stage_index;
+    if (i < 0 || i >= i32(replay_file_.stages.size())) return nullptr;
+    const ReplayStageSegment& seg = replay_file_.stages[size_t(i)];
+    return seg.header.size() == ReplayFile::kStageHeaderSize ? &seg : nullptr;
+}
+
+void GameSession::replay_stage_start_() {
+    Player& player = game.player;
+    if (game.mode == 1) {
+        const ReplayStageSegment* seg = current_replay_segment_();
+        if (seg == nullptr || !game.player_live) return;
+        // 0x4476d0（段头 +0xc）：定点坐标与浮点坐标、四个子机 +0xd4 吸附位；再 +0x23c → 低速标志、0x4440e0
+        const u8* header = seg->header.data();
+        std::memcpy(&player.fixed_x, header + 0xc, 4);
+        std::memcpy(&player.fixed_y, header + 0x10, 4);
+        player.pos.x = float(player.fixed_x) * 0.0078125f;
+        player.pos.y = float(player.fixed_y) * 0.0078125f;
+        for (PlayerOption& option : player.options) option.snap = 1;
+        std::memcpy(&player.focus, header + 0x23c, 4);
+        player.setup_options(animations, globals);
+        return;
+    }
+    // 记录：换关（DAT_004c17d0 == 0）时重抄全局块；自机定点坐标 / 低速标志每段都写
+    if (!globals.new_game) replay_recording_.set_stage_globals(globals);
+    if (game.player_live) replay_recording_.set_stage_start(player.fixed_x, player.fixed_y, player.focus);
 }
 
 AnmResource* GameSession::resource(const char* name) {
@@ -426,12 +455,34 @@ void GameSession::leave_title() {
     supervisor.title_assets_ready = false;
 }
 
-bool GameSession::start_game_direct() {
+bool GameSession::start_game_direct(i32 replay_mode) {
     if (!load_boot_banks()) return false;
     enable_ascii_chains();   // 原版由启动幕 0x43b290 打开；直接进游戏时在此补上
     supervisor.current = SceneId::Game;
     supervisor.requested = SceneId::Game;
-    return enter_game();
+    return enter_game(replay_mode);
+}
+
+void GameSession::apply_replay_start(i32 stage_choice) {
+    if (!replay_file_.stages.empty()) {
+        // 标题 Replay：按关卡选择下标取段；demo（stage_choice < 0）：首段（0x447ef0 首个非空段）
+        i32 stage_i = 0;
+        if (stage_choice >= 0) {
+            for (i32 i = 0; i < i32(replay_file_.stages.size()); ++i) {
+                if (replay_file_.stages[i].stage == stage_choice + 1) { stage_i = i; break; }
+            }
+        }
+        globals.stage = replay_file_.stages[stage_i].stage;
+        globals.stage_copy = globals.stage;
+        bind_loaded_replay_();   // 按新关卡重选段与种子
+    }
+    if (replay_file_.user.size() >= 0xa0) {
+        // 0x447760(1)：用户块 +0x84 / +0x88 / +0x9c / +0x8c → 机体 / 副机体 / 子季节 / 难度
+        globals.shot = read_i32(replay_file_.user.data() + 0x84);
+        globals.shot_aux = read_i32(replay_file_.user.data() + 0x88);
+        globals.difficulty = read_i32(replay_file_.user.data() + 0x8c);
+        globals.season = read_i32(replay_file_.user.data() + 0x9c);
+    }
 }
 
 bool GameSession::create_player() {
@@ -500,7 +551,17 @@ bool GameSession::create_player() {
     game.player.setup_options(animations, globals);   // 0x4440e0
     globals.flags &= ~0x4u;
 
-    // 0x447e20 / 0x447760：ReplayManager 登记三条链——记录 0x10、回放快进 0x22、FPS 文字 0x47
+    // 0x447e20 / 0x447760：回放时以本关段头 +0x14 快照覆盖刚初始化的全局，再按回放槽号定模式（0x449190）；
+    // 子机要到首帧 0x448eb0 才按新火力重排。录制时（新开局）在此刻抄快照
+    if (game.mode == 1) {
+        if (const ReplayStageSegment* seg = current_replay_segment_()) {
+            load_replay_globals(globals, seg->header.data() + kReplayGlobalsOffset);
+            globals.set_mode(globals.replay_slot < 0 ? 0 : 2);
+        }
+    } else {
+        replay_recording_.snapshot_globals(globals, true);
+    }
+    // ReplayManager 登记三条链——记录 0x10、回放快进 0x22、FPS 文字 0x47
     replay_ff_counter_ = 0;
     replay_fps_byte_ = 60;
     replay_record_chain_ = chains.create([this]() -> ChainResult {
@@ -514,7 +575,6 @@ bool GameSession::create_player() {
                 game_input.held = held & 0xffffu;
                 // 原版另写 DAT_004a52d4 / DAT_004a52d8（aux）；边沿仍走 commit
                 game_input.commit();
-                supervisor.input.held = (supervisor.input.held & ~0xffffu) | (held & 0xffffu);
             }
             ++replay_ff_counter_;
             return ChainResult::Continue;
@@ -554,7 +614,8 @@ bool GameSession::create_player() {
         return ChainResult::Continue;
     }, 0x47, false);
     // 0x440fb0：自机更新链 0x16（0x443720 → 0x442560）与绘制链 0x1d（0x443730）
-    game.player.on_game_over = [this]() { if (menu_live) menu.open_continue(); };
+    // 0x442560：回放中（ReplayManager +0xc == 1）残机耗尽不进续关画面，自机照常复活
+    game.player.on_game_over = [this]() { if (menu_live && game.mode != 1) menu.open_continue(); };
     game.player.sfx_sink = &sfx_events;
     player_update_chain_ = chains.create([this]() -> ChainResult {
         game.player.update(animations, globals, game_input, game.world, animations.file(8), geometry, supervisor.game_speed);
@@ -760,6 +821,9 @@ void GameSession::register_game_chains() {
         return game.update(animations, globals, supervisor.game_speed) ? ChainResult::Continue : ChainResult::BreakExit;
     }, 0xf, true);
     game.game_input = &game_input;
+    game.system_input = &supervisor.input;
+    game.config_flags = &config_flags;
+    game.scores = &scores;
     game.on_screen_fade = [this](i32 kind, i32 duration, u32 color) { create_screen_fade(kind, duration, color); };
     game.on_return_to_title = [this]() { if (menu_live) menu.open_return_to_title(); };
     game.on_frame_advanced = [this]() { compositor.tick(animations); };
@@ -776,6 +840,7 @@ void GameSession::register_game_chains() {
             replay_recording_.begin_stage(i16(globals.stage), seed);
         }
     };
+    game.on_replay_stage_start = [this]() { replay_stage_start_(); };
     game.on_previous_stage_destroyed = [this](StageManager& stage) {
         remove_stage_chains(stage);
         unload_stage_anm(stage);
@@ -798,7 +863,11 @@ bool GameSession::enter_game(i32 replay_mode) {
     // 各管理器链在 0x42cb60 中建为禁用，首帧 0x42d7b0 → 0x42dee0 统一启用；排在 GameManager（0xf）之前的 GameMenu 链 10
     // 因此从第 2 帧起才推进
     game.chains_suspended = true;
-    // 0x42cb60 → 0x449e50 → 0x449030（Replay 构造）：重置 DAT_004a6d8c 调用计数
+    // 0x42cb60 → 0x447e20 → 0x447760（Replay 构造）：重置 DAT_004a6d8c 调用计数；回放时 DAT_004a6d88 := 段头 +2
+    // （DAT_004a6d80 不动：新开局不走 0x449030）
+    if (replay_mode == 1) {
+        if (const ReplayStageSegment* seg = current_replay_segment_()) animations.visual_rng.seed = seg->rng_seed;
+    }
     animations.visual_rng.calls = 0;
     if (replay_mode != 1) {
         const i32 time32 = i32(std::time(nullptr));
@@ -1040,7 +1109,7 @@ bool GameSession::next_stage() {
     // 0x43ce10 case 0xc：DAT_004c17d0（新开局）= 0；当前场景 7 → 0x42d780 销毁；请求改回 7；0x42d700(模式) 重建
     globals.new_game = false;
     // ---- 0x42d780 → 0x42d200（DAT_004a5bec bit1 路径）----
-    // 0x449a00 成绩文件写盘：ScoreFile 接入时补
+    save_scores();   // 0x449a00
     globals.flags &= ~3u;
     supervisor.game_speed = 1.0f;
     // 0x41a390：AsciiManager "Loading" VM；0x42d274 以 XMM1 = 480 / XMM2 = 392 传参（Ghidra 漏掉），函数内加倍 = (960, 784)
@@ -1097,6 +1166,21 @@ bool GameSession::next_stage() {
     // 0x449030（Replay 关卡段）：game_rng 种子 := visual_rng 种子低 16 位；视觉 RNG 调用计数清零
     animations.game_rng.seed = animations.visual_rng.seed & 0xffffu;
     animations.visual_rng.calls = 0;
+    if (game.mode == 1 && replay_file_loaded_) {
+        // 回放：游标切到本关段（+0xd8 = -1，首帧 0x448eb0 归零）、种子取段头 +2、全局块整块读回
+        for (i32 i = 0; i < i32(replay_file_.stages.size()); ++i) {
+            if (replay_file_.stages[size_t(i)].stage != i16(globals.stage)) continue;
+            replay_cursor_.stage_index = i;
+            replay_cursor_.frame_index = 0;
+            replay_cursor_.ended = false;
+            const ReplayStageSegment& seg = replay_file_.stages[size_t(i)];
+            animations.visual_rng.seed = seg.rng_seed;
+            animations.game_rng.seed = seg.rng_seed;
+            if (seg.header.size() == ReplayFile::kStageHeaderSize)
+                load_replay_globals(globals, seg.header.data() + kReplayGlobalsOffset);
+            break;
+        }
+    }
     {
         AnmFile* logo = nullptr;
         std::vector<u8> msg_bytes;
@@ -1556,25 +1640,7 @@ bool GameSession::logic_step() {
                 }
                 loaded = true;
             }
-            if (loaded) {
-                if (!replay_file_.stages.empty()) {
-                    // 标题 Replay：按关卡选择下标取段；demo：首段
-                    i32 stage_i = 0;
-                    if (!pending_replay.empty()) {
-                        for (i32 i = 0; i < i32(replay_file_.stages.size()); ++i) {
-                            if (replay_file_.stages[i].stage == pending_replay_stage + 1) { stage_i = i; break; }
-                        }
-                    }
-                    globals.stage = replay_file_.stages[stage_i].stage;
-                    globals.stage_copy = globals.stage;
-                }
-                if (replay_file_.user.size() >= 0xa0) {
-                    globals.shot = read_i32(replay_file_.user.data() + 0x84);
-                    globals.shot_aux = read_i32(replay_file_.user.data() + 0x88);
-                    globals.difficulty = read_i32(replay_file_.user.data() + 0x8c);
-                    globals.season = read_i32(replay_file_.user.data() + 0x9c);
-                }
-            }
+            if (loaded) apply_replay_start(pending_replay.empty() ? -1 : pending_replay_stage);
             if (leave == SceneId::Title) leave_title();
             if (!enter_game(1)) return false;
             supervisor.current = supervisor.requested = SceneId::Game;

@@ -691,7 +691,8 @@ void Gui::execute(Msg& m, const MsgInstruction& ins) {
         for (u32 id : m.text_vms) anm.interrupt(id, 3);
         break;
     case 19:  // Boss 曲 + logo ANM 脚本 2（Boss 名标题）
-        bgm_events.push_back({1, entry->bgm_boss_track});
+        bgm_events.push_back({1, entry->bgm_boss_track});   // 0x43c3f0(1, Boss 曲)：同时置音乐室已听过
+        if (scores != nullptr) scores->mark_bgm_heard(entry->bgm_boss_track);
         if (logo != nullptr) anm.spawn(*logo, 2, -1);
         break;
     case 20: {  // Boss 名牌（关卡表 Boss 块 a0 的名牌 ANM）

@@ -27,13 +27,21 @@ struct ReplayRecording {
     bool stage_open = false;
     bool sealed = false;
     i32 timestamp = 0;                            // 用户块 +0xc（time32）
+    std::vector<u8> pending_globals;              // 下一段段头 +0x14 的全局快照（0x8a dword）
+    bool pending_new_game = false;                // 段头 +0x290 bit0（DAT_004c17d0）
     std::string error;
 
     void reset();
     // 开局：填用户块中的机体 / 难度 / 季节 / 模式标志；时间戳由宿主提供
     void begin_run(const GameGlobals& globals, i32 time32);
-    // 0x448eb0：开始新关卡段（封口上一关）；seed = game_rng 种子低 16 位
+    // 0x447760（新开局，ReplayManager 构造时）/ 0x448eb0（换关首帧）：抄 DAT_004a5790 全局块，供下一段段头用
+    void snapshot_globals(const GameGlobals& globals, bool new_game);
+    // 0x448eb0：开始新关卡段（封口上一关）；seed = game_rng 种子低 16 位；段头带上待用快照
     void begin_stage(i16 stage, u16 rng_seed);
+    // 0x448eb0（换关，DAT_004c17d0 == 0）：当前段段头 +0x14 改为此刻的全局块
+    void set_stage_globals(const GameGlobals& globals);
+    // 0x448eb0：段头 +0xc / +0x10 自机定点坐标、+0x23c 低速标志（Player +0x61c / +0x620 / +0x165c8）
+    void set_stage_start(i32 fixed_x, i32 fixed_y, i32 focus);
     // 0x447fd0：记录一帧（held/pressed/released 低 16 位；fps 每 30 帧采样一次）
     bool tick(u16 held, u16 pressed, u16 released, u8 fps_byte);
     // 封口当前关（换关 / 结束前）；可选追加 0xffff 终止三元组（0x448400 非 spell 路径）

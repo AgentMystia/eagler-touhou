@@ -58,6 +58,7 @@ struct EndingScene {
     std::string pending_anm_name;  // +0x70 指向的名字副本
     std::string last_text;         // 最近一次 op3 解密结果（宿主/测试）
     std::string last_bgm;          // 最近一次 op10
+    ScoreFile* scores = nullptr;   // DAT_004a6f0c（begin 时记下）
     i32 text_paint_count = 0;      // 入队 0x46d990 次数（测试）
 
     AnmManager* animations = nullptr;

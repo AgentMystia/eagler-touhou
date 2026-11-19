@@ -2627,6 +2627,7 @@ void TitleScene::update_name_entry(AnmManager& anm, const InputState& input) {
     case 0: {
         cursor.count = 0x1e;
         events.push_back({"bgm-name-entry", 0});  // FUN_0043c370(0,"th128_08")
+        if (scores != nullptr) scores->mark_bgm_heard(0x11);   // 0x43c3f0(0, 0x11)
         if (vm[kLeafEmitter] == 0 && ascii_file) spawn_into(anm, kLeafEmitter, *ascii_file, kLeafEmitterScript);
         if (title_file) spawn_into(anm, 0x6f, *title_file, 0x6f);
         set_sub(1);
@@ -2711,6 +2712,7 @@ void TitleScene::update_name_entry(AnmManager& anm, const InputState& input) {
             cursor.pop();
             set_screen(kMainMenu);
             events.push_back({"bgm-default", 1});  // FUN_0043c370(0,"th16_01")
+            if (scores != nullptr) scores->mark_bgm_heard(0);   // 0x43c3f0(0, 0)
             events.push_back({"screen", screen});
         }
         break;

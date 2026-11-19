@@ -230,6 +230,31 @@ test('play count 0x42cb60 and play clock 0x42dbc0: pause banks wall time since t
   assert.equal(paused.play_count, 1);
   assert.equal(paused.play_time, 501);
   assert.equal(paused.total_time, 501, 'ST total play time grows by the same ticks');
+  // 0x43c3f0：标题曲 0 号位与 0x42dc50 首帧的第 1 关曲目（DAT_004a23a4 +0x28 = 1）都记入音乐室已听过位
+  assert.equal(running.bgm, 0x3, 'title track + stage 1 track heard');
+});
+
+const demoDir = resolve(monorepo, 'artifacts/th16/dat');
+const needDemo = {skip: (!available || !existsSync(resolve(demoDir, 'demo1.rpy'))) && 'demo1.rpy not present'};
+// 0x44af80：主菜单空闲 0x708 帧后进 demo1（scene 0xd → 7）
+const DEMO_START = 1981;
+const sceneChanges = out => out.split('\n').filter(l => l.startsWith('scene-change ')).map(l => l.split(' ').slice(1).join(' '));
+
+test('title demo 0x42d7b0 bit6: plays to timer 0xf3c, then back to the title without marking BGM', needDemo, () => {
+  const out = execFileSync(harness, ['scene-boot', dat, String(DEMO_START + 0xf3c + 10), 'scenes'],
+    {encoding: 'utf8', env: {...process.env, TH16_REPLAY_DIR: demoDir}});
+  // demo1 第 0x661 帧残机 -1：回放中 0x442560 不进续关（ReplayManager +0xc == 1），一直播到 0xf3c
+  assert.deepEqual(sceneChanges(out), ['frame=0 1->4', `frame=${DEMO_START} 4->7`, `frame=${DEMO_START + 0xf3d} 7->4`]);
+  const scores = Object.fromEntries(out.split('\n').find(l => l.startsWith('scores ')).split(' ').slice(1).map(kv => kv.split('=')));
+  assert.equal(scores.bgm, '1', 'demo (bec bit6) skips the 0x42dc50 stage-track mark');
+  assert.equal(Number(scores.play_count), 0, 'replay loads do not bump play counts');
+});
+
+test('title demo 0x42d7b0 bit6: shot/bomb/Esc/Enter held on the system input returns to the title', needDemo, () => {
+  const at = DEMO_START + 200;
+  const out = execFileSync(harness, ['scene-boot', dat, String(at + 20), `${at}:${Z}`, 'scenes'],
+    {encoding: 'utf8', env: {...process.env, TH16_REPLAY_DIR: demoDir}});
+  assert.deepEqual(sceneChanges(out), ['frame=0 1->4', `frame=${DEMO_START} 4->7`, `frame=${at + 1} 7->4`]);
 });
 
 test('game start flow: Normal / Cirno / Autumn → scene 7 with stage 1, title destroyed', needDat, () => {

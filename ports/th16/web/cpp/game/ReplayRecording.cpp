@@ -1,6 +1,7 @@
 #include "ReplayRecording.hpp"
 
 #include "GameGlobals.hpp"
+#include "ReplayGlobals.hpp"
 
 #include <cstdio>
 #include <cstring>
@@ -50,6 +51,8 @@ void ReplayRecording::reset() {
     stage_open = false;
     sealed = false;
     timestamp = 0;
+    pending_globals.clear();
+    pending_new_game = false;
     error.clear();
 }
 
@@ -67,6 +70,12 @@ void ReplayRecording::begin_run(const GameGlobals& globals, i32 time32) {
     if ((globals.flags & GameGlobals::kModeMask) == 0x20) user[0xa] = u8(user[0xa] | 2);
 }
 
+void ReplayRecording::snapshot_globals(const GameGlobals& globals, bool new_game) {
+    pending_globals.assign(kReplayGlobalsSize, 0);
+    store_replay_globals(globals, pending_globals.data());
+    pending_new_game = new_game;
+}
+
 void ReplayRecording::begin_stage(i16 stage, u16 rng_seed) {
     if (sealed) return;
     if (stage_open) close_stage(false);
@@ -74,7 +83,29 @@ void ReplayRecording::begin_stage(i16 stage, u16 rng_seed) {
     current.stage = stage;
     current.rng_seed = rng_seed;
     current.frames = 0;
+    current.header.assign(ReplayFile::kStageHeaderSize, 0);
+    u8* header = current.header.data();
+    if (pending_globals.size() == kReplayGlobalsSize)
+        std::memcpy(header + kReplayGlobalsOffset, pending_globals.data(), kReplayGlobalsSize);
+    // 0x447760：+0x240 起 0x14 个 dword 填 0, -0x21522153, -2×0x21522153, …
+    u32 filler = 0;
+    for (u32 i = 0; i < 0x14; ++i, filler -= 0x21522153u) put_u32(header + 0x240 + i * 4, filler);
+    put_u32(header + 0x290, pending_new_game ? 1u : 0u);
+    pending_globals.clear();
+    pending_new_game = false;
     stage_open = true;
+}
+
+void ReplayRecording::set_stage_globals(const GameGlobals& globals) {
+    if (!stage_open || current.header.size() != ReplayFile::kStageHeaderSize) return;
+    store_replay_globals(globals, current.header.data() + kReplayGlobalsOffset);
+}
+
+void ReplayRecording::set_stage_start(i32 fixed_x, i32 fixed_y, i32 focus) {
+    if (!stage_open || current.header.size() != ReplayFile::kStageHeaderSize) return;
+    put_i32(current.header.data() + 0xc, fixed_x);
+    put_i32(current.header.data() + 0x10, fixed_y);
+    put_i32(current.header.data() + 0x23c, focus);
 }
 
 bool ReplayRecording::tick(u16 held, u16 pressed, u16 released, u8 fps_byte) {
