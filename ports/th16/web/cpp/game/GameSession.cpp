@@ -222,6 +222,8 @@ bool GameSession::start_game_direct() {
 
 bool GameSession::create_player() {
     // 0x42cb60 新游戏段（DAT_004c17d0 != 0）
+    // Extra 面（第 7 关）把难度抬到 4：HUD 难度牌 / 得点表 / 续关表都按 Extra 取
+    if (globals.stage == 7 && globals.difficulty < 4) globals.difficulty = 4;
     // 残机：模式 0 → 2；符卡练习 → 0（炸弹亦 0）；练习 → DAT_004a5bf8 ? 其值-1 : 9
     const i32 mode = globals.mode();
     // 得分 / 擦弹清零；得点值初值与上限按难度表（DAT_004922a8 / DAT_00492290 × 100；Extra 为 100000 / 1000000）
