@@ -104,6 +104,7 @@ public:
     i32 music_notice = 0;            // +0x800：未听过曲目的提示已显示（再按确认才播放）
     // 0x44af80 +0x5ce8 bit0 / +0x5ce4：进标题 10 帧后重播 th16_01
     bool title_bgm_pending = false;
+    bool first_entry = false;        // +0x5ce8 bit1：首次进标题（DAT_004a6f1c == 0），主菜单播完整开场
     i32 title_bgm_delay = 0;
     MenuCursor spell_shot_cursor;    // +0x5cec：符卡练习机体副光标
     i32 spell_group = 0;             // +0x5dc4：选中的分组（确认后带入列表）
@@ -182,7 +183,15 @@ public:
     // 0x4541b0：画面 0xf 回放槽列表（sub 2）/ 选中槽滑入 + 名字输入（sub 3）
     void draw_name_confirm(AsciiManager& ascii);
     // 0x4560b0：按难度填 +0x5dd0、刷 +0x740 名 VM（Nothing / No.%3d / ？？？）
-    void refresh_spell_slot_names(AnmManager& anm);
+    void refresh_spell_slot_names(AnmManager& anm, i32 list_index);   // 0x4560b0
+    void move_spell_shot(AnmManager& anm, const InputState& input);    // 0x455790
+    void highlight_spell_entry(AnmManager& anm, i32 entry);            // 0x4569a0
+    void launch_spell_practice(i32 entry, i32 season);                 // 0x456a20 / 0x455d50 case 3
+    void enter_shot_select();                                          // 0x44fe20 LAB_004501a0
+    void enter_season_select(AnmManager& anm, i32 panel);              // 0x4502c0 LAB_004509e1
+    void enter_practice_stage(AnmManager& anm, i32 panel);             // 0x450af0 LAB_00450d8f
+    void enter_spell_list(AnmManager& anm);                            // 0x4553d0 LAB_004556b1
+    void enter_spell_entries(AnmManager& anm);                         // 0x455900 LAB_00455bd4
     // 主菜单空闲 demo 门控（0x708 / bit6 / 下标 %3）；供单测与 update 共用
     void tick_idle_demo(const InputState& input);
     void close_help();  // 释放标题 Manual 的 HelpScreen

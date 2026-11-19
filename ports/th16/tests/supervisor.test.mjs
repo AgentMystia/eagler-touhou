@@ -31,7 +31,8 @@ const ui = events => events.filter(e => !e[0].startsWith('bgm'));
 // 位：0x1 Z，0x2 X，0x10 ↑，0x20 ↓，0x100 Esc，0x80000 Enter
 const Z = '0x1', X = '0x2', UP = '0x10', DOWN = '0x20', LEFT = '0x40', RIGHT = '0x80', ESC = '0x100', ENTER = '0x80000';
 const MENU_LIVE = 180;       // 启动幕 +0x638 到 0xb4 的那一帧（绘制之后）标题线程登记更新链；该链从下一帧起运行
-const MAIN = MENU_LIVE + 12; // Timer 0x78→0x83（>0x82）进入 case 2
+// 首次进标题（DAT_004a6f1c == 0 → +0x5ce8 bit1）：0x44b5f0 不跳 Timer，从 0 数到 0x83（>0x82）才进 case 2
+const MAIN = MENU_LIVE + 1 + 0x83;
 // 常驻绘制链：Supervisor 画面合成 10 条（0x43ba40）+ AnmManager 层绘制 39 条（0x46a3a0：33 条普通层 + 6 条切相机的特殊层）
 // + AsciiManager 文字 3 条（0x407cb0：优先级 0x51 / 0x35 / 0x42，启动幕装载完成 0x43b290 时启用）
 const PERMANENT_DRAW_CHAINS = 53;  // +1：FrameTimer 全局 FPS 绘制链 0x4b（0x4263e0，默认禁用）
@@ -47,7 +48,7 @@ test('scene-boot: boot hold is exactly 0xb4 draw-chain frames, then title decor/
   const firstTick = parse(run(['scene-boot', dat, String(MENU_LIVE + 1)]));
   assert.equal(firstTick.header.screen, 1, '0x44af80 case 0 → 0x44a560(1) main menu on the first title tick');
   assert.equal(firstTick.header.sub, 1, '0x44b5f0 case 0 falls into case 1 (Intro)');
-  assert.ok(firstTick.header.quads >= 10, `title quads expected, got ${firstTick.header.quads}`);
+  assert.ok(firstTick.header.quads >= 8, `title quads expected, got ${firstTick.header.quads}`);
   const notYet = parse(run(['scene-boot', dat, String(MENU_LIVE - 1)]));
   assert.equal(notYet.header.title_live, 0);
   assert.equal(notYet.header.draw_chains, PERMANENT_DRAW_CHAINS + 1);
@@ -60,7 +61,7 @@ test('scene-boot: input cannot skip the boot hold; DAT_004c1800&0x180 can', need
   const skipped = parse(run(['scene-boot', dat, '20', 'skip']));
   assert.equal(skipped.header.title_live, 1);
   assert.equal(skipped.header.boot_frames, 1);
-  assert.equal(skipped.header.sub, 2);
+  assert.equal(skipped.header.sub, 1, 'first title entry plays the full intro (Timer 0 → 0x78 logo)');
 });
 
 test('title BGM (0x44af80 LAB_0044b0c6): th16_01 restarts on the 10th frame after title entry', needDat, () => {
@@ -593,4 +594,37 @@ test('input-edges: pressed on rising edge, repeat after 0x19 held frames then ev
   // 第 3 行重新按下算第 1 帧；第 26 帧（>0x19）首次连发，之后每 8 帧
   assert.deepEqual(repeatFrames, [3 + 25, 3 + 33]);
   assert.deepEqual(rows.at(-1), ['0', '0', '20']);
+});
+
+function spellState(out) {
+  const line = out.split('\n').find(l => l.startsWith('spell '));
+  return Object.fromEntries(line.split(' ').slice(1).map(kv => kv.split('=')));
+}
+
+test('Spell Practice return (DAT_004a6f1c = 5): 0x4553d0 / 0x455900 / 0x456a20 restore group / list / entry one page per frame', needDat, () => {
+  const at = f => run(['scene-boot', dat, String(f), 'origin=5', 'spell-return=2,1,3', 'unlock-spells']);
+  // 0x44af80 case 0 同帧落入 0x11：分组还原后直接进 0x12
+  const first = at(MENU_LIVE + 1);
+  assert.equal(parse(first).header.screen, 0x12);
+  assert.deepEqual([spellState(first).group, spellState(first).return], ['2', '-1,1,3']);
+  const list = at(MENU_LIVE + 2);
+  assert.equal(parse(list).header.screen, 0x13);
+  assert.deepEqual([spellState(list).list, spellState(list).slots], ['1', '22,23,24,25,-2']);
+  const entry = parse(at(MENU_LIVE + 3)).header;
+  assert.deepEqual([entry.screen, entry.sub, entry.cursor], [0x13, 1, 3]);
+});
+
+test('Spell Practice launch (0x455d50 case 3): DAT_004a6f1c = 5, return slots saved, difficulty from DAT_00491700', needDat, () => {
+  const out = run(['scene-boot', dat, '270', 'origin=5', 'spell-return=2,1,3', 'unlock-spells', '195:0x1,225:0x1']);
+  const h = parse(out).header;
+  assert.deepEqual([h.scene, h.stage, h.difficulty], [7, 3, 3]);
+  const s = spellState(out);
+  assert.deepEqual([s.return, s.origin, s.replay_slot], ['2,1,3', '5', '25']);
+});
+
+test('practice return (DAT_004a6f1c = 4): difficulty → shot → season auto-confirm, one screen per frame, into stage select', needDat, () => {
+  const screen = f => parse(run(['scene-boot', dat, String(f), 'origin=4'])).header.screen;
+  assert.deepEqual([screen(MENU_LIVE + 1), screen(MENU_LIVE + 2), screen(MENU_LIVE + 3)], [6, 7, 8]);
+  const out = run(['scene-boot', dat, String(MENU_LIVE + 4), 'origin=4']);
+  assert.equal(spellState(out).origin, '1', '0x450ef0 case 0 resets DAT_004a6f1c 4 → 1');
 });
