@@ -1194,6 +1194,14 @@ void TitleScene::update_stage(AnmManager& anm, const InputState& input) {
             sfx(7);
             sfx(0x32);
             g.last_practice_stage = cursor.index;
+            // DAT_004a5bf8：0x402130 快照（DirectInput 分支，DIK 下标）里按住的首个数字键 1..9（DIK 0x02..0x0a）
+            // → 练习初始残机 = 其值-1（0x42cb60）；未按为 0 → 9 残机。原版无焦点返回 0 走 VK 下标分支，快照已清零，等价无效
+            g.practice_lives = 0;
+            if (keyboard_state != nullptr) {
+                for (i32 digit = 1; digit <= 9; ++digit) {
+                    if (keyboard_state[1 + digit] & 0x80) { g.practice_lives = digit; break; }
+                }
+            }
             bgm_fade();
         }
         break;

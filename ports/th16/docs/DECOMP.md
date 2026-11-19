@@ -44,7 +44,7 @@
 | 0x43c050 / 0x459830 | th16.cfg：100 字节块 DAT_004c12a4（magic 0x160002、手柄表 +4、六字节上限校验、失败整块回默认并总是回写；退出主循环后再写） | `game/GameConfig.cpp` / `GameSession::load_config / save_config` |
 | 0x44e930 / 0x44f710 / 0x44ec60 / 0x44f810 | 标题 Key Config：配手柄按钮号（工作表 +0x5b34 ↔ DAT_004a52e4 [0][1][9][2][3]）、首个按下按钮写槽并对调冲突、数字精灵、光标前后项 0x1e/0x1f | `game/TitleScene.cpp update_key_config` |
 | 0x44af80 / 0x44b5f0 / 0x44a700 / 0x44a680 / 0x44a790 / 0x44a650 / 0x44a560 / 0x44a5e0 | 标题更新：主菜单 case 0/1/2/4（装饰、Timer 0x78/0x82/0x13、光标、确定 0x80001 / 取消 0x102、画面表）；子项查找/中断/收起；画面与子状态切换 | `game/TitleScene.cpp` |
-| 0x44fe20 / 0x4502c0 / 0x450af0 / 0x450ef0 | 难度 / 机体 / 子季节 / 练习关卡画面（VM 表 +0x2c0 按脚本号索引；面板 0x7e·0x7f / 0x96·0x98 / 0x97·0x99 / 0x71；季节 case 3 请求场景 7；练习关卡确定读 +0x51a5 = 所选关卡（光标 + 1）的到达位，未到达播 0x10；0x44a850 / 0x44a800 / 0x44a8e0 读未续关通关次数 +0x5184：主菜单 Extra 可选、Extra 机体光标与禁用、难度 / 机体通关章 0x9e+d / 0x9a+k 在条件不满足时 0x46f340 隐藏） | `game/TitleScene.cpp` |
+| 0x44fe20 / 0x4502c0 / 0x450af0 / 0x450ef0 | 难度 / 机体 / 子季节 / 练习关卡画面（VM 表 +0x2c0 按脚本号索引；面板 0x7e·0x7f / 0x96·0x98 / 0x97·0x99 / 0x71；季节 case 3 请求场景 7；练习关卡确定读 +0x51a5 = 所选关卡（光标 + 1）的到达位，未到达播 0x10，到达则 0x402130 取键盘快照、按 DIK_1..9 顺序首个按住的数字写 DAT_004a5bf8（`GameGlobals::practice_lives`；0x42cb60 练习初始残机 = 其值-1，未按 = 9——0x42c280 此时第 9 格越过 +0x70 写到 bomb_vms[0]，随即被 0x42c390 改写）；0x44a850 / 0x44a800 / 0x44a8e0 读未续关通关次数 +0x5184：主菜单 Extra 可选、Extra 机体光标与禁用、难度 / 机体通关章 0x9e+d / 0x9a+k 在条件不满足时 0x46f340 隐藏） | `game/TitleScene.cpp` |
 | 0x449190 | 模式位（DAT_004a5bec bit4-5）与 Replay 槽复位 | `game/GameGlobals.hpp` |
 | 0x402e70 / 0x418720 / 0x440c00 / 0x402de0 / 0x402e20 | MenuCursor：移动（wrap + 跳禁用）、设置、禁用、压栈、出栈 | `game/MenuCursor.hpp` |
 | 0x46f340 / 0x46f3b0 | 清 flags_lo bit1（显示）并递归子树 | `game/TitleScene.cpp` |
