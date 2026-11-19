@@ -77,4 +77,24 @@ bool text_paint_vm_centered(AnmManager& animations, AnmVm& vm, u32 color, u32 ou
     return true;
 }
 
+bool text_paint_vm_middle(AnmManager& animations, AnmVm& vm, u32 color, u32 outline, i32 font, i32 spacing,
+                          const char* text, std::vector<TextIntoTextureRequest>* out) {
+    if (text == nullptr) text = "";
+    const i32 height = text_font_height(font);
+    i32 left = 0, top = 0, right = 0, bottom = 0;
+    float sprite_w = 0;
+    const bool have_rect = sprite_rect(animations, vm, left, top, right, bottom, &sprite_w);
+    vm.flags_lo |= 1u;
+    if (!have_rect) return false;
+    if (height >= 1 && height < 9) return true;
+    if (out == nullptr) return true;
+    TextIntoTextureRequest req = make_request(vm, color, outline, font, height < 1 ? 0x11 : height, text, left, top,
+                                              right, bottom);
+    const u32 quarter = u32((height * 2 - 1) * i32(req.text.size())) >> 2;
+    req.x = i32(u32(i32(sprite_w) / 2) - quarter);
+    req.spacing = spacing * 2;
+    out->push_back(std::move(req));
+    return true;
+}
+
 }  // namespace th16

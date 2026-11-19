@@ -50,6 +50,13 @@ struct SpellPracticeTable {
         return i32(kSpellDifficulty[spell_id]);
     }
 
+    // 0x4176d0：DAT_00491700 中难度为 difficulty 的符卡张数
+    static i32 count_with_difficulty(i32 difficulty) {
+        i32 n = 0;
+        for (i32 id = 0; id < ScoreFile::kSpellRecords; ++id) n += i32(kSpellDifficulty[id]) == difficulty ? 1 : 0;
+        return n;
+    }
+
     // 表行原始 id（遇 -1 终止）；供 0x456060 解锁扫描
     static void raw_slot_ids(i32 group, i32 slot, i32 out[kIdsPerSlot]) {
         for (int i = 0; i < kIdsPerSlot; ++i) out[i] = -1;

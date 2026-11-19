@@ -45,4 +45,8 @@ bool text_paint_vm(AnmManager& animations, AnmVm& vm, u32 color, u32 outline, i3
 bool text_paint_vm_centered(AnmManager& animations, AnmVm& vm, u32 color, u32 outline, i32 font, i32 spacing,
                             const char* text, std::vector<TextIntoTextureRequest>* out);
 
+// 0x46dc20：居中——x = (int)sprite.width / 2 − ((u32)((h×2−1)×strlen) >> 2)
+bool text_paint_vm_middle(AnmManager& animations, AnmVm& vm, u32 color, u32 outline, i32 font, i32 spacing,
+                          const char* text, std::vector<TextIntoTextureRequest>* out);
+
 }  // namespace th16
