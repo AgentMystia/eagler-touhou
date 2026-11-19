@@ -124,6 +124,14 @@ test('draw structure: stage 1 Normal Cirno bomb burst particles (draw hook 3 = 0
   assert.equal(checkGolden('draw-st1-cirno-bomb'), 421);
 });
 
+test('draw structure: stage 1 Easy first spellcard start / name text / bonus countdown / death during spell, frames 7840–8200', needDat, () => {
+  assert.equal(checkGolden('draw-st1-spell'), 361);
+});
+
+test('draw structure: stage 1 Easy player death (state 4 → 2 → 0 → 1) and respawn, frames 940–1150', needDat, () => {
+  assert.equal(checkGolden('draw-st1-death'), 211);
+});
+
 test('draw structure: stage 4 Normal st04 background (mode 8 texture-matrix cache 0x467b0d) + mode 4 projected leaf particles (0x466390, camera right = facing_norm × up), frames 2–300', needDat, () => {
   assert.equal(checkGolden('draw-st4-leaves'), 299);
 });
