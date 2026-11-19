@@ -361,7 +361,10 @@ constexpr AddressAnchor kAnchors[] = {
     {"title-extra-unlocked", 0x44A800, nullptr}, // 机体是否解锁 Extra
     {"title-demo", 0x44AF80, nullptr},       // 0x44af80 开头：无输入 0x708 帧后播放 demo 录像（DAT_004a5bf0）
     {"title-loading-text", 0x41A390, "game/GameSession.cpp GameSession::spawn_loading_vm（ascii.anm 0x11；位置 = 2 × (XMM1, XMM2) 寄存器传参，0x42d274 传 480 / 392 → (960, 784)，Ghidra 漏掉这两个寄存器实参）"},
-    {"effect-spawn-transition", 0x418BA0, nullptr}, // EffectManager 种类 0 过场（DAT_004c12a0，interrupt 7）
+    {"effect-transition-init", 0x4071A0, "game/Effect.cpp EffectManager::transition_init"},
+    {"effect-transition-update", 0x407330, "game/Effect.cpp EffectManager::transition_update"},
+    {"effect-transition-interrupt", 0x407900, "game/Effect.cpp EffectManager::transition_interrupted"},
+    {"effect-spawn-transition", 0x418BA0, "game/Effect.cpp EffectManager::attach(0) / TitleScene::transition_effect（DAT_004c12a0，interrupt 7）"},
     {"bgm-fade", 0x43C470, nullptr},         // 0x45ed00(…,5,…)：BGM 淡出
     {"title-option", 0x44C570, nullptr},     // 画面 3：Option
     {"title-replay", 0x451750, nullptr},     // 画面 0xb
