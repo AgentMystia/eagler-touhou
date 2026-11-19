@@ -55,6 +55,7 @@ test('ending-script: mash confirm through dialogue reaches staff', needDat, () =
   const inject = Array.from({length: 320}, (_, i) => i % 2 === 0 ? `${i}:0x1` : null).filter(Boolean);
   const out = run(['ending-smoke', dat, '320', 'noskip=1', 'diff=1', ...inject]);
   assert.ok(out.includes('event staff'), 'op12 loads staffN.msg');
+  assert.ok(out.includes('event fade-out'), 'op0xe ScreenEffect kind 5 before staff');
   assert.match(out, /msg=staff2\.msg/);
   assert.ok(out.includes('event anm-loaded'));
 });
