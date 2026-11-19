@@ -27,6 +27,7 @@
 #include "Enemy.hpp"
 #include "Gui.hpp"
 #include "Input.hpp"
+#include "Music.hpp"
 #include "Item.hpp"
 #include "Laser.hpp"
 #include "Player.hpp"
@@ -104,8 +105,10 @@ public:
     std::function<void()> on_return_to_title;
     // 0x42d7b0 尾（LAB_0042db05）：0x45f980 ×4 推进 Supervisor 的四个画面合成 VM（ScreenCompositor::tick）
     std::function<void()> on_frame_advanced;
-    // 0x42d7b0 换关过场结束：0x43c3f0(0, 关卡曲) 重播并 0x45e330 排空到音乐命令处理完
+    // 0x42d7b0 换关过场结束（flags 0x10000：th16 内无人置位，保留结构）：0x43c3f0(0, 关卡曲) 重播并 0x45e330 排空
     std::function<void()> on_transition_finished;
+    MusicManager* music = nullptr;   // DAT_004d9e10 乐曲命令（0x43c3f0 / 0x43c440）
+    void start_stage_bgm();          // 0x43c3f0(0, DAT_004a6f18 +0x28)：播放槽 0 并置音乐室已听过
 
     // 0x42dc50 首帧初始化；返回 false 表示装载失败（原版返回 1 → 场景请求 2/3）
     bool first_frame(AnmManager& manager, GameGlobals& globals);
@@ -117,7 +120,6 @@ public:
 private:
     // 0x42dc50 / 0x42dee0 共用段：复位、帧计数清零、生成 "main"、启用链
     void reset_for_stage(AnmManager& manager, GameGlobals& globals);
-    void mark_stage_bgm_heard();   // 0x43c3f0(0, DAT_004a6f18 +0x28)
 };
 
 }  // namespace th16

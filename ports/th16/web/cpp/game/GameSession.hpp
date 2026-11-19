@@ -15,6 +15,7 @@
 #include "Effect.hpp"
 #include "EndingScene.hpp"
 #include "ScreenEffect.hpp"
+#include "Music.hpp"
 #include "Sound.hpp"
 #include "Spellcard.hpp"
 #include "Input.hpp"
@@ -80,6 +81,11 @@ public:
     // 挂上设备后绘制链才真正出图（Application / harness game-draw）；可为空
     void attach_device(RenderDevice* device) { renderer.device = device; }
     SoundEffects sound;                // 原版 SoundManager 音效部分：请求队列 / 声部状态（宿主通过 sound.output 出声）
+    MusicManager music;                // 原版 SoundManager 乐曲部分：命令队列 / thbgm.fmt（宿主通过 music.output 串流）
+    // 0x45e330：乐曲命令推进一步 + 音效队列消费，返回队头命令 kind（0 = 空）；drain_sound 为 do … while (ret != 0)
+    i32 process_sound();
+    void drain_sound();
+    void unload_bgm();
     SoundRequests sfx_events;          // 本帧 0x45e150 / 0x45e1f0 音效登记（全部管理器，调用序；harness 对拍取 ids）
     std::vector<i32> player_sfx_events; // 其中由 Player 代码段（0x440000..0x449000：更新/被弹/擦弹）登记的子集
     bool run_draw_chains = true;  // harness 对拍 oracle（不跑 0x4015a0）时关掉

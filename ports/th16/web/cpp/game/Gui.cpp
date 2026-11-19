@@ -184,14 +184,14 @@ bool Gui::start_dialogue(i32 entry_index) {
         // 关卡 / Boss 曲切换 + logo ANM 标题（-1 → 关卡曲 / 脚本 2；-3 → Boss 曲 / 脚本 1）
         const i32 which = entry_index == -1 ? 1 : 0;
         const char* name = which != 0 ? entry->bgm_boss_name : entry->bgm_name;
-        // 符卡练习且非回放：当前曲已是目标曲（DAT_004dc0f0 文件名 == name + ".wav"）则什么都不做
-        if (globals != nullptr && globals->mode() == 2 && !replay_playback && current_bgm == std::string(name) + ".wav")
+        // 符卡练习且非回放：当前曲（DAT_004dc0f0）已是目标曲 name + ".wav" 则什么都不做
+        if (globals != nullptr && globals->mode() == 2 && !replay_playback && music != nullptr &&
+            music->current == std::string(name) + ".wav")
             return true;
         // 0x45ed00(2, which)：切曲；成绩文件 +0x19fa6 + 曲目序号 置音乐室已听过
         const i32 track = which != 0 ? entry->bgm_boss_track : entry->bgm_track;
-        bgm_events.push_back({2, track});
+        if (music != nullptr) music->play_slot(which);
         if (scores != nullptr) scores->mark_bgm_heard(track);
-        current_bgm = std::string(name) + ".wav";
         if (logo != nullptr && animations != nullptr) animations->spawn(*logo, which + 1, -1);
         return true;
     }
@@ -506,7 +506,7 @@ bool Gui::run_dialogue(float game_speed) {
                 m.lines_written = 0;
                 m.lines_cleared = 0;
             } else {
-                execute(m, ins);
+                execute(m, ins, game_speed);
             }
             m.pc = m.pc + m.ins()->size + 4;
         } while (i32(m.ins()->time) <= m.timer.current);
@@ -532,7 +532,7 @@ bool Gui::run_dialogue(float game_speed) {
     return false;
 }
 
-void Gui::execute(Msg& m, const MsgInstruction& ins) {
+void Gui::execute(Msg& m, const MsgInstruction& ins, float game_speed) {
     AnmManager& anm = *animations;
     const i32 a0 = ins.size >= 4 ? ins_arg_i32(ins, 0) : 0;
     const i32 a1 = ins.size >= 8 ? ins_arg_i32(ins, 1) : 0;
@@ -691,7 +691,7 @@ void Gui::execute(Msg& m, const MsgInstruction& ins) {
         for (u32 id : m.text_vms) anm.interrupt(id, 3);
         break;
     case 19:  // Boss 曲 + logo ANM 脚本 2（Boss 名标题）
-        bgm_events.push_back({1, entry->bgm_boss_track});   // 0x43c3f0(1, Boss 曲)：同时置音乐室已听过
+        if (music != nullptr) music->play_slot(1);   // 0x43c3f0(1, Boss 曲)：同时置音乐室已听过
         if (scores != nullptr) scores->mark_bgm_heard(entry->bgm_boss_track);
         if (logo != nullptr) anm.spawn(*logo, 2, -1);
         break;
@@ -705,8 +705,11 @@ void Gui::execute(Msg& m, const MsgInstruction& ins) {
         stage_clear();
         break;
     case 22:
+        // 0x43c470 淡出：第 6 面取 XMM0 残值（0x42a1d0 分派前装的常量 2.0），其余 8.0 秒
+        if (music != nullptr) music->fade_out(globals != nullptr && globals->stage == 6 ? 2.0f : 8.0f, game_speed);
+        break;
     case 27:
-        bgm_events.push_back({0, -1});  // 0x43c470 淡出
+        if (music != nullptr) music->fade_out(m.farg(0), game_speed);   // 0x43c470(参数秒)
         break;
     case 23:
         anm.interrupt(m.portrait_vm, 7);

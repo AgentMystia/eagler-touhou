@@ -63,6 +63,7 @@
 #include "../../web/cpp/game/ScoreFile.hpp"
 #include "../../web/cpp/game/Rng.hpp"
 #include "../../web/cpp/game/ScreenEffect.hpp"
+#include "../../web/cpp/game/Music.hpp"
 #include "../../web/cpp/game/Sound.hpp"
 #include "../../web/cpp/game/Stage.hpp"
 #include "../../web/cpp/game/TextPaint.hpp"
@@ -665,6 +666,62 @@ int main(int argc, char** argv) {
     if (argc < 3 || !read_file(argv[2], dat)) return fail("cannot read archive");
     Archive archive;
     if (!archive.open(dat.data(), u32(dat.size()))) return fail(archive.error.c_str());
+    if (command == "music-script" && argc >= 4) {
+        // 乐曲命令队列（tools/oracle/music-oracle.py 同口径）：ops 逐条执行，假串流器记录每次调用
+        struct LogOutput final : MusicOutput {
+            const MusicManager* music = nullptr;
+            i32 index(const BgmEntry& e) const { return music->find_track(e.name); }
+            void stop(bool close_file) override { std::printf("stop %d\n", close_file ? 1 : 0); }
+            void open(const BgmEntry& e) override { std::printf("open %d\n", index(e)); }
+            void seek(const BgmEntry& e, u32 offset) override { std::printf("seek %d %u\n", index(e), offset); }
+            void play(bool looped, u32 offset) override { std::printf("fill %u\nplay 0 %d %u\n", offset, looped ? 1 : 0, offset); }
+            void start() override { std::printf("start\n"); }
+            void pause() override { std::printf("pause\n"); }
+            void resume() override { std::printf("resume\n"); }
+            void fade(i32 frames) override { std::printf("fade %d\n", frames); }
+            void set_volume(i32) override { std::printf("volume 0\n"); }
+            void switch_loop(const BgmEntry& e) override { std::printf("loop %d\n", index(e)); }
+            double position_seconds() override { return 0.0; }
+            void restart_at(double) override {}
+        } out;
+        MusicManager music;
+        std::vector<u8> fmt;
+        if (!archive.read("thbgm.fmt", fmt)) return fail(archive.error.c_str());
+        if (!music.load_table(fmt.data(), fmt.size())) return fail("thbgm.fmt empty");
+        out.music = &music;
+        music.output = &out;
+        for (int a = 4; a < argc; ++a)
+            if (std::strcmp(argv[a], "disabled") == 0) music.enabled = false;
+        std::string ops = argv[3];
+        size_t at = 0;
+        while (at <= ops.size()) {
+            const size_t end = std::min(ops.find(',', at), ops.size());
+            const std::string op = ops.substr(at, end - at);
+            at = end + 1;
+            if (op.empty()) continue;
+            const char kind = op[0];
+            if (kind == 'q') {
+                // q:<kind>:<track>:<name>
+                const size_t c1 = op.find(':', 2), c2 = c1 == std::string::npos ? c1 : op.find(':', c1 + 1);
+                if (c1 == std::string::npos || c2 == std::string::npos) return fail("bad q op");
+                music.enqueue(std::atoi(op.c_str() + 2), std::atoi(op.c_str() + c1 + 1), op.c_str() + c2 + 1);
+            } else if (kind == 'P') {
+                std::printf("ret %d\n", music.step());
+            } else if (kind == 'D') {
+                for (int k = 0; k < 64; ++k) {
+                    const i32 ret = music.step();
+                    std::printf("ret %d\n", ret);
+                    if (ret == 0) break;
+                }
+            } else if (kind == 'F') {
+                // 串流器刷新锁（+0x9c）在端口的单线程里恒为 0：无操作
+            } else if (kind == 'c') {
+                std::printf("current %s\n", music.current.empty() ? "-" : music.current.c_str());
+            } else return fail("unknown music op");
+            std::printf("-- %s\n", op.c_str());
+        }
+        return 0;
+    }
     if (command == "archive-list") {
         std::vector<u8> bytes;
         for (u32 i = 0; i < archive.entries.size(); ++i) {
@@ -1719,11 +1776,12 @@ int main(int argc, char** argv) {
             std::printf("}");
         }
         if (digest_only)
-            std::printf("stage=%d shot=%d season=%d frames=%d scene_exit=%d exit_frame=%d digest=%016llx enemies=%016llx bullets=%016llx enemy_vms=%016llx items=%016llx spell=%016llx lasers=%016llx bombs=%016llx menu=%016llx sound=%016llx\n",
+            std::printf("stage=%d shot=%d season=%d frames=%d scene_exit=%d exit_frame=%d digest=%016llx enemies=%016llx bullets=%016llx enemy_vms=%016llx items=%016llx spell=%016llx lasers=%016llx bombs=%016llx menu=%016llx sound=%016llx bgm=%s\n",
                         stage, shot, season, frames, scene_exit, exit_frame, (unsigned long long)digest, (unsigned long long)enm_digest,
                         (unsigned long long)bul_digest, (unsigned long long)vm_digest, (unsigned long long)item_digest,
                         (unsigned long long)spell_digest, (unsigned long long)laser_digest, (unsigned long long)bomb_digest,
-                        (unsigned long long)menu_digest, (unsigned long long)sound_digest);
+                        (unsigned long long)menu_digest, (unsigned long long)sound_digest,
+                        session.music.current.empty() ? "-" : session.music.current.c_str());
         else std::printf("],\"scene_exit\":%d,\"exit_frame\":%d}\n", scene_exit, exit_frame);
         if (record_dir != nullptr && !session.save_replay_slot(1, "TEST")) return fail(session.failure.c_str());
         if (!session.game.enemies.unknown_ops.empty()) {

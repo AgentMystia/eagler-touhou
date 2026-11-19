@@ -27,6 +27,7 @@
 
 #include "AnmVm.hpp"
 #include "MenuCursor.hpp"
+#include "Music.hpp"
 #include "Sound.hpp"
 #include "Types.hpp"
 
@@ -105,7 +106,7 @@ struct GameMenuContext {
     float* game_speed = nullptr;           // DAT_004a5788
     i32* sound_thread_state = nullptr;     // DAT_004d9d90
     const u32* config_flags = nullptr;     // DAT_004c1800
-    const std::string* current_bgm = nullptr;  // DAT_004dc0f0
+    MusicManager* music = nullptr;         // 0x45ed00 乐曲命令：暂停 6 / 恢复 7 / 续关换 th128_08 / 续播保存曲
     SoundRequests* sfx_sink = nullptr;     // 帧级音效表（为空时登记到 sfx_queue 由宿主取走）
     SoundEffects* sound = nullptr;         // 0x42e4d0 暂停 / 0x440bd0 恢复 / 0x45e330 排空
     i32 replay_timestamp = 0;              // 本局回放头 +0xc 的开局时刻（0x4483b0 写 time32；Replay 接入前为 0）
@@ -167,12 +168,11 @@ public:
     char name[12] = {};          // +0x2d4
     float saved_game_speed = 0;  // +0x2e0（0x43e350 memset 为 0）
     std::string saved_bgm;       // +0x2ec
+    double saved_bgm_position = 0.0;   // +0x2e4：0x471bd0 取得的播放时刻（秒）
     u32 flags = 0;               // +0x3ec
     AnmFile* front = nullptr;    // +0x3f0
     HelpScreen* help = nullptr;  // DAT_004a6dd8
     std::vector<i32> sfx_queue;                 // 0x45e150
-    struct BgmEvent { i32 kind; i32 track; std::string name; };   // 0x45ed00(kind, track, name)
-    std::vector<BgmEvent> bgm_events;
 
     GameMenuContext ctx;
 
@@ -219,7 +219,15 @@ private:
     void sfx(i32 id) { if (ctx.sfx_sink != nullptr) ctx.sfx_sink->push(id); else sfx_queue.push_back(id); }
     void suspend_sound() { if (ctx.sound != nullptr) ctx.sound->suspend(); }   // 0x42e4d0
     void resume_sound() { if (ctx.sound != nullptr) ctx.sound->resume(); }     // 0x440bd0
-    void flush_sound() { if (ctx.sound != nullptr) ctx.sound->process(); }     // 0x45e330 排空
+    void bgm(i32 kind, i32 track, const char* name) { if (ctx.music != nullptr) ctx.music->enqueue(kind, track, name); }
+    // 0x45e330 排空：do … while (队头 kind != 0)——乐曲命令逐步推进，音效尾段每次消费
+    void flush_sound() {
+        for (int k = 0; k < 64; ++k) {
+            if (ctx.music != nullptr) ctx.music->step();
+            if (ctx.sound != nullptr) ctx.sound->process();
+            if (ctx.music == nullptr || ctx.music->head_kind() == 0) break;
+        }
+    }
 };
 
 }  // namespace th16

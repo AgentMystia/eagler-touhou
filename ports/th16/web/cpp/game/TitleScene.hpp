@@ -19,6 +19,7 @@
 #include "GameMenu.hpp"
 #include "Input.hpp"
 #include "MenuCursor.hpp"
+#include "Music.hpp"
 #include "ScoreFile.hpp"
 #include "TextPaint.hpp"
 #include "Types.hpp"
@@ -114,6 +115,8 @@ public:
     // +0x740：文字行 VM——符卡练习名行（前 5，title.anm 0xd2+i）/ Player Data 符卡页 10 行（text.anm 脚本 3..12）
     u32 row_text_vms[10] = {};
     ScoreFile* scores = nullptr;     // 0x456060 解锁判定
+    MusicManager* bgm = nullptr;     // DAT_004d9e10 乐曲命令
+    const float* game_speed = nullptr;   // DAT_004a5788（0x43c470 淡出秒数除数）
     const u32* config_flags = nullptr;   // DAT_004c1800（bit13：退出改为停在场景 2）
     // 0x44a850：任一机体在 Easy..Lunatic 有未续关通关（主菜单 Extra 项可选）
     bool extra_unlocked() const { return scores != nullptr && scores->extra_unlocked(); }
@@ -245,7 +248,10 @@ private:
     void layout_music_items(AnmManager& anm);                            // 光标移动后重排曲目 VM
     void paint_music_comment(AnmManager& anm);                           // 偶数帧刷一行注释
     void leave_music(AnmManager& anm);                                   // LAB_00455228：收起并 → 子状态 3
-    void play_bgm_op(i32 op);                                            // 0x45ed00(op)：宿主声音命令（事件）
+    void play_bgm_op(i32 op);                                            // 0x45ed00(op, 0, "dummy")
+    void bgm_default();                                                  // 0x43c370(0, "th16_01")
+    void bgm_name_entry();                                               // 0x43c370(0, "th128_08")
+    void bgm_fade();                                                     // 0x43c470(0.05)
     void tick_title_bgm();                                               // 0x44af80 LAB_0044b0c6
     void update_spell_practice(AnmManager& anm, const InputState& input); // 0x4553d0
     void update_spell_list(AnmManager& anm, const InputState& input);    // 0x455900（分组内符卡列表 → 0x13）
