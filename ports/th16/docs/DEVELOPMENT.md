@@ -82,6 +82,11 @@ python3 tools/oracle/draw-compare.py /tmp/st1.draw.jsonl /tmp/st1.port.jsonl --f
 不能按链地址剔除，因为链回调里的出批会把上一层的残批记在它名下。注意被剔除的子系统若切相机（如 AsciiManager 的
 0x408ef0 切到场地相机再切回 UI 相机），紧随其后出批的那条绘制在移植版会记到不同的视口，这类差异要等该子系统移植后才消失。
 
+回归守护在 `tests/draw.test.mjs`：原版流经 `draw-compare.py <oracle.jsonl> - --structure-golden tests/golden/draw-st1.json --frames a-b`
+折叠成每帧一条 sha1（口径 = `structure_lines`：目标 / 视口 / 图元 / 格式 / 纹理 / 状态子集，**不含顶点与矩阵**——原版 x87 与
+移植版 SSE 单精度在个别顶点差 1 ulp，位级摘要会误报），测试跑 `game-draw` 后按同一口径复算；原版 jsonl 本身（数十 MB）不入库。
+顶点级对拍仍用上面的 `--eps` 命令手工做。
+
 `scene-boot` / `anm-draw` 也经 RecordingDevice 输出可读的 `quad` 行（屏幕四边形直接取顶点，世界四边形按 world·view·projection 投影并算线性顶点雾）。XYZRHW 顶点不经 TnL，原版从不关 TEXTURETRANSFORMFLAGS 而移植版对屏幕批显式关掉，draw-compare 对屏幕格式不比较该位。
 
 ## 页面壳
