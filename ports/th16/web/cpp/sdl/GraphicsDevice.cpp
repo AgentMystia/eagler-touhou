@@ -45,9 +45,15 @@ bool GraphicsDevice::preload(const AnmResource& file) {
     for (u32 index = 0; index < file.entries.size(); ++index) {
         const auto& entry = file.entries[index];
         const bool render_target = entry.name.size() >= 2 && entry.name[0] == '@' && entry.name[1] == 'R';
-        if (!render_target && !entry.texture.present()) { handles.push_back(0); continue; }
+        // 0x46cd30：其余无 THTX 的 '@' entry 按头部宽高建空纹理（0x459240 文字目标）
+        const bool blank = !render_target && !entry.texture.present() && !entry.name.empty() && entry.name[0] == '@';
+        if (!render_target && !blank && !entry.texture.present()) { handles.push_back(0); continue; }
         Texture t;
-        if (render_target) {
+        if (blank) {
+            t.width = entry.width;
+            t.height = entry.height;
+            t.pixels.assign(size_t(t.width) * t.height * 4, 0);
+        } else if (render_target) {
             // 0x46d3b0：'@R' 头部宽高改写为后备缓冲尺寸（DAT_004d9d2c/30），D3DXCreateTexture(USAGE_RENDERTARGET)；
             // 这里建一块空表面，内容全部来自之后的帧缓冲绘制
             t.width = animations != nullptr ? animations->render_target_width : 640;
