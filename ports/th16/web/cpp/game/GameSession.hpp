@@ -95,7 +95,12 @@ public:
     bool load_replay_file(const char* path);
     // 标题 demo 目录（内含 demo/demo1.rpy…）；空则跳过自动装载；亦为 th16_XX.rpy 写出根目录
     std::string demo_directory;
-    // 0x448400：把本局记录写入 demo_directory/replay/th16_XX.rpy（或根目录回退）
+    // 回放槽与成绩文件的读写根目录；空则同 demo_directory（浏览器宿主指向 IDBFS 挂载点）
+    std::string save_directory;
+    const std::string& replay_directory() const { return save_directory.empty() ? demo_directory : save_directory; }
+    // 写盘成功后通知宿主（浏览器 IDBFS 回写）
+    std::function<void()> on_saved;
+    // 0x448400：把本局记录写入 replay_directory()/replay/th16_XX.rpy（或根目录回退）
     bool save_replay_slot(int slot, const char* player_name);
     // scoreth16.dat 路径；空则不读不写（harness 默认）。启动幕 0x4497e0 读、0x42d200 / 0x43afe0 经 0x449a00 写
     std::string score_path;

@@ -65,6 +65,15 @@ try {
     const font = await fetch('assets/' + name).catch(() => null);
     if (font && font.ok) mod.FS.writeFile('/fonts/' + name, new Uint8Array(await font.arrayBuffer()));
   }
+  // scoreth16.dat / replay/*.rpy：/save 挂 IDBFS，启动前从 IndexedDB 灌入，C++ 每次写盘后回写（串行）
+  mod.FS.mkdirTree('/save');
+  mod.FS.mount(mod.IDBFS, {}, '/save');
+  const syncfs = populate => new Promise((resolve, reject) => mod.FS.syncfs(populate, e => e ? reject(e) : resolve()));
+  await syncfs(true).catch(e => note('err', 'save load: ' + e));
+  try { mod.FS.mkdir('/save/replay'); } catch (_) {}
+  let persisting = Promise.resolve();
+  mod.th16_persist = () => { persisting = persisting.then(() => syncfs(false)).catch(e => note('err', 'save flush: ' + e)); return persisting; };
+  window.th16_persisted = () => persisting;
   status('初始化 SDL3 / GLES 3.0…');
   if (!mod._th16_initialize()) throw new Error('初始化失败：' + mod.UTF8ToString(mod._th16_error()));
   document.getElementById('loading').textContent = '';
