@@ -138,6 +138,7 @@ class GameOracle(Oracle):
         self.replaced[0x471C90] = (0, lambda o: None)                                    # BGM 缓冲重填（同上为空；0x42d7b0 换关 / 0x43f980 续关恢复）
         self.replaced[0x449A00] = (0, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0))    # 成绩文件写盘（0x42d200 换关 / 退出；只改成绩缓冲与校验和，无游戏状态副作用）
         self.replaced[0x47A09E] = (0, self.on_time64)                                    # CRT __time64（0x43e250 入榜记录时刻；CRT 内部经 DecodePointer 取时钟，oracle 无此环境）
+        self.replaced[0x47A36A] = (0, self.on_gmtime)                                    # CRT gmtime（菜单回放/排名列表拆日期；_getptd/TLS 在 oracle 不可用）
         self.replaced[0x47BCEC] = (0, self.on_malloc)                                    # __malloc_base
         self.replaced[0x47BD3A] = (0, self.on_calloc)                                    # __calloc_base
         self.replaced[0x483CB9] = (0, self.on_realloc)                                   # __realloc_base
@@ -212,6 +213,24 @@ class GameOracle(Oracle):
         self.uc.reg_write(UC_X86_REG_EAX, 0)
         self.uc.reg_write(UC_X86_REG_EDX, 0)
 
+    def on_gmtime(self, o):
+        # gmtime(const time_t*) cdecl → 静态 tm*。oracle 无 CRT TLS（_getptd），直接按 UTC 拆秒。
+        # 菜单只读 tm_mday / tm_mon / tm_year（0x43e8c0 / 0x43ec10）。
+        t_ptr = self.arg(0)
+        seconds = self.i32(t_ptr) if t_ptr else 0
+        if seconds < 0:
+            seconds = 0
+        # 1970-01-01 起的 UTC 拆分（不用 utcfromtimestamp：3.12 已弃用）
+        from datetime import datetime, timedelta, timezone
+        dt = datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=seconds)
+        if not hasattr(self, '_gmtime_buf'):
+            self._gmtime_buf = self.alloc(36)
+        tm = self._gmtime_buf
+        # struct tm：sec min hour mday mon year wday yday isdst
+        words = [dt.second, dt.minute, dt.hour, dt.day, dt.month - 1, dt.year - 1900, dt.weekday(), dt.timetuple().tm_yday - 1, 0]
+        self.uc.mem_write(tm, struct.pack('<' + 'i' * 9, *words))
+        self.uc.reg_write(UC_X86_REG_EAX, tm)
+
     def on_vsprintf(self, o):
         # __stdio_common_vsprintf(options u64, buf, count, fmt, locale, va_list) cdecl → 写入 buf，返回长度
         buf, count, fmt_p, va = self.arg(2), self.arg(3), self.arg(4), self.arg(6)
@@ -244,7 +263,8 @@ class GameOracle(Oracle):
                 va += 4
                 out.append((spec + 's') % (self.cstr(p) if p else '(null)'))
             elif conv == 'c':
-                out.append((spec + 'c') % chr(self.u32(va) & 0xFF))
+                # 原始字节：菜单名字表 0x7f/0x80/0x81 是专用字形；经 cp932 会变成 '?'
+                out.append(bytes([self.u32(va) & 0xFF]))
                 va += 4
             else:
                 if length == 'll':
@@ -256,7 +276,17 @@ class GameOracle(Oracle):
                     va += 4
                     value = struct.unpack('<i' if conv in 'di' else '<I', raw)[0]
                 out.append((spec + (conv if conv != 'u' else 'd')) % value)
-        text = ''.join(out).encode('cp932', errors='replace')
+        # %c 已是 raw bytes；其余为 str。latin-1 保 0x00..0xFF，日文 %s 走 cp932
+        parts = bytearray()
+        for part in out:
+            if isinstance(part, (bytes, bytearray)):
+                parts.extend(part)
+            else:
+                try:
+                    parts.extend(part.encode('latin-1'))
+                except UnicodeEncodeError:
+                    parts.extend(part.encode('cp932', errors='replace'))
+        text = bytes(parts)
         if count and len(text) >= count:
             text = text[:count - 1]
         self.uc.mem_write(buf, text + b'\0')
@@ -432,6 +462,20 @@ class GameOracle(Oracle):
             'D3DXVec3Project': (24, self.on_vec3_project),
             'D3DXVec3ProjectArray': (36, self.on_vec3_project_array),
             'D3DXLoadSurfaceFromSurface': (36, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0)),  # 截屏（暂停/结束画面）
+            # 回放槽 / 成绩文件探测（0x402600 CreateFileA、CRT fopen 族）：一律当作“文件不存在”
+            # ——菜单列表画出空槽占位行，不触发写盘；GetLastError 回 ERROR_FILE_NOT_FOUND
+            'CreateFileA': (28, self.on_create_file_a),
+            'CloseHandle': (4, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 1)),
+            'ReadFile': (20, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0)),
+            'WriteFile': (20, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0)),
+            'GetFileSize': (8, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0xFFFFFFFF)),
+            'SetFilePointer': (16, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0xFFFFFFFF)),
+            'DeleteFileA': (4, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0)),
+            'FindFirstFileA': (8, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0xFFFFFFFF)),
+            'FindNextFileA': (8, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0)),
+            'FindClose': (4, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 1)),
+            'GetLastError': (0, lambda o: self.uc.reg_write(UC_X86_REG_EAX, getattr(self, '_last_error', 0))),
+            'SetLastError': (4, lambda o: setattr(self, '_last_error', self.arg(0))),
         }
         for imp in imports:
             name = imp['name']
@@ -442,6 +486,11 @@ class GameOracle(Oracle):
             else:
                 addr = self.make_stub2(0, (lambda nm: (lambda o: self.on_unknown_import(nm)))(name))
             self.uc.mem_write(slot, struct.pack('<I', addr))
+
+    def on_create_file_a(self, o):
+        # 一律失败：回放槽 / 成绩文件都不在 oracle 环境里；后续 GetLastError → ERROR_FILE_NOT_FOUND
+        self._last_error = 2
+        self.uc.reg_write(UC_X86_REG_EAX, 0xFFFFFFFF)
 
     def on_unknown_import(self, name):
         eip_ret = struct.unpack('<I', self.uc.mem_read(self.uc.reg_read(UC_X86_REG_ESP), 4))[0]
