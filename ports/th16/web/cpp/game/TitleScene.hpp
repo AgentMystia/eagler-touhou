@@ -50,6 +50,9 @@ public:
     AnmFile* title_v_file = nullptr; // +0x14
     AnmFile* ascii_file = nullptr;   // AsciiManager 槽 2
     bool has_clear_data = false;     // 0x44a850()：任一难度有通关记录（Extra 可选）
+    i32 idle_frames = 0;             // DAT_004a5bf0：主菜单无输入帧计数
+    i32 demo_index = 0;              // DAT_004a5bf4：demo1..3 轮转（%3）
+    i32 pending_demo = -1;           // 本帧触发的 demo 下标；GameSession 装文件后清
     GameGlobals* globals = nullptr;
     std::vector<Event> events;       // SFX / 画面 / 场景请求 / 过场效果（供 harness 断言）
     // GameSession 注入：0x45d150 淡入淡出 / 0x41a390 Loading + 0x418ba0 过场
@@ -68,6 +71,8 @@ public:
 
     // 0x44af80：每帧由标题更新链（优先级 6）调用
     void update(AnmManager& anm, const InputState& input);
+    // 主菜单空闲 demo 门控（0x708 / bit6 / 下标 %3）；供单测与 update 共用
+    void tick_idle_demo(const InputState& input);
 
 private:
     // 0x44a560 / 0x44a5e0

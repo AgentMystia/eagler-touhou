@@ -70,9 +70,37 @@ void TitleScene::transition_effect() {
     if (on_transition_effect) on_transition_effect();
 }
 
+void TitleScene::tick_idle_demo(const InputState& input) {
+    // 0x44af80 开头：画面==1 时 DAT_004a5bf0++；held==0 且 ≥0x708 → bit6 demo + 场景 0xd
+    if (screen != kMainMenu || globals == nullptr) return;
+    ++idle_frames;
+    if (input.held == 0) {
+        if (idle_frames < 0x708) return;
+        GameGlobals& g = *globals;
+        g.flags = (g.flags & ~0x80u) | 0x40u;
+        pending_demo = demo_index;
+        events.push_back({"demo", demo_index});
+        const i32 n = demo_index + 1;
+        const i64 prod = i64(n) * 0x55555555ll;
+        i32 edx = i32(u32(u64(prod) >> 32));
+        edx = edx - n;
+        edx >>= 1;
+        i32 ecx = edx;
+        ecx = i32(u32(ecx) >> 31);
+        ecx = ecx + edx;
+        demo_index = ecx * 3 + n;
+        g.scene_request = 0xd;
+        events.push_back({"scene", g.scene_request});
+        idle_frames = 0;
+    } else {
+        idle_frames = 0;
+    }
+}
+
 // 0x44af80
 void TitleScene::update(AnmManager& anm, const InputState& input) {
     if (title_file == nullptr) return;
+    tick_idle_demo(input);
     switch (screen) {
     case kNone: {
         // 0x44af80 case 0：按 DAT_004a6f1c（title_origin）分流

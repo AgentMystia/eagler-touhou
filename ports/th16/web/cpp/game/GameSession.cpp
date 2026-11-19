@@ -1,8 +1,8 @@
 #include "GameSession.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <memory>
-
 #include <vector>
 
 namespace th16 {
@@ -1287,7 +1287,9 @@ bool GameSession::logic_step() {
     }
     SceneId leave = SceneId::Invalid, enter = SceneId::Invalid;
     if (supervisor.consume_switch(leave, enter)) {
-        if (leave == SceneId::Title) leave_title();
+        // 0x43ce10 case 0xd 需要在 leave_title 前抄出 demo 下标
+        const i32 pending_demo = (leave == SceneId::Title) ? title.pending_demo : -1;
+        if (leave == SceneId::Title && enter != SceneId::PracticeFromTitle) leave_title();
         if (enter == SceneId::Title && !enter_title_assets()) return false;
         if (enter == SceneId::NextStage) {
             // 0x43ce10 case 0xc：GameManager 销毁 / 重建后场景仍为 7
@@ -1297,6 +1299,31 @@ bool GameSession::logic_step() {
                    enter == SceneId::RestartSpellPractice) {
             // 0x43ce10 case 0xa / 0xb / 0xe / 0x13：0x42d780 整体销毁，关卡回到开局选择（DAT_004a5794），新开局重建
             if (!restart_game(enter, enter == SceneId::RestartPractice ? 1 : 0)) return false;
+            supervisor.current = supervisor.requested = SceneId::Game;
+        } else if (enter == SceneId::PracticeFromTitle) {
+            // 0x43ce10 case 0xd：标题 demo / 练习进游戏，0x42d700(1)
+            if (pending_demo >= 0 && !demo_directory.empty()) {
+                char path[512];
+                std::snprintf(path, sizeof(path), "%s/demo/demo%d.rpy", demo_directory.c_str(), pending_demo + 1);
+                if (!load_replay_file(path)) {
+                    // artifacts/th16/dat 扁平布局：demo1.rpy 与 th16.dat 同级
+                    std::snprintf(path, sizeof(path), "%s/demo%d.rpy", demo_directory.c_str(), pending_demo + 1);
+                    if (!load_replay_file(path)) return false;
+                }
+                if (!replay_file_.stages.empty()) {
+                    // 与 0x44af80 一致：取首个有段的关卡号
+                    globals.stage = replay_file_.stages[0].stage;
+                    globals.stage_copy = globals.stage;
+                }
+                if (replay_file_.user.size() >= 0xa0) {
+                    globals.shot = read_i32(replay_file_.user.data() + 0x84);
+                    globals.shot_aux = read_i32(replay_file_.user.data() + 0x88);
+                    globals.difficulty = read_i32(replay_file_.user.data() + 0x8c);
+                    globals.season = read_i32(replay_file_.user.data() + 0x9c);
+                }
+            }
+            if (leave == SceneId::Title) leave_title();
+            if (!enter_game(1)) return false;
             supervisor.current = supervisor.requested = SceneId::Game;
         } else {
             if (leave == SceneId::Game) leave_game();
