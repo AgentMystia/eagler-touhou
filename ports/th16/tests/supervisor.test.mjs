@@ -2,7 +2,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {copyFileSync, existsSync, mkdirSync} from 'node:fs';
+import {copyFileSync, existsSync, mkdirSync, rmSync} from 'node:fs';
 import {resolve} from 'node:path';
 
 const here = resolve(import.meta.dirname);
@@ -394,6 +394,41 @@ test('Replay screen: confirm th16_01.rpy → scene 0xd play', needDat, () => {
     ].join(',')]));
     assert.ok(out.events.some(e => e[0] === 'replay-play' && e[1] === '0'));
     assert.ok(out.events.some(e => e[0] === 'scene' && e[1] === '13'));
+  } finally {
+    if (prev === undefined) delete process.env.TH16_REPLAY_DIR;
+    else process.env.TH16_REPLAY_DIR = prev;
+  }
+});
+
+test('Replay list draw (0x451d50): No. page, User page th16_ud????, stage list after confirm', needDat, () => {
+  const slots = resolve('/tmp/th16-replay-list-draw');
+  rmSync(slots, {recursive: true, force: true});
+  mkdirSync(resolve(slots, 'replay'), {recursive: true});
+  copyFileSync(resolve(monorepo, 'artifacts/th16/dat/demo1.rpy'), resolve(slots, 'replay/th16_01.rpy'));
+  copyFileSync(resolve(monorepo, 'artifacts/th16/dat/demo2.rpy'), resolve(slots, 'replay/th16_udABCD.rpy'));
+  const t = MAIN + 1;
+  const downs = Array.from({length: 3}, (_, i) => `${t + i * 2}:${DOWN}`);
+  const confirmAt = t + 8;
+  const ready = confirmAt + 30;
+  const prev = process.env.TH16_REPLAY_DIR;
+  process.env.TH16_REPLAY_DIR = slots;
+  const ascii = (frames, keys) => run(['scene-boot', dat, String(frames), 'ascii', [...downs, `${confirmAt}:${Z}`, ...keys].join(',')])
+    .split('\n').filter(l => l.startsWith('ascii '));
+  try {
+    const page0 = ascii(ready + 1, []);
+    assert.equal(page0[0], 'ascii 32.0 80.0 ffffff00 1 [No.01 ZUN      17/07/31 18:16 Reimu   Summer Hard    St3 0.0%]');
+    assert.equal(page0[1], 'ascii 32.0 95.0 ff808080 1 [No.02 -------- --/--/-- --:-- ------- ------ ------- --- ---%]');
+    assert.equal(page0.length, 25);
+
+    const page1 = ascii(ready + 4, [`${ready}:${RIGHT}`]);
+    assert.match(page1[0], /^ascii 32\.0 80\.0 ffffff00 1 \[ABCD  \S+ +\d\d\/\d\d\/\d\d \d\d:\d\d \S+ +\S+ +\S+ +\S+ +\(null\) 0\.0%\]$/);
+    assert.equal(page1[1], 'ascii 32.0 95.0 ff808080 1 [User  -------- --/--/-- --:-- ------- ------ ------- --- ---%]');
+
+    const stages = ascii(ready + 20, [`${ready}:${Z}`]);
+    assert.equal(stages[0], 'ascii 32.0 80.0 ffffffff 1 [No.01 ZUN      17/07/31 18:16 Reimu   Summer Hard    St3 0.0%]');
+    assert.equal(stages.length, 1 + 7);
+    assert.match(stages[1], /^ascii 220\.0 128\.0 ff808080 1 \[Stage 1  ---------\]$/);
+    assert.match(stages[3], /^ascii 220\.0 164\.0 ffffff00 1 \[Stage 3  \d{9}\]$/);
   } finally {
     if (prev === undefined) delete process.env.TH16_REPLAY_DIR;
     else process.env.TH16_REPLAY_DIR = prev;

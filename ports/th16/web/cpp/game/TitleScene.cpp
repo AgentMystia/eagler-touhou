@@ -7,8 +7,11 @@
 #include "SpellPracticeTable.hpp"
 #include "TextPaint.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <dirent.h>
+#include <strings.h>
 
 namespace th16 {
 
@@ -394,6 +397,17 @@ constexpr i32 kNameCols = 13;
 constexpr i32 kNameCharCount = 0x5b;
 constexpr i32 kNameSpace = 0x58, kNameBack = 0x59, kNameEnd = 0x5a;
 constexpr u32 kRowHighlight = 0xffffff00u, kRowNormal = 0xff808080u;
+
+// 回放行名称表（.rdata 0x491970 机体 / 0x4918c0 季节 / 0x491950 难度 / 0x4918f0 关卡，下标 8 = "All"）
+constexpr const char* kReplayShotNames[4] = {"Reimu  ", "Cirno  ", "Aya    ", "Marisa "};
+constexpr const char* kReplaySeasonNames[5] = {"Spring", "Summer", "Autumn", "Winter", "Full  "};
+constexpr const char* kReplayDifficultyNames[6] = {"Easy   ", "Normal ", "Hard   ", "Lunatic", "Extra  ", "O.D.   "};
+constexpr const char* kReplayStageNames[9] = {"tst", "St1", "St2", "St3", "St4", "St5", "St6", "Ex ", "All"};
+
+template <size_t N>
+const char* table_name(const char* const (&table)[N], i32 index) {
+    return index >= 0 && size_t(index) < N ? table[index] : "";
+}
 }  // namespace
 
 void TitleScene::print_rank_row(AsciiManager& ascii, float y, i32 rank, i32 shot, i32 diff) {
@@ -484,17 +498,12 @@ void TitleScene::draw_name_entry_ranks(AsciiManager& ascii) {
 }
 
 void TitleScene::print_replay_row(AsciiManager& ascii, float y, i32 slot, const ReplaySummary& s, const char* stage) {
-    // 0x4541b0 行：.rdata 0x491970 机体 / 0x491950 难度全名 / 0x4918f0 关卡（下标 8 = "All"）
-    static constexpr const char* kShot[4] = {"Reimu  ", "Cirno  ", "Aya    ", "Marisa "};
-    static constexpr const char* kDiff[6] = {"Easy   ", "Normal ", "Hard   ", "Lunatic", "Extra  ", "O.D.   "};
-    static constexpr const char* kStage[9] = {"tst", "St1", "St2", "St3", "St4", "St5", "St6", "Ex ", "All"};
-    const i32 shot_i = s.shot + s.shot_aux;
-    const char* shot = (shot_i >= 0 && shot_i < 4) ? kShot[shot_i] : "";
-    const char* diff = (s.difficulty >= 0 && s.difficulty < 6) ? kDiff[s.difficulty] : "";
-    if (stage == nullptr) stage = (s.stage >= 0 && s.stage < 9) ? kStage[s.stage] : "";
+    // 0x4541b0 行：机体 / 难度全名 / 关卡（无季节列）
+    if (stage == nullptr) stage = table_name(kReplayStageNames, s.stage);
     const ClockFields t = clock_fields(s.timestamp);
     ascii.printf(Vec3{58.0f, y, 0.0f}, "No.%.2d %s %.2d/%.2d/%.2d %.2d:%.2d %s %s %s %2.1f%%", slot, s.name,
-                 t.year % 100, t.month, t.day, t.hour, t.minute, shot, diff, stage, double(s.slow_rate));
+                 t.year % 100, t.month, t.day, t.hour, t.minute, table_name(kReplayShotNames, s.shot + s.shot_aux),
+                 table_name(kReplayDifficultyNames, s.difficulty), stage, double(s.slow_rate));
 }
 
 void TitleScene::draw_name_confirm(AsciiManager& ascii) {
@@ -528,62 +537,78 @@ void TitleScene::draw_name_confirm(AsciiManager& ascii) {
     ascii.style.shadow = false;
 }
 
-void TitleScene::draw_replay_list(AsciiManager& ascii) {
-    // 0x451d50：sub==2 时当前页 25 槽；空槽占位，有文件则摘要行
-    if (sub != 2) return;
-    static constexpr const char* kShotNames[4] = {"Reimu  ", "Cirno  ", "Aya    ", "Marisa "};
-    static constexpr const char* kSeasonShort[5] = {"Sp", "Sm", "At", "Wt", "Fl"};
-    static constexpr const char* kDiffShort[6] = {"E ", "N ", "H ", "L ", "EX", "OD"};
-    static constexpr const char* kStageShort[8] = {"tst", "St1", "St2", "St3", "St4", "St5", "St6", "Ex "};
-
-    const i32 page = page_cursor.index;
-    const i32 base = page * 0x19;
-    float y = 80.0f;
-    ascii.style.shadow = true;
-    ascii.style.group = AsciiManager::Group::Ui;
-    for (int i = 0; i < 0x19; ++i) {
-        const i32 abs = base + i;
-        ascii.style.color = (cursor.index == i) ? 0xffffff00u : 0xff808080u;
-        ReplaySummary summary{};
-        const bool live = abs >= 0 && abs < 100 && replay_slot_live[abs] &&
-                          ReplayRecording::slot_summary(replay_directory.c_str(), abs + 1, summary);
-        if (!live) {
-            // page0 / 非 page0 空槽格式略有差异；统一用短占位
-            ascii.printf(Vec3{32.0f, y, 0.0f}, "No.%.2d -------- --/--/-- ------ -- -- St-", abs + 1);
-        } else {
-            const i64 sec = summary.timestamp;
-            const i64 days = sec / 86400;
-            i64 z = days + 719468;
-            const i64 era = (z >= 0 ? z : z - 146096) / 146097;
-            const i64 doe = z - era * 146097;
-            const i64 yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-            const i64 doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-            const i64 mp = (5 * doy + 2) / 153;
-            const i32 day = i32(doy - (153 * mp + 2) / 5 + 1);
-            const i32 month = i32(mp < 10 ? mp + 3 : mp - 9);
-            const i32 year = i32(yoe + era * 400 + (month <= 2 ? 1 : 0));
-            const i32 tod = int(sec % 86400);
-            const i32 hour = tod / 3600;
-            const i32 minute = (tod / 60) % 60;
-            const char* shot = (summary.shot >= 0 && summary.shot < 4) ? kShotNames[summary.shot] : "------ ";
-            const char* season = (summary.season >= 0 && summary.season < 5) ? kSeasonShort[summary.season] : "--";
-            if (summary.spell_practice) {
-                ascii.printf(Vec3{32.0f, y, 0.0f},
-                             "No.%.2d %s %.2d/%.2d/%.2d %.2d:%.2d %s %s SpellPr %3d %2.1f%%",
-                             abs + 1, summary.name, year % 100, month, day, hour, minute, shot, season,
-                             summary.spell_id + 1, double(summary.slow_rate));
-            } else {
-                const char* diff = (summary.difficulty >= 0 && summary.difficulty < 6)
-                                       ? kDiffShort[summary.difficulty]
-                                       : "--";
-                const char* stage = (summary.stage >= 0 && summary.stage < 8) ? kStageShort[summary.stage] : "St-";
-                ascii.printf(Vec3{32.0f, y, 0.0f},
-                             "No.%.2d %s %.2d/%.2d/%.2d %.2d:%.2d %s %s %s %s %2.1f%%",
-                             abs + 1, summary.name, year % 100, month, day, hour, minute, shot, season, diff, stage,
-                             double(summary.slow_rate));
-            }
+void TitleScene::print_replay_list_row(AsciiManager& ascii, float y, i32 abs) {
+    const ReplayListEntry& e = replay_entries[abs];
+    const ReplaySummary& r = e.summary;
+    const ClockFields t = clock_fields(r.timestamp);
+    const char* shot = table_name(kReplayShotNames, r.shot + r.shot_aux);
+    const char* season = table_name(kReplaySeasonNames, r.season);
+    const Vec3 pos{32.0f, y, 0.0f};
+    if (page_cursor.index == 0) {
+        if (r.spell_practice) {
+            ascii.printf(pos, "No.%.2d %s %.2d/%.2d/%.2d %.2d:%.2d %s %s SpellPr %3d %2.1f%%", abs + 1, r.name,
+                         t.year % 100, t.month, t.day, t.hour, t.minute, shot, season, r.spell_id + 1,
+                         double(r.slow_rate));
+            return;
         }
-        y += 15.0f;
+        ascii.printf(pos, "No.%.2d %s %.2d/%.2d/%.2d %.2d:%.2d %s %s %s %s %2.1f%%", abs + 1, r.name, t.year % 100,
+                     t.month, t.day, t.hour, t.minute, shot, season, table_name(kReplayDifficultyNames, r.difficulty),
+                     table_name(kReplayStageNames, r.stage), double(r.slow_rate));
+        return;
+    }
+    // User 页（0x493708）：格式里有 5 个 %s 而原版只压了 4 个字符串，第 5 个 %s 吃到 (double)慢放率的低
+    // 32 位、%2.1f 吃到其高 32 位与栈上保存的 EDI。float 扩成 double 后低位多为 0 → MSVC 打 "(null)"；
+    // 高位配上用户态指针构成的 double 远小于 0.05 → "0.0"。低位非 0 时原版读野指针，这里同样按 "(null)" 处理
+    ascii.printf(pos, "%s  %s %.2d/%.2d/%.2d %.2d:%.2d %s %s %s %s %s %2.1f%%", e.ud_name, r.name, t.year % 100,
+                 t.month, t.day, t.hour, t.minute, shot, table_name(kReplayDifficultyNames, r.difficulty),
+                 table_name(kReplayStageNames, r.stage), season, "(null)", 0.0);
+}
+
+void TitleScene::draw_replay_list(AsciiManager& ascii) {
+    // 0x451d50：sub 2 当前页 25 槽；sub 4 选中行 10 帧滑到 y = 80，之后列出 7 个关卡起点分数
+    if (sub == 2) {
+        ascii.style.shadow = true;
+        const i32 base = page_cursor.index * 0x19;
+        float y = 80.0f;
+        for (i32 abs = base; abs < base + 0x19; ++abs) {
+            ascii.style.color = cursor.index == abs % 0x19 ? kRowHighlight : kRowNormal;
+            if (!replay_slot_live[abs]) {
+                if (page_cursor.index == 0) {
+                    ascii.printf(Vec3{32.0f, y, 0.0f},
+                                 "No.%.2d -------- --/--/-- --:-- ------- ------ ------- --- ---%%", abs + 1);
+                } else {
+                    ascii.printf(Vec3{32.0f, y, 0.0f},
+                                 "User  -------- --/--/-- --:-- ------- ------ ------- --- ---%%", abs + 1);
+                }
+            } else {
+                print_replay_list_row(ascii, y, abs);
+            }
+            y += 15.0f;
+        }
+        ascii.style.color = 0xffffffffu;
+        ascii.style.shadow = false;
+        return;
+    }
+    if (sub != 4 || replay_choice < 0 || replay_choice >= kReplayListSlots) return;
+    float y = 80.0f;
+    if (timer < 10) y = ((10.0f - float(timer)) * float((replay_choice % 0x19) * 15)) / 10.0f + 80.0f;
+    ascii.style.shadow = true;
+    print_replay_list_row(ascii, y, replay_choice);
+    if (timer >= 10) {
+        static constexpr const char* kStageLong[9] = {"test   ", "Stage 1", "Stage 2", "Stage 3", "Stage 4",
+                                                      "Stage 5", "Stage 6", "Extra  ", "Clear  "};
+        const ReplayListEntry& e = replay_entries[replay_choice];
+        float row = 128.0f;
+        for (i32 st = 1; st < 8; ++st) {
+            ascii.style.color = cursor.index == st - 1 ? kRowHighlight : kRowNormal;
+            if ((replay_stage_mask[replay_choice] & (1 << (st - 1))) == 0) {
+                ascii.printf(Vec3{220.0f, row, 0.0f}, "%s  ---------", kStageLong[st]);
+            } else {
+                ascii.printf(Vec3{220.0f, row, 0.0f}, "%s  %.8d%d", kStageLong[st], e.stage_score[st],
+                             e.stage_continues[st]);
+            }
+            row += 18.0f;
+        }
     }
     ascii.style.color = 0xffffffffu;
     ascii.style.shadow = false;
@@ -1275,25 +1300,90 @@ void TitleScene::update_option(AnmManager& anm, const InputState& input) {
     }
 }
 
+namespace {
+i32 load_i32_at(const std::vector<u8>& bytes, size_t off) {
+    i32 v = 0;
+    if (bytes.size() >= off + 4) std::memcpy(&v, bytes.data() + off, 4);
+    return v;
+}
+
+// th16_ud????.rpy：FindFirstFileA 的 '?' 在扩展名前可匹配 0..1 个字符
+bool is_user_replay_name(const char* n) {
+    const size_t len = std::strlen(n);
+    if (len < 11 || len > 15) return false;
+    if (std::strncmp(n, "th16_ud", 7) != 0) return false;
+    return std::strcmp(n + len - 4, ".rpy") == 0;
+}
+}  // namespace
+
 void TitleScene::scan_replay_slots() {
-    // 同步完成原版 0x402fb0 工作线程：标记 th16_01..th16_100.rpy
-    for (int i = 0; i < 100; ++i) {
+    // 同步完成原版 0x402fb0 工作线程 0x451560
+    auto fill = [this](i32 i, const char* path) {
+        ReplayFile file;
+        if (!file.open_file(path) || file.user.size() < ReplayFile::kUserSize) return;
+        ReplayListEntry& e = replay_entries[i];
+        e.path = path;
+        std::memcpy(e.summary.name, file.user.data(), 8);
+        e.summary.name[8] = '\0';
+        e.summary.timestamp = load_i32_at(file.user, 0xc);
+        e.summary.spell_practice = (file.user[0xa] & 2) != 0;
+        e.summary.shot = load_i32_at(file.user, 0x84);
+        e.summary.shot_aux = load_i32_at(file.user, 0x88);
+        e.summary.difficulty = load_i32_at(file.user, 0x8c);
+        e.summary.stage = load_i32_at(file.user, 0x90);
+        e.summary.spell_id = load_i32_at(file.user, 0x98);
+        e.summary.season = load_i32_at(file.user, 0x9c);
+        std::memcpy(&e.summary.slow_rate, file.user.data() + 0x7c, sizeof(float));
+        const ReplayStageSegment* by_stage[8] = {};
+        for (const ReplayStageSegment& seg : file.stages) {
+            if (seg.stage >= 1 && seg.stage <= 7) {
+                replay_stage_mask[i] |= 1 << (seg.stage - 1);
+                by_stage[seg.stage] = &seg;
+            }
+        }
+        for (i32 st = 1; st < 8; ++st) {
+            const ReplayStageSegment* next = st < 6 ? by_stage[st + 1] : nullptr;
+            if (next != nullptr) {
+                e.stage_score[st] = load_i32_at(next->header, 0x34);
+                e.stage_continues[st] = load_i32_at(next->header, 0x3c);
+            } else {
+                e.stage_score[st] = load_i32_at(file.user, 0x14);
+                e.stage_continues[st] = load_i32_at(file.user, 0x94);
+            }
+        }
+        replay_slot_live[i] = true;
+        replay_spell_practice[i] = e.summary.spell_practice;
+    };
+    for (i32 i = 0; i < 100; ++i) {
         replay_slot_live[i] = false;
         replay_stage_mask[i] = 0;
         replay_spell_practice[i] = false;
-        if (replay_directory.empty()) continue;
-        char path[512];
-        std::snprintf(path, sizeof(path), "%s/th16_%02d.rpy", replay_directory.c_str(), i + 1);
-        ReplayFile file;
-        if (!file.open_file(path)) {
-            // 兼容扁平 replay/ 子目录
-            std::snprintf(path, sizeof(path), "%s/replay/th16_%02d.rpy", replay_directory.c_str(), i + 1);
-            if (!file.open_file(path)) continue;
+    }
+    for (ReplayListEntry& e : replay_entries) e = ReplayListEntry{};
+    if (!replay_directory.empty()) {
+        for (i32 i = 0; i < 0x19; ++i) {
+            char path[512];
+            if (replay_slot_path(replay_directory.c_str(), i + 1, path, sizeof(path))) fill(i, path);
         }
-        replay_slot_live[i] = true;
-        if (file.user.size() >= 0xb) replay_spell_practice[i] = (file.user[0xa] & 2) != 0;
-        for (const ReplayStageSegment& seg : file.stages) {
-            if (seg.stage >= 1 && seg.stage <= 7) replay_stage_mask[i] |= 1 << (seg.stage - 1);
+        std::vector<std::string> names;
+        const std::string dir = replay_directory + "/replay";
+        if (DIR* d = opendir(dir.c_str())) {
+            while (dirent* ent = readdir(d)) {
+                if (is_user_replay_name(ent->d_name)) names.emplace_back(ent->d_name);
+            }
+            closedir(d);
+        }
+        // NTFS 目录枚举按大小写不敏感的名字序
+        std::sort(names.begin(), names.end(), [](const std::string& x, const std::string& y) {
+            return strcasecmp(x.c_str(), y.c_str()) < 0;
+        });
+        i32 slot = 0x19;
+        for (const std::string& n : names) {
+            if (slot >= kReplayListSlots) break;
+            const std::string path = dir + "/" + n;
+            fill(slot, path.c_str());
+            if (replay_slot_live[slot]) std::memcpy(replay_entries[slot].ud_name, n.c_str() + 7, 4);
+            ++slot;
         }
     }
     replay_ui_flags = (replay_ui_flags & 0xfffffff3u) | 8u;  // 清 bit2、置 bit3 扫描完成
@@ -1374,16 +1464,9 @@ void TitleScene::update_replay(AnmManager& anm, const InputState& input) {
         if (timer == 2) transition_effect();
         if (timer > 0x1f && (replay_ui_flags & 8u) != 0) {
             set_screen(kFinished);  // 原版 set_screen(2) 后写 DAT_004c17c4=0xd
-            char path[512];
-            std::snprintf(path, sizeof(path), "%s/th16_%02d.rpy", replay_directory.c_str(), replay_choice + 1);
-            pending_replay_path = path;
-            {
-                ReplayFile probe;
-                if (!probe.open_file(path)) {
-                    std::snprintf(path, sizeof(path), "%s/replay/th16_%02d.rpy", replay_directory.c_str(), replay_choice + 1);
-                    pending_replay_path = path;
-                }
-            }
+            pending_replay_path = (replay_choice >= 0 && replay_choice < kReplayListSlots)
+                                      ? replay_entries[replay_choice].path
+                                      : std::string{};
             last_replay_slot = replay_choice;
             globals->scene_request = 0xd;
             globals->replay_slot = replay_stage_choice;  // DAT_004a57c8 路径相关；阶段选择另见 pending
