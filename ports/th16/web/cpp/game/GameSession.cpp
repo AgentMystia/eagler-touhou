@@ -731,18 +731,24 @@ bool GameSession::enter_game(i32 replay_mode) {
     return true;
 }
 
+namespace {
+// 0x42d200：各路径的 "Loading" VM 位置都是 (960, 784)：暂停重开写在栈上，0x41a390 路径由寄存器 480 / 392 加倍而来
+constexpr Vec3 kLoadingVmPos{960.0f, 784.0f, 0.0f};
+}  // namespace
+
 bool GameSession::restart_game(SceneId reason, i32 replay_mode) {
     // 0x42d200 开头按场景请求决定重开方式：
     //   0xa / 0xb（暂停菜单重开）：Loading VM（ascii.anm 0x11）放到 (960, 784)；与开局同一关 → bit0 快速重开
-    //   0xe（Extra 续关）：0x41a390 Loading VM；关卡不同 → 续关次数 +1（上限 9）并置 bit3；无论如何置 bit0
+    //   0xe（Extra 续关）：0x41a390 Loading VM（XMM1 = 480 / XMM2 = 392 寄存器传参，坐标加倍 = (960, 784)）；
+    //   关卡不同 → 续关次数 +1（上限 9）并置 bit3；无论如何置 bit0
     //   0x13（符卡练习重开）：整体销毁重建
     // bit0 / bit3 之下 EnemyManager 只复位不析构、关卡背景 ANM 槽不释放（0x4099a0 末）
     const bool same_stage = globals.stage_copy == globals.stage;
     if (reason == SceneId::Restart || reason == SceneId::RestartPractice) {
-        spawn_loading_vm(Vec3{960.0f, 784.0f, 0.0f});
+        spawn_loading_vm(kLoadingVmPos);
         if (same_stage) globals.flags |= 1u;
     } else if (reason == SceneId::RestartExtra) {
-        spawn_loading_vm(Vec3{});
+        spawn_loading_vm(kLoadingVmPos);
         if (!same_stage) {
             if (++globals.continues > 9) globals.continues = 9;
             globals.flags |= 8u;
@@ -768,8 +774,8 @@ bool GameSession::next_stage() {
     // 0x449a00 成绩文件写盘：ScoreFile 接入时补
     globals.flags &= ~3u;
     supervisor.game_speed = 1.0f;
-    // 0x41a390：AsciiManager "Loading" VM（原版位置取自未初始化的 XMM 寄存器，逻辑上无影响）
-    spawn_loading_vm(Vec3{});
+    // 0x41a390：AsciiManager "Loading" VM；0x42d274 以 XMM1 = 480 / XMM2 = 392 传参（Ghidra 漏掉），函数内加倍 = (960, 784)
+    spawn_loading_vm(kLoadingVmPos);
     globals.flags |= 2u;
     // 0x427970：Gui 删 Msg、释放 msg；(bec & 9) == 0 → 卸 logo 槽 6
     if (game.gui_live) {
@@ -801,7 +807,9 @@ bool GameSession::next_stage() {
     destroy_bombs();
     spellcard.destroy();
     if (game_update_chain_) { chains.remove(game_update_chain_); game_update_chain_ = nullptr; }
-    // 0x42e4d0 声音循环 / DAT_004c1b0c：Sound 接入时补
+    // 0x42e4d0 声音循环：Sound 接入时补
+    // 0x42d200 末：场地清屏色回到黑（换关路径 bit0 必为 0，不会走全透明分支）
+    compositor.background_color = (globals.flags & 1u) != 0 ? 0u : 0xff000000u;
     globals.post_load_frames = 1;
 
     // ---- 0x42d700 + 0x42cb60（DAT_004c17d0 == 0）----
