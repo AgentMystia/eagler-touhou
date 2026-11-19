@@ -348,10 +348,11 @@ int main(int argc, char** argv) {
             std::memcpy(&focus, s.header.data() + 0x23c, 4);
             std::memcpy(&flags, s.header.data() + 0x290, 4);
             std::printf("%zu stage=%d shot=%d+%d season=%d diff=%d score=%d lives=%d/%d bombs=%d/%d power=%d/%d/%d "
-                        "gauge=%d/%d pv=%d graze=%d replay_slot=%d pos=%d,%d focus=%d new_game=%d\n",
+                        "gauge=%d/%d pv=%d graze=%d replay_slot=%d pos=%d,%d focus=%d new_game=%d seed=%d frames=%d\n",
                         i, g.stage, g.shot, g.shot_aux, g.season, g.difficulty, g.score, g.lives, g.life_fragments,
                         g.bombs, g.bomb_fragments, g.power, g.power_max, g.power_per_level, g.season_gauge,
-                        g.season_gauge_max, g.point_value, g.graze, g.replay_slot, px, py, focus, flags & 1);
+                        g.season_gauge_max, g.point_value, g.graze, g.replay_slot, px, py, focus, flags & 1,
+                        i32(s.rng_seed), s.frames);
         }
         return 0;
     }
@@ -994,7 +995,10 @@ int main(int argc, char** argv) {
         if (record_dir != nullptr) session.save_directory = record_dir;
         if (!session.start_game_direct(replay_mode)) return fail(session.failure.c_str());
         // 可选残机覆盖（game-oracle.py --lives 同口径：装载完成后写 DAT_004a57f4），用于无输入长程对拍不被 Game Over 截断
-        if (argc >= 13 && argv[12][0] != '\0') session.globals.lives = std::atoi(argv[12]);
+        if (argc >= 13 && argv[12][0] != '\0') {
+            session.globals.lives = std::atoi(argv[12]);
+            session.restamp_replay_globals();
+        }
         // refill != 0：每帧开始前把残机补回 lives（game-oracle.py --refill-lives 同口径）；原版残机显示 0x42c280 只有 8 槽，
         // 不能直接写入 > 8 的残机数，长程无输入对拍只能靠补满越过 Game Over
         const int refill_lives = (argc >= 14 && argv[13][0] != '\0' && std::atoi(argv[13]) != 0) ? session.globals.lives : -1;

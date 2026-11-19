@@ -42,6 +42,8 @@ struct ReplayRecording {
     void set_stage_globals(const GameGlobals& globals);
     // 0x448eb0：段头 +0xc / +0x10 自机定点坐标、+0x23c 低速标志（Player +0x61c / +0x620 / +0x165c8）
     void set_stage_start(i32 fixed_x, i32 fixed_y, i32 focus);
+    // 装载后外部改写全局（harness 残机覆盖）时重抄：已开段写当前段头，否则覆盖待用快照
+    void restamp_globals(const GameGlobals& globals);
     // 0x447fd0：记录一帧（held/pressed/released 低 16 位；fps 每 30 帧采样一次）
     bool tick(u16 held, u16 pressed, u16 released, u8 fps_byte);
     // 封口当前关（换关 / 结束前）；可选追加 0xffff 终止三元组（0x448400 非 spell 路径）

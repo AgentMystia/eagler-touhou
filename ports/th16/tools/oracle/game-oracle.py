@@ -88,8 +88,11 @@ def f32(v):
 
 class GameOracle(Oracle):
     def __init__(self, exe, dat_dir, stage=1, shot=0, season=0, difficulty=1, seed=0, debug=False, replay_slot=-1,
-                 lives=None, mode=0, draw=False, demo=None):
+                 lives=None, mode=0, draw=False, demo=None, replay=None):
         dat_dir = pathlib.Path(dat_dir)
+        self.replay = replay   # (槽文件名 "th16_XX.rpy", 文件字节)：标题 Replay 选槽回放（bec bit6 不置，0x448c10 走 replay/%s 磁盘读）
+        self.disk_files = {}   # CreateFileA 可见的只读文件（路径 → 字节）
+        self.open_handles = {}
         self.demo = demo   # (内部名 "demo/demoN.rpy", 文件字节)：0x43ce10 case 0xd 的标题演示回放
         self.mode = mode   # DAT_004a5bec bit4-5：0 普通 / 1 练习 / 2 符卡练习（0x449190）
         super().__init__(exe, 'text.anm', (dat_dir / 'text.anm').read_bytes())
@@ -467,7 +470,7 @@ class GameOracle(Oracle):
             # ——菜单列表画出空槽占位行，不触发写盘；GetLastError 回 ERROR_FILE_NOT_FOUND
             'CreateFileA': (28, self.on_create_file_a),
             'CloseHandle': (4, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 1)),
-            'ReadFile': (20, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0)),
+            'ReadFile': (20, self.on_win_read_file),
             'WriteFile': (20, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0)),
             'GetFileSize': (8, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0xFFFFFFFF)),
             'SetFilePointer': (16, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0xFFFFFFFF)),
@@ -489,9 +492,30 @@ class GameOracle(Oracle):
             self.uc.mem_write(slot, struct.pack('<I', addr))
 
     def on_create_file_a(self, o):
-        # 一律失败：回放槽 / 成绩文件都不在 oracle 环境里；后续 GetLastError → ERROR_FILE_NOT_FOUND
+        # 只认 self.disk_files 里登记的路径（--replay 的 replay/th16_XX.rpy，只读）；其余一律失败
+        # ——回放槽 / 成绩文件都不在 oracle 环境里；后续 GetLastError → ERROR_FILE_NOT_FOUND
+        name = self.cstr(self.arg(0)).replace('\\', '/')
+        if name in self.disk_files and self.arg(1) == 0x80000000:
+            handle = 0x7000 + len(self.open_handles) * 4
+            self.open_handles[handle] = [self.disk_files[name], 0]
+            self.uc.reg_write(UC_X86_REG_EAX, handle)
+            return
         self._last_error = 2
         self.uc.reg_write(UC_X86_REG_EAX, 0xFFFFFFFF)
+
+    def on_win_read_file(self, o):
+        handle, buf, count, read_ptr = self.arg(0), self.arg(1), self.arg(2), self.arg(3)
+        entry = self.open_handles.get(handle)
+        if entry is None:
+            self.uc.reg_write(UC_X86_REG_EAX, 0)
+            return
+        data, pos = entry
+        chunk = data[pos:pos + count]
+        self.uc.mem_write(buf, chunk)
+        entry[1] = pos + len(chunk)
+        if read_ptr:
+            self.uc.mem_write(read_ptr, struct.pack('<I', len(chunk)))
+        self.uc.reg_write(UC_X86_REG_EAX, 1)
 
     def on_unknown_import(self, name):
         eip_ret = struct.unpack('<I', self.uc.mem_read(self.uc.reg_read(UC_X86_REG_ESP), 4))[0]
@@ -807,6 +831,12 @@ class GameOracle(Oracle):
             name, data = self.demo
             self.files[name] = data
             uc.mem_write(DAT_GAME_FLAGS, struct.pack('<I', ((self.mode & 3) << 4) | 0x40))
+            uc.mem_write(0x4A6DE0, name.encode('ascii') + b'\0')
+            replay_mode = 1
+        elif self.replay is not None:
+            # 0x451750 选槽：槽文件名抄进 DAT_004a6de0；0x448c10 经 0x402600 / 0x402880 / 0x402940 读 replay/<名>
+            name, data = self.replay
+            self.disk_files['replay/' + name] = data
             uc.mem_write(0x4A6DE0, name.encode('ascii') + b'\0')
             replay_mode = 1
         # 0x43ce10 case 7 / 0xd（标题 → 游戏）：Supervisor(0x4c10d0)+0x700 = 1（新开局：0x42cb60 据此创建 Player）
@@ -1633,6 +1663,7 @@ def main():
     ap.add_argument('--mode', type=int, default=0, help='DAT_004a5bec 模式位：0 普通 / 1 练习（过关走 0x43f500 结算）/ 2 符卡练习')
     ap.add_argument('--replay-slot', type=int, default=-1, help='DAT_004a57c8（默认 -1 走 MainFront；0 走 MainBossSpell）')
     ap.add_argument('--demo', default='', help='演示回放 demoN.rpy 路径：按 0x43ce10 case 0xd 进回放（bec bit6，0x42d700(1)）；机体 / 难度 / 全局取自回放')
+    ap.add_argument('--replay', default='', help='标题 Replay 选槽回放 th16_XX.rpy 路径：bec bit6 不置，0x448c10 从 replay/<名> 磁盘读；机体 / 难度 / 全局取自回放')
     ap.add_argument('--trace-ecl', default='', help='把每条执行的 ECL 指令 (frame, enemy, sub, pc, time, ins_time, op) 写到此文件')
     ap.add_argument('--trace-rng', default='', help='把回放同步 RNG（DAT_004a6d88）的每次调用 (frame, 步数, 返回地址, 包装外层调用方) 写到此文件')
     ap.add_argument('--trace-game-rng', action='store_true', help='--trace-rng 改为追踪游戏逻辑 RNG（DAT_004a6d80）')
@@ -1640,7 +1671,8 @@ def main():
     a = ap.parse_args()
     o = GameOracle(pathlib.Path(a.exe), a.dat_dir, a.stage, a.shot, a.season, a.difficulty, a.seed, a.debug, a.replay_slot,
                    a.lives, a.mode, draw=a.draw,
-                   demo=(('demo/' + pathlib.Path(a.demo).name), pathlib.Path(a.demo).read_bytes()) if a.demo else None)
+                   demo=(('demo/' + pathlib.Path(a.demo).name), pathlib.Path(a.demo).read_bytes()) if a.demo else None,
+                   replay=(pathlib.Path(a.replay).name, pathlib.Path(a.replay).read_bytes()) if a.replay else None)
     o.enemy_snap = a.enemies
     o.bullet_snap = a.bullets
     o.item_snap = a.items

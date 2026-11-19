@@ -101,6 +101,11 @@ void ReplayRecording::set_stage_globals(const GameGlobals& globals) {
     store_replay_globals(globals, current.header.data() + kReplayGlobalsOffset);
 }
 
+void ReplayRecording::restamp_globals(const GameGlobals& globals) {
+    if (stage_open) set_stage_globals(globals);
+    else if (pending_globals.size() == kReplayGlobalsSize) store_replay_globals(globals, pending_globals.data());
+}
+
 void ReplayRecording::set_stage_start(i32 fixed_x, i32 fixed_y, i32 focus) {
     if (!stage_open || current.header.size() != ReplayFile::kStageHeaderSize) return;
     put_i32(current.header.data() + 0xc, fixed_x);

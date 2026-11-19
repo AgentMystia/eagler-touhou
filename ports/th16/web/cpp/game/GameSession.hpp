@@ -106,6 +106,7 @@ public:
     std::function<void()> on_saved;
     // 0x448400：把本局记录写入 replay_directory()/replay/th16_XX.rpy（或根目录回退）
     bool save_replay_slot(int slot, const char* player_name);
+    void restamp_replay_globals() { if (game.mode != 1) replay_recording_.restamp_globals(globals); }
     // scoreth16.dat 路径；空则不读不写（harness 默认）。启动幕 0x4497e0 读、0x42d200 / 0x43afe0 经 0x449a00 写
     std::string score_path;
     bool save_scores();   // 0x449a00
@@ -146,6 +147,8 @@ private:
     float global_fps_ = 60.0f;                       // FrameTimer+0x30（0x4262f0 测速；无墙钟时固定 60）
     ReplayFile replay_file_;                         // 0x448c10 展开后的回放
     ReplayPlaybackCursor replay_cursor_;             // 当前关卡段读指针（+0xc8 / +0xd8）
+    i32 replay_next_stage_index_ = -1;               // 换关 0x449030(1) 已备好、待 0x448eb0 才切过去的段（+0x214 之前不动）
+    u16 replay_stage_seed_ = 0;                      // 记录：0x447760 / 0x449030 装载时抄进新段头 +2 的 DAT_004a6d88
     bool replay_file_loaded_ = false;
     ReplayRecording replay_recording_;               // 非回放局 0x447fd0 缓冲；0x448400 经 ReplayStore 落盘
     std::unique_ptr<ReplayStore> replay_store_;       // 目录型 th16_XX.rpy

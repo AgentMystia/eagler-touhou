@@ -213,7 +213,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"score-rng-init", 0x449720, "game/GameSession.cpp load_boot_banks（0x4497e0 ScoreFile 构造：DAT_004a6d88 做 0x1ee 次 next16 填 ScoreStats::noise）"},
     {"replay-playback-chain", 0x448E40, "game/Replay.hpp replay_fast_forward_result + GameSession replay_playback_chain_（0x22：+0x20c%8→Restart；装载/非回放/未按 Z|Skip → Continue）"},
     {"replay-draw-fps", 0x4482F0, "game/Replay.hpp replay_fps_color + GameSession replay_draw_chain_（0x47 ← 0x448e90：回放 (383,450) \"%3d\" FPS；装载中跳过）"},
-    {"replay-rng-reset", 0x449030, "game/GameSession.cpp next_stage（DAT_004a5bec bit1 换关：记录时 game_rng 种子 := visual_rng 种子低 16 位；回放时游标切到本关段、DAT_004a6d88 / DAT_004a6d80 := 段头 +2、段头 +0x14 全局块读回）"},
+    {"replay-rng-reset", 0x449030, "game/GameSession.cpp next_stage（DAT_004a5bec bit1 换关：记录时 game_rng 种子 := visual_rng 种子低 16 位；记录时新段头种子取此刻 DAT_004a6d88；回放时本关段备好（+0xd8 = -1，+0x214 不动，游标要到 0x448eb0 才切）、DAT_004a6d88 / DAT_004a6d80 := 段头 +2、段头 +0x14 全局块读回）"},
     {"replay-manager-create", 0x447760, "game/GameSession.cpp enter_game / create_player（Replay 构造：DAT_004a6d8c 清零；回放只置 DAT_004a6d88 := 段头 +2，段头 +0x14 全局块 0x8a dword 覆盖 DAT_004a5790 后 0x449190(replay_slot<0 ? 0 : 2)；记录时 ReplayRecording::snapshot_globals，+0x240 填充序列、+0x290 bit0 = DAT_004c17d0）"},
     {"replay-globals-block", 0x4A5790, "game/ReplayGlobals.cpp store_replay_globals / load_replay_globals（DAT_004a5790..DAT_004a59b8 共 0x228 字节，按原版偏移映射 GameGlobals 具名字段）"},
     {"replay-player-start", 0x4476D0, "game/GameSession.cpp GameSession::replay_stage_start_（回放：段头 +0xc / +0x10 → 自机定点 / 浮点坐标、子机 +0xd4 吸附；+0x23c → 低速标志、0x4440e0）"},
@@ -433,7 +433,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"replay-load", 0x448C10, "game/ReplayFile.cpp ReplayFile::open（t16r 头、双重 0x402220、LZSS、段表）"},
     {"replay-playback-step", 0x448130, "game/ReplayFile.cpp replay_playback_step + GameSession 记录链 mode==1（只写 DAT_004a52c8 游戏输入；段尾 / 0xffff×3 终止帧时 held / pressed / released 清零且不走 0x418650，终止帧另调 0x43f240 GameMenu::open_return_to_title 并停止读段）"},
     {"replay-record-tick", 0x447FD0, "game/ReplayRecording.cpp + GameSession 记录链 mode!=1（自动低速 / 边沿 / FPS）"},
-    {"replay-stage-begin", 0x448EB0, "game/ReplayRecording.cpp begin_stage（GameSession::on_stage_started）+ GameManager::on_replay_stage_start → GameSession::replay_stage_start_（回放 0x4476d0 读回；记录 set_stage_start 写 +0xc / +0x10 / +0x23c、换关时 set_stage_globals 重抄全局块）"},
+    {"replay-stage-begin", 0x448EB0, "GameManager::on_replay_stage_start → GameSession::replay_stage_start_（新开局首帧 0x42dc50 / 换关第 0x1e 帧 0x42dee0 调用；+0x20c 清零；记录 0x449270 / 0x4491c0 → ReplayRecording::begin_stage 换段，此前换关期间的帧仍记进上一段；回放 +0x214 切到本关段、+0xd8 = 0；回放 0x4476d0 读回；记录 set_stage_start 写 +0xc / +0x10 / +0x23c、换关时 set_stage_globals 重抄全局块）"},
     {"replay-save", 0x448400, "game/ReplayRecording.cpp write_slot / ReplayFile::encode（LZSS+双重加密+USER 尾）"},
     {"replay-slot-header", 0x447EF0, "game/ReplayRecording.cpp slot_summary（GameMenu DiskReplayStore）"},
     {"ver-file", 0x43B480, nullptr},         // th16_%.4x%c.ver

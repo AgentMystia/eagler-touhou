@@ -124,7 +124,15 @@ const ReplayStageSegment* GameSession::current_replay_segment_() const {
 
 void GameSession::replay_stage_start_() {
     Player& player = game.player;
+    // 0x448eb0：+0x20c 清零（两种模式）；回放时 +0x214 才切到本关段并从段首读，记录时才开新段
+    replay_ff_counter_ = 0;
     if (game.mode == 1) {
+        if (replay_next_stage_index_ >= 0) {
+            replay_cursor_.stage_index = replay_next_stage_index_;
+            replay_next_stage_index_ = -1;
+        }
+        replay_cursor_.frame_index = 0;
+        replay_cursor_.ended = false;
         const ReplayStageSegment* seg = current_replay_segment_();
         if (seg == nullptr || !game.player_live) return;
         // 0x4476d0（段头 +0xc）：定点坐标与浮点坐标、四个子机 +0xd4 吸附位；再 +0x23c → 低速标志、0x4440e0
@@ -138,7 +146,9 @@ void GameSession::replay_stage_start_() {
         player.setup_options(animations, globals);
         return;
     }
-    // 记录：换关（DAT_004c17d0 == 0）时重抄全局块；自机定点坐标 / 低速标志每段都写
+    // 记录：0x449270 / 0x4491c0 换到本关段（此前的帧仍记在上一段）；换关（DAT_004c17d0 == 0）时重抄全局块；
+    // 自机定点坐标 / 低速标志每段都写
+    replay_recording_.begin_stage(i16(globals.stage), replay_stage_seed_);
     if (!globals.new_game) replay_recording_.set_stage_globals(globals);
     if (game.player_live) replay_recording_.set_stage_start(player.fixed_x, player.fixed_y, player.focus);
 }
@@ -602,7 +612,8 @@ bool GameSession::create_player() {
                 const float rounded = global_fps_ + 0.5f;
                 replay_fps_byte_ = rounded >= 256.0f ? 255 : u8(i32(rounded));
             }
-            if (game_live && !game.chains_suspended) {
+            // 换关期间（0x449030 → 0x448eb0）Replay 链照常运行，帧仍记进上一段；新开局首段要到 0x448eb0 才开
+            if (game_live) {
                 replay_recording_.tick(u16(game_input.held & 0xffffu), u16(game_input.pressed & 0xffffu),
                                        u16(game_input.released & 0xffffu), replay_fps_byte_);
             }
@@ -844,12 +855,6 @@ void GameSession::register_game_chains() {
         if (menu_draw_chain_) chains.enable(menu_draw_chain_);
         if (popup_update_chain_) chains.enable(popup_update_chain_);
         if (popup_draw_chain_) chains.enable(popup_draw_chain_);
-        // 0x448eb0：非回放局开新段；seed = visual_rng 低 16（与 0x449030 对齐）
-        if (game.mode != 1) {
-            replay_ff_counter_ = 0;
-            const u16 seed = u16(animations.visual_rng.seed & 0xffffu);
-            replay_recording_.begin_stage(i16(globals.stage), seed);
-        }
     };
     game.on_replay_stage_start = [this]() { replay_stage_start_(); };
     game.on_previous_stage_destroyed = [this](StageManager& stage) {
@@ -880,6 +885,8 @@ bool GameSession::enter_game(i32 replay_mode) {
         if (const ReplayStageSegment* seg = current_replay_segment_()) animations.visual_rng.seed = seg->rng_seed;
     }
     animations.visual_rng.calls = 0;
+    replay_next_stage_index_ = -1;
+    replay_stage_seed_ = u16(animations.visual_rng.seed & 0xffffu);
     if (replay_mode != 1) {
         const i32 time32 = i32(std::time(nullptr));
         menu.ctx.replay_timestamp = time32;
@@ -1177,13 +1184,13 @@ bool GameSession::next_stage() {
     // 0x449030（Replay 关卡段）：game_rng 种子 := visual_rng 种子低 16 位；视觉 RNG 调用计数清零
     animations.game_rng.seed = animations.visual_rng.seed & 0xffffu;
     animations.visual_rng.calls = 0;
+    replay_stage_seed_ = u16(animations.visual_rng.seed & 0xffffu);
     if (game.mode == 1 && replay_file_loaded_) {
-        // 回放：游标切到本关段（+0xd8 = -1，首帧 0x448eb0 归零）、种子取段头 +2、全局块整块读回
+        // 回放：本关段备好（+0xd8 = -1），+0x214 仍指上一段——0x448eb0 之前上一段读尽后只回零输入；
+        // 种子取段头 +2、全局块整块读回
         for (i32 i = 0; i < i32(replay_file_.stages.size()); ++i) {
             if (replay_file_.stages[size_t(i)].stage != i16(globals.stage)) continue;
-            replay_cursor_.stage_index = i;
-            replay_cursor_.frame_index = 0;
-            replay_cursor_.ended = false;
+            replay_next_stage_index_ = i;
             const ReplayStageSegment& seg = replay_file_.stages[size_t(i)];
             animations.visual_rng.seed = seg.rng_seed;
             animations.game_rng.seed = seg.rng_seed;
