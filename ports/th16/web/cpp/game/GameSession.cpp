@@ -416,6 +416,7 @@ bool GameSession::create_enemies() {
     game.player.global_game_speed = &supervisor.game_speed;
     game.enemies.global_game_speed = &supervisor.game_speed;
     game.enemies.gui = &game.gui;
+    game.enemies.score_popups = game.score_popups_live ? &game.score_popups : nullptr;
     game.enemies.world = &game.world;
     if (enemy_update_chain_ == nullptr) {
         enemy_update_chain_ = chains.create([this]() -> ChainResult {
@@ -491,7 +492,12 @@ void GameSession::register_game_chains() {
     game.on_screen_fade = [this](i32 kind, i32 duration, u32 color) { create_screen_fade(kind, duration, color); };
     game.on_return_to_title = [this]() { if (menu_live) menu.open_return_to_title(); };
     game.on_frame_advanced = [this]() { compositor.tick(animations); };
-    game.on_stage_started = [this]() { if (game.stage) enable_stage_chains(*game.stage); };
+    game.on_stage_started = [this]() {
+        if (game.stage) enable_stage_chains(*game.stage);
+        // 0x42dc50 / 0x42dee0 接着启用得分飘字的两条链
+        if (popup_update_chain_) chains.enable(popup_update_chain_);
+        if (popup_draw_chain_) chains.enable(popup_draw_chain_);
+    };
     game.on_previous_stage_destroyed = [this](StageManager& stage) {
         remove_stage_chains(stage);
         unload_stage_anm(stage);
@@ -557,7 +563,6 @@ bool GameSession::enter_game(i32 replay_mode) {
                 game.items->focus_held = (game_input.held & 0x8u) != 0;
                 sync_bomb_state();
                 game.items->update(supervisor.game_speed);
-                game.items->popups.clear();   // 0x44a460 弹出数字：AsciiManager 接入前无状态影响
             }
             return ChainResult::Continue;
         }, 0x1d, true);
@@ -600,6 +605,24 @@ bool GameSession::enter_game(i32 replay_mode) {
     }
 
     create_menu();
+    // 0x449e50（GameMenu 之后）：得分飘字；两条链建为禁用，关卡首帧 0x42dc50 / 0x42dee0 启用（on_stage_started）
+    {
+        AnmFile* ascii_file = animations.file(AnmManager::kAsciiSlot);
+        if (ascii_file == nullptr) { failure = "ascii.anm not loaded"; return false; }
+        game.score_popups.create(*ascii_file);
+        game.score_popups.player = game.player_live ? &game.player : nullptr;
+        game.score_popups_live = true;
+        if (game.items) game.items->score_popups = &game.score_popups;
+        game.player.score_popups = &game.score_popups;
+        popup_update_chain_ = chains.create([this]() -> ChainResult {
+            if (game.score_popups_live) game.score_popups.update(supervisor.game_speed);
+            return ChainResult::Continue;
+        }, 0x14, true);
+        popup_draw_chain_ = chains.create([this]() -> ChainResult {
+            if (game.score_popups_live) game.score_popups.draw(renderer);
+            return ChainResult::Continue;
+        }, 0x2f, false);
+    }
     if (!create_enemies()) return false;
     create_bombs();
 
@@ -970,6 +993,11 @@ void GameSession::leave_game() {
     if (laser_draw_chain_) { chains.remove(laser_draw_chain_); laser_draw_chain_ = nullptr; }
     if (spellcard_update_chain_) { chains.remove(spellcard_update_chain_); spellcard_update_chain_ = nullptr; }
     if (spellcard_draw_chain_) { chains.remove(spellcard_draw_chain_); spellcard_draw_chain_ = nullptr; }
+    // 0x449d60：得分飘字随 Item / Laser 一起释放
+    if (popup_update_chain_) { chains.remove(popup_update_chain_); popup_update_chain_ = nullptr; }
+    if (popup_draw_chain_) { chains.remove(popup_draw_chain_); popup_draw_chain_ = nullptr; }
+    game.score_popups_live = false;
+    game.player.score_popups = nullptr;
     destroy_bombs();
     game.gui.bomb = nullptr;
     if (gui_update_chain_) { chains.remove(gui_update_chain_); gui_update_chain_ = nullptr; }

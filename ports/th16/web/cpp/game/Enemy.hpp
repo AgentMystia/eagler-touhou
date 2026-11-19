@@ -257,6 +257,7 @@ public:
     bool release_active = false;// DAT_004a6da4+0x30 == 1（季节解放接入前恒 false）
     const PlayerWorld* world = nullptr;  // Gui+0x1c8 != 0 的镜像（对话中伤害为 0、不判体碰撞；ECL 518 当帧即生效）
     Gui* gui = nullptr;                  // DAT_004a6dcc：ECL 518 / 519 / 554
+    class ScorePopupManager* score_popups = nullptr;   // DAT_004a6f10：ECL 638 得分飘字（0x44a460）
     StageManager* stage = nullptr;       // DAT_004a6da0：ECL 630 背景脚本标签跳转（换关后由 GameSession 重新绑定）
     bool dialogue_active() const noexcept;
     // Enemy 触发的 0x45e1f0 音效（受击 0x22/0x23、死亡 3/4、ECL 516）。原版与 ECL 601 等经 BulletManager 登记的音效

@@ -6,6 +6,7 @@
 #include "AnmManager.hpp"
 #include "Effect.hpp"
 #include "Gui.hpp"
+#include "ScorePopup.hpp"
 #include "Stage.hpp"
 #include "Item.hpp"
 #include "Laser.hpp"
@@ -2186,9 +2187,19 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
         case 901: case 902:
             // DebugSkipFunc / DebugSkipStopFunc 标记：0x422d70 表把 901 / 902 映到默认分支，原版即空操作
             return 0;
-        case 629: case 631: case 633: case 634: case 638:
+        case 638: {  // case 0x95：0x43e080 加分（含 extend）后在敌机位置弹出白色得分数字
+            const i32 value = iarg(0);
+            if (manager) {
+                manager->globals->add_score(value, [this] {
+                    if (manager->gui != nullptr) manager->gui->celebrate_extend();
+                });
+                if (manager->score_popups != nullptr) manager->score_popups->push(pos, value, 0xffffffffu);
+            }
+            return 0;
+        }
+        case 629: case 631: case 633: case 634:
             // 629 Boss 畸变光环（0x418c70，依赖场地渲染目标 DAT_004c127c，随渲染/RT 接入）、631 EnemyManager 标志、
-            // 633/634 伤害 / 判定回调表（全部 ECL 未使用）、638 得分飘字：随 Effect / Gui 子系统接入
+            // 633/634 伤害 / 判定回调表（全部 ECL 未使用）
             return 0;
         // —— 激光 700..714（0x41dcb0 case 0x99..0xa7）：复用发射器槽的弹种 / 颜色 / 角度 / 速度 / Ex，
         //    长度与时序参数放在发射器 +0x340 参数区与 pos 字段 ——

@@ -12,6 +12,7 @@
 #include "Input.hpp"
 #include "Item.hpp"
 #include "Laser.hpp"
+#include "ScorePopup.hpp"
 #include "Spellcard.hpp"
 
 #include <cmath>
@@ -263,7 +264,7 @@ void Player::graze(AnmManager& manager, AnmFile* effect_anm, GameGlobals& global
     if (globals.graze_total > 99999999) globals.graze_total = 99999999;
     const Vec3 mid{(bullet_pos.x + pos.x) * 0.5f, (pos.y + bullet_pos.y) * 0.5f, 0.0f};
     if (effect_anm != nullptr) manager.spawn_effect(*effect_anm, 0x18, -1, mid, 0.0f);
-    // 0x44a460：Gui 擦弹数字飘字（Gui 接入前无状态影响）
+    if (score_popups != nullptr) score_popups->push(mid, globals.graze_total, 0xffc0c0ffu);   // 0x44a460
     play_sfx(0x2a);
 }
 

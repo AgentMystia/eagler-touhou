@@ -7,6 +7,7 @@
 #include "Gui.hpp"
 #include "Motion.hpp"
 #include "Player.hpp"
+#include "ScorePopup.hpp"
 #include "Rng.hpp"
 
 #include <cmath>
@@ -76,7 +77,6 @@ void ItemManager::reset() {
     }
     attract_scale = 1.0f;
     sfx_queue.clear();
-    popups.clear();
 }
 
 void ItemManager::push_front(Item*& head, Item& it) {
@@ -386,7 +386,9 @@ void ItemManager::update(float gs) {
 // ---------------------------------------------------------------------------------------------
 // 拾取结算
 
-void ItemManager::popup(const Vec3& pos, i32 value, u32 color) { popups.push_back({pos, value, color}); }
+void ItemManager::popup(const Vec3& pos, i32 value, u32 color) {
+    if (score_popups != nullptr) score_popups->push(pos, value, color);
+}
 
 void ItemManager::record_collect(i32 value) {
     globals->collect_count = globals->collect_count + 1;

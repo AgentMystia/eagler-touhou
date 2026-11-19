@@ -112,6 +112,8 @@ private:
     ChainEntry* laser_update_chain_ = nullptr;
     ChainEntry* laser_draw_chain_ = nullptr;
     ChainEntry* spellcard_update_chain_ = nullptr;
+    ChainEntry* popup_update_chain_ = nullptr;        // 0x14（0x44a440 → 0x449ea0 得分飘字）
+    ChainEntry* popup_draw_chain_ = nullptr;          // 0x2f（0x44a450 → 0x44a000）
     ChainEntry* bomb_update_chain_ = nullptr;         // 0x18（0x40dd00 主炸弹）
     ChainEntry* release_update_chain_ = nullptr;      // 0x19（0x40dd00 季节解放）
     ChainEntry* bomb_draw_chain_ = nullptr;           // 0x28（0x40da70）

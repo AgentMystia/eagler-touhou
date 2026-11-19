@@ -30,6 +30,7 @@
 #include "Item.hpp"
 #include "Laser.hpp"
 #include "Player.hpp"
+#include "ScorePopup.hpp"
 #include "Stage.hpp"
 #include "StageTable.hpp"
 #include "Types.hpp"
@@ -74,6 +75,8 @@ public:
     bool items_live = false;
     std::unique_ptr<LaserManager> lasers;    // DAT_004a6ee0（0x610 字节；0x4314a0）
     bool lasers_live = false;
+    ScorePopupManager score_popups;          // DAT_004a6f10（0x449e50，与 Item / Laser 同批创建，换关沿用）
+    bool score_popups_live = false;
     BombManager bombs;           // DAT_004a6da8 / DAT_004a6da4（0x40d890 每关装载时建，0x40da90 离开时毁）
     Gui gui;                     // DAT_004a6dcc（0x427ca0；对话 / Boss 标题 / 过关结算 / HUD）
     bool gui_live = false;

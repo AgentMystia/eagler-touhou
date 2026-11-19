@@ -283,7 +283,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"player-hitbox-rect", 0x4438C0, "game/Bullet.cpp check_player_collision（矩形判定）"},
     {"player-hitbox-circle", 0x4439E0, "game/Bullet.cpp check_player_collision（圆形判定）"},
     {"player-hit", 0x443F10, "game/Player.cpp Player::hit（状态 4 决死窗口、无敌 6 帧、音效 2）"},
-    {"player-graze", 0x444CF0, "game/Player.cpp Player::graze + Bullet.cpp BulletManager::graze（擦弹计数上限 99999999、特效 0x18、音效 0x2a、得点道具 0x10）"},
+    {"player-graze", 0x444CF0, "game/Player.cpp Player::graze + Bullet.cpp BulletManager::graze（擦弹计数上限 99999999、特效 0x18、累计擦弹数飘字 0x44a460(ffc0c0ff)、音效 0x2a、得点道具 0x10）"},
     {"bullet-cancel-all", 0x416F40, "game/Bullet.cpp BulletManager::cancel_all（0x416840 / 0x416c20 / 0x416d20 族：全屏/圆形消弹转道具）"},
     {"bullet-cancel-radius", 0x416840, "game/Bullet.cpp BulletManager::cancel_radius"},
     {"bullet-cancel-to-item", 0x416A00, "game/Bullet.cpp BulletManager::convert_cancel_item（屏内消弹按模式转化道具；模式 2/4/5 消耗 DAT_004a6d88）"},
@@ -395,7 +395,12 @@ constexpr AddressAnchor kAnchors[] = {
     {"item-add-bomb", 0x43DFB0, "game/Item.cpp ItemManager::add_bomb（上限 8）"},
     {"item-add-point-value", 0x430DC0, "game/Item.cpp ItemManager::add_point_value（× 100 累加、封顶 point_value_max）"},
     {"item-add-season-gauge", 0x43DE50, "game/Item.cpp ItemManager::add_season_gauge（量表 +1 封顶；跨子机阈值时重建季节子机）"},
-    {"item-score-popup", 0x44A460, nullptr},  // 得分弹出（Gui）：Item 暂以 popups 队列记录，Gui 还原后接入
+    {"item-score-popup", 0x44A460, "game/ScorePopup.cpp ScorePopupManager::push（10 项环；value < 0 → 字形 10；十进制各位低位在前；上升速度 1）"},
+    {"score-popup-create", 0x449E50, "game/ScorePopup.cpp ScorePopupManager::create + GameSession.cpp enter_game（0x449c70 / 0x449cd0：ascii.anm、数字 VM 精灵 0x103、flags_hi |0x380000；链 0x14 / 0x2f 建为禁用，0x42dc50 启用）"},
+    {"score-popup-update", 0x449EA0, "game/ScorePopup.cpp ScorePopupManager::update（0x44a440 thunk；y -= 速度 × 游戏速度、速度 ×0.95、计时 > 0x3c 结束）"},
+    {"score-popup-draw", 0x44A000, "game/ScorePopup.cpp ScorePopupManager::draw（0x44a450 thunk；字宽 8（<8 帧为 8/计时）、自机 64 像素内 alpha 0x80..0xff、高位先消失的三套字形 0x103 / 0x10e / 0x118）"},
+    {"score-popup-destroy", 0x449D60, "game/GameSession.cpp GameSession::leave_game（摘两条链）"},
+    {"ecl-score-popup", 0x41DCB0, "game/Enemy.cpp Enemy::execute case 638（case 0x95：0x43e080 加分 + 0x44a460(敌机坐标, 分值, 白)）"},
     // —— LaserManager（DAT_004a6ee0，0x5ec 字节；更新链 0x1b、绘制链 0x23）——
     {"laser-manager-create", 0x4314A0, "game/Laser.cpp LaserManager::create（0x431330 构造；sprite_mapper 2 = 0x431fa0 直线 / 照射柱、3 = 0x43a840 曲线）"},
     {"laser-manager-reset", 0x42CB00, "game/Laser.cpp LaserManager::reset（0x42cb60 装载段清池）"},
