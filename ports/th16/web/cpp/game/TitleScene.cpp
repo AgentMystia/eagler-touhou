@@ -158,6 +158,8 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
     case kShot: update_shot(anm, input); break;
     case kSeason: update_season(anm, input); break;
     case kStage: update_stage(anm, input); break;
+    case kOption: update_option(anm, input); break;
+    case kKeyConfig: update_stub(anm, input); break;
     default: update_stub(anm, input); break;
     }
     ++timer;  // 0x44af80 末尾
@@ -658,7 +660,147 @@ void TitleScene::update_stage(AnmManager& anm, const InputState& input) {
     }
 }
 
-// 待还原画面（Option / Player Data / Replay / Music Room / Manual / Spell Practice）：取消回主菜单
+void TitleScene::panel_item_interrupt_now(AnmManager& anm, i32 script, i32 value) {
+    const u32 id = child_id(anm, 1, script);  // Option 面板 +0x2c4 = vm[1]
+    AnmVm* item = anm.find(id);
+    if (item == nullptr) return;
+    item->pending_interrupt = value;
+    anm.run(*item);
+}
+
+void TitleScene::refresh_option_items(AnmManager& anm) {
+    // 0x44c8c0：光标前项脚本 i+0x17 / i+0x1c → 0x1e；光标后项 → 0x1f（选中由面板 interrupt 负责）
+    if (vm[1] == 0) return;
+    for (i32 i = 0; i < cursor.index; ++i) {
+        panel_item_interrupt_now(anm, i + 0x17, 0x1e);
+        panel_item_interrupt_now(anm, i + 0x1c, 0x1e);
+    }
+    for (i32 i = cursor.index + 1; i < 5; ++i) {
+        panel_item_interrupt_now(anm, i + 0x17, 0x1f);
+        panel_item_interrupt_now(anm, i + 0x1c, 0x1f);
+    }
+}
+
+void TitleScene::apply_option_volume(AnmManager& anm) {
+    // 0x44dc70：把 BGM/SE 写到面板子脚本 0x21.. 的数字 ANM；无子 VM 时静默跳过
+    (void)anm;
+    if (vm[1] == 0) return;
+    // 宿主音量侧效在 Sound 子系统接入后再写 DAT_004df49c 族；此处保持逻辑值即可
+}
+
+// 0x44c570：Option（BGM / SE / KeyConfig / Default / Quit）
+void TitleScene::update_option(AnmManager& anm, const InputState& input) {
+    GameGlobals& g = *globals;
+    switch (sub) {
+    case 0:
+        cursor.count = 5;
+        cursor.wrap = true;
+        cursor.set(0);
+        if (title_file != nullptr) spawn_into(anm, 1, *title_file, 1);  // +0x2c4 面板脚本 1
+        apply_option_volume(anm);
+        refresh_option_items(anm);
+        set_sub(1);
+        events.push_back({"option", 0});
+        [[fallthrough]];
+    case 1:
+        if (timer > 6) {
+            set_sub(2);
+            if (vm[1]) {
+                anm.interrupt_now(vm[1], 3);
+                anm.interrupt(vm[1], cursor.index + 0x11);
+            }
+            refresh_option_items(anm);
+        }
+        break;
+    case 2: {
+        const i32 prev = cursor.index;
+        const u32 edge = input.pressed | input.repeat;
+        if (edge & InputState::kUp) cursor.move(-1);
+        if (edge & InputState::kDown) cursor.move(1);
+        if (cursor.index != prev) {
+            sfx(10);
+            if (vm[1]) {
+                anm.interrupt_now(vm[1], 3);
+                anm.interrupt(vm[1], to_short(cursor.index + 7));
+            }
+            refresh_option_items(anm);
+        }
+        // 取消：非 Quit 项时先跳到 Quit（4），再取消才退出——与原版 0x102 分支一致
+        if (input.pressed & InputState::kCancelMask) {
+            if (cursor.index != 4) {
+                sfx(9);
+                cursor.set(4);
+                if (vm[1]) {
+                    anm.interrupt_now(vm[1], 3);
+                    anm.interrupt(vm[1], to_short(cursor.index + 7));
+                }
+                refresh_option_items(anm);
+                break;
+            }
+            if (vm[1]) anm.interrupt(vm[1], 6);
+            sfx(9);
+            set_sub(4);
+            break;
+        }
+        // 左右调音量（项 0 BGM / 1 SE），步进 5，夹到 0..100（0x4186f0）
+        if (edge & InputState::kLeft) {
+            if (cursor.index == 0) {
+                g.bgm_volume = u8(g.bgm_volume < 5 ? 0 : g.bgm_volume - 5);
+                apply_option_volume(anm);
+            } else if (cursor.index == 1) {
+                g.se_volume = u8(g.se_volume < 5 ? 0 : g.se_volume - 5);
+                apply_option_volume(anm);
+            }
+        }
+        if (edge & InputState::kRight) {
+            if (cursor.index == 0) {
+                g.bgm_volume = u8(g.bgm_volume + 5 > 100 ? 100 : g.bgm_volume + 5);
+                apply_option_volume(anm);
+            } else if (cursor.index == 1) {
+                g.se_volume = u8(g.se_volume + 5 > 100 ? 100 : g.se_volume + 5);
+                apply_option_volume(anm);
+            }
+        }
+        if (input.pressed & InputState::kConfirmMask) {
+            if (cursor.index == 2) {
+                if (vm[1]) anm.interrupt(vm[1], 6);
+                sfx(7);
+                set_sub(4);
+            } else if (cursor.index == 3) {
+                g.bgm_volume = 100;
+                g.se_volume = 80;  // 0x5064
+                g.option_flags = 0;
+                apply_option_volume(anm);
+                sfx(7);
+            } else if (cursor.index == 4) {
+                if (vm[1]) anm.interrupt(vm[1], 6);
+                sfx(9);
+                set_sub(4);
+            }
+        }
+        break;
+    }
+    case 4:
+        if (timer > 9) {
+            if (cursor.index == 2) {
+                dismiss(anm, 1);
+                set_screen(kKeyConfig);
+                cursor.push();
+                events.push_back({"screen", screen});
+            } else if (cursor.index == 4) {
+                dismiss(anm, 1);
+                set_screen(kMainMenu);
+                cursor.pop();
+                events.push_back({"screen", screen});
+            }
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+// 待还原画面（Key Config / Player Data / Replay / Music Room / Manual / Spell Practice）
 void TitleScene::update_stub(AnmManager& anm, const InputState& input) {
     (void)anm;
     if (sub == 0) {
@@ -667,8 +809,13 @@ void TitleScene::update_stub(AnmManager& anm, const InputState& input) {
     }
     if (input.pressed & InputState::kCancelMask) {
         sfx(9);
-        set_screen(kMainMenu);
-        cursor.pop();
+        if (screen == kKeyConfig) {
+            set_screen(kOption);
+            cursor.pop();
+        } else {
+            set_screen(kMainMenu);
+            cursor.pop();
+        }
         events.push_back({"screen", screen});
     }
 }

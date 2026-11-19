@@ -283,13 +283,49 @@ test('practice: season confirm goes to Stage select (8); locked stages refuse wi
   assert.deepEqual(out.events.at(-1), ['sfx', '16'], 'no clear data → stage locked');
 });
 
-test('stub screens (Option/Replay/…): cancel returns to the main menu', needDat, () => {
+test('Option screen (0x44c570): cancel to Quit then back to main menu', needDat, () => {
   const t = MAIN + 1;
   const downs = Array.from({length: 6}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Option (7)
   const confirmAt = t + 12 + 2;
+  // 主菜单 case4 等 0x13 → Option case0/1 等 timer>6 后才可输入（约 confirmAt+30）
+  // 首次取消跳到 Quit，再次取消进 case4，再等 timer>9 回主菜单
+  const ready = confirmAt + 30;
+  const out = parse(run(['scene-boot', dat, String(ready + 20), [
+    ...downs, `${confirmAt}:${Z}`, `${ready}:${X}`, `${ready + 2}:${X}`,
+  ].join(',')]));
+  assert.equal(out.header.screen, 1);
+  assert.ok(out.events.some(e => e[0] === 'option'));
+});
+
+test('Option screen: ←/→ adjust BGM, Default restores 100/80', needDat, () => {
+  const t = MAIN + 1;
+  const downs = Array.from({length: 6}, (_, i) => `${t + i * 2}:${DOWN}`);
+  const confirmAt = t + 12 + 2;
+  const ready = confirmAt + 30;
+  const left = parse(run(['scene-boot', dat, String(ready + 4), [
+    ...downs, `${confirmAt}:${Z}`, `${ready}:${LEFT}`, `${ready + 2}:${LEFT}`,
+  ].join(',')]));
+  assert.equal(left.header.screen, 3);
+  assert.equal(left.header.bgm, 90);
+  assert.equal(left.header.se, 80);
+  // ↓↓↓ 到 Default(3) 再确定
+  const restored = parse(run(['scene-boot', dat, String(ready + 12), [
+    ...downs, `${confirmAt}:${Z}`,
+    `${ready}:${LEFT}`, `${ready + 2}:${LEFT}`,
+    `${ready + 4}:${DOWN}`, `${ready + 6}:${DOWN}`, `${ready + 8}:${DOWN}`,
+    `${ready + 10}:${Z}`,
+  ].join(',')]));
+  assert.equal(restored.header.bgm, 100);
+  assert.equal(restored.header.se, 80);
+});
+
+test('stub screens (Replay/…): cancel returns to the main menu', needDat, () => {
+  const t = MAIN + 1;
+  const downs = Array.from({length: 7}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Player Data / Replay 一带
+  const confirmAt = t + 14 + 2;
   const out = parse(run(['scene-boot', dat, String(confirmAt + 21 + 4), [...downs, `${confirmAt}:${Z}`, `${confirmAt + 22}:${X}`].join(',')]));
   assert.equal(out.header.screen, 1);
-  assert.ok(out.events.some(e => e[0] === 'stub' && e[1] === '3'));
+  assert.ok(out.events.some(e => e[0] === 'stub'));
 });
 
 test('chain-demo: priority order, Remove, Restart, enable/disable', () => {

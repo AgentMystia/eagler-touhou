@@ -1372,9 +1372,10 @@ int main(int argc, char** argv) {
         const Supervisor& sup = session.supervisor;
         const TitleScene& title = session.title;
         const GameGlobals& g = session.globals;
-        std::printf("scene=%d boot_frames=%u title_live=%d screen=%d sub=%d cursor=%d difficulty=%d shot=%d season=%d stage=%d mode=%d quit=%d update_chains=%u draw_chains=%u quads=%zu\n",
+        std::printf("scene=%d boot_frames=%u title_live=%d screen=%d sub=%d cursor=%d difficulty=%d shot=%d season=%d stage=%d mode=%d quit=%d bgm=%u se=%u update_chains=%u draw_chains=%u quads=%zu\n",
                     int(sup.current), sup.boot_frames, sup.title_menu_live ? 1 : 0, title.screen, title.sub, title.cursor.index,
                     g.difficulty, g.shot, g.season, g.stage, g.mode(), session.quit_requested ? 1 : 0,
+                    unsigned(g.bgm_volume), unsigned(g.se_volume),
                     session.chains.update_count(), session.chains.draw_count(), quads.size());
         for (const TitleScene::Event& e : session.title_events) std::printf("event %s %d\n", e.kind, e.value);
         for (const TitleScene::Event& e : title.events) std::printf("event %s %d\n", e.kind, e.value);
