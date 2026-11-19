@@ -984,6 +984,14 @@ int main(int argc, char** argv) {
             session.globals.flags |= 0x40u;
             replay_mode = 1;
         }
+        // TH16_REPLAY=<th16_XX.rpy>：标题 Replay 选槽口径（bit6 不置）；TH16_RECORD_DIR=<目录>：跑完后 0x448400 写 th16_01.rpy
+        if (const char* replay = std::getenv("TH16_REPLAY")) {
+            if (!session.load_replay_file(replay)) return fail(session.failure.c_str());
+            session.apply_replay_start(-1);
+            replay_mode = 1;
+        }
+        const char* record_dir = std::getenv("TH16_RECORD_DIR");
+        if (record_dir != nullptr) session.save_directory = record_dir;
         if (!session.start_game_direct(replay_mode)) return fail(session.failure.c_str());
         // 可选残机覆盖（game-oracle.py --lives 同口径：装载完成后写 DAT_004a57f4），用于无输入长程对拍不被 Game Over 截断
         if (argc >= 13 && argv[12][0] != '\0') session.globals.lives = std::atoi(argv[12]);
@@ -1627,6 +1635,7 @@ int main(int argc, char** argv) {
                         (unsigned long long)spell_digest, (unsigned long long)laser_digest, (unsigned long long)bomb_digest,
                         (unsigned long long)menu_digest);
         else std::printf("],\"scene_exit\":%d,\"exit_frame\":%d}\n", scene_exit, exit_frame);
+        if (record_dir != nullptr && !session.save_replay_slot(1, "TEST")) return fail(session.failure.c_str());
         if (!session.game.enemies.unknown_ops.empty()) {
             std::fprintf(stderr, "unknown_ecl_ops=");
             for (size_t i = 0; i < session.game.enemies.unknown_ops.size(); ++i)

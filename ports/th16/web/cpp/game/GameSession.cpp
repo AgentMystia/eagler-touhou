@@ -570,11 +570,22 @@ bool GameSession::create_player() {
             u32 held = 0, aux0 = 0, aux1 = 0;
             u8 fps = replay_fps_byte_;
             if (replay_file_loaded_) {
-                replay_playback_step(replay_file_, replay_cursor_, held, aux0, aux1, fps);
+                const bool stepped = replay_playback_step(replay_file_, replay_cursor_, held, aux0, aux1, fps);
                 replay_fps_byte_ = fps;
-                game_input.held = held & 0xffffu;
-                // 原版另写 DAT_004a52d4 / DAT_004a52d8（aux）；边沿仍走 commit
-                game_input.commit();
+                if (stepped) {
+                    game_input.held = held & 0xffffu;
+                    // 原版另写 DAT_004a52d4 / DAT_004a52d8（aux）；边沿仍走 commit
+                    game_input.commit();
+                } else {
+                    // 0x448130 段尾 / 终止帧：DAT_004a52c8 / d4 / d8 清零后直接返回（不走 0x418650）
+                    game_input.previous = game_input.held;
+                    game_input.held = game_input.pressed = game_input.released = 0;
+                    if (replay_cursor_.terminated) {
+                        // 0xffff×3：0x43f240 回标题菜单，+0x214 = -1 后不再读段
+                        replay_cursor_.terminated = false;
+                        if (menu_live) menu.open_return_to_title();
+                    }
+                }
             }
             ++replay_ff_counter_;
             return ChainResult::Continue;

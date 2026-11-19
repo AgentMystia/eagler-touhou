@@ -3,7 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 
@@ -28,6 +29,33 @@ for (const [name, g] of Object.entries(golden.demos)) {
     }
   });
 }
+
+test('replay-roundtrip: a port recording plays back identically in the port and in the original', { skip: !existsSync(dat) && 'th16.dat not present' }, () => {
+  const g = golden.recorded;
+  const dir = mkdtempSync(join(tmpdir(), 'th16-rec-'));
+  try {
+    const args = ['game-digest', dat, String(g.stage), String(g.shot), String(g.season), String(g.frames)];
+    const digests = (env, input) => {
+      const r = spawnSync(harness, [...args, input], { encoding: 'utf8', env: { ...process.env, ...env } });
+      assert.equal(r.status, 0, r.stderr || r.stdout);
+      return Object.fromEntries(r.stdout.trim().split('\n').at(-1).split(' ').map((kv) => kv.split('=')));
+    };
+    const recorded = digests({ TH16_RECORD_DIR: dir }, g.input);
+    const rpy = join(dir, 'replay', 'th16_01.rpy');
+    assert.ok(existsSync(rpy), 'th16_01.rpy written');
+    // 标题 Replay 口径（bit6 不置）与演示口径（golden 由原版 --demo 回放得出；1300 帧内两者玩法相同）
+    const replayed = digests({ TH16_REPLAY: rpy }, '0:0');
+    const demo = digests({ TH16_DEMO: rpy }, '0:0');
+    for (const key of ['digest', 'enemies', 'enemy_vms', 'bullets', 'items', 'spell', 'lasers', 'bombs']) {
+      assert.equal(recorded[key], g[key], `recording run ${key}`);
+      assert.equal(replayed[key], g[key], `port playback ${key}`);
+      assert.equal(demo[key], g[key], `port demo playback ${key}`);
+    }
+    assert.equal(demo.menu, g.menu, 'demo playback menu digest');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('replay-globals: stage header +0x14 snapshot decodes the 0x4a5790 block', need, () => {
   const r = spawnSync(harness, ['replay-globals', join(demosDir, 'demo1.rpy')], { encoding: 'utf8' });

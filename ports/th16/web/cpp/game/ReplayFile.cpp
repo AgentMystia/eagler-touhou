@@ -231,6 +231,14 @@ bool replay_playback_step(const ReplayFile& file, ReplayPlaybackCursor& cursor,
         held_low16 = read_u16(seg.inputs.data() + at);
         aux0 = read_u16(seg.inputs.data() + at + 2);
         aux1 = read_u16(seg.inputs.data() + at + 4);
+        if (held_low16 == 0xffffu && aux0 == 0xffffu && aux1 == 0xffffu) {
+            // 终止帧：输入全清零，不推进帧计数与 FPS 字节，此后不再读段
+            held_low16 = aux0 = aux1 = 0;
+            cursor.ended = true;
+            cursor.terminated = true;
+            fps_byte = cursor.fps_byte;
+            return false;
+        }
     }
     // 0x448130：每 30 帧从 FPS 流取一字节（计数为段内帧；第 0/30/… 帧）
     if ((cursor.frame_index % 30) == 0) {

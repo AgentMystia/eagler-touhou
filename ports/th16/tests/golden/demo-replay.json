@@ -69,5 +69,22 @@
    "bombs": "0ad9766d632163e5",
    "menu": "0e4ea3a790748feb"
   }
+ },
+ "recorded": {
+  "_source": "harness game-digest 1 0 0 1300 <input> 以 TH16_RECORD_DIR 录制 th16_01.rpy，再以 game-oracle.py --demo 在原版回放 1300 帧",
+  "stage": 1,
+  "shot": 0,
+  "season": 0,
+  "frames": 1300,
+  "input": "0:0,60:0x1,200:0x11,260:0x41,400:0x21,500:0x81,700:0x9,900:0x1",
+  "digest": "e3a7c3ffe558c55c",
+  "enemies": "018898fc0e99b53d",
+  "enemy_vms": "f0e798886a25109a",
+  "bullets": "b76a74cad1de8d7d",
+  "items": "04a5b3365190ef96",
+  "spell": "b7bed1319cae59e1",
+  "lasers": "46916e5313814d06",
+  "bombs": "42cc17fdd0ef4112",
+  "menu": "dbc5a4b33058e07d"
  }
 }
