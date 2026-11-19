@@ -643,24 +643,41 @@ class GameOracle(Oracle):
             self.project_one(out + i * out_stride, v_p + i * in_stride, vp_p, proj_p, view_p, world_p)
         self.uc.reg_write(UC_X86_REG_EAX, out)
 
-    def project_one(self, out, v_p, vp_p, proj_p, view_p, world_p):
-        v = self.read_f(v_p, 3) + [1.0]
-        mats = [self.read_f(p, 16) for p in (world_p, view_p, proj_p) if p]
-        for m in mats:
-            r = []
+    @staticmethod
+    def _mat_mul(a, b):
+        # D3DXMatrixMultiply：每项 a[i][0]*b[0][j] + a[i][1]*b[1][j] + … 从左到右单精度累加
+        m = []
+        for r in range(4):
             for c in range(4):
-                acc = 0.0
-                for k in range(4):
-                    acc = f32(acc + f32(v[k] * m[k * 4 + c]))
-                r.append(acc)
-            v = r
-        w = v[3] if v[3] != 0.0 else 1.0
-        x, y, z = f32(v[0] / w), f32(v[1] / w), f32(v[2] / w)
+                acc = f32(a[r * 4] * b[c])
+                for k in range(1, 4):
+                    acc = f32(acc + f32(a[r * 4 + k] * b[k * 4 + c]))
+                m.append(acc)
+        return m
+
+    def project_one(self, out, v_p, vp_p, proj_p, view_p, world_p):
+        # D3DXVec3Project（按 Wine d3dx9 的参考实现）：先把 world·view·projection 乘成一张矩阵，
+        # 再 D3DXVec3TransformCoord（各分量从左到右累加后除以 w），最后映射到视口：
+        # x' = X + (1 + x) × Width / 2。全部单精度逐步舍入；mode 4（0x466390）用两次投影之差定尺寸，
+        # 对这里的舍入顺序敏感，移植侧 Camera::project 与此逐步对应
+        v = self.read_f(v_p, 3)
+        m = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+        for p in (world_p, view_p, proj_p):
+            if p:
+                m = self._mat_mul(m, self.read_f(p, 16))
+        r = []
+        for c in range(4):
+            acc = f32(m[c] * v[0])
+            acc = f32(acc + f32(m[4 + c] * v[1]))
+            acc = f32(acc + f32(m[8 + c] * v[2]))
+            r.append(f32(acc + m[12 + c]))
+        w = r[3] if r[3] != 0.0 else 1.0
+        x, y, z = f32(r[0] / w), f32(r[1] / w), f32(r[2] / w)
         vx, vy, vw, vh = struct.unpack('<4I', self.uc.mem_read(vp_p, 16))
         minz, maxz = struct.unpack('<2f', self.uc.mem_read(vp_p + 16, 8))
-        sx = f32(f32(f32(x + 1.0) * 0.5) * vw + vx)
-        sy = f32(f32(f32(1.0 - y) * 0.5) * vh + vy)
-        sz = f32(f32(z * f32(maxz - minz)) + minz)
+        sx = f32(vx + f32(f32(f32(1.0 + x) * vw) / 2.0))
+        sy = f32(vy + f32(f32(f32(1.0 - y) * vh) / 2.0))
+        sz = f32(minz + f32(z * f32(maxz - minz)))
         self.write_f(out, [sx, sy, sz])
 
     # ---- 文件 ----

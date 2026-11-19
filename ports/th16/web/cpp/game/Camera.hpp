@@ -6,7 +6,7 @@
 //   0x43c780  "正对视口中心"：eye=(视口中心, (h/2)/tan(fov/2))、at=(视口中心, 0)、up=(0,-1,0)，近远 1 / 10000；
 //             UI 相机与层绘制回调（0x46ddd0）每帧都用它复位
 //   0x43c940  关卡相机：eye = pos + pos_offset，at = eye + facing_norm，up 为脚本给定；近远 30 / 8000；
-//             顺便算出 right = normalize(cross(up, facing_norm))，并把抖动偏移写进 AnmManager 绘制偏移
+//             顺便算出 right = normalize(cross(facing_norm, up))，并把抖动偏移写进 AnmManager 绘制偏移
 //   0x43c710  把相机的 view / projection 下发给设备（AnmRenderer::use_camera）
 //
 // 原版字段按 dword 下标：0 pos  3 facing  6 up  9 facing_norm  0xc right  0xf pos_offset  0x12 facing_offset
@@ -51,8 +51,11 @@ struct Camera {
     // 0x43c940 的 eye / at
     Vec3 eye() const { return {pos.x + pos_offset.x, pos.y + pos_offset.y, pos.z + pos_offset.z}; }
     Vec3 at() const { const Vec3 e = eye(); return {e.x + facing_norm.x, e.y + facing_norm.y, e.z + facing_norm.z}; }
-    // D3DXVec3Project：世界坐标 →（屏幕 x, y, 视口深度）；rhw 另给。测试与视锥剔除用，渲染本身由设备做变换
+    // D3DXVec3Project(v, viewport, projection, view, world = 单位阵)：世界坐标 →（屏幕 x, y, 视口深度）；rhw 另给
     void project(const float world[3], float& sx, float& sy, float& sz, float& rhw) const;
+    // D3DXVec3Project(v, viewport, projection, view, world = 平移 translation)：0x466390 的两次投影用法
+    void project_translated(const float translation[3], const float v[3], float& sx, float& sy, float& sz,
+                            float& rhw) const;
 };
 using StageCamera = Camera;
 
