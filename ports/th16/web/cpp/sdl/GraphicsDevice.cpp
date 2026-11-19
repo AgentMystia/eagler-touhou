@@ -130,4 +130,53 @@ void GraphicsDevice::draw(Topology topology, VertexLayout layout, u32 primitive_
     backend.draw(topology, primitive_count, vertices, stride);
 }
 
+void GraphicsDevice::clear_texture_rect(u32 handle, i32 left, i32 top, i32 right, i32 bottom) {
+    auto it = textures.find(handle);
+    if (it == textures.end()) return;
+    Texture& t = it->second;
+    if (t.format != touhou::graphics::PixelFormat::Bgra8 || t.pixels.empty()) return;
+    const i32 x0 = left < 0 ? 0 : left;
+    const i32 y0 = top < 0 ? 0 : top;
+    const i32 x1 = right > i32(t.width) ? i32(t.width) : right;
+    const i32 y1 = bottom > i32(t.height) ? i32(t.height) : bottom;
+    if (x1 <= x0 || y1 <= y0) return;
+    for (i32 y = y0; y < y1; ++y) {
+        std::memset(t.pixels.data() + size_t(y) * t.width * 4 + size_t(x0) * 4, 0, size_t(x1 - x0) * 4);
+    }
+    ++t.revision;
+}
+
+void GraphicsDevice::blit_rgba_to_texture(u32 handle, i32 dst_x, i32 dst_y, const u8* rgba, i32 width, i32 height,
+                                          i32 pitch) {
+    auto it = textures.find(handle);
+    if (it == textures.end() || rgba == nullptr || width <= 0 || height <= 0) return;
+    Texture& t = it->second;
+    if (t.format != touhou::graphics::PixelFormat::Bgra8 || t.pixels.empty()) return;
+    for (i32 y = 0; y < height; ++y) {
+        const i32 dy = dst_y + y;
+        if (dy < 0 || dy >= i32(t.height)) continue;
+        for (i32 x = 0; x < width; ++x) {
+            const i32 dx = dst_x + x;
+            if (dx < 0 || dx >= i32(t.width)) continue;
+            const u8* src = rgba + size_t(y) * pitch + size_t(x) * 4;
+            const u8 sr = src[0], sg = src[1], sb = src[2], sa = src[3];
+            if (sa == 0) continue;
+            u8* dst = t.pixels.data() + size_t(dy) * t.width * 4 + size_t(dx) * 4;
+            if (sa == 255) {
+                dst[0] = sb;
+                dst[1] = sg;
+                dst[2] = sr;
+                dst[3] = 255;
+            } else {
+                const u8 inv = u8(255 - sa);
+                dst[0] = u8((sb * sa + dst[0] * inv + 127) / 255);
+                dst[1] = u8((sg * sa + dst[1] * inv + 127) / 255);
+                dst[2] = u8((sr * sa + dst[2] * inv + 127) / 255);
+                dst[3] = u8(sa + (dst[3] * inv + 127) / 255);
+            }
+        }
+    }
+    ++t.revision;
+}
+
 }  // namespace th16::sdl

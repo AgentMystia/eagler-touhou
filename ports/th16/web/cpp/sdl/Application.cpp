@@ -78,6 +78,7 @@ bool Application::step() {
     if (!initialized) return false;
     sample_input();
     if (!session.logic_step()) { failure = session.failure; return false; }
+    fonts.flush(graphics, session.animations, session.text_into_texture);
     graphics.present();
     ++frames;
     if (!graphics.error.empty()) failure = graphics.error;
@@ -90,6 +91,7 @@ bool Application::step_at(double wall_seconds) {
     sample_input();
     for (u32 i = 0; i < steps; ++i) {
         if (!session.logic_step()) { failure = session.failure; return false; }
+        fonts.flush(graphics, session.animations, session.text_into_texture);
     }
     graphics.present();
     ++frames;
