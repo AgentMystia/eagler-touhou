@@ -111,7 +111,8 @@ public:
     i32 spell_list_index = 0;        // +0x5dc8：列表确认的槽（带入 0x13）
     i32 spell_entry_index = 0;       // +0x5dcc：条目页确认的下标（带入 0x14 / 开战）
     i32 spell_slot_ids[5] = {-2, -2, -2, -2, -2};  // +0x5dd0：当前列表槽对应符卡 id
-    u32 spell_name_vms[5] = {};      // +0x740：符卡名文字 VM（title.anm 0xd2+i）
+    // +0x740：文字行 VM——符卡练习名行（前 5，title.anm 0xd2+i）/ Player Data 符卡页 10 行（text.anm 脚本 3..12）
+    u32 row_text_vms[10] = {};
     ScoreFile* scores = nullptr;     // 0x456060 解锁判定
     const u32* config_flags = nullptr;   // DAT_004c1800（bit13：退出改为停在场景 2）
     // 0x44a850：任一机体在 Easy..Lunatic 有未续关通关（主菜单 Extra 项可选）
@@ -119,8 +120,12 @@ public:
     bool shot_extra_unlocked(i32 shot) const { return scores != nullptr && scores->shot_extra_unlocked(shot); }        // 0x44a800
     bool difficulty_cleared_by_all(i32 d) const { return scores != nullptr && scores->difficulty_cleared_by_all(d); } // 0x44a8e0
     std::vector<TextIntoTextureRequest>* text_paints = nullptr;  // 0x46d990 名行入队
-    MenuCursor score_shot_cursor;    // +0xfc：Player Data 机体（count 5）
-    MenuCursor score_page_cursor;    // +0x1d4：成绩翻页
+    // Player Data：机体沿用 +0x24 主光标（count 4，←→），难度 +0xfc（count 5，↑↓），
+    // 翻页 +0x1d4（0 = 排名页，1.. = 该难度符卡每页 10 条）
+    MenuCursor score_difficulty_cursor;
+    static constexpr i32 kScoreShotLabel = 0xa7;        // title.anm 0xa7 + 机体（+0x55c）
+    static constexpr i32 kScoreDifficultyLabel = 0xaf;  // title.anm 0xaf + 难度（+0x57c）
+    MenuCursor score_page_cursor;
     i32 key_bind_slot = -1;          // Key Config：正在捕获的槽 0..4；-1=无
     i32 pending_scancode = -1;       // 宿主注入下一键（≥0 时 0x44f710 写入）
     char name_entry[9] = "        "; // +0x5a48：通关名字输入缓冲
@@ -240,6 +245,8 @@ private:
     void update_spell_shot(AnmManager& anm, const InputState& input);    // 0x456a20（条目/机体；非 Extra→0x14）
     void update_spell_start(AnmManager& anm, const InputState& input);   // 0x455d50（最终确认开战）
     void update_score(AnmManager& anm, const InputState& input);         // 0x452330 Player Data
+    void refresh_score_spell_page(AnmManager& anm);                       // 0x452c30
+    void dismiss_score_page_rows(AnmManager& anm);
     void update_name_entry(AnmManager& anm, const InputState& input);    // 0x4532f0 通关名字输入
     void update_name_confirm(AnmManager& anm, const InputState& input);  // 0x453c10 通关存回放
     void begin_name_input();                                             // 名字缓冲 ← last_name，字符表光标初值

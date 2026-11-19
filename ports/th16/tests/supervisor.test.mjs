@@ -635,6 +635,38 @@ test('Player Data (0x452330): cancel returns to the main menu', needDat, () => {
   assert.ok(out.events.some(e => e[0] === 'score'));
 });
 
+test('Player Data (0x452330 / 0x452c30 / 0x453030): spell pages per difficulty, shot ←→ on +0x24, footer on every page', needDat, () => {
+  const t = MAIN + 1;
+  const downs = Array.from({length: 4}, (_, i) => `${t + i * 2}:${DOWN}`);
+  const ready = t + 8 + 2 + 30;
+  const base = [...downs, `${t + 10}:${Z}`];
+  const texts = out => out.split('\n').filter(l => l.startsWith('text '));
+  const asciiRows = out => out.split('\n').filter(l => l.startsWith('ascii '));
+  // 排名页：机体 0（灵梦）、难度 1（Normal）；10 条排名 + 底部 3 行
+  const ranks = run(['scene-boot', dat, String(ready + 2), base.join(','), 'ascii']);
+  assert.equal(parse(ranks).header.cursor, 0, 'shot cursor +0x24 starts at 0');
+  assert.equal(asciiRows(ranks).length, 13);
+  // Normal 共 26 张 → 页数 (26+9)/10+1 = 4；第 1 页 10 行 No.2/6/10…（未见过：灰 808080，问号行）
+  const page1 = run(['scene-boot', dat, String(ready + 2), [...base, `${ready}:${Z}`].join(','), 'ascii', 'text']);
+  const rows1 = texts(page1);
+  assert.equal(rows1.length, 10);
+  assert.ok(rows1.every(l => / color=808080 /.test(l)));
+  assert.match(rows1[0], /\[No\.[^ ]+ [^ ]+    0\/   0\]$/, 'SJIS No.　　２ + 21 × ？ + captures/attempts');
+  assert.deepEqual(asciiRows(page1).map(l => l.split(' ')[2]), ['378.0', '396.0', '414.0'], 'rank rows hidden, footer stays');
+  // 第 3 页：剩 6 张 + 4 行空白（色 ffffffff 的 " "）；再确定回到第 0 页
+  const pages = [...base, `${ready}:${Z}`, `${ready + 2}:${Z}`, `${ready + 4}:${Z}`];
+  const rows3 = texts(run(['scene-boot', dat, String(ready + 6), pages.join(','), 'text'])).slice(-10);
+  assert.equal(rows3.filter(l => / color=808080 /.test(l)).length, 6);
+  assert.equal(rows3.filter(l => / color=ffffffff .*\[ \]$/.test(l)).length, 4);
+  const wrapped = parse(run(['scene-boot', dat, String(ready + 8), [...pages, `${ready + 6}:${Z}`].join(',')]));
+  assert.deepEqual(wrapped.events.filter(e => e[0] === 'score-page').map(e => e[1]), ['1', '2', '3', '0']);
+  // 合计块见过（unlock-spells）→ 名字行 efefef；→ 换机体（sfx 10），符卡页按新机体刷新
+  const seen = run(['scene-boot', dat, String(ready + 4), 'unlock-spells', [...base, `${ready}:${Z}`, `${ready + 2}:${RIGHT}`].join(','), 'text']);
+  assert.equal(parse(seen).header.cursor, 1);
+  assert.equal(texts(seen).length, 20, 'page refreshed after the shot change');
+  assert.ok(texts(seen).every(l => / color=efefef /.test(l)));
+});
+
 test('chain-demo: priority order, Remove, Restart, enable/disable', () => {
   assert.equal(run(['chain-demo']).trim(), 'BCCA|CA|CD r=1,1,1 count=3');
 });
