@@ -136,6 +136,7 @@ private:
     void update_manual(AnmManager& anm, const InputState& input);        // 0x4545a0
     void update_music(AnmManager& anm, const InputState& input);         // 0x4546f0
     void update_spell_practice(AnmManager& anm, const InputState& input); // 0x4553d0
+    void update_spell_list(AnmManager& anm, const InputState& input);    // 0x455d50
     void update_score(AnmManager& anm, const InputState& input);         // 0x452330 Player Data
     void update_key_config(AnmManager& anm, const InputState& input);    // 0x44e930
     void update_stub(AnmManager& anm, const InputState& input);          // 待还原画面：取消回上层

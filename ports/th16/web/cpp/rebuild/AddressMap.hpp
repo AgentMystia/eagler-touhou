@@ -378,6 +378,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"effect-spawn-transition", 0x418BA0, "game/Effect.cpp EffectManager::attach(0) / TitleScene::transition_effect（DAT_004c12a0，interrupt 7）"},
     {"bgm-fade", 0x43C470, nullptr},         // 0x45ed00(…,5,…)：BGM 淡出
     {"title-spell-practice", 0x4553D0, "game/TitleScene.cpp TitleScene::update_spell_practice（分组+机体光标，确定→0x12）"},
+    {"title-spell-list", 0x455D50, "game/TitleScene.cpp TitleScene::update_spell_list（符卡列表；确定开战 / 取消→0x13）"},
     {"title-score", 0x452330, "game/TitleScene.cpp TitleScene::update_score（Player Data 难度/机体/翻页）"},
     {"ending-create", 0x419640, "game/EndingScene.cpp EndingScene::begin / GameSession::enter_ending"},
     {"ending-load", 0x4191F0, "game/EndingScene.cpp（更新链 0x23；剧本 ANM 待接）"},

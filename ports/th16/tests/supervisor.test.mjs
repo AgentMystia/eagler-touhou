@@ -408,6 +408,20 @@ test('Spell Practice (0x4553d0): cancel returns to the main menu', needDat, () =
   assert.ok(out.events.some(e => e[0] === 'spell-practice'));
 });
 
+test('Spell List (0x455d50): from Spell Practice confirm, cancel → screen 0x13', needDat, () => {
+  const t = MAIN + 1;
+  const downs = Array.from({length: 2}, (_, i) => `${t + i * 2}:${DOWN}`);
+  const confirmAt = t + 4 + 2;
+  const spReady = confirmAt + 35;
+  // 练习 case3 等 >0x13 → 列表；列表 case1 等 >10 后取消，再等 case4 >5
+  const listReady = spReady + 40;
+  const out = parse(run(['scene-boot', dat, String(listReady + 20), [
+    ...downs, `${confirmAt}:${Z}`, `${spReady}:${Z}`, `${listReady}:${X}`,
+  ].join(',')]));
+  assert.ok(out.events.some(e => e[0] === 'spell-list'));
+  assert.equal(out.header.screen, 0x13);
+});
+
 test('Player Data (0x452330): cancel returns to the main menu', needDat, () => {
   const t = MAIN + 1;
   const downs = Array.from({length: 4}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Score/Player Data(5)
