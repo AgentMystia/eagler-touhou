@@ -1249,8 +1249,38 @@ void TitleScene::apply_option_volume(AnmManager& anm) {
         if (sound != nullptr) sound->master_volume = globals->se_volume;
     }
     if (bgm != nullptr) bgm->enqueue(8, 0, "SetVol");
-    (void)anm;
-    if (vm[1] == 0) return;
+    if (globals == nullptr) return;
+
+    // 面板子脚本：BGM 百/十/个位 0x21..0x23（精灵 +0x2a）与 0x25..0x27（精灵 +0x35，高亮色）；
+    // SE 对应 0x29..0x2b / 0x2d..0x2f。再按位数藏/显前导零（flags_lo bit1）。
+    auto paint = [&](i32 script, i32 sprite) {
+        AnmVm* digit = anm.find(child_id(anm, kOptionPanel, script));
+        if (digit == nullptr) return;
+        if (AnmFile* file = anm.file(digit->file_slot)) anm_set_sprite(*file, *digit, sprite);
+    };
+    auto show = [&](i32 script, bool on) {
+        AnmVm* digit = anm.find(child_id(anm, kOptionPanel, script));
+        if (digit == nullptr) return;
+        if (on) digit->flags_lo |= AnmVm::kFlag2;
+        else digit->flags_lo &= ~AnmVm::kFlag2;
+    };
+    const i32 bgm_vol = globals->bgm_volume;
+    const i32 se_vol = globals->se_volume;
+    for (i32 base : {0x21, 0x25}) {
+        const i32 sprite = base == 0x21 ? 0x2a : 0x35;
+        paint(base + 0, bgm_vol / 100 + sprite);
+        paint(base + 1, (bgm_vol / 10) % 10 + sprite);
+        paint(base + 2, bgm_vol % 10 + sprite);
+        paint(base + 8, se_vol / 100 + sprite);
+        paint(base + 9, (se_vol / 10) % 10 + sprite);
+        paint(base + 10, se_vol % 10 + sprite);
+    }
+    for (i32 base : {0x21, 0x25}) {
+        show(base + 0, bgm_vol >= 100);
+        show(base + 1, bgm_vol >= 10);
+        show(base + 8, se_vol >= 100);
+        show(base + 9, se_vol >= 10);
+    }
 }
 
 // 0x44c570：Option（BGM / SE / KeyConfig / Default / Quit）
