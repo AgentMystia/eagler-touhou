@@ -438,33 +438,50 @@ test('Spell Practice (0x4553d0): cancel returns to the main menu', needDat, () =
   assert.ok(out.events.some(e => e[0] === 'spell-practice'));
 });
 
-test('Spell List (0x455d50): from Spell Practice confirm, cancel → screen 0x13', needDat, () => {
+test('Spell List (0x455900): from Spell Practice confirm, cancel → screen 0x11', needDat, () => {
   const t = MAIN + 1;
   const downs = Array.from({length: 2}, (_, i) => `${t + i * 2}:${DOWN}`);
   const confirmAt = t + 4 + 2;
   const spReady = confirmAt + 35;
-  // 练习 case3 等 >0x13 → 列表；列表 case1 等 >10 后取消，再等 case4 >5
+  // 练习 → 列表；列表 case1 等 >10 后取消，再等 case4 >5 → 回练习 0x11
   const listReady = spReady + 40;
   const out = parse(run(['scene-boot', dat, String(listReady + 20), [
     ...downs, `${confirmAt}:${Z}`, `${spReady}:${Z}`, `${listReady}:${X}`,
   ].join(',')]));
   assert.ok(out.events.some(e => e[0] === 'spell-list'));
-  assert.equal(out.header.screen, 0x13);
+  assert.equal(out.header.screen, 0x11);
 });
 
-test('Spell Shot (0x456a20): cancel returns to Spell List', needDat, () => {
+test('Spell Shot (0x456a20): list confirm → shot; cancel returns to list 0x12', needDat, () => {
   const t = MAIN + 1;
   const downs = Array.from({length: 2}, (_, i) => `${t + i * 2}:${DOWN}`);
   const confirmAt = t + 4 + 2;
   const spReady = confirmAt + 35;
   const listReady = spReady + 40;
-  const shotReady = listReady + 25;
+  // 列表确定后 >0xd 进 shot，再等 case1 >10 才可取消
+  const shotReady = listReady + 45;
   const out = parse(run(['scene-boot', dat, String(shotReady + 25), [
-    ...downs, `${confirmAt}:${Z}`, `${spReady}:${Z}`, `${listReady}:${X}`,
+    ...downs, `${confirmAt}:${Z}`, `${spReady}:${Z}`, `${listReady}:${Z}`,
     `${shotReady}:${X}`,
   ].join(',')]));
   assert.ok(out.events.some(e => e[0] === 'spell-shot'));
   assert.equal(out.header.screen, 0x12);
+});
+
+test('Spell Start (0x455d50): shot confirm → 0x14; cancel → 0x13', needDat, () => {
+  const t = MAIN + 1;
+  const downs = Array.from({length: 2}, (_, i) => `${t + i * 2}:${DOWN}`);
+  const confirmAt = t + 4 + 2;
+  const spReady = confirmAt + 35;
+  const listReady = spReady + 40;
+  const shotReady = listReady + 45;
+  const startReady = shotReady + 45;
+  const out = parse(run(['scene-boot', dat, String(startReady + 25), [
+    ...downs, `${confirmAt}:${Z}`, `${spReady}:${Z}`, `${listReady}:${Z}`,
+    `${shotReady}:${Z}`, `${startReady}:${X}`,
+  ].join(',')]));
+  assert.ok(out.events.some(e => e[0] === 'spell-start'));
+  assert.equal(out.header.screen, 0x13);
 });
 
 test('Player Data (0x452330): cancel returns to the main menu', needDat, () => {

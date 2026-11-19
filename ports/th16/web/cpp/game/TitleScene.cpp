@@ -169,6 +169,7 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
     case kSpellPractice: update_spell_practice(anm, input); break;
     case kSpellList: update_spell_list(anm, input); break;
     case kSpellShot: update_spell_shot(anm, input); break;
+    case kSpellStart: update_spell_start(anm, input); break;
     case kScore: update_score(anm, input); break;
     case kKeyConfig: update_key_config(anm, input); break;
     default: update_stub(anm, input); break;
@@ -1243,22 +1244,27 @@ void TitleScene::update_score(AnmManager& anm, const InputState& input) {
 }
 
 // 0x455d50：符卡列表（count 4；确定开战；取消 → 画面 0x13）
+// 0x455900：分组内符卡列表（确定 → 0x13 / 取消 → 0x11）。条目表 0x4560b0 随后补全。
 void TitleScene::update_spell_list(AnmManager& anm, const InputState& input) {
+    static constexpr i32 kGroupCounts[7] = {2, 3, 4, 3, 6, 9, 0xd};
     switch (sub) {
-    case 0:
-        cursor.count = 4;
+    case 0: {
+        const i32 g = spell_group < 0 ? 0 : (spell_group > 6 ? 6 : spell_group);
+        cursor.count = kGroupCounts[g];
         cursor.wrap = true;
         cursor.set(0);
-        if (title_file && vm[0xd9] == 0) spawn_into(anm, 0xd9, *title_file, 0xd9);  // +0x624
+        if (title_file && vm[0x6b] == 0) spawn_into(anm, 0x6b, *title_file, 0x6b);  // +0x46c
+        if (title_file && vm[0xd8] == 0) spawn_into(anm, 0xd8, *title_file, 0xd8);  // +0x620
         set_sub(1);
         events.push_back({"spell-list", spell_group});
         [[fallthrough]];
+    }
     case 1:
         if (timer > 10) {
             set_sub(2);
-            if (vm[0xd9]) {
-                anm.interrupt_now(vm[0xd9], 3);
-                anm.interrupt(vm[0xd9], to_short(cursor.index + 7));
+            if (vm[0xd8]) {
+                anm.interrupt_now(vm[0xd8], 3);
+                anm.interrupt(vm[0xd8], to_short(cursor.index + 7));
             }
         }
         break;
@@ -1269,18 +1275,17 @@ void TitleScene::update_spell_list(AnmManager& anm, const InputState& input) {
         if (edge & InputState::kDown) cursor.move(1);
         if (cursor.index != prev) {
             sfx(10);
-            if (vm[0xd9]) {
-                anm.interrupt_now(vm[0xd9], 3);
-                anm.interrupt(vm[0xd9], to_short(cursor.index + 7));
+            if (vm[0xd8]) {
+                anm.interrupt_now(vm[0xd8], 3);
+                anm.interrupt(vm[0xd8], to_short(cursor.index + 7));
             }
         }
-        // ←/→ 机体副光标（0x455790）
         const i32 prev_shot = spell_shot_cursor.index;
         if (edge & InputState::kLeft) spell_shot_cursor.move(-1);
         if (edge & InputState::kRight) spell_shot_cursor.move(1);
         if (spell_shot_cursor.index != prev_shot) {
             sfx(10);
-            globals->shot = spell_shot_cursor.index;
+            if (globals) globals->shot = spell_shot_cursor.index;
         }
         if (input.pressed & InputState::kCancelMask) {
             set_sub(4);
@@ -1288,30 +1293,25 @@ void TitleScene::update_spell_list(AnmManager& anm, const InputState& input) {
             break;
         }
         if (input.pressed & InputState::kConfirmMask) {
-            if (vm[0xd9]) anm.interrupt(vm[0xd9], 6);
+            if (vm[0xd8]) anm.interrupt(vm[0xd8], 6);
             set_sub(3);
             sfx(7);
-            sfx(0x32);
-            events.push_back({"bgm-fade", 0});
         }
         break;
     }
     case 3:
-        if (timer == 10) transition_effect();
-        if (timer > 0x27) {
-            // 符卡练习开战：场景 7，mode 已在主菜单置 2
-            globals->stage = spell_group + 1;
-            globals->stage_copy = globals->stage;
-            globals->difficulty = cursor.index;  // 列表项暂作难度/条目；精确表见 0x5dd0
-            globals->scene_request = kSceneGame;
-            events.push_back({"scene", kSceneGame});
-            set_screen(kFinished);
+        if (timer > 0xd) {
+            if (vm[0x6b]) { dismiss(anm, 0x6b); }
+            set_screen(kSpellShot);
+            cursor.push();
+            events.push_back({"screen", screen});
         }
         break;
     case 4:
         if (timer > 5) {
-            dismiss(anm, 0xd9);
-            set_screen(kSpellShot);
+            dismiss(anm, 0x6b);
+            dismiss(anm, 0xd8);
+            set_screen(kSpellPractice);
             cursor.pop();
             events.push_back({"screen", screen});
         }
@@ -1321,7 +1321,7 @@ void TitleScene::update_spell_list(AnmManager& anm, const InputState& input) {
     }
 }
 
-// 0x456a20：符卡机体/条目页（count 5；取消回列表 0x12）
+// 0x456a20：符卡条目/机体页（Extra 组直接开战；否则 → 0x14；取消 → 0x12）
 void TitleScene::update_spell_shot(AnmManager& anm, const InputState& input) {
     (void)anm;
     switch (sub) {
@@ -1346,7 +1346,7 @@ void TitleScene::update_spell_shot(AnmManager& anm, const InputState& input) {
         if (edge & InputState::kRight) spell_shot_cursor.move(1);
         if (spell_shot_cursor.index != prev_shot) {
             sfx(10);
-            globals->shot = spell_shot_cursor.index;
+            if (globals) globals->shot = spell_shot_cursor.index;
         }
         if (input.pressed & InputState::kCancelMask) {
             set_sub(4);
@@ -1367,15 +1367,16 @@ void TitleScene::update_spell_shot(AnmManager& anm, const InputState& input) {
         if (spell_group == 6) {
             if (timer == 10) transition_effect();
             if (timer > 0x27) {
-                globals->stage = spell_group + 1;
-                globals->stage_copy = globals->stage;
-                globals->scene_request = kSceneGame;
+                if (globals) {
+                    globals->stage = spell_group + 1;
+                    globals->stage_copy = globals->stage;
+                    globals->scene_request = kSceneGame;
+                }
                 events.push_back({"scene", kSceneGame});
                 set_screen(kFinished);
             }
         } else if (timer > 0xd) {
-            // 非 Extra 组：进更深页 0x14（未接）→ 暂回列表
-            set_screen(kSpellList);
+            set_screen(kSpellStart);
             cursor.push();
             events.push_back({"screen", screen});
         }
@@ -1383,6 +1384,85 @@ void TitleScene::update_spell_shot(AnmManager& anm, const InputState& input) {
     case 4:
         if (timer > 5) {
             set_screen(kSpellList);
+            cursor.pop();
+            events.push_back({"screen", screen});
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+// 0x455d50：符卡练习最终确认页（画面 0x14；取消 → 0x13）
+void TitleScene::update_spell_start(AnmManager& anm, const InputState& input) {
+    switch (sub) {
+    case 0:
+        cursor.count = 4;
+        cursor.wrap = true;
+        cursor.set(0);
+        if (title_file && vm[0xd9] == 0) spawn_into(anm, 0xd9, *title_file, 0xd9);  // +0x624
+        set_sub(1);
+        events.push_back({"spell-start", spell_group});
+        [[fallthrough]];
+    case 1:
+        if (timer > 10) {
+            set_sub(2);
+            if (vm[0xd9]) {
+                anm.interrupt_now(vm[0xd9], 3);
+                anm.interrupt(vm[0xd9], to_short(cursor.index + 7));
+            }
+        }
+        break;
+    case 2: {
+        const i32 prev = cursor.index;
+        const u32 edge = input.pressed | input.repeat;
+        if (edge & InputState::kUp) cursor.move(-1);
+        if (edge & InputState::kDown) cursor.move(1);
+        if (cursor.index != prev) {
+            sfx(10);
+            if (vm[0xd9]) {
+                anm.interrupt_now(vm[0xd9], 3);
+                anm.interrupt(vm[0xd9], to_short(cursor.index + 7));
+            }
+        }
+        const i32 prev_shot = spell_shot_cursor.index;
+        if (edge & InputState::kLeft) spell_shot_cursor.move(-1);
+        if (edge & InputState::kRight) spell_shot_cursor.move(1);
+        if (spell_shot_cursor.index != prev_shot) {
+            sfx(10);
+            if (globals) globals->shot = spell_shot_cursor.index;
+        }
+        if (input.pressed & InputState::kCancelMask) {
+            set_sub(4);
+            sfx(9);
+            break;
+        }
+        if (input.pressed & InputState::kConfirmMask) {
+            if (vm[0xd9]) anm.interrupt(vm[0xd9], 6);
+            set_sub(3);
+            sfx(7);
+            sfx(0x32);
+            events.push_back({"bgm-fade", 0});
+        }
+        break;
+    }
+    case 3:
+        if (timer == 10) transition_effect();
+        if (timer > 0x27) {
+            if (globals) {
+                globals->stage = spell_group + 1;
+                globals->stage_copy = globals->stage;
+                globals->difficulty = cursor.index;
+                globals->scene_request = kSceneGame;
+            }
+            events.push_back({"scene", kSceneGame});
+            set_screen(kFinished);
+        }
+        break;
+    case 4:
+        if (timer > 5) {
+            dismiss(anm, 0xd9);
+            set_screen(kSpellShot);
             cursor.pop();
             events.push_back({"screen", screen});
         }
