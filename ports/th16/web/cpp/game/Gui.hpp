@@ -25,6 +25,7 @@
 #include <string>
 #include <vector>
 
+#include "AnmRenderer.hpp"
 #include "AnmVm.hpp"
 #include "Types.hpp"
 
@@ -92,7 +93,7 @@ struct Msg {
     float farg(int i) const noexcept;
 };
 
-class Gui {
+class Gui final : public AnmDrawHooks {
 public:
     static constexpr int kLogoSlot = 6;  // 0x426c10：关卡 logo ANM 装入槽 6（oracle banks[6] = stNNlogo.anm）
 
@@ -314,6 +315,9 @@ private:
     void resize_text_box(Msg& m, i32 index);
     // 0x46f3e0：按 id 设 entity_offset（找不到则清 id）
     void set_offset(u32& id, const Vec3& pos);
+    // 0x42b480（绘制钩子 5）：文字 VM 绘制前按文字框子 VM（0xb4 + 下标）的当前屏幕位置重定 entity_offset；
+    // 与更新尾段同式，但右侧展开中（scale.x < 1）不加 0.125
+    void dialogue_text_follow(AnmVm& vm) override;
     // 0x46f2e0：找 VM，找不到则清 id
     AnmVm* find_or_clear(u32& id);
     // 0x46d990 请求

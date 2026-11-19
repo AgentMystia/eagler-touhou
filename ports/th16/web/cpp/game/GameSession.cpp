@@ -660,6 +660,7 @@ bool GameSession::enter_game(i32 replay_mode) {
         game.gui.globals = &globals;
         game.gui.input = &game_input;
         game.gui.geometry = &geometry;
+        renderer.draw_hooks = &game.gui;   // 绘制钩子 5（对话文字跟随）
         game.gui.replay_playback = game.mode != 0;
         game.gui.spellcard_flags = &spellcard.flags;
         game.gui.game_flags = &game.flags;
