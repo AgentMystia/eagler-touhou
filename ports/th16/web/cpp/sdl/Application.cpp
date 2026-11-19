@@ -1,6 +1,6 @@
 #include "Application.hpp"
 
-#include "../game/KeyBindMap.hpp"
+#include "../game/ScancodeMap.hpp"
 #include "../game/TitleScene.hpp"
 
 #include <cstdio>
@@ -27,21 +27,22 @@ bool read_file(const char* path, std::vector<u8>& out) {
 
 }  // namespace
 
-// 0x401d50 键盘位：可配置 5 键走 GameGlobals::key_binds（DI 扫描码）；其余固定
+// 0x401d50 键盘位（固定键位，Key Config 不改键盘）：Z 射击 / X 炸弹 / Shift 低速 / Ctrl 跳过 / C 跳过+季节解放；
+// 方向键与小键盘；Esc / Q / S / P·Home / Enter / D / R / F10。手柄：0x401c30 按钮快照交给 GameSession（0x4018e0 按表合成），
+// 摇杆轴按原版“中心 ± 1/4 量程”阈值出方向位；POV 帽原版不读，这里一并映射到方向（现代手柄十字键多报为帽）
 void Application::sample_input() {
     u32 held = 0;
+    u32 buttons = 0;
 #if defined(__EMSCRIPTEN__) || defined(TH16_HAS_SDL)
     int n = 0;
     const bool* keys = SDL_GetKeyboardState(&n);
     if (keys != nullptr) {
         auto down = [&](SDL_Scancode s) { return s != SDL_SCANCODE_UNKNOWN && s < n && keys[s]; };
-        auto down_di = [&](i16 di) { return down(di_to_sdl(di)); };
-
-        // 可配置：Shot / Bomb / Slow / Skip / Release
-        for (int i = 0; i < kConfigurableBinds; ++i) {
-            if (down_di(session.globals.key_binds[i])) held |= key_bind_bit(i);
-        }
-        // 方向与菜单固定键（原版不在 Key Config 五项内）
+        if (down(SDL_SCANCODE_Z)) held |= InputState::kShot;
+        if (down(SDL_SCANCODE_X)) held |= InputState::kBomb;
+        if (down(SDL_SCANCODE_LSHIFT) || down(SDL_SCANCODE_RSHIFT)) held |= InputState::kSlow;
+        if (down(SDL_SCANCODE_LCTRL) || down(SDL_SCANCODE_RCTRL)) held |= InputState::kSkip;
+        if (down(SDL_SCANCODE_C)) held |= InputState::kSkip | InputState::kRelease;
         if (down(SDL_SCANCODE_UP) || down(SDL_SCANCODE_KP_8)) held |= InputState::kUp;
         if (down(SDL_SCANCODE_DOWN) || down(SDL_SCANCODE_KP_2)) held |= InputState::kDown;
         if (down(SDL_SCANCODE_LEFT) || down(SDL_SCANCODE_KP_4)) held |= InputState::kLeft;
@@ -51,7 +52,6 @@ void Application::sample_input() {
         if (down(SDL_SCANCODE_KP_1)) held |= InputState::kDown | InputState::kLeft;
         if (down(SDL_SCANCODE_KP_3)) held |= InputState::kDown | InputState::kRight;
         if (down(SDL_SCANCODE_ESCAPE)) held |= InputState::kEscape;
-        if (down(SDL_SCANCODE_RCTRL)) held |= InputState::kSkip;  // 右 Ctrl 始终可 Skip（左 Ctrl 走绑定）
         if (down(SDL_SCANCODE_Q)) held |= InputState::kQ;
         if (down(SDL_SCANCODE_S)) held |= InputState::kS;
         if (down(SDL_SCANCODE_P) || down(SDL_SCANCODE_HOME)) held |= InputState::kPause;
@@ -66,26 +66,38 @@ void Application::sample_input() {
             const i16 di = sdl_to_di(SDL_Scancode(i));
             if (di >= 0 && di < 256) session.keyboard_state[di] = 0x80;
         }
-
-        // Key Config 捕获：首个新按下的可映射键 → pending_scancode（DI）
-        TitleScene& title = session.title;
-        if (title.live() && title.screen == TitleScene::kKeyConfig && title.key_bind_slot >= 0 &&
-            title.pending_scancode < 0) {
-            static bool prev[512] = {};
-            for (int i = 0; i < n && i < 512; ++i) {
-                if (keys[i] && !prev[i]) {
-                    const i16 di = sdl_to_di(SDL_Scancode(i));
-                    if (di >= 0) {
-                        title.pending_scancode = di;
-                        break;
-                    }
-                }
-            }
-            for (int i = 0; i < n && i < 512; ++i) prev[i] = keys[i];
+    }
+    if (joystick == nullptr) {
+        int count = 0;
+        if (SDL_JoystickID* ids = SDL_GetJoysticks(&count)) {
+            if (count > 0) joystick = SDL_OpenJoystick(ids[0]);
+            SDL_free(ids);
         }
+    } else if (!SDL_JoystickConnected(joystick)) {
+        SDL_CloseJoystick(joystick);
+        joystick = nullptr;
+    }
+    if (joystick != nullptr) {
+        const int button_count = SDL_GetNumJoystickButtons(joystick);
+        for (int i = 0; i < button_count && i < 32; ++i) {
+            if (SDL_GetJoystickButton(joystick, i)) buttons |= 1u << i;
+        }
+        const int axes = SDL_GetNumJoystickAxes(joystick);
+        const i32 x = axes > 0 ? SDL_GetJoystickAxis(joystick, 0) : 0;
+        const i32 y = axes > 1 ? SDL_GetJoystickAxis(joystick, 1) : 0;
+        if (x < -16384) held |= InputState::kLeft;
+        if (x > 16384) held |= InputState::kRight;
+        if (y < -16384) held |= InputState::kUp;
+        if (y > 16384) held |= InputState::kDown;
+        const u8 hat = SDL_GetNumJoystickHats(joystick) > 0 ? SDL_GetJoystickHat(joystick, 0) : 0;
+        if (hat & SDL_HAT_UP) held |= InputState::kUp;
+        if (hat & SDL_HAT_DOWN) held |= InputState::kDown;
+        if (hat & SDL_HAT_LEFT) held |= InputState::kLeft;
+        if (hat & SDL_HAT_RIGHT) held |= InputState::kRight;
     }
 #endif
     session.host_input = held;
+    session.pad_buttons = buttons;
 }
 
 bool Application::initialize(const char* archive_path) {
@@ -100,12 +112,18 @@ bool Application::initialize(const char* archive_path) {
     } else {
         session.demo_directory = ".";
     }
-    // 0x4497e0：scoreth16.dat 在游戏目录（0x479a65 切到该目录后相对路径读写）
+    // 0x4497e0：scoreth16.dat 在游戏目录（0x479a65 切到该目录后相对路径读写）；0x43c050：th16.cfg 同目录
     session.score_path = session.replay_directory() + "/scoreth16.dat";
+    session.config_path = session.replay_directory() + "/th16.cfg";
+    session.load_config();
     graphics.animations = &session.animations;
     if (!graphics.initialize()) { failure = graphics.error; return false; }
 
     session.attach_device(&graphics);
+#if defined(__EMSCRIPTEN__) || defined(TH16_HAS_SDL)
+    // 0x401c30 手柄：无手柄或子系统不可用时不致命，按钮位图保持 0
+    if (!SDL_InitSubSystem(SDL_INIT_JOYSTICK)) std::fprintf(stderr, "th16: joystick disabled: %s\n", SDL_GetError());
+#endif
     // 原版 SoundManager（DAT_004d9e10）的 DirectSound 侧：thbgm.dat 与 th16.dat 同目录（0x43adc0 以 "thbgm.dat" 打开）
     audio.thbgm_path = session.demo_directory + "/thbgm.dat";
     audio.music_directory = session.demo_directory + "/music";

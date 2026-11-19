@@ -19,7 +19,10 @@
 //                                              → GameSession（与浏览器同一逻辑层）：Boot→Title→主菜单→难度/机体/季节/关卡；frames 帧后报告
 //                                                scene/boot_frames/title_live/screen/sub/cursor/difficulty/shot/season/stage/mode/quit/链数/quads，
 //                                                随后 "event sfx|screen|scene|bgm-fade|transition|stub N" 与各四边形。skip = DAT_004c1800&0x180；
-//                                                f:bits 在第 f 帧注入 held 位（0x1 Z，0x2 X，0x10 ↑，0x20 ↓，0x100 Esc，0x80000 Enter）
+//                                                f:bits 在第 f 帧注入 held 位（0x1 Z，0x2 X，0x10 ↑，0x20 ↓，0x100 Esc，0x80000 Enter）；
+//                                                Pf:button 第 f 帧手柄按钮按下；config=<th16.cfg> 开机读/回写配置（0x43c050）
+//   harness pad-input-bits                      → 0x4018e0 手柄按钮表 → 输入位
+//   harness config-file <th16.cfg>              → 0x43c050 读 + 校验 + 回写；打印字段与 100 字节映像
 //   harness chain-demo                          → ChainManager 走法自检
 //   harness frame-clock <t0> <t1> ...           → 每个墙钟时刻应执行的逻辑步数
 //   harness input-edges <held0> <held1> ...     → 0x405580 边沿/连发/释放位
@@ -57,7 +60,7 @@
 #include "../../web/cpp/game/GameGlobals.hpp"
 #include "../../web/cpp/game/GameMenu.hpp"
 #include "../../web/cpp/game/FrameTimer.hpp"
-#include "../../web/cpp/game/KeyBindMap.hpp"
+#include "../../web/cpp/game/GameConfig.hpp"
 #include "../../web/cpp/game/Spellcard.hpp"
 #include "../../web/cpp/game/SpellPracticeTable.hpp"
 #include "../../web/cpp/game/ScoreFile.hpp"
@@ -524,24 +527,33 @@ int main(int argc, char** argv) {
                     double(timer.slow_rate()), timer.window_frames, timer.elapsed_good, timer.elapsed_total);
         return 0;
     }
-    if (command == "key-bind-assign") {
-        // 0x44f710：写入并冲突对调
+    if (command == "pad-input-bits") {
+        // 0x4018e0：默认表 {0,1,2,5,...,3} 下按钮位图 → 输入位
         GameGlobals g;
-        g.reset_key_binds();
-        const i16 shot0 = g.key_binds[0];
-        const i16 bomb0 = g.key_binds[1];
-        g.assign_key_bind(0, bomb0);  // Shot ← Bomb 的键 → 对调
-        std::printf("shot=%d bomb=%d swapped=%d\n", int(g.key_binds[0]), int(g.key_binds[1]),
-                    (g.key_binds[0] == bomb0 && g.key_binds[1] == shot0) ? 1 : 0);
-        g.assign_key_bind(2, 0x1e);  // Slow ← A
-        std::printf("slow=%d\n", int(g.key_binds[2]));
-        return (g.key_binds[0] == bomb0 && g.key_binds[1] == shot0 && g.key_binds[2] == 0x1e) ? 0 : 1;
+        std::printf("b0=%x b1=%x b2=%x b5=%x b3=%x none=%x\n", g.pad_input_bits(1u << 0), g.pad_input_bits(1u << 1),
+                    g.pad_input_bits(1u << 2), g.pad_input_bits(1u << 5), g.pad_input_bits(1u << 3), g.pad_input_bits(1u << 4));
+        g.pad_buttons[0] = -1;
+        std::printf("unbound=%x\n", g.pad_input_bits(1u << 0));
+        return (GameGlobals().pad_input_bits(1u << 3) == InputState::kRelease && g.pad_input_bits(1u << 0) == 0) ? 0 : 1;
     }
-    if (command == "key-bind-bits") {
-        // 可配置槽 → InputState 位
-        std::printf("0=%x 1=%x 2=%x 3=%x 4=%x\n", key_bind_bit(0), key_bind_bit(1), key_bind_bit(2),
-                    key_bind_bit(3), key_bind_bit(4));
-        return (key_bind_bit(0) == InputState::kShot && key_bind_bit(4) == InputState::kRelease) ? 0 : 1;
+    if (command == "config-file" && argc >= 3) {
+        // 0x43c050：读 → 校验 → 回写；参数为 th16.cfg 路径（不存在则落默认并创建）
+        GameSession session;
+        session.config_path = argv[2];
+        const bool valid = session.load_config();
+        const GameGlobals& g = session.globals;
+        std::printf("valid=%d bgm=%u se=%u opt=%u input=%x win=%u bgm_mode=%u se_on=%u res=%u skip=%u pad=", valid ? 1 : 0,
+                    unsigned(g.bgm_volume), unsigned(g.se_volume), unsigned(g.option_flags), g.input_config,
+                    unsigned(g.window_mode), unsigned(g.bgm_mode), unsigned(g.se_enabled), unsigned(g.resolution),
+                    unsigned(g.frame_skip));
+        for (int i = 0; i < GameGlobals::kPadButtonCount; ++i) std::printf("%s%d", i ? "," : "", int(g.pad_buttons[i]));
+        std::printf("\n");
+        u8 image[config::kSize];
+        config::encode(g, image);
+        std::printf("image=");
+        for (u8 b : image) std::printf("%02x", b);
+        std::printf("\n");
+        return 0;
     }
     if (command == "screen-fade" && argc >= 6) {
         // kind 4 / 6 / 7 / 9 更新函数对拍：每行 frame alpha alive
@@ -1820,9 +1832,9 @@ int main(int argc, char** argv) {
             if (slash != std::string::npos) session.demo_directory.resize(slash);
         }
         struct Key { int frame; u32 bits; };
-        struct ScanInj { int frame; i32 code; };
+        struct PadPress { int frame; i32 button; };
         std::vector<Key> script;
-        std::vector<ScanInj> scans;
+        std::vector<PadPress> pads;
         bool unlock_spells = false;
         bool dump_ascii = false;
         bool dump_text = false;
@@ -1847,6 +1859,7 @@ int main(int argc, char** argv) {
                 continue;
             }
             if (std::strncmp(argv[a], "score=", 6) == 0) { session.score_path = argv[a] + 6; continue; }
+            if (std::strncmp(argv[a], "config=", 7) == 0) { session.config_path = argv[a] + 7; session.load_config(); continue; }
             if (std::strcmp(argv[a], "wall") == 0) { wall_clock = true; continue; }
             if (std::strcmp(argv[a], "scenes") == 0) { trace_scenes = true; continue; }
             if (std::strncmp(argv[a], "dik=", 4) == 0) {
@@ -1878,13 +1891,13 @@ int main(int argc, char** argv) {
             const char* p = argv[a];
             while (*p) {
                 char* endp = nullptr;
-                // "Sframe:scancode" → 标题 Key Config 捕获注入（TitleScene::pending_scancode）
-                if (*p == 'S' || *p == 's') {
+                // "Pframe:button" → 该帧手柄按钮 button 按下（0x401c30 快照；Key Config 捕获 / 0x4018e0 合成）
+                if (*p == 'P' || *p == 'p') {
                     const long frame = std::strtol(p + 1, &endp, 10);
-                    if (endp == p + 1 || *endp != ':') return fail("bad scancode script");
+                    if (endp == p + 1 || *endp != ':') return fail("bad pad script");
                     p = endp + 1;
                     const long code = std::strtol(p, &endp, 0);
-                    scans.push_back({int(frame), i32(code)});
+                    pads.push_back({int(frame), i32(code)});
                     p = endp;
                     if (*p == ',') ++p;
                     continue;
@@ -1926,8 +1939,9 @@ int main(int argc, char** argv) {
         for (int f = 0; f < frames; ++f) {
             session.injected_input = 0;
             for (const Key& k : script) if (k.frame == f) session.injected_input |= k.bits;
-            for (const ScanInj& s : scans) {
-                if (s.frame == f) session.title.pending_scancode = s.code;
+            session.pad_buttons = 0;
+            for (const PadPress& s : pads) {
+                if (s.frame == f && s.button >= 0 && s.button < 32) session.pad_buttons |= 1u << s.button;
             }
             if (wall_clock) session.wall_clock_seconds = f / 60.0;
             std::memset(session.keyboard_state, 0, sizeof(session.keyboard_state));
@@ -1953,6 +1967,9 @@ int main(int argc, char** argv) {
                     title.spell_slot_ids[0], title.spell_slot_ids[1], title.spell_slot_ids[2], title.spell_slot_ids[3],
                     title.spell_slot_ids[4], g.spell_return_group, g.spell_return_list, g.spell_return_entry,
                     g.title_origin, g.replay_slot);
+        std::printf("pad");
+        for (int i = 0; i < GameGlobals::kPadButtonCount; ++i) std::printf("%c%d", i ? ',' : ' ', int(g.pad_buttons[i]));
+        std::printf("\n");
         {
             const ScoreBlock& b = session.scores.blocks[g.shot + g.shot_aux];
             u32 bgm = 0;

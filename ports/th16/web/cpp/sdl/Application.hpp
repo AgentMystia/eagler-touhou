@@ -10,6 +10,10 @@
 #include <string>
 #include <vector>
 
+#if defined(__EMSCRIPTEN__) || defined(TH16_HAS_SDL)
+#include <SDL3/SDL.h>
+#endif
+
 namespace th16::sdl {
 
 class Application {
@@ -37,6 +41,9 @@ public:
 
 private:
     std::vector<u8> archive_bytes;
+#if defined(__EMSCRIPTEN__) || defined(TH16_HAS_SDL)
+    SDL_Joystick* joystick = nullptr;   // 0x401c30 / 0x4018e0：首个手柄（joyGetPosEx(0)）
+#endif
 
     void sample_input();
 };

@@ -1,4 +1,5 @@
 #include "GameSession.hpp"
+#include "GameConfig.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -348,6 +349,7 @@ bool GameSession::activate_title_menu() {
     title.scores = &scores;
     title.config_flags = &config_flags;
     title.keyboard_state = keyboard_state;
+    title.pad_buttons = &pad_buttons;
     title.text_paints = &text_into_texture;
     title.replay_directory = replay_directory();
     title.read_replay_slot = [this](int slot, ReplaySummary& out) {
@@ -402,8 +404,40 @@ bool GameSession::activate_title_menu() {
 }
 
 void GameSession::sample_input() {
-    supervisor.input.held = host_input | injected_input;
+    // 0x401d50：键盘位（宿主固定映射 + 注入）| 0x4018e0 手柄按钮表合成位
+    supervisor.input.held = host_input | injected_input | globals.pad_input_bits(pad_buttons);
     supervisor.input.commit();
+}
+
+bool GameSession::load_config() {
+    // 0x43c050：读 <游戏目录>/th16.cfg → 校验（失败整块回默认）→ 无论如何回写一份
+    bool valid = false;
+    if (!config_path.empty()) {
+        std::ifstream in(config_path, std::ios::binary);
+        if (in) {
+            const std::vector<u8> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            valid = config::decode(globals, bytes.data(), u32(bytes.size()));
+        } else {
+            config::reset(globals);
+        }
+    }
+    music.volume = globals.bgm_volume;
+    sound.master_volume = globals.se_volume;
+    save_config();
+    return valid;
+}
+
+bool GameSession::save_config() {
+    if (config_path.empty()) return false;
+    u8 image[config::kSize];
+    config::encode(globals, image);
+    std::ofstream out(config_path, std::ios::binary);
+    if (!out) return false;
+    out.write(reinterpret_cast<const char*>(image), std::streamsize(config::kSize));
+    out.close();
+    if (!out) return false;
+    if (on_saved) on_saved();
+    return true;
 }
 
 // 0x44af50 析构 / 0x43ce10 切换：摘标题更新链，标记 title*.anm VM 删除（0x46f270），释放槽
@@ -1739,9 +1773,10 @@ bool GameSession::logic_step() {
             if (leave == SceneId::Ending) leave_ending();
             if (leave == SceneId::Game) leave_game();
             if (enter == SceneId::Exit) {
-                // 退出进程：0x43afe0 Supervisor 析构先经 0x449a00 写成绩文件
+                // 退出进程：0x43afe0 Supervisor 析构先经 0x449a00 写成绩文件；随后 0x459830 主循环返回处写 th16.cfg
                 quit_requested = true;
                 save_scores();
+                save_config();
             }
             if (enter == SceneId::Game && !enter_game()) return false;
             // 结局回标题：跳过启动幕等待，直接启用标题菜单（0x419450 之后请求 4）

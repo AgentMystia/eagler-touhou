@@ -2530,17 +2530,18 @@ void TitleScene::update_spell_start(AnmManager& anm, const InputState& input) {
     }
 }
 
-// 0x44e930：Key Config（7 项：5 键位 + Default + Quit）；捕获写入 0x44f710
+// 0x44e930：Key Config——7 项：Shot / Bomb / Release / Slow / Pause / Default / Quit。配置的是手柄按钮号
+// （DAT_004a52e4 表），每帧取 0x401c30 快照中首个按下的按钮写入光标槽（0x44f710）；键盘键位固定（0x401d50）
 void TitleScene::update_key_config(AnmManager& anm, const InputState& input) {
     switch (sub) {
     case 0:
         cursor.count = 7;
         cursor.wrap = true;
         cursor.set(0);
-        key_bind_slot = -1;
-        pending_scancode = -1;
         if (title_file) spawn_into(anm, 2, *title_file, 2);  // +0x2c8 面板脚本 2
         set_sub(1);
+        load_key_table();
+        paint_key_table(anm);
         events.push_back({"key-config", 0});
         [[fallthrough]];
     case 1:
@@ -2548,8 +2549,9 @@ void TitleScene::update_key_config(AnmManager& anm, const InputState& input) {
             set_sub(2);
             if (vm[2]) {
                 anm.interrupt_now(vm[2], 3);
-                anm.interrupt(vm[2], cursor.index + 0x11);
+                anm.interrupt(vm[2], to_short(cursor.index + 0x11));
             }
+            refresh_key_config_items(anm);
         }
         break;
     case 2: {
@@ -2563,64 +2565,42 @@ void TitleScene::update_key_config(AnmManager& anm, const InputState& input) {
                 anm.interrupt_now(vm[2], 3);
                 anm.interrupt(vm[2], to_short(cursor.index + 7));
             }
+            refresh_key_config_items(anm);
         }
-        // 取消仅在 Quit(6) 上退出；否则跳到 Quit（与 Option 同型）
-        if (input.pressed & InputState::kCancelMask) {
-            if (cursor.index != 6) {
-                cursor.set(6);
-                sfx(9);
-                if (vm[2]) {
-                    anm.interrupt_now(vm[2], 3);
-                    anm.interrupt(vm[2], to_short(cursor.index + 7));
-                }
+        // 0x401c30：首个按下的手柄按钮（0..0x1e）→ 当前键位槽
+        if (pad_buttons != nullptr) {
+            for (i32 button = 0; button < 0x1f; ++button) {
+                if ((*pad_buttons >> button & 1u) == 0) continue;
+                if (cursor.index < 5) assign_key_button(anm, cursor.index, button);
                 break;
             }
-            if (vm[2]) anm.interrupt(vm[2], 6);
+        }
+        // 取消只在 Quit(6) 上生效：丢弃改动并退出
+        if ((input.pressed & InputState::kCancelMask) && cursor.index == 6) {
+            load_key_table();
+            paint_key_table(anm);
             sfx(9);
+            if (vm[2]) anm.interrupt(vm[2], 6);
             set_sub(4);
             break;
         }
         if (input.pressed & InputState::kConfirmMask) {
             if (cursor.index == 5) {
-                if (globals) globals->reset_key_binds();
+                // Default：回到进入时的全局表 DAT_004a52e4（不是 exe 初值）
+                load_key_table();
+                paint_key_table(anm);
                 sfx(7);
                 events.push_back({"key-default", 0});
             } else if (cursor.index == 6) {
-                if (vm[2]) anm.interrupt(vm[2], 6);
+                commit_key_table();
+                events.push_back({"key-commit", 0});
                 sfx(9);
+                if (vm[2]) anm.interrupt(vm[2], 6);
                 set_sub(4);
-            } else {
-                // 项 0..4：进入捕获（0x44f710 等下一键；宿主写 pending_scancode）
-                key_bind_slot = cursor.index;
-                pending_scancode = -1;
-                set_sub(3);
-                events.push_back({"key-bind-wait", key_bind_slot});
             }
         }
         break;
     }
-    case 3:
-        // 捕获中：取消放弃；pending_scancode≥0 → 0x44f710 写入后回列表
-        if (input.pressed & InputState::kCancelMask) {
-            key_bind_slot = -1;
-            pending_scancode = -1;
-            sfx(9);
-            set_sub(2);
-            events.push_back({"key-bind-cancel", 0});
-            break;
-        }
-        if (pending_scancode >= 0 && key_bind_slot >= 0 && globals != nullptr) {
-            const i32 slot = key_bind_slot;
-            const i32 code = pending_scancode;
-            globals->assign_key_bind(slot, i16(code));
-            events.push_back({"key-bind", slot});
-            events.push_back({"key-scancode", code});
-            sfx(7);
-            key_bind_slot = -1;
-            pending_scancode = -1;
-            set_sub(2);
-        }
-        break;
     case 4:
         if (timer > 9) {
             dismiss(anm, 2);
@@ -2632,6 +2612,79 @@ void TitleScene::update_key_config(AnmManager& anm, const InputState& input) {
     default:
         break;
     }
+}
+
+void TitleScene::load_key_table() {
+    if (globals == nullptr) return;
+    key_table[0] = globals->pad_buttons[0];
+    key_table[1] = globals->pad_buttons[1];
+    key_table[2] = globals->pad_buttons[9];
+    key_table[3] = globals->pad_buttons[2];
+    key_table[4] = globals->pad_buttons[3];
+}
+
+void TitleScene::commit_key_table() {
+    if (globals == nullptr) return;
+    globals->pad_buttons[0] = key_table[0];
+    globals->pad_buttons[1] = key_table[1];
+    globals->pad_buttons[9] = key_table[2];
+    globals->pad_buttons[2] = key_table[3];
+    globals->pad_buttons[3] = key_table[4];
+}
+
+// 0x44f710
+void TitleScene::assign_key_button(AnmManager& anm, i32 slot, i32 button) {
+    if (slot < 0 || slot >= kKeyTableCount) return;
+    const i16 old = key_table[slot];
+    if (old == button) return;
+    for (int i = 0; i < kKeyTableCount; ++i) {
+        if (i != slot && key_table[i] == button) key_table[i] = old;
+    }
+    key_table[slot] = i16(button);
+    paint_key_table(anm);
+    sfx(7);
+    events.push_back({"key-bind", slot});
+    events.push_back({"key-button", button});
+}
+
+// 0x44ec60：槽 i 的十位 / 个位 → 子脚本 0x3f+2i / 0x40+2i 与 0x49+2i / 0x4a+2i（精灵 0x2a 起；-1 按 C 截断得 0 / -1）
+void TitleScene::paint_key_table(AnmManager& anm) {
+    if (vm[2] == 0) return;
+    auto paint = [&](i32 script, i32 sprite) {
+        AnmVm* digit = anm.find(child_id(anm, 2, script));
+        if (digit == nullptr) return;
+        if (AnmFile* file = anm.file(digit->file_slot)) anm_set_sprite(*file, *digit, sprite);
+    };
+    for (i32 i = 0; i < 5; ++i) {
+        const i32 value = key_table[i];
+        paint(0x3f + 2 * i, value / 10 + 0x2a);
+        paint(0x40 + 2 * i, value % 10 + 0x2a);
+        paint(0x49 + 2 * i, value / 10 + 0x2a);
+        paint(0x4a + 2 * i, value % 10 + 0x2a);
+    }
+}
+
+// 0x44f810：光标前的项（标签 i+0x31 / i+0x38 与数字 0x3f+2i..）→ 0x1e，光标后的 → 0x1f
+void TitleScene::refresh_key_config_items(AnmManager& anm) {
+    if (vm[2] == 0) return;
+    auto interrupt_now = [&](i32 script, i32 value) {
+        AnmVm* item = anm.find(child_id(anm, 2, script));
+        if (item == nullptr) return;
+        item->pending_interrupt = value;
+        anm.run(*item);
+    };
+    auto mark = [&](i32 i, i32 value) {
+        interrupt_now(i + 0x31, value);
+        interrupt_now(i + 0x38, value);
+        if (i < 5) {
+            interrupt_now(0x3f + 2 * i, value);
+            interrupt_now(0x40 + 2 * i, value);
+            interrupt_now(0x49 + 2 * i, value);
+            interrupt_now(0x4a + 2 * i, value);
+        }
+    };
+    for (i32 i = 0; i < cursor.index; ++i) mark(i, 0x1e);
+    for (i32 i = cursor.index + 1; i < 7; ++i) mark(i, 0x1f);
 }
 
 void TitleScene::begin_name_input() {
