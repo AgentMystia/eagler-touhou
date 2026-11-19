@@ -801,7 +801,7 @@ struct AnmInterpreter {
             }
             case 302:
                 set_bit(vm.flags_lo, AnmVm::kRenderModeMask, AnmVm::kRenderModeShift, u32(ins.i(0)));
-                // 渲染模式 10（0x469e20 环形粒子缓冲）待 600 系列几何一并实现
+                // 渲染模式 10（0x469e20 环形粒子缓冲 + 绘制钩子 6）：全部 .anm 无 302(10)，不移植
                 break;
             case 303: set_bit(vm.flags_lo, AnmVm::kBlendMask, AnmVm::kBlendShift, u32(ins.i(0))); break;
             case 304: set_layer(ins.p[8]); break;
