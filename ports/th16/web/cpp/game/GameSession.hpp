@@ -132,6 +132,7 @@ public:
     bool restart_game(SceneId reason, i32 replay_mode);
     bool logic_step();                 // 一个逻辑帧（输入 → 切换 → 链 → ANM tick）
     const Archive& archive() const { return archive_; }
+    Archive& archive() { return archive_; }
     AnmResource* resource(const char* name);
 
 private:

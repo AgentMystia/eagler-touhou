@@ -678,8 +678,9 @@ int main(int argc, char** argv) {
             void start() override { std::printf("start\n"); }
             void pause() override { std::printf("pause\n"); }
             void resume() override { std::printf("resume\n"); }
+            void halt() override { std::printf("halt\n"); }
             void fade(i32 frames) override { std::printf("fade %d\n", frames); }
-            void set_volume(i32) override { std::printf("volume 0\n"); }
+            void set_volume(i32 v) override { std::printf("volume %d\n", v); }
             void switch_loop(const BgmEntry& e) override { std::printf("loop %d\n", index(e)); }
             double position_seconds() override { return 0.0; }
             void restart_at(double) override {}
@@ -715,6 +716,8 @@ int main(int argc, char** argv) {
                 }
             } else if (kind == 'F') {
                 // 串流器刷新锁（+0x9c）在端口的单线程里恒为 0：无操作
+            } else if (kind == 'T') {
+                music.tick_fade();
             } else if (kind == 'c') {
                 std::printf("current %s\n", music.current.empty() ? "-" : music.current.c_str());
             } else return fail("unknown music op");
