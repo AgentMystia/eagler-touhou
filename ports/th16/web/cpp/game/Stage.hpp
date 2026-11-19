@@ -19,6 +19,7 @@
 #include "AnmVm.hpp"
 #include "Camera.hpp"
 #include "Chain.hpp"
+#include "Distortion.hpp"
 #include "ScreenEffect.hpp"
 #include "Std.hpp"
 #include "Types.hpp"
@@ -58,7 +59,17 @@ public:
     AnmVm layer_vms[kLayerSprites];         // +0x31c
     i32 layer_ids[kLayerSprites] = {};      // +0x32fc
     float cull_distance_sq = 0;             // +0x331c（ins 20 绘制距离的平方；0x40a7d0 先按实例中心到相机的距离剔除）
-    i32 distortion_kind = 0;                // +0x3340（ins 17；特效对象本身待 EffectManager）
+    // ins 17 关卡畸变（0x40c4a0 每帧更新；th16 数据只有第 1 关用种类 1：场地底部 384 × 128 的 7 行波浪网格）
+    std::unique_ptr<DistortionGrid> distortion;   // +0x3314
+    float distortion_radius_min = 112.0f;   // +0x3318（种类 2：半径下限）
+    float distortion_radius = 192.0f;       // +0x331c（种类 2：每帧 −2 至下限）
+    i32 distortion_unused = -1;             // +0x3320
+    Timer distortion_timer;                 // +0x3324（种类 1：前 60 帧振幅从 0 升到 6）
+    float distortion_angle_a = 0;           // +0x3338
+    float distortion_angle_b = 0;           // +0x333c
+    i32 distortion_kind = 0;                // +0x3340（ins 17 arg0）
+    const bool* render_targets_ready = nullptr;   // DAT_004c127c：ins 17 只在渲染目标可用时建 VM
+    const u32* spellcard_flags = nullptr;         // DAT_004a6db0+0x78：符卡进行中（bit0）时种类 1 不更新网格
 
     u32 flags = 1;               // +0x66c4：bit0 绘制启用  bit1 结束中  bit2 结束淡出  bit3 隐藏
     Timer end_timer;             // +0x66c8
@@ -82,6 +93,8 @@ public:
     void start(AnmManager& manager);
     // 0x409e50
     void update(AnmManager& manager, float game_speed, const Rng* visual_rng = nullptr);
+    // 0x40c4a0：ins 17 畸变网格每帧更新（种类 1 波浪 / 种类 2 透镜），末尾推进畸变计时
+    void update_distortion(AnmManager& manager, float game_speed);
 
     // ---- 绘制链 ----
     // 0x45d150(3, 0x1e, 0xffffffff)：新关淡入白闪（0x409f90 在结束计时 < 0x1e 时建；更新链 0x13 + 绘制链 10）

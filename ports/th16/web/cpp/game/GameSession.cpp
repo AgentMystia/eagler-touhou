@@ -341,6 +341,8 @@ bool GameSession::create_stage() {
     if (stage->anm == nullptr) { failure = "stage anm load failed"; return false; }
     stage->camera_global = &stage_camera;
     stage->screen_clear_color = &compositor.background_color;
+    stage->render_targets_ready = &compositor.render_targets_ready;
+    stage->spellcard_flags = &spellcard.flags;
     stage->on_screen_fade = [this](i32 kind, i32 duration, u32 color) { create_screen_fade(kind, duration, color); };
     game.stage = std::move(stage);
     game.stage_live = true;
