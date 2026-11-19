@@ -367,6 +367,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"title-extra-unlocked", 0x44A800, nullptr}, // 机体是否解锁 Extra
     {"title-demo", 0x44AF80, "game/TitleScene.cpp TitleScene::tick_idle_demo（0x708 无输入 → flags bit6 + scene 0xd；demo 下标 %3）"},
     {"title-option", 0x44C570, "game/TitleScene.cpp TitleScene::update_option（BGM/SE 音量、Default、取消两段退出）"},
+    {"title-key-config", 0x44E930, "game/TitleScene.cpp TitleScene::update_key_config（7 项；键捕获 0x44f710 待接）"},
     {"title-replay", 0x451750, "game/TitleScene.cpp TitleScene::update_replay（25×3 槽、关卡选择、场景 0xd）"},
     {"title-manual", 0x4545A0, "game/TitleScene.cpp TitleScene::update_manual（0x42ea30 HelpScreen，scroll=112）"},
     {"title-music", 0x4546F0, "game/TitleScene.cpp TitleScene::update_music（musiccmt 曲目导航 / 取消恢复 th16_01）"},

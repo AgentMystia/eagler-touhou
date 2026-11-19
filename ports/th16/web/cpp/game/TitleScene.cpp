@@ -169,8 +169,8 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
     case kSpellPractice: update_spell_practice(anm, input); break;
     case kScore: update_score(anm, input); break;
     case kSpellList:
-    case kSpellShot:
-    case kKeyConfig: update_stub(anm, input); break;
+    case kSpellShot: update_stub(anm, input); break;
+    case kKeyConfig: update_key_config(anm, input); break;
     default: update_stub(anm, input); break;
     }
     ++timer;  // 0x44af80 末尾
@@ -1240,7 +1240,84 @@ void TitleScene::update_score(AnmManager& anm, const InputState& input) {
     }
 }
 
-// 待还原画面（Key Config / Spell List 0x12 / Spell Shot 0x13）
+// 0x44e930：Key Config（7 项：5 键位 + Default + Quit；真实键捕获待 0x44f710）
+void TitleScene::update_key_config(AnmManager& anm, const InputState& input) {
+    switch (sub) {
+    case 0:
+        cursor.count = 7;
+        cursor.wrap = true;
+        cursor.set(0);
+        if (title_file) spawn_into(anm, 2, *title_file, 2);  // +0x2c8 面板脚本 2
+        set_sub(1);
+        events.push_back({"key-config", 0});
+        [[fallthrough]];
+    case 1:
+        if (timer > 6) {
+            set_sub(2);
+            if (vm[2]) {
+                anm.interrupt_now(vm[2], 3);
+                anm.interrupt(vm[2], cursor.index + 0x11);
+            }
+        }
+        break;
+    case 2: {
+        const i32 prev = cursor.index;
+        const u32 edge = input.pressed | input.repeat;
+        if (edge & InputState::kUp) cursor.move(-1);
+        if (edge & InputState::kDown) cursor.move(1);
+        if (cursor.index != prev) {
+            sfx(10);
+            if (vm[2]) {
+                anm.interrupt_now(vm[2], 3);
+                anm.interrupt(vm[2], to_short(cursor.index + 7));
+            }
+        }
+        // 取消仅在 Quit(6) 上退出；否则跳到 Quit（与 Option 同型）
+        if (input.pressed & InputState::kCancelMask) {
+            if (cursor.index != 6) {
+                cursor.set(6);
+                sfx(9);
+                if (vm[2]) {
+                    anm.interrupt_now(vm[2], 3);
+                    anm.interrupt(vm[2], to_short(cursor.index + 7));
+                }
+                break;
+            }
+            if (vm[2]) anm.interrupt(vm[2], 6);
+            sfx(9);
+            set_sub(4);
+            break;
+        }
+        if (input.pressed & InputState::kConfirmMask) {
+            if (cursor.index == 5) {
+                // Default：恢复键位表（0x44ec60）；端口暂发事件
+                sfx(7);
+                events.push_back({"key-default", 0});
+            } else if (cursor.index == 6) {
+                if (vm[2]) anm.interrupt(vm[2], 6);
+                sfx(9);
+                set_sub(4);
+            } else {
+                // 项 0..4：等待下一键（0x44f710）；暂用占位事件
+                events.push_back({"key-bind", cursor.index});
+            }
+        }
+        break;
+    }
+    case 4:
+        if (timer > 9) {
+            dismiss(anm, 2);
+            set_screen(kOption);
+            cursor.pop();
+            events.push_back({"screen", screen});
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+// 待还原画面（Spell List 0x12 / Spell Shot 0x13）
 void TitleScene::update_stub(AnmManager& anm, const InputState& input) {
     (void)anm;
     if (sub == 0) {
@@ -1249,10 +1326,7 @@ void TitleScene::update_stub(AnmManager& anm, const InputState& input) {
     }
     if (input.pressed & InputState::kCancelMask) {
         sfx(9);
-        if (screen == kKeyConfig) {
-            set_screen(kOption);
-            cursor.pop();
-        } else if (screen == kSpellList || screen == kSpellShot) {
+        if (screen == kSpellList || screen == kSpellShot) {
             set_screen(kSpellPractice);
             cursor.pop();
         } else {
