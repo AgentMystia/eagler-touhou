@@ -19,7 +19,7 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8446
     server = ThreadingHTTPServer(("0.0.0.0", port), NoCacheHandler)
-    print(f"th16 playtest server on http://127.0.0.1:{port}/sdl-runtime/th16.html (no-store)")
+    print(f"th16 playtest server on http://127.0.0.1:{port}/sdl-runtime/th16-dev.html (no-store)")
     server.serve_forever()
 
 

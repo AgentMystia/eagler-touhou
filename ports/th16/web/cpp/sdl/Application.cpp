@@ -27,77 +27,84 @@ bool read_file(const char* path, std::vector<u8>& out) {
 
 }  // namespace
 
-// 0x401d50 键盘位（固定键位，Key Config 不改键盘）：Z 射击 / X 炸弹 / Shift 低速 / Ctrl 跳过 / C 跳过+季节解放；
-// 方向键与小键盘；Esc / Q / S / P·Home / Enter / D / R / F10。手柄：0x401c30 按钮快照交给 GameSession（0x4018e0 按表合成），
-// 摇杆轴按原版“中心 ± 1/4 量程”阈值出方向位；POV 帽原版不读，这里一并映射到方向（现代手柄十字键多报为帽）
+// 0x401d50 / 0x402130：物理键盘（SDL）与启动器托管键（DOM code）先折成 DIK 快照，再按 DirectInput 分支合成输入位；
+// 手柄：0x401c30 按钮快照交给 GameSession（0x4018e0 按表合成），左摇杆按原版“中心 ± 1/4 量程”阈值出方向位；
+// 原版不读 POV 帽，这里把 SDL 标准布局的十字键一并映射到方向（现代手柄十字键多报为帽）
 void Application::sample_input() {
-    u32 held = 0;
+    u8 keys[256];
+    std::memcpy(keys, hosted_keys, sizeof(keys));
+    u32 held = touch_controls.input_bits();
     u32 buttons = 0;
 #if defined(__EMSCRIPTEN__) || defined(TH16_HAS_SDL)
     int n = 0;
-    const bool* keys = SDL_GetKeyboardState(&n);
-    if (keys != nullptr) {
-        auto down = [&](SDL_Scancode s) { return s != SDL_SCANCODE_UNKNOWN && s < n && keys[s]; };
-        if (down(SDL_SCANCODE_Z)) held |= InputState::kShot;
-        if (down(SDL_SCANCODE_X)) held |= InputState::kBomb;
-        if (down(SDL_SCANCODE_LSHIFT) || down(SDL_SCANCODE_RSHIFT)) held |= InputState::kSlow;
-        if (down(SDL_SCANCODE_LCTRL) || down(SDL_SCANCODE_RCTRL)) held |= InputState::kSkip;
-        if (down(SDL_SCANCODE_C)) held |= InputState::kSkip | InputState::kRelease;
-        if (down(SDL_SCANCODE_UP) || down(SDL_SCANCODE_KP_8)) held |= InputState::kUp;
-        if (down(SDL_SCANCODE_DOWN) || down(SDL_SCANCODE_KP_2)) held |= InputState::kDown;
-        if (down(SDL_SCANCODE_LEFT) || down(SDL_SCANCODE_KP_4)) held |= InputState::kLeft;
-        if (down(SDL_SCANCODE_RIGHT) || down(SDL_SCANCODE_KP_6)) held |= InputState::kRight;
-        if (down(SDL_SCANCODE_KP_7)) held |= InputState::kUp | InputState::kLeft;
-        if (down(SDL_SCANCODE_KP_9)) held |= InputState::kUp | InputState::kRight;
-        if (down(SDL_SCANCODE_KP_1)) held |= InputState::kDown | InputState::kLeft;
-        if (down(SDL_SCANCODE_KP_3)) held |= InputState::kDown | InputState::kRight;
-        if (down(SDL_SCANCODE_ESCAPE)) held |= InputState::kEscape;
-        if (down(SDL_SCANCODE_Q)) held |= InputState::kQ;
-        if (down(SDL_SCANCODE_S)) held |= InputState::kS;
-        if (down(SDL_SCANCODE_P) || down(SDL_SCANCODE_HOME)) held |= InputState::kPause;
-        if (down(SDL_SCANCODE_RETURN) || down(SDL_SCANCODE_KP_ENTER)) held |= InputState::kEnter;
-        if (down(SDL_SCANCODE_D)) held |= InputState::kD;
-        if (down(SDL_SCANCODE_R)) held |= InputState::kR;
-        if (down(SDL_SCANCODE_F10)) held |= InputState::kF10;
-
-        std::memset(session.keyboard_state, 0, sizeof(session.keyboard_state));
-        for (int i = 0; i < n && i < 512; ++i) {
-            if (!keys[i]) continue;
+    if (const bool* physical = SDL_GetKeyboardState(&n)) {
+        for (int i = 0; i < n && i < SDL_SCANCODE_COUNT; ++i) {
+            if (!physical[i]) continue;
             const i16 di = sdl_to_di(SDL_Scancode(i));
-            if (di >= 0 && di < 256) session.keyboard_state[di] = 0x80;
+            if (di >= 0) keys[di] = 0x80;
         }
     }
-    if (joystick == nullptr) {
+    if (gamepad == nullptr) {
         int count = 0;
-        if (SDL_JoystickID* ids = SDL_GetJoysticks(&count)) {
-            if (count > 0) joystick = SDL_OpenJoystick(ids[0]);
+        if (SDL_JoystickID* ids = SDL_GetGamepads(&count)) {
+            if (count > 0) gamepad = SDL_OpenGamepad(ids[0]);
             SDL_free(ids);
         }
-    } else if (!SDL_JoystickConnected(joystick)) {
-        SDL_CloseJoystick(joystick);
-        joystick = nullptr;
+    } else if (!SDL_GamepadConnected(gamepad)) {
+        SDL_CloseGamepad(gamepad);
+        gamepad = nullptr;
     }
-    if (joystick != nullptr) {
-        const int button_count = SDL_GetNumJoystickButtons(joystick);
-        for (int i = 0; i < button_count && i < 32; ++i) {
-            if (SDL_GetJoystickButton(joystick, i)) buttons |= 1u << i;
+    if (gamepad != nullptr) {
+        for (int i = 0; i < SDL_GAMEPAD_BUTTON_COUNT && i < 32; ++i) {
+            if (SDL_GetGamepadButton(gamepad, SDL_GamepadButton(i))) buttons |= 1u << i;
         }
-        const int axes = SDL_GetNumJoystickAxes(joystick);
-        const i32 x = axes > 0 ? SDL_GetJoystickAxis(joystick, 0) : 0;
-        const i32 y = axes > 1 ? SDL_GetJoystickAxis(joystick, 1) : 0;
+        const i32 x = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTX);
+        const i32 y = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTY);
         if (x < -16384) held |= InputState::kLeft;
         if (x > 16384) held |= InputState::kRight;
         if (y < -16384) held |= InputState::kUp;
         if (y > 16384) held |= InputState::kDown;
-        const u8 hat = SDL_GetNumJoystickHats(joystick) > 0 ? SDL_GetJoystickHat(joystick, 0) : 0;
-        if (hat & SDL_HAT_UP) held |= InputState::kUp;
-        if (hat & SDL_HAT_DOWN) held |= InputState::kDown;
-        if (hat & SDL_HAT_LEFT) held |= InputState::kLeft;
-        if (hat & SDL_HAT_RIGHT) held |= InputState::kRight;
+        if (SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_DPAD_UP)) held |= InputState::kUp;
+        if (SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_DPAD_DOWN)) held |= InputState::kDown;
+        if (SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_DPAD_LEFT)) held |= InputState::kLeft;
+        if (SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) held |= InputState::kRight;
     }
 #endif
-    session.host_input = held;
+    std::memcpy(session.keyboard_state, keys, sizeof(keys));
+    session.host_input = held | keyboard_input_bits(keys);
     session.pad_buttons = buttons;
+}
+
+void Application::set_hosted_key(const char* dom_code, bool down) {
+    const i16 di = dom_code_to_di(dom_code);
+    if (di >= 0) hosted_keys[di] = down ? 0x80 : 0;
+}
+
+void Application::clear_hosted_keys() {
+    std::memset(hosted_keys, 0, sizeof(hosted_keys));
+    touch_controls = {};
+}
+
+u32 Application::TouchControls::input_bits() {
+    u32 bits = pulse;
+    pulse = 0;
+    if (fire) bits |= InputState::kShot;
+    if (focus) bits |= InputState::kSlow;
+    if (joystick_x < -16384) bits |= InputState::kLeft;
+    if (joystick_x > 16384) bits |= InputState::kRight;
+    if (joystick_y < -16384) bits |= InputState::kUp;
+    if (joystick_y > 16384) bits |= InputState::kDown;
+    return bits;
+}
+
+void Application::TouchControls::update(bool fire_on, bool focus_on, u32 bomb, u32 escape, i32 x, i32 y) {
+    fire = fire_on;
+    focus = focus_on;
+    joystick_x = x;
+    joystick_y = y;
+    // 序号变化 = 一次按下：下一逻辑帧给一帧脉冲（菜单确定/取消与炸弹都按边沿判定）
+    if (bomb != bomb_serial) { bomb_serial = bomb; pulse |= InputState::kBomb; }
+    if (escape != escape_serial) { escape_serial = escape; pulse |= InputState::kEscape; }
 }
 
 bool Application::initialize(const char* archive_path) {
@@ -122,11 +129,11 @@ bool Application::initialize(const char* archive_path) {
     session.attach_device(&graphics);
 #if defined(__EMSCRIPTEN__) || defined(TH16_HAS_SDL)
     // 0x401c30 手柄：无手柄或子系统不可用时不致命，按钮位图保持 0
-    if (!SDL_InitSubSystem(SDL_INIT_JOYSTICK)) std::fprintf(stderr, "th16: joystick disabled: %s\n", SDL_GetError());
+    if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) std::fprintf(stderr, "th16: gamepad disabled: %s\n", SDL_GetError());
 #endif
     // 原版 SoundManager（DAT_004d9e10）的 DirectSound 侧：thbgm.dat 与 th16.dat 同目录（0x43adc0 以 "thbgm.dat" 打开）
     audio.thbgm_path = session.demo_directory + "/thbgm.dat";
-    audio.music_directory = session.demo_directory + "/music";
+    audio.music_directory = music_directory.empty() ? session.demo_directory + "/music" : music_directory;
     audio.music = &session.music;
     // 打不开音频时逻辑（命令队列 / 音效队列）照常推进，只是无输出——与 harness 同口径，逐帧行为不变
     if (audio.initialize(session.archive())) {

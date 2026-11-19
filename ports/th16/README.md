@@ -18,7 +18,8 @@ Hidden Star in Four Seasons v1.00a 的网页移植：C++17 / SDL3 / GLES 3.0 / E
 | `web/cpp/platform/` | 浏览器导出（RNG oracle 直调） |
 | `portable/sdl/` | 与 th13/th15 共享的语义 GLES3 渲染后端（`Renderer.cpp`），不得分叉 |
 | `portable/build.mjs` / `build-harness.mjs` | 网页运行时（emcc）与 WASI 无头 harness 构建 |
-| `web/sdl-runtime/th16.html` | 页面壳：`assets/th16.dat` 整档进 MEMFS → `th16_initialize` → rAF 主循环 |
+| `web/sdl-runtime/th16-dev.html` | 开发页壳：`assets/th16.dat` 整档进 MEMFS → `th16_initialize` → rAF 主循环 |
+| `web/sdl-runtime/th16.html` + `shell.mjs` | 启动器运行时页（eagler-touhou/1 协议；`portable/package-eagler.mjs` 打包为 `build-eagler/`） |
 | `web/scripts/cpp/analyze.mjs` + `decomp/ExportTh16.java` | Ghidra headless 全函数导出 |
 | `tests/` | `run.sh`：本机 harness + `node --test`（RNG golden、THA1/ANM 对 thtk 逐字节/逐像素对照、ANM VM 1887 脚本对 Unicorn 直跑原版逐字节对照） |
 | `tools/oracle/` | Unicorn RNG oracle、ANM VM oracle（`anm-oracle.py` → `anm-golden.mjs`）、THTX 像素对照脚本 |
@@ -30,7 +31,7 @@ Hidden Star in Four Seasons v1.00a 的网页移植：C++17 / SDL3 / GLES 3.0 / E
 EMSDK=../../toolchains/emsdk node portable/build.mjs
 # 原版 th16.dat 放入页面壳资源目录（不入库）；乐曲为 assets/music/<曲名>.ogg（见 docs/DEVELOPMENT.md「音频」）
 ln -s /path/to/th16.dat web/sdl-runtime/assets/th16.dat
-python3 web/sdl-runtime/serve.py 8446   # http://127.0.0.1:8446/sdl-runtime/th16.html
+python3 web/sdl-runtime/serve.py 8446   # http://127.0.0.1:8446/sdl-runtime/th16-dev.html
 ```
 
 ## 测试

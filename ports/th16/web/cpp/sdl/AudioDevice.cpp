@@ -247,6 +247,9 @@ struct AudioDevice::Impl {
     bool ready = false;
     bool suspended = false;
     bool refill = true;
+    bool music_on = true;
+    i32 music_base = 0;          // 最近一次 0x4711f0 的 base（关/开音乐时按它重算增益）
+    u32 min_queued = 0xffffffffu;
     u64 mixed_frames = 0;
     u32 mix_failures = 0;
     std::array<std::unique_ptr<Voice>, kSoundVoiceCount> voices;
@@ -403,9 +406,30 @@ void AudioDevice::open_stream(const BgmEntry& entry) {
 // 0x4711f0：(1 − (1 − m/100)²) × (base + 5000) − 5000，m = 0 → -10000；未接 MusicManager 时按 m = 100
 void AudioDevice::apply_music_volume(i32 base) {
     Impl::Stream& s = impl->stream;
+    impl->music_base = base;
     if (!s.attached) return;
     const i32 ds = music != nullptr ? music->ds_volume(base) : base;
-    ma_sound_set_volume(&s.sound, amplitude(ds));
+    ma_sound_set_volume(&s.sound, impl->music_on ? amplitude(ds) : 0.0f);
+}
+
+void AudioDevice::set_music_enabled(bool on) {
+    impl->music_on = on;
+    apply_music_volume(impl->music_base);
+}
+
+bool AudioDevice::music_enabled() const { return impl->music_on; }
+
+u32 AudioDevice::queued_frames() const {
+#ifdef TH16_AUDIO_SDL
+    if (impl->sdl_stream != nullptr) return u32(std::max(0, SDL_GetAudioStreamQueued(impl->sdl_stream)) / i32(sizeof(float) * kMixChannels));
+#endif
+    return 0;
+}
+
+u32 AudioDevice::take_min_queued_frames() {
+    const u32 value = impl->min_queued == 0xffffffffu ? queued_frames() : impl->min_queued;
+    impl->min_queued = 0xffffffffu;
+    return value;
 }
 
 std::string AudioDevice::status() const {
@@ -440,6 +464,7 @@ void AudioDevice::pump() {
     // 队列保持在 2048..3072 帧之间（约 46..70 ms），每帧最多补三块
     constexpr i32 kLow = 2048, kHigh = 3072, kChunk = 1024;
     i32 queued = std::max(0, SDL_GetAudioStreamQueued(a.sdl_stream)) / i32(sizeof(float) * kMixChannels);
+    a.min_queued = std::min(a.min_queued, u32(queued));
     if (!a.refill && queued < kLow) a.refill = true;
     if (!a.refill) return;
     if (queued >= kHigh) { a.refill = false; return; }
@@ -456,6 +481,7 @@ void AudioDevice::pump() {
 
 void AudioDevice::suspend(bool value) {
     Impl& a = *impl;
+    if (a.suspended == value) return;
     a.suspended = value;
 #ifdef TH16_AUDIO_SDL
     if (a.sdl_stream != nullptr) {
