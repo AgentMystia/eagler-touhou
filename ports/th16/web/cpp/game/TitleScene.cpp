@@ -65,20 +65,56 @@ void TitleScene::request_game(i32 stage, i32 table) {
 }
 
 void TitleScene::transition_effect() {
-    // 0x41a390：ascii.anm 0x11（Loading 文字）；0x418ba0：EffectManager 种类 0 过场 + interrupt 7。EffectManager 未接，先记事件。
+    // 0x41a390：ascii.anm 0x11（Loading 文字）；0x418ba0：EffectManager 种类 0 过场；0x46f0b0(..., 7) 中断 7
     events.push_back({"transition", 7});
+    if (on_transition_effect) on_transition_effect();
 }
 
 // 0x44af80
 void TitleScene::update(AnmManager& anm, const InputState& input) {
     if (title_file == nullptr) return;
     switch (screen) {
-    case kNone:
-        // case 0：DAT_004a6f1c（来源）为 0 → 置 1 并进主菜单；其它来源（Replay 结束 / 练习返回）待接
-        if (globals->title_origin == 0) globals->title_origin = 1;
-        set_screen(kMainMenu);
-        update_main_menu(anm, input);
+    case kNone: {
+        // 0x44af80 case 0：按 DAT_004a6f1c（title_origin）分流
+        const i32 origin = globals->title_origin;
+        if (origin == 0) {
+            globals->title_origin = 1;
+            set_screen(kMainMenu);
+            update_main_menu(anm, input);
+        } else if (origin == 1) {
+            set_screen(kMainMenu);
+            update_main_menu(anm, input);
+        } else if (origin == 2) {
+            // 回放结束回标题：进 Replay 画面（BGM th16_01 等由宿主补）
+            globals->title_origin = 1;
+            set_screen(kReplay);
+        } else if (origin == 5) {
+            // 符卡练习返回：kind 9 淡入 + 装饰 0x61 interrupt 3 → Spell Practice
+            if (on_screen_fade) on_screen_fade(9, 0x1e, 0);
+            globals->title_origin = 1;
+            u32 decor = 0;
+            if (vm[kDecor61] == 0) spawn_into(anm, kDecor61, *title_file, kDecor61);
+            decor = vm[kDecor61];
+            if (decor) anm.interrupt_now(decor, 3);
+            set_screen(kSpellPractice);
+        } else if (origin == 4) {
+            // 练习返回：kind 9 淡入 + 装饰 0x61 interrupt 3 → 难度选择
+            if (on_screen_fade) on_screen_fade(9, 0x1e, 0);
+            u32 decor = 0;
+            if (vm[kDecor61] == 0) spawn_into(anm, kDecor61, *title_file, kDecor61);
+            decor = vm[kDecor61];
+            if (decor) anm.interrupt_now(decor, 3);
+            set_screen(kDifficulty);
+        } else if (origin == 3) {
+            globals->title_origin = 1;
+            set_screen(kMusicRoom);
+        } else {
+            globals->title_origin = 1;
+            set_screen(kMainMenu);
+            update_main_menu(anm, input);
+        }
         break;
+    }
     case kMainMenu:
         update_main_menu(anm, input);
         break;
@@ -130,15 +166,15 @@ void TitleScene::update_main_menu(AnmManager& anm, const InputState& input) {
         if (mode == 2) { cursor.set(3); g.set_mode(0); }
         else if (mode != 0) { cursor.set(2); g.set_mode(0); }
         set_sub(1);
-        if (anm.find(vm[kDecor61]) == nullptr) {
-            spawn_into(anm, kDecor61, *title_file, kDecor61);
-            anm.interrupt_now(vm[kDecor61], 2);
+        if (anm.find(vm[0x61]) == nullptr) {
+            spawn_into(anm, 0x61, *title_file, 0x61);
+            anm.interrupt_now(vm[0x61], 2);
         }
         if (anm.find(vm[kDecor65]) == nullptr) {
             spawn_into(anm, kDecor65, *title_file, kDecor65);
             anm.interrupt_now(vm[kDecor65], 2);
         }
-        if (prev_screen != kOption) anm.interrupt_now(vm[kDecor61], 2);
+        if (prev_screen != kOption) anm.interrupt_now(vm[0x61], 2);
         timer = 0x78;  // 0x406490(&Timer, 0x78)
         [[fallthrough]];
     }
@@ -207,7 +243,7 @@ void TitleScene::update_main_menu(AnmManager& anm, const InputState& input) {
             switch (cursor.index) {
             case 0:
                 g.set_mode(0);
-                anm.interrupt_now(vm[kDecor61], 3);
+                anm.interrupt_now(vm[0x61], 3);
                 set_screen(kDifficulty);
                 cursor.push();
                 cursor.set(g.last_difficulty);
@@ -215,7 +251,7 @@ void TitleScene::update_main_menu(AnmManager& anm, const InputState& input) {
                 break;
             case 1:
                 g.set_mode(0);
-                anm.interrupt_now(vm[kDecor61], 3);
+                anm.interrupt_now(vm[0x61], 3);
                 set_screen(kDifficulty);
                 cursor.push();
                 g.difficulty = kExtraDifficulty;
@@ -223,7 +259,7 @@ void TitleScene::update_main_menu(AnmManager& anm, const InputState& input) {
                 break;
             case 2:
                 g.set_mode(1);
-                anm.interrupt_now(vm[kDecor61], 3);
+                anm.interrupt_now(vm[0x61], 3);
                 cursor.push();
                 cursor.set(g.last_difficulty);
                 g.difficulty = g.last_difficulty;
@@ -231,16 +267,16 @@ void TitleScene::update_main_menu(AnmManager& anm, const InputState& input) {
                 break;
             case 3:
                 g.set_mode(2);
-                anm.interrupt_now(vm[kDecor61], 3);
+                anm.interrupt_now(vm[0x61], 3);
                 set_screen(kSpellPractice);
                 cursor.push();
                 cursor.set(0);
                 break;
-            case 4: anm.interrupt_now(vm[kDecor61], 3); set_screen(kReplay); cursor.push(); break;
-            case 5: anm.interrupt_now(vm[kDecor61], 3); set_screen(kScore); cursor.push(); break;
-            case 6: anm.interrupt_now(vm[kDecor61], 3); set_screen(kMusicRoom); cursor.push(); break;
+            case 4: anm.interrupt_now(vm[0x61], 3); set_screen(kReplay); cursor.push(); break;
+            case 5: anm.interrupt_now(vm[0x61], 3); set_screen(kScore); cursor.push(); break;
+            case 6: anm.interrupt_now(vm[0x61], 3); set_screen(kMusicRoom); cursor.push(); break;
             case 7: set_screen(kOption); cursor.push(); break;
-            case 8: anm.interrupt_now(vm[kDecor61], 3); set_screen(kManual); cursor.push(); break;
+            case 8: anm.interrupt_now(vm[0x61], 3); set_screen(kManual); cursor.push(); break;
             case 9: set_screen(kFinished); break;
             default: break;
             }
