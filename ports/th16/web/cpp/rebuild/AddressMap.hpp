@@ -510,7 +510,9 @@ constexpr AddressAnchor kAnchors[] = {
     {"ascii-draw-field-group", 0x408EF0, "game/Ascii.cpp AsciiManager::draw_field_group（0x4080a0 组 1：场地相机 + 层组 0x80000 偏移；0x4080b0 组 2：场地相机原样）"},
     {"ascii-draw-entry", 0x408650, "game/Ascii.cpp AsciiManager::draw_entry（字体 0..5 的字形映射 / 字宽 / 对齐 / 阴影 +2 / 换行与空格推进；0x465c40 + 0x465280(…,1) 像素对齐屏幕四边形）"},
     {"anm-draw-screen-sprite", 0x465C40, "game/AnmRenderer.cpp AnmRenderer::draw_screen_sprite（轴对齐四角 + submit_screen_quad 像素对齐，不判可见位）"},
-    {"msg-text-draw", 0x46D990, nullptr},     // AsciiManager 文字画入 VM 纹理（Msg::text_requests 记录请求）
+    {"msg-text-draw", 0x46D990, "game/TextPaint.cpp text_paint_vm（对话行：取精灵矩形、置 flags_lo bit0、入队 text_into_texture；GDI 写入由宿主刷）"},
+    {"spell-name-text-draw", 0x46DAB0, "game/TextPaint.cpp text_paint_vm_centered（符卡名居中；Spellcard::start 调用）"},
+    {"text-gdi-blit", 0x459240, "sdl/FontPainter.cpp FontPainter::blit（0x459240：字号表 DAT_00491b68、阴影 TextOut、D3DXLoadSurfaceFromMemory → 纹理脏矩形）"},
     {"stage-clear", 0x42E150, "game/Gui.cpp Gui::stage_clear（MSG op 21 / 0x429ff0(-2)：非练习 0x42c070 奖励、0x42ca80 子机收拢、普通模式 1..5 面场景请求 0xc + 关卡号 +1 + 练习解锁位；练习 0x43f500；6·Extra 面 flags 0x4000 + 残机 × 5 + 残弹 奖励 + 通关记录；回放 0x43f240）"},
     {"game-manager-ending", 0x42D7B0, "game/GameManager.cpp GameManager::update（flags 0x4000：+0xb0 过 0x17b → 场景 0xf / 0x10；回放 → 0x43f240）"},
     {"supervisor-restart", 0x43CE10, "game/GameSession.cpp GameSession::restart_game（case 0xa / 0xb / 0xe / 0x13：0x42d780 后以 DAT_004a5794 新开局）"},

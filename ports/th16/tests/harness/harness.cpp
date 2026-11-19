@@ -48,6 +48,7 @@
 #include "../../web/cpp/game/Rng.hpp"
 #include "../../web/cpp/game/ScreenEffect.hpp"
 #include "../../web/cpp/game/Stage.hpp"
+#include "../../web/cpp/game/TextPaint.hpp"
 #include "../../web/cpp/game/StageTable.hpp"
 #include "../../web/cpp/game/Std.hpp"
 #include "../../web/cpp/game/Supervisor.hpp"
@@ -114,6 +115,17 @@ int main(int argc, char** argv) {
         Rng a{seed}, b{seed}, c{seed};
         for (int i = 0; i < steps; ++i)
             std::printf("%u %u %u\n", bits(a.unit()), bits(b.signed_unit()), bits(c.angle()));
+        return 0;
+    }
+    if (command == "text-paint-flag") {
+        // 0x46d990：即便精灵矩形无效也置 flags_lo bit0；有矩形才入队
+        AnmManager animations;
+        AnmVm vm;
+        vm.flags_lo = 0;
+        std::vector<TextIntoTextureRequest> queue;
+        text_paint_vm(animations, vm, 0xffffffu, 0u, 0, 0, 0, "test", &queue);
+        std::printf("flag=%u queued=%zu height0=%d height8=%d\n", vm.flags_lo & 1u, queue.size(),
+                    text_font_height(0), text_font_height(8));
         return 0;
     }
     if (command == "screen-fade" && argc >= 6) {
