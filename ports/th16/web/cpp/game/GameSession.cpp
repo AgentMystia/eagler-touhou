@@ -315,9 +315,17 @@ bool GameSession::enter_ending(bool extra) {
         return enter_title_assets() && activate_title_menu();
     }
     leave_ending();
-    // scores.+0x19f9e 等「未见过」标记：ScoreFile 接入前用 false → 普通 end 下标
-    const bool has_true_end = false;
-    ending.begin(globals.shot, globals.shot_aux, has_true_end);
+    // 0x4191f0：continues==0 → 偶下标；装 e0N.msg；成绩见过位；Loading VM ascii 0x11
+    ending.begin(globals.shot, globals.shot_aux, globals.continues, &scores, globals.difficulty);
+    {
+        std::vector<u8> msg;
+        if (archive_.read(ending.msg_name.c_str(), msg)) {
+            ending.load_msg(msg.data(), u32(msg.size()), ending.msg_name.c_str());
+        } else {
+            ending.load_msg(nullptr, 0, ending.msg_name.c_str());
+        }
+    }
+    spawn_loading_vm(kLoadingVmPos);  // 0x4191f0：AsciiManager+0x19248 脚本 0x11 @ (960,784) 若尚未存在
     ending_live = true;
     ending_update_chain_ = chains.create([this]() -> ChainResult {
         if (!ending_live) return ChainResult::Continue;

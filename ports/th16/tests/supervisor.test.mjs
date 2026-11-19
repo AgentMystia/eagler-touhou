@@ -337,6 +337,12 @@ test('key-bind-assign 0x44f710 swap', () => {
   assert.match(out, /slow=30/);
 });
 
+test('key-bind-bits map to InputState', () => {
+  const out = run(['key-bind-bits']);
+  assert.match(out, /0=1 /);
+  assert.match(out, /4=800/);
+});
+
 test('Option screen: ←/→ adjust BGM, Default restores 100/80', needDat, () => {
   const t = MAIN + 1;
   const downs = Array.from({length: 6}, (_, i) => `${t + i * 2}:${DOWN}`);

@@ -51,6 +51,9 @@ struct ScoreFile {
     u32 no_continue_clears[kShots][kDifficulties] = {};  // +0x5184：未续关通关次数
     SpellRecord spells[kShots][kSpellRecords];       // +0x8d8
     char last_name[9];                       // +0x19f8c
+    // +0x19f96：8 个结局「见过」位图（bit0 见过；bit1.. 难度标记）；+0x19f9e 任一结局见过
+    u8 ending_seen[8] = {};
+    u8 any_ending_seen = 0;
 
     ScoreFile() {
         for (auto& shot : ranks)

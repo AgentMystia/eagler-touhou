@@ -1,5 +1,8 @@
 #include "Application.hpp"
 
+#include "../game/KeyBindMap.hpp"
+#include "../game/TitleScene.hpp"
+
 #include <cstdio>
 #include <cstring>
 
@@ -24,17 +27,21 @@ bool read_file(const char* path, std::vector<u8>& out) {
 
 }  // namespace
 
-// 0x401d50 键盘位（含 Enter/Esc/Ctrl 等菜单键）
+// 0x401d50 键盘位：可配置 5 键走 GameGlobals::key_binds（DI 扫描码）；其余固定
 void Application::sample_input() {
     u32 held = 0;
 #if defined(__EMSCRIPTEN__) || defined(TH16_HAS_SDL)
     int n = 0;
     const bool* keys = SDL_GetKeyboardState(&n);
     if (keys != nullptr) {
-        auto down = [&](SDL_Scancode s) { return s < n && keys[s]; };
-        if (down(SDL_SCANCODE_Z)) held |= InputState::kShot;
-        if (down(SDL_SCANCODE_X)) held |= InputState::kBomb;
-        if (down(SDL_SCANCODE_LSHIFT) || down(SDL_SCANCODE_RSHIFT)) held |= InputState::kSlow;
+        auto down = [&](SDL_Scancode s) { return s != SDL_SCANCODE_UNKNOWN && s < n && keys[s]; };
+        auto down_di = [&](i16 di) { return down(di_to_sdl(di)); };
+
+        // 可配置：Shot / Bomb / Slow / Skip / Release
+        for (int i = 0; i < kConfigurableBinds; ++i) {
+            if (down_di(session.globals.key_binds[i])) held |= key_bind_bit(i);
+        }
+        // 方向与菜单固定键（原版不在 Key Config 五项内）
         if (down(SDL_SCANCODE_UP) || down(SDL_SCANCODE_KP_8)) held |= InputState::kUp;
         if (down(SDL_SCANCODE_DOWN) || down(SDL_SCANCODE_KP_2)) held |= InputState::kDown;
         if (down(SDL_SCANCODE_LEFT) || down(SDL_SCANCODE_KP_4)) held |= InputState::kLeft;
@@ -44,7 +51,7 @@ void Application::sample_input() {
         if (down(SDL_SCANCODE_KP_1)) held |= InputState::kDown | InputState::kLeft;
         if (down(SDL_SCANCODE_KP_3)) held |= InputState::kDown | InputState::kRight;
         if (down(SDL_SCANCODE_ESCAPE)) held |= InputState::kEscape;
-        if (down(SDL_SCANCODE_LCTRL) || down(SDL_SCANCODE_RCTRL) || down(SDL_SCANCODE_C)) held |= InputState::kSkip;
+        if (down(SDL_SCANCODE_RCTRL)) held |= InputState::kSkip;  // 右 Ctrl 始终可 Skip（左 Ctrl 走绑定）
         if (down(SDL_SCANCODE_Q)) held |= InputState::kQ;
         if (down(SDL_SCANCODE_S)) held |= InputState::kS;
         if (down(SDL_SCANCODE_P) || down(SDL_SCANCODE_HOME)) held |= InputState::kPause;
@@ -52,6 +59,23 @@ void Application::sample_input() {
         if (down(SDL_SCANCODE_D)) held |= InputState::kD;
         if (down(SDL_SCANCODE_R)) held |= InputState::kR;
         if (down(SDL_SCANCODE_F10)) held |= InputState::kF10;
+
+        // Key Config 捕获：首个新按下的可映射键 → pending_scancode（DI）
+        TitleScene& title = session.title;
+        if (title.live() && title.screen == TitleScene::kKeyConfig && title.key_bind_slot >= 0 &&
+            title.pending_scancode < 0) {
+            static bool prev[512] = {};
+            for (int i = 0; i < n && i < 512; ++i) {
+                if (keys[i] && !prev[i]) {
+                    const i16 di = sdl_to_di(SDL_Scancode(i));
+                    if (di >= 0) {
+                        title.pending_scancode = di;
+                        break;
+                    }
+                }
+            }
+            for (int i = 0; i < n && i < 512; ++i) prev[i] = keys[i];
+        }
     }
 #endif
     session.host_input = held;
