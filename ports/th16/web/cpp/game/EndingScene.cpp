@@ -53,15 +53,66 @@ bool EndingScene::waiting_for_input(const InputState& input) const {
     return true;
 }
 
-void EndingScene::begin(i32 shot, i32 shot_aux, i32 continues, ScoreFile* scores, i32 difficulty) {
+void EndingScene::paint_line(u32 vm_id, const char* text, i32 font) {
+    if (animations == nullptr || vm_id == 0) return;
+    AnmVm* vm = animations->find(vm_id);
+    if (vm == nullptr) return;
+    if (text_paint_vm(*animations, *vm, text_color, 0, font, 0, 0, text, text_paints)) {
+        ++text_paint_count;
+    }
+}
+
+bool EndingScene::switch_to_staff() {
+    // 0x4199f0 case 0xc：清行 VM → 按难度装 staffN.msg → 复位剧本态（flags|=2）
+    if (animations != nullptr) {
+        for (u32& id : line_vms) {
+            if (id != 0) animations->kill(id);
+            id = 0;
+        }
+        for (u32& id : anm_vms) {
+            if (id != 0) {
+                if (kill_ending_anm) kill_ending_anm(id);
+                else animations->kill(id);
+            }
+            id = 0;
+        }
+    }
+    for (AnmFile*& f : ending_anms) f = nullptr;
+
+    const i32 idx = (difficulty >= 1 && difficulty <= 3) ? difficulty : 0;
+    // Easy(0)→staff1；Normal(1)→staff2；Hard(2)→staff3；Lunatic(3)→staff4
+    const char* name = kStaffNames[idx];
+    std::vector<u8> bytes;
+    if (!read_archive || !read_archive(name, bytes) || bytes.empty()) {
+        events.push_back("staff-missing");
+        return false;
+    }
+    load_msg(bytes.data(), u32(bytes.size()), name);
+    script_timer.reset();
+    wait_timer.reset();
+    script_flags = 2;  // 原版 memset 后 |2；bit2 装载中不置
+    text_color = 0xffffff;
+    lines_written = 0;
+    events.push_back("staff");
+    return true;
+}
+
+void EndingScene::begin(i32 shot, i32 shot_aux, i32 continues, ScoreFile* scores, i32 difficulty_in) {
     auto load_cb = std::move(load_ending_anm);
     auto spawn_cb = std::move(spawn_ending_anm);
     auto kill_cb = std::move(kill_ending_anm);
+    auto read_cb = std::move(read_archive);
+    AnmManager* anm = animations;
+    auto* paints = text_paints;
     *this = EndingScene{};
     load_ending_anm = std::move(load_cb);
     spawn_ending_anm = std::move(spawn_cb);
     kill_ending_anm = std::move(kill_cb);
+    read_archive = std::move(read_cb);
+    animations = anm;
+    text_paints = paints;
     live = true;
+    difficulty = difficulty_in;
     const i32 combo = shot + shot_aux;
     ending_index = combo * 2 + (continues == 0 ? 0 : 1);
     if (ending_index < 0) ending_index = 0;
@@ -98,7 +149,7 @@ bool EndingScene::load_msg(const u8* bytes, u32 size, const char* name) {
     }
     script_timer.reset();
     wait_timer.reset();
-    script_flags = 1;
+    if ((script_flags & 2u) == 0) script_flags = 1;
     text_color = 0xffffff;
     lines_written = 0;
     events.push_back("msg-loaded");
@@ -106,6 +157,7 @@ bool EndingScene::load_msg(const u8* bytes, u32 size, const char* name) {
 }
 
 void EndingScene::spawn_line_vms(AnmManager& anm, AnmFile* text_anm) {
+    animations = &anm;
     if (text_anm == nullptr) return;
     for (int i = 0; i < 5; ++i) {
         AnmVm* vm = nullptr;
@@ -143,7 +195,6 @@ EndingScene::ScriptResult EndingScene::step_script(const InputState& input) {
             return ScriptResult::Finished;
         }
         const EndingIns* ins = read_ins(script_pc);
-        // 脚本时刻未到：推进 +0x1c 后返回（与对话 Msg 同口径）
         if (script_timer.current < i32(ins->time)) {
             script_timer.tick(1.0f);
             return ScriptResult::Running;
@@ -154,38 +205,47 @@ EndingScene::ScriptResult EndingScene::step_script(const InputState& input) {
             return ScriptResult::Finished;
 
         case 3: {
-            // 写字：首行先清五格空白，再画 line_vms[lines_written]
             last_text = decrypt_text(script_pc + 4);
             events.push_back("text");
             if (lines_written == 0) {
-                // 原版：先对 5 个行 VM 刷 " " 再中断 3；此处只记事件，贴图待 TH16_HAS_TTF
-            }
-            ++lines_written;
-            if (lines_written > 4) {
-                lines_written = 0;
+                for (u32 id : line_vms) paint_line(id, " ", 0);
+                paint_line(line_vms[0], last_text.c_str(), 0);
+                if (animations != nullptr && line_vms[0] != 0) animations->interrupt(line_vms[0], 2);
+                ++lines_written;
                 advance_pc();
                 continue;
+            }
+            {
+                const i32 slot = lines_written;
+                if (slot >= 0 && slot < 5) {
+                    paint_line(line_vms[slot], last_text.c_str(), 0);
+                    if (animations != nullptr && line_vms[slot] != 0) animations->interrupt(line_vms[slot], 2);
+                }
+                ++lines_written;
+                if (lines_written > 4) lines_written = 0;
             }
             advance_pc();
             continue;
         }
 
         case 4:
-            // 五行中断 3（收起文字）
+            if (animations != nullptr) {
+                for (u32 id : line_vms) {
+                    if (id != 0) animations->interrupt(id, 3);
+                }
+            }
             lines_written = 0;
             advance_pc();
             continue;
 
         case 5:
         case 6: {
-            // 等待：arg 为倒计时；确认或长按跳过可提前结束
             const i32 wait_arg = ins->size >= 4 ? arg_i32(script_pc, 0) : 0;
             if (wait_timer.current < 1) wait_timer.set(wait_arg);
             wait_timer.untick(1.0f);
             if (wait_arg < 0) wait_timer.set(999);
 
             if (waiting_for_input(input) && wait_timer.current > 0) {
-                // 跳过键 / 长按射击：每 6 帧推进一拍（与原版 %6 对齐的简化）
                 const bool can_ff = (flags & 1u) == 0 &&
                     (((input.held & InputState::kSkip) != 0) ||
                      ((input.held & InputState::kShot) != 0 && input.total_frames[0] >= 0x14));
@@ -201,7 +261,6 @@ EndingScene::ScriptResult EndingScene::step_script(const InputState& input) {
         }
 
         case 7: {
-            // 装 e0N.anm：槽 = arg0 + 0x14；名在 pc+8；异步标志 bit2（本移植同步装入后立即清）
             const i32 slot_arg = ins->size >= 4 ? arg_i32(script_pc, 0) : 0;
             pending_anm_slot = slot_arg + 0x14;
             pending_anm_name.clear();
@@ -215,15 +274,14 @@ EndingScene::ScriptResult EndingScene::step_script(const InputState& input) {
             if (slot_arg >= 0 && slot_arg < 4) ending_anms[slot_arg] = file;
             script_flags &= ~4u;
             advance_pc();
-            return ScriptResult::Running;  // 原版装载启动后本帧返回
+            return ScriptResult::Running;
         }
 
         case 8: {
-            // args: vm_slot, anm_index, script_id
             const i32 vm_slot = ins->size >= 4 ? arg_i32(script_pc, 0) : 0;
             const i32 anm_index = ins->size >= 8 ? arg_i32(script_pc, 1) : 0;
             const i32 script_id = ins->size >= 12 ? arg_i32(script_pc, 2) : 0;
-            if (vm_slot >= 0 && vm_slot < 4) {
+            if (vm_slot >= 0 && vm_slot < 8) {
                 if (anm_vms[vm_slot] != 0 && kill_ending_anm) {
                     kill_ending_anm(anm_vms[vm_slot]);
                     anm_vms[vm_slot] = 0;
@@ -255,20 +313,42 @@ EndingScene::ScriptResult EndingScene::step_script(const InputState& input) {
             continue;
 
         case 11:
-            // BGM 淡出 + 清 flags bit0
             script_flags &= ~1u;
             events.push_back("fade");
             advance_pc();
             continue;
 
         case 12:
-            // staffN.msg 切换——完整 staff 链随后接；此处记事件并结束本段
-            events.push_back("staff");
             advance_pc();
-            return ScriptResult::Finished;
+            if (!switch_to_staff()) return ScriptResult::Finished;
+            continue;
+
+        case 0xf:
+        case 0x10:
+        case 0x11: {
+            // 难度条件精灵：仅当 difficulty 匹配时执行与 op8 相同的 spawn
+            const i32 need = ins->op - 0xf + 1;  // 0xf→1, 0x10→2, 0x11→3
+            if (difficulty == need) {
+                const i32 vm_slot = ins->size >= 4 ? arg_i32(script_pc, 0) : 0;
+                const i32 anm_index = ins->size >= 8 ? arg_i32(script_pc, 1) : 0;
+                const i32 script_id = ins->size >= 12 ? arg_i32(script_pc, 2) : 0;
+                if (vm_slot >= 0 && vm_slot < 8) {
+                    if (anm_vms[vm_slot] != 0 && kill_ending_anm) {
+                        kill_ending_anm(anm_vms[vm_slot]);
+                        anm_vms[vm_slot] = 0;
+                    }
+                    AnmFile* file = (anm_index >= 0 && anm_index < 4) ? ending_anms[anm_index] : nullptr;
+                    if (file != nullptr && spawn_ending_anm) {
+                        anm_vms[vm_slot] = spawn_ending_anm(file, script_id, vm_slot);
+                    }
+                }
+            }
+            advance_pc();
+            continue;
+        }
 
         default:
-            // 0xd/0xe 特效、0xf..0x11 难度条件精灵：按 size 跳过，保持剧本可跑
+            // 0xd/0xe ScreenEffect 等：按 size 跳过
             advance_pc();
             continue;
         }
@@ -285,18 +365,18 @@ bool EndingScene::update(const InputState& input) {
     if (!live) return false;
     ++timer;
 
-    // 0x4196c0：先跑剧本；结束 → 回标题
     if (step_script(input) == ScriptResult::Finished) {
         end();
         return true;
     }
 
-    // 烟雾 / 调试口径：>0x78 确认结束整段（原版无此短路，完整 staff 跑完才退）
-    if (timer > kSkipFrames && (input.pressed & (InputState::kConfirmMask | InputState::kCancelMask)) != 0) {
+    // 烟雾 / 调试口径：>0x78 确认结束整段（完整 staff 跑完才退是原版路径）
+    if (smoke_skip && timer > kSkipFrames &&
+        (input.pressed & (InputState::kConfirmMask | InputState::kCancelMask)) != 0) {
         end();
         return true;
     }
-    if (timer > kAutoFrames) {
+    if (smoke_skip && timer > kAutoFrames) {
         end();
         return true;
     }

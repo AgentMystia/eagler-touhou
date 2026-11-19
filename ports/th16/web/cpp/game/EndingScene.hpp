@@ -4,11 +4,12 @@
 //   0x4191f0  登记链 0x23/0x43；选 e0N.msg；成绩 +0x19f96；ascii Loading 0x11
 //   0x4197c0  text.anm 0x2e..0x32 行 VM
 //   0x4199f0  剧本：op0 结束、op3 写字、op5/6 等待、op7 装 e0N.anm（槽=arg+0x14）、
-//            op8 放精灵、op9 颜色、op10 BGM、op11 淡出、op12 staff.msg…
+//            op8 放精灵、op9 颜色、op10 BGM、op11 淡出、op12 staffN.msg（按难度）…
 //   0x4196c0  每帧调 0x4199f0；结束 → 场景 4/2；快进 Restart(6)
 #pragma once
 #include "AnmVm.hpp"
 #include "Input.hpp"
+#include "TextPaint.hpp"
 #include "Types.hpp"
 
 #include <functional>
@@ -27,14 +28,19 @@ struct EndingScene {
     static constexpr const char* kMsgNames[8] = {
         "e01.msg", "e02.msg", "e03.msg", "e04.msg", "e05.msg", "e06.msg", "e07.msg", "e08.msg",
     };
+    static constexpr const char* kStaffNames[4] = {
+        "staff1.msg", "staff2.msg", "staff3.msg", "staff4.msg",
+    };
 
     enum class ScriptResult : i32 { Running = 0, Finished = -1 };
 
     bool live = false;
     i32 timer = 0;                 // Ending 外壳 +0x20（0x4196c0 每帧 +1）
     i32 ending_index = 0;          // +0x18
+    i32 difficulty = 1;            // DAT_004a57b4：op12 选 staffN
     u32 flags = 0;                 // 外壳 +0x1c（bit0 首次本结局、bit1 首次任意结局）
     bool finished = false;
+    bool smoke_skip = true;        // 移植烟雾：>0x78 确认整段结束；原版无此短路
     std::vector<u8> msg_bytes;
     std::string msg_name;
 
@@ -47,17 +53,23 @@ struct EndingScene {
     i32 lines_written = 0;         // +0x78
     u32 text_color = 0xffffff;     // +0x7c
     AnmFile* ending_anms[4] = {};  // +0x80：op7 装入的 ANM（下标 = 剧本 arg）
-    u32 anm_vms[4] = {};           // +0x90
+    u32 anm_vms[8] = {};           // +0x90：staff 用到槽 0..5
     i32 pending_anm_slot = -1;     // +0xec / op7 槽
     std::string pending_anm_name;  // +0x70 指向的名字副本
     std::string last_text;         // 最近一次 op3 解密结果（宿主/测试）
     std::string last_bgm;          // 最近一次 op10
+    i32 text_paint_count = 0;      // 入队 0x46d990 次数（测试）
+
+    AnmManager* animations = nullptr;
+    std::vector<TextIntoTextureRequest>* text_paints = nullptr;
 
     // 宿主：装 ending ANM → 返回槽内 AnmFile*（失败 nullptr）
     std::function<AnmFile*(int slot, const char* name)> load_ending_anm;
     // 宿主：在 ending ANM 上 spawn 脚本（op8）；返回 VM id
     std::function<u32(AnmFile* file, i32 script, i32 slot_index)> spawn_ending_anm;
     std::function<void(u32 vm)> kill_ending_anm;
+    // 宿主：读 archive 条目（op12 staffN.msg）
+    std::function<bool(const char* name, std::vector<u8>& out)> read_archive;
     std::vector<const char*> events;
 
     void begin(i32 shot, i32 shot_aux, i32 continues, ScoreFile* scores, i32 difficulty);
@@ -74,6 +86,8 @@ private:
     static std::string decrypt_text(const u8* src);
     void advance_pc();
     bool waiting_for_input(const InputState& input) const;
+    void paint_line(u32 vm_id, const char* text, i32 font);
+    bool switch_to_staff();
 };
 
 }  // namespace th16

@@ -146,9 +146,13 @@ int main(int argc, char** argv) {
         const char* path = argv[2];
         const int frames = std::atoi(argv[3]);
         bool extra = false;
+        bool noskip = false;
+        i32 difficulty = 1;
         std::unordered_map<int, u32> inject;
         for (int a = 4; a < argc; ++a) {
             if (std::strncmp(argv[a], "extra=", 6) == 0) extra = std::atoi(argv[a] + 6) != 0;
+            else if (std::strncmp(argv[a], "noskip=", 7) == 0) noskip = std::atoi(argv[a] + 7) != 0;
+            else if (std::strncmp(argv[a], "diff=", 5) == 0) difficulty = std::atoi(argv[a] + 5);
             else {
                 int f = 0; u32 bits = 0;
                 if (std::sscanf(argv[a], "%d:%x", &f, &bits) == 2) inject[f] = bits;
@@ -161,16 +165,22 @@ int main(int argc, char** argv) {
         if (!session.begin_boot()) { std::fprintf(stderr, "%s\n", session.failure.c_str()); return 1; }
         session.globals.shot = 0;
         session.globals.shot_aux = 0;
+        session.globals.difficulty = difficulty;
         session.supervisor.request(extra ? SceneId::ExtraEnding : SceneId::Ending);
+        // 先进一步以创建 Ending，再关烟雾短路（noskip 测 staff 全链）
         for (int f = 0; f < frames; ++f) {
             session.injected_input = inject.count(f) ? inject[f] : 0;
+            if (noskip) session.ending.smoke_skip = false;
             if (!session.logic_step()) { std::fprintf(stderr, "%s\n", session.failure.c_str()); return 1; }
+            if (noskip) session.ending.smoke_skip = false;
         }
-        std::printf("scene=%d ending_live=%d ending_index=%d finished=%d title_live=%d color=%x lines=%d bgm=%s\n",
+        std::printf("scene=%d ending_live=%d ending_index=%d finished=%d title_live=%d color=%x lines=%d "
+                    "paints=%d bgm=%s msg=%s\n",
                     int(session.supervisor.current), session.ending_live ? 1 : 0, session.ending.ending_index,
                     session.ending.finished ? 1 : 0, session.supervisor.title_menu_live ? 1 : 0,
-                    session.ending.text_color, session.ending.lines_written,
-                    session.ending.last_bgm.empty() ? "-" : session.ending.last_bgm.c_str());
+                    session.ending.text_color, session.ending.lines_written, session.ending.text_paint_count,
+                    session.ending.last_bgm.empty() ? "-" : session.ending.last_bgm.c_str(),
+                    session.ending.msg_name.c_str());
         if (!session.ending.last_text.empty()) std::printf("text_bytes=%zu\n", session.ending.last_text.size());
         for (const char* e : session.ending.events) std::printf("event %s\n", e);
         return 0;
