@@ -1,5 +1,5 @@
 {
- "$comment": "tools/oracle/game-oracle.py --enemies --bullets --items --lasers --bombs --lives 8 --refill-lives（Unicorn 直跑 th16.exe v1.00a）第 2..7 面各一组机体 × 子季节 × 难度的 6000 帧对拍：持续射击 + 向上移动，第 1500 / 3000 帧按一次炸弹。九组 FNV-1a 64 摘要与 harness game-digest 同口径（含全部音效的 GameMenu 快照 menu 摘要）。 第二组为 14000 / 16000 帧长程（第 2500 / 5000 / 7500 / 10000 帧各一次炸弹），覆盖各面中 Boss 与 Boss 前半段。",
+ "$comment": "tools/oracle/game-oracle.py --enemies --bullets --items --lasers --bombs --lives 8 --refill-lives（Unicorn 直跑 th16.exe v1.00a）第 1..7 面各一组机体 × 子季节 × 难度的 6000 帧对拍：持续射击 + 向上移动，第 1500 / 3000 帧按一次炸弹。九组 FNV-1a 64 摘要与 harness game-digest 同口径（含全部音效的 GameMenu 快照 menu 摘要）。 第二组为 14000 / 16000 帧长程（第 2500 / 5000 / 7500 / 10000 帧各一次炸弹），覆盖各面中 Boss 与 Boss 前半段。第三组补第 1 面与 Extra 灵梦土用，以及第 2 / 4 / 5 面尚未入库的机体 × 难度。",
  "cases": [
   {
    "name": "st2-easy-reimu-winter-shoot-bomb-6000",
@@ -275,6 +275,121 @@
     "lasers": "5b24e77b984291b5",
     "bombs": "94c6bcf2e280e49f",
     "menu": "f0c2c3fc97be30e8"
+   }
+  },
+  {
+   "name": "st1-easy-reimu-spring-shoot-bomb-6000",
+   "stage": 1,
+   "shot": 0,
+   "season": 0,
+   "difficulty": 0,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "133fea3a934e09c4",
+    "enemies": "c054af817508bccf",
+    "enemy_vms": "1299fd7d92aaabf3",
+    "bullets": "2f1ee728a700695e",
+    "items": "52d6890f3d600125",
+    "spell": "6196518a4faa71f8",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "291d00442c07b7c6",
+    "menu": "8c16f9ddfbf791e8"
+   }
+  },
+  {
+   "name": "st2-hard-marisa-summer-shoot-bomb-6000",
+   "stage": 2,
+   "shot": 3,
+   "season": 1,
+   "difficulty": 2,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "d34075b0fde5600b",
+    "enemies": "c746b86f8a9d3765",
+    "enemy_vms": "0b8b99ff40c13a0c",
+    "bullets": "2492400f2d3d9569",
+    "items": "ff912aa2b23add04",
+    "spell": "9d92fe61144a0a22",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "b8e98051133ab28d",
+    "menu": "04c60f95fadcfc81"
+   }
+  },
+  {
+   "name": "st4-lunatic-cirno-winter-shoot-bomb-6000",
+   "stage": 4,
+   "shot": 1,
+   "season": 3,
+   "difficulty": 3,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "21918f1a37b956c6",
+    "enemies": "923df2a25582b66a",
+    "enemy_vms": "ecc9aa7deb09742f",
+    "bullets": "9f2f33a727f07943",
+    "items": "5c68fcc2b29e3580",
+    "spell": "e7ec460a6a7594e3",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "e081d789dad160e0",
+    "menu": "42c4604f7c192694"
+   }
+  },
+  {
+   "name": "st5-easy-marisa-spring-shoot-bomb-6000",
+   "stage": 5,
+   "shot": 3,
+   "season": 0,
+   "difficulty": 0,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "0999eff17d9fb784",
+    "enemies": "938f57217d382c0c",
+    "enemy_vms": "efb46b8d0738da21",
+    "bullets": "d6516a9422a77144",
+    "items": "385bb7ad1150a987",
+    "spell": "8d2e173f65ad14c1",
+    "lasers": "0c4a3bd25cd93368",
+    "bombs": "a2bc68606401933c",
+    "menu": "ce2e970180c44835"
+   }
+  },
+  {
+   "name": "st7-extra-reimu-doyou-shoot-bomb-6000",
+   "stage": 7,
+   "shot": 0,
+   "season": 4,
+   "difficulty": 4,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "6aee1a574971eca0",
+    "enemies": "efb49fb2224a4149",
+    "enemy_vms": "0ec5687c286ab204",
+    "bullets": "ab1ce54e07f570e1",
+    "items": "799ae6fbfbee4d28",
+    "spell": "57c16713219bdf2b",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "a29b68e43fb2ffe6",
+    "menu": "9399478f3bc71389"
    }
   }
  ]
