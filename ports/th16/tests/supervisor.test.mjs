@@ -367,10 +367,23 @@ test('Manual screen (0x4545a0): cancel HelpScreen returns to main menu', needDat
   assert.ok(out.events.some(e => e[0] === 'manual'));
 });
 
-test('stub screens (Music/…): cancel returns to the main menu', needDat, () => {
+test('Music Room (0x4546f0): cancel returns to main and restores default BGM', needDat, () => {
   const t = MAIN + 1;
   const downs = Array.from({length: 5}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Music(6)
   const confirmAt = t + 10 + 2;
+  const ready = confirmAt + 30;
+  const out = parse(run(['scene-boot', dat, String(ready + 20), [
+    ...downs, `${confirmAt}:${Z}`, `${ready}:${X}`,
+  ].join(',')]));
+  assert.equal(out.header.screen, 1);
+  assert.ok(out.events.some(e => e[0] === 'music' && Number(e[1]) >= 1));
+  assert.ok(out.events.some(e => e[0] === 'bgm-default'));
+});
+
+test('stub screens (Player Data/…): cancel returns to the main menu', needDat, () => {
+  const t = MAIN + 1;
+  const downs = Array.from({length: 4}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Score/Player Data(5)
+  const confirmAt = t + 8 + 2;
   const out = parse(run(['scene-boot', dat, String(confirmAt + 21 + 4), [...downs, `${confirmAt}:${Z}`, `${confirmAt + 22}:${X}`].join(',')]));
   assert.equal(out.header.screen, 1);
   assert.ok(out.events.some(e => e[0] === 'stub'));

@@ -245,6 +245,12 @@ bool GameSession::activate_title_menu() {
         if (!load_anm("help.anm", res)) return nullptr;
         return animations.load(0x13, *res);
     };
+    {
+        std::vector<u8> cmt;
+        if (archive_.read("musiccmt.txt", cmt) && !cmt.empty()) {
+            title.parse_music_cmt(reinterpret_cast<const char*>(cmt.data()), cmt.size());
+        }
+    }
     globals.scene_request = -1;
 
     // 0x44ac54：启用标题更新链（优先级 6 → 0x44af80）
