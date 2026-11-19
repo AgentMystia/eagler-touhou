@@ -98,7 +98,7 @@ python3 tools/oracle/draw-compare.py /tmp/st1.draw.jsonl /tmp/st1.port.jsonl --f
 
 ## 音频
 
-`web/cpp/sdl/AudioDevice.*`：miniaudio 无设备混音 + SDL3 音频流（44100 Hz 立体声 f32，队列保持 2048..3072 帧）。音效声部按 `kSoundDefinitions` 绑定 th16.dat 内 `se_*.wav`；乐曲串流器首选与 th16.dat 同目录的 `thbgm.dat`（按 `thbgm.fmt` 条目直接读 PCM、循环点同原版），否则取 `<同目录>/music/<曲名>.ogg`（PCM 帧数须与 `thbgm.fmt` 一致，否则报错不播）。浏览器不进 388 MiB 的 `thbgm.dat`：把 18 首 `assets/music/<曲名>.ogg`（不入库，例如 `ffmpeg -f s16le -ar 44100 -ac 2 -i <按 fmt 偏移截出的 PCM> -c:a libvorbis -q:a 4`）放到 `web/sdl-runtime/assets/music/`，页面壳并行取进 MEMFS `/assets/music`，缺则该曲静音。音频打不开时逻辑（命令队列 / 音效队列）照常推进，只是无输出。
+`web/cpp/sdl/AudioDevice.*`：miniaudio 无设备混音 + SDL3 音频流（44100 Hz 立体声 f32，队列保持 2048..3072 帧）。音效声部按 `kSoundDefinitions` 绑定 th16.dat 内 `se_*.wav`；乐曲串流器首选与 th16.dat 同目录的 `thbgm.dat`（按 `thbgm.fmt` 条目直接读 PCM、循环点同原版），否则取 `<同目录>/music/<曲名>.ogg`（PCM 帧数须与 `thbgm.fmt` 一致，否则报错不播）。浏览器不进 388 MiB 的 `thbgm.dat`：把 18 首 `assets/music/<曲名>.ogg`（不入库，例如 `ffmpeg -f s16le -ar 44100 -ac 2 -i <按 fmt 偏移截出的 PCM> -c:a libvorbis -q:a 4`）放到 `web/sdl-runtime/assets/music/`，页面壳并行取进 MEMFS `/assets/music`，缺则该曲静音。音频打不开时逻辑（命令队列 / 音效队列）照常推进，只是无输出。 浏览器构建里音效声部另经共享 `common/include/eagler/audio/WebSfx.hpp` 输出：装载时把 `se_*.wav` 整段解码上传为 WebAudio 独立声部（`web_sfx::upload`），play/stop/pan/volume/seek 与 `suspend` 同步下发，绕开混音队列的 2048 帧延迟；上传失败或非 Emscripten 构建时所有 `web_sfx` 命令返回 0，自动回落到 miniaudio 声部。`tools/ports/sfx-routing.test.mjs` 要求该头参与构建身份（`portable/build.mjs` 的 `allHeaders`）。
 
 原版 BGM / SE 音量变量（DAT_004df49c / DAT_004df4a0）只在 Option 画面 0x44dc70 写入（开机到首次进 Option 为 0），端口开机即以配置值出声；0x470bb0 每次开曲重建 DirectSound 缓冲，端口在 open 时按配置音量重置。这些只影响宿主音量，不进任何对拍。
 

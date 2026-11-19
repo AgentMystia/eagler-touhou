@@ -43,7 +43,7 @@ const run = (args) => new Promise((done, reject) => {
 const common = ['-O2', '-g0', '-fno-strict-aliasing', '-ffp-contract=off',
   '-DTH_SDL3=1', '-DTH_NATIVE_PLATFORM=1', '--use-port=sdl3',
   '-DTH16_HAS_TTF=1', '--use-port=sdl3_ttf',  // 0x459240 字形光栅（字体文件由宿主装入 MEMFS）
-  '-I' + resolve(root, 'cpp')];
+  '-I' + resolve(root, 'cpp'), '-I' + resolve(workspace, '../../common/include')];
 const flags = [...common, '-std=c++17', '-fno-exceptions', '-fno-rtti'];
 
 const sources = [
@@ -53,7 +53,10 @@ const sources = [
   '../portable/sdl/Renderer.cpp',  // 语义 GLES 渲染后端（与 th13/th15 同源）
 ];
 
-const allHeaders = headerInputs(resolve(root, 'cpp'), resolve(workspace, 'portable/sdl'), resolve(workspace, 'portable/input'));
+const allHeaders = [
+  ...headerInputs(resolve(root, 'cpp'), resolve(workspace, 'portable/sdl'), resolve(workspace, 'portable/input')),
+  resolve(workspace, '../../common/include/eagler/audio/WebSfx.hpp'),  // 共享网页音效输出（AudioDevice.cpp）
+];
 await printRuntimeInputs({workspace, root, sources: sources.map(p => resolve(root, p)), headers: allHeaders, flags});
 const version = spawnSync(python, [emcc, '--version'], {cwd: root, env, encoding: 'utf8'});
 checkProcess(version);

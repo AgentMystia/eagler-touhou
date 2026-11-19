@@ -117,7 +117,7 @@ public:
     u32 row_text_vms[10] = {};
     ScoreFile* scores = nullptr;     // 0x456060 解锁判定
     MusicManager* bgm = nullptr;     // DAT_004d9e10 乐曲命令
-    SoundEffects* sound = nullptr;   // 0x44dc70 写 DAT_004df4a0（音效主音量）
+    SoundEffects* sound = nullptr;   // 0x45e150 音效请求；0x44dc70 写 DAT_004df4a0（音效主音量）
     const float* game_speed = nullptr;   // DAT_004a5788（0x43c470 淡出秒数除数）
     const u32* config_flags = nullptr;   // DAT_004c1800（bit13：退出改为停在场景 2）
     // 0x44a850：任一机体在 Easy..Lunatic 有未续关通关（主菜单 Extra 项可选）
@@ -227,7 +227,11 @@ private:
     // 0x44a560 / 0x44a5e0
     void set_screen(i32 s) { prev_screen = screen; screen = s; sub = 0; timer = 0; }
     void set_sub(i32 s) { sub = s; timer = 0; }
-    void sfx(i32 id) { events.push_back({"sfx", id}); }
+    // 0x45e150：标题各画面的音效请求直接进 SoundManager 队列（声像 0），下一帧 0x45e330 出声；事件表供 harness 断言
+    void sfx(i32 id) {
+        events.push_back({"sfx", id});
+        if (sound != nullptr) sound->play(id);
+    }
 
     // 0x44a790：vm[slot] 子树里脚本号 == script 的 VM id（无则 0）
     u32 child_id(AnmManager& anm, i32 slot, i32 script);

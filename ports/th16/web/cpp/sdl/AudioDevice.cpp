@@ -20,6 +20,10 @@
 
 #include "AudioDevice.hpp"
 
+// 共享网页音效输出：预录 se_*.wav 走 WebAudio 独立声部，绕开混音队列的缓冲延迟；
+// 非 Emscripten 构建里所有 web_sfx 命令返回 0，自动回落到 miniaudio 声部。
+#include <eagler/audio/WebSfx.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -33,6 +37,8 @@
 #endif
 
 namespace th16::sdl {
+
+namespace web_sfx = eagler::audio::web_sfx;
 
 namespace {
 
@@ -111,6 +117,7 @@ struct AudioDevice::Impl {
         bool decoded = false;
         bool attached = false;
         ~Voice() {
+            web_sfx::erase(&sound);
             if (attached) ma_sound_uninit(&sound);
             if (decoded) ma_decoder_uninit(&decoder);
         }
@@ -146,28 +153,39 @@ struct AudioDevice::Impl {
         bool available(i32 voice) const override { return impl->voice(voice) != nullptr; }
         bool playing(i32 voice) override {
             Voice* v = impl->voice(voice);
-            return v != nullptr && ma_sound_is_playing(&v->sound);
+            if (v == nullptr) return false;
+            return web_sfx::contains(&v->sound) ? web_sfx::playing(&v->sound) : ma_sound_is_playing(&v->sound);
         }
         void stop(i32 voice) override {
-            if (Voice* v = impl->voice(voice)) ma_sound_stop(&v->sound);
+            if (Voice* v = impl->voice(voice)) {
+                web_sfx::stop(&v->sound);
+                ma_sound_stop(&v->sound);
+            }
         }
         void set_position(i32 voice, u32 byte) override {
             // 声部缓冲为解码后的 PCM；原版只传 0
-            if (Voice* v = impl->voice(voice)) ma_sound_seek_to_pcm_frame(&v->sound, byte / 4);
+            if (Voice* v = impl->voice(voice)) {
+                web_sfx::seek(&v->sound, byte / 4, kMixRate);
+                ma_sound_seek_to_pcm_frame(&v->sound, byte / 4);
+            }
         }
         void set_pan(i32 voice, i32 pan) override {
             if (Voice* v = impl->voice(voice)) {
+                web_sfx::pan(&v->sound, balance(pan));
                 ma_sound_set_pan_mode(&v->sound, ma_pan_mode_balance);
                 ma_sound_set_pan(&v->sound, balance(pan));
             }
         }
         void set_volume(i32 voice, i32 volume) override {
-            if (Voice* v = impl->voice(voice)) ma_sound_set_volume(&v->sound, amplitude(volume));
+            if (Voice* v = impl->voice(voice)) {
+                web_sfx::volume(&v->sound, amplitude(volume));
+                ma_sound_set_volume(&v->sound, amplitude(volume));
+            }
         }
         void play(i32 voice, u32 flags) override {
             if (Voice* v = impl->voice(voice)) {
                 ma_sound_set_looping(&v->sound, (flags & 1u) ? MA_TRUE : MA_FALSE);
-                ma_sound_start(&v->sound);
+                if (!web_sfx::play(&v->sound, (flags & 1u) != 0)) ma_sound_start(&v->sound);
             }
         }
     };
@@ -338,6 +356,17 @@ bool AudioDevice::initialize(Archive& archive, bool device) {
             return false;
         }
         voice->attached = true;
+        if (device) {
+            // 整段解码后交给共享网页输出；上传失败（非浏览器/无 AudioContext）则留在 miniaudio 声部
+            ma_uint64 frames = 0, read = 0;
+            if (ma_decoder_get_length_in_pcm_frames(&voice->decoder, &frames) == MA_SUCCESS && frames != 0 && frames <= UINT32_MAX / 8) {
+                std::vector<float> pcm(size_t(frames) * kMixChannels);
+                if (ma_decoder_read_pcm_frames(&voice->decoder, pcm.data(), frames, &read) == MA_SUCCESS && read == frames) {
+                    web_sfx::upload(&voice->sound, pcm.data(), unsigned(frames), kMixChannels, kMixRate);
+                }
+                ma_decoder_seek_to_pcm_frame(&voice->decoder, 0);
+            }
+        }
         a.voices[size_t(v)] = std::move(voice);
     }
 #ifdef TH16_AUDIO_SDL
@@ -483,6 +512,7 @@ void AudioDevice::suspend(bool value) {
     Impl& a = *impl;
     if (a.suspended == value) return;
     a.suspended = value;
+    web_sfx::suspend(value);
 #ifdef TH16_AUDIO_SDL
     if (a.sdl_stream != nullptr) {
         if (value) SDL_PauseAudioStreamDevice(a.sdl_stream);
