@@ -4,6 +4,7 @@
 //   敌方 ECL 操作码 ≥300：0x41dcb0（本阶段覆盖生成/运动/判定/标志等 st01 前段所需）
 #pragma once
 #include "Bullet.hpp"
+#include "Distortion.hpp"
 #include "Ecl.hpp"
 #include "Motion.hpp"
 #include "Types.hpp"
@@ -140,6 +141,13 @@ public:
     i32 drop_counts[15]{};      // +0x3f94..+0x3fcc（掉落表：道具种类 1..15 的数量）
     Vec2 drop_radius{32.0f, 32.0f};  // +0x3fd8 / +0x51e4（op 508；0x41b580 初值 32）
     std::string death_sub;      // +0x44d8（op 556：死亡时切到该子程序立刻跑一帧）
+    // ECL 629（0x41dcb0 case 0x8c）Boss 畸变光环：17 × 17 网格把 RT1 场地画面扭曲后贴进 RT2（Distortion.hpp）
+    std::unique_ptr<DistortionGrid> distortion;   // +0x44bc
+    float distortion_radius_target = 0; // +0x44c4（arg0；<= 0 时不建网格）
+    float distortion_radius = 0;        // +0x44c8（每帧 += 2 × 速度，直到目标半径；初值 16）
+    u32 distortion_color = 0;           // +0x44cc（arg1：圈内顶点色，随强度向白过渡）
+    float distortion_angle_a = 0;       // +0x44d0（逐顶点 += π/32 的横向抖动相位；整帧 += π/16 × 速度）
+    float distortion_angle_b = 0;       // +0x44d4（逐顶点 −= π/64 的纵向抖动相位；整帧 += π/32 × 速度）
     i32 hit_flash_timer = 0;    // +0x3ff0（受击闪烁/音效节流 4 帧）
     i32 hit_sfx = -1;           // +0x3ff8
     i32 death_sfx = -1;         // +0x3fe4 / +0x51f0（(id & 1) + 3）
@@ -191,6 +199,8 @@ public:
     void die(float game_speed);
     // 0x41c330：受击 / 阶段中断 / 死亡 / 体碰撞 / 闪烁；返回 0 继续，非 0 → 敌机移出列表
     int resolve_hits(float game_speed);
+    // 0x41cbd0：每帧重建畸变网格并按到 Boss 的距离位移 / 着色顶点（在 resolve_hits 之后、sync_vm_offsets 之前）
+    void update_distortion(float game_speed);
     // 0x424f00：按 interrupts 的血量阈值切阶段；返回要切入的子程序（空 = 无）并刷新 life_display / phase_life
     const std::string* life_interrupt();
     // 0x425010：按 interrupts 的时间阈值切阶段（并结算 Spellcard 超时）；返回要切入的子程序
@@ -259,6 +269,7 @@ public:
     Gui* gui = nullptr;                  // DAT_004a6dcc：ECL 518 / 519 / 554
     class ScorePopupManager* score_popups = nullptr;   // DAT_004a6f10：ECL 638 得分飘字（0x44a460）
     StageManager* stage = nullptr;       // DAT_004a6da0：ECL 630 背景脚本标签跳转（换关后由 GameSession 重新绑定）
+    const bool* render_targets_ready = nullptr;   // DAT_004c127c：ECL 629 畸变网格只在渲染目标可用时建 VM
     bool dialogue_active() const noexcept;
     // Enemy 触发的 0x45e1f0 音效（受击 0x22/0x23、死亡 3/4、ECL 516）。原版与 ECL 601 等经 BulletManager 登记的音效
     // 同在敌机链内按调用序写入声音队列；GameSession 把 sfx_sink 指向帧级汇总表以保持这一顺序

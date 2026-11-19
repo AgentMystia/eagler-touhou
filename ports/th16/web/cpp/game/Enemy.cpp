@@ -3,6 +3,7 @@
 
 #include <algorithm>
 
+#include "AnmGeometry.hpp"
 #include "AnmManager.hpp"
 #include "Effect.hpp"
 #include "Gui.hpp"
@@ -497,6 +498,7 @@ bool Enemy::update(float game_speed) {
 
     if (frame_hook != FrameHook::None && run_frame_hook(frame_hook) != 0) { alive = false; return false; }
     if (resolve_hits(game_speed) != 0) { alive = false; return false; }
+    update_distortion(game_speed);
     sync_vm_offsets();
 
     if (invuln.current > 0) invuln.untick(game_speed);
@@ -601,6 +603,93 @@ void Enemy::sync_sprite_direction() {
         sprite_size.x = std::fabs(vm->sprite_size.y * vm->scale.y);
         sprite_size.y = std::fabs(vm->sprite_size.x * vm->scale.x);
     }
+}
+
+// 0x41cbd0：Boss 畸变光环每帧更新
+//   1. 半径未到目标则 += 2 × 速度；
+//   2. 以 Boss 为中心、半径 + 20 为半边长重铺 17 × 17 网格（0x418df0）；
+//   3. 逐节点（列主序，相位 angle_a / angle_b 跨整张网格连续推进）：圈内（r² − d² >= 0）强度 s = (r² − d²) / r²，
+//      顶点色 = 圈色各分量向 255 过渡 s、alpha 置 255，顶点沿径向外推 32·s 再叠加 sin 相位 × 8·s 的抖动；
+//      圈外只把 alpha 清 0。随后节点坐标截到场地 (0, 16) 起 384 × 448 的开区间内（两侧各留 1 像素），
+//      UV 以截断后的节点坐标 / 渲染目标尺寸重算（负值截 0）；
+//   4. 相位整体推进 π/16 × 速度 / π/32 × 速度。
+void Enemy::update_distortion(float game_speed) {
+    if (!distortion || manager == nullptr || manager->animations == nullptr) return;
+    DistortionGrid& grid = *distortion;
+    const float radius = distortion_radius;
+    float angle_a = distortion_angle_a;
+    float angle_b = distortion_angle_b;
+    if (radius < distortion_radius_target) distortion_radius = game_speed * 2.0f + radius;
+
+    static const AnmGeometry kDefaultGeometry;
+    const AnmGeometry& geometry = manager->animations->geometry != nullptr ? *manager->animations->geometry : kDefaultGeometry;
+    const u32 target_w = manager->animations->render_target_width;
+    const u32 target_h = manager->animations->render_target_height;
+    const float size = radius + radius + 40.0f;
+    grid.fill(pos.x - radius - 20.0f, pos.y - radius - 20.0f, size, size, geometry, target_w, target_h);
+    if (grid.columns() <= 0) return;
+
+    const float center_x = float(target_w) * 0.5f + pos.x;
+    const float center_y = geometry.field_offset_y + pos.y;
+    const float center_z = pos.z;
+    const float radius_sq = radius * radius;
+    ScreenColorUvVertex* vertex = grid.vertices().data();
+    Vec3* node = grid.nodes().data();
+    const i32 total = grid.columns() * grid.rows();
+    for (i32 i = 0; i < total; ++i, ++vertex, ++node) {
+        float dx = node->x - center_x;
+        float dz = node->z - center_z;
+        float dy = node->y - center_y;
+        const float inside = radius_sq - (dy * dy + dx * dx);
+        if (inside < 0.0f) {
+            vertex->color &= 0x00ffffffu;
+        } else {
+            const float strength = inside / radius_sq;
+            vertex->color = distortion_color | 0xff000000u;
+            u32 color = vertex->color;
+            for (int shift = 16; shift >= 0; shift -= 8) {
+                const u32 channel = (color >> shift) & 0xffu;
+                const u32 lifted = u32(i32(255.0f - float(i32(0xff - channel)) * strength)) & 0xffu;
+                color = (color & ~(0xffu << shift)) | (lifted << shift);
+            }
+            vertex->color = color;
+            const float push = strength * 32.0f;
+            // D3DXVec3Normalize：float32 长度，零向量保持为零
+            const float length = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (length != 0.0f) { dx /= length; dy /= length; dz /= length; }
+            float offset_x = push * dx;
+            const float offset_y0 = push * dy;
+            offset_x = float(std::sin(double(angle_a))) * strength * 8.0f + offset_x;
+            const float offset_y = float(std::sin(double(angle_b))) * strength * 8.0f + offset_y0;
+            vertex->x = vertex->x + offset_x;
+            vertex->z = 0.0f;
+            vertex->y = vertex->y + offset_y;
+            node->z = 0.0f;
+        }
+        angle_a = wrap_angle(angle_a + 0.09817477f);
+        angle_b = wrap_angle(angle_b - 0.049087387f);
+        // 场地开区间截断（DAT_004d9d38 = 0 起 384 宽、DAT_004d9d54 起 448 高）
+        const float field_x = 0.0f;
+        if (field_x < node->x) {
+            if (field_x + 384.0f <= node->x) { vertex->x = field_x + 384.0f - 1.0f; node->x = field_x + 384.0f - 1.0f; }
+        } else {
+            vertex->x = field_x + 1.0f;
+            node->x = field_x + 1.0f;
+        }
+        const float field_y = geometry.field_offset_y;
+        if (field_y < node->y) {
+            if (field_y + 448.0f <= node->y) { vertex->y = field_y + 448.0f - 1.0f; node->y = field_y + 448.0f - 1.0f; }
+        } else {
+            vertex->y = field_y + 1.0f;
+            node->y = field_y + 1.0f;
+        }
+        vertex->u = node->x / float(target_w);
+        vertex->v = node->y / float(target_h);
+        if (vertex->u < 0.0f) vertex->u = 0.0f;
+        if (vertex->v < 0.0f) vertex->v = 0.0f;
+    }
+    distortion_angle_a = wrap_angle(game_speed * 0.19634955f + distortion_angle_a);
+    distortion_angle_b = wrap_angle(game_speed * 0.09817477f + distortion_angle_b);
 }
 
 // 0x41d2e0 后段
@@ -976,8 +1065,9 @@ void Enemy::die(float game_speed) {
     }
 }
 
-// 0x41ba10：移出列表时（flags2 & 4 未置）杀掉全部绑定 VM 及其子树
+// 0x41ba10：移出列表时（flags2 & 4 未置）杀掉全部绑定 VM 及其子树；畸变网格无条件析构
 void Enemy::destroy() {
+    distortion.reset();
     if (manager == nullptr || manager->animations == nullptr) return;
     for (u32& vid : vm_ids) {
         if (AnmVm* vm = manager->animations->find(vid)) AnmManager::kill_tree(*vm);
@@ -2197,9 +2287,24 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             }
             return 0;
         }
-        case 629: case 631: case 633: case 634:
-            // 629 Boss 畸变光环（0x418c70，依赖场地渲染目标 DAT_004c127c，随渲染/RT 接入）、631 EnemyManager 标志、
-            // 633/634 伤害 / 判定回调表（全部 ECL 未使用）
+        case 629: {  // case 0x8c：Boss 畸变光环（半径 > 0 才建 17 × 17 网格；颜色为圈内顶点色）
+            distortion.reset();
+            distortion_radius_target = farg(0);
+            distortion_radius = 16.0f;
+            distortion_color = u32(iarg(1));
+            distortion_angle_a = wrap_angle(0.0f);
+            distortion_angle_b = wrap_angle(0.0f);
+            if (0.0f < distortion_radius_target && manager != nullptr && manager->animations != nullptr) {
+                AnmFile* text = manager->animations->file(0);   // DAT_004c17f8 text.anm
+                if (text != nullptr) {
+                    const bool ready = manager->render_targets_ready != nullptr && *manager->render_targets_ready;
+                    distortion = std::make_unique<DistortionGrid>(*manager->animations, *text, ready, 0x11);
+                }
+            }
+            return 0;
+        }
+        case 631: case 633: case 634:
+            // 631 EnemyManager 标志、633/634 伤害 / 判定回调表（全部 ECL 未使用）
             return 0;
         // —— 激光 700..714（0x41dcb0 case 0x99..0xa7）：复用发射器槽的弹种 / 颜色 / 角度 / 速度 / Ex，
         //    长度与时序参数放在发射器 +0x340 参数区与 pos 字段 ——

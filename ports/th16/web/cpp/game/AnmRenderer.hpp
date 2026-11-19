@@ -127,6 +127,8 @@ public:
     void draw_layer(int layer);
     // 未实现的 render mode 计数（按模式号），对拍时据此发现缺口
     u32 unimplemented_modes[32] = {};
+    // 未实现的绘制钩子（DAT_00491b2c 表下标 1..6）计数
+    u32 unimplemented_draw_callbacks[8] = {};
 
 private:
     AnmManager& manager_;
