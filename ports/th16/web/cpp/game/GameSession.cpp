@@ -43,7 +43,7 @@ GameSession::GameSession() {
     compositor.register_draw_chains(chains, renderer);
     register_layer_draw_chains();
     // 0x43b520：FrameTimer 绘制链 0x4b（0x426490 → 0x4263e0）；标题 / 结局不画。
-    // 测速 0x4262f0（QPC）未接前保持禁用，避免无墙钟的 harness 绘制黄金被 "%2.1ffps" 污染。
+    // 建为禁用：宿主给出墙钟（wall_clock_seconds ≥ 0）后帧泵 0x4262f0 测速时才启用，无墙钟的 harness 绘制黄金不含 "%2.1ffps"。
     global_fps_draw_chain_ = chains.create([this]() -> ChainResult {
         if (supervisor.current == SceneId::Title || supervisor.current == SceneId::Ending)
             return ChainResult::Continue;
