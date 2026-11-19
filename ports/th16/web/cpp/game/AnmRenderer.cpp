@@ -1,6 +1,8 @@
 // th16 ANM 绘制实现——地址见 AnmRenderer.hpp。
 #include "AnmRenderer.hpp"
 
+#include "Distortion.hpp"
+
 #include <cmath>
 #include <cstring>
 
@@ -236,6 +238,12 @@ const AnmRuntimeSprite* AnmRenderer::sprite_of(const AnmVm& vm) const {
 
 int AnmRenderer::draw_vm(AnmVm& vm) {
     if (device == nullptr) return -1;
+    // 绘制钩子表 DAT_00491b2c（在可见性检查之前调用，返回值不用）：
+    //   4 = 0x418c60 畸变网格把顶点抄进条带；1..3 / 5 / 6（0x4073a0 / 0x405ec0 / 0x406860 / 0x42b5f0 / 0x46a330）待接
+    if (vm.draw_callback != 0) {
+        if (vm.draw_callback == 4) distortion_draw_callback(vm);
+        else if (vm.draw_callback > 0 && vm.draw_callback < 8) ++unimplemented_draw_callbacks[vm.draw_callback];
+    }
     if ((vm.flags_lo & AnmVm::kVisible) == 0 || (vm.flags_lo & AnmVm::kFlag2) == 0) return -1;
     if ((vm.flags_hi & AnmVm::kHiDeletingMask) != 0) return -1;
     set_depth_write(false);   // 0x43c570

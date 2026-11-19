@@ -216,7 +216,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"enemy-manager-create", 0x41B340, "game/Enemy.cpp EnemyManager::create + GameSession.cpp enter_game（0x41ae70 装 ECL + 登记更新链 0x1a）"},
     {"enemy-manager-update", 0x41B3D0, "game/Enemy.cpp EnemyManager::update（0x41b4f0 入口：遍历敌人链表、清 0x40000 重入位、同步 enemy_count）"},
     {"enemy-spawn", 0x41AA70, "game/Enemy.cpp EnemyManager::spawn_enemy / Enemy::init（分配 id、flags、invuln=2、life_timer=0x3c，承袭生成者 I0..I3/F0..F7，立即执行首帧 0x41d1e0，再定死亡音效与默认爆散脚本 Enemy::apply_default_death_effect）"},
-    {"enemy-update", 0x41D2E0, "game/Enemy.cpp Enemy::update（0x41d1e0：0x40000 隔帧门控 → 运动 0x41bb50 → ECL 0x473bc0 → 碰撞 0x41c330 → invuln/season_drop 倒数）"},
+    {"enemy-update", 0x41D2E0, "game/Enemy.cpp Enemy::update（0x41d1e0：0x40000 隔帧门控 → 运动 0x41bb50 → ECL 0x473bc0 → 碰撞 0x41c330 → 畸变 0x41cbd0 → invuln/season_drop 倒数）"},
     {"enemy-motion", 0x41BB50, "game/Enemy.cpp Enemy::update（两组角度 / 速度 / 半径 Vec2 / 位置插值 → motion1/2 update_velocity + integrate → 0x41c1f0 合成与 0x20000 边界钳制 → 精灵半宽高场地进出判定）"},
     {"enemy-motion-combine", 0x41C1F0, "game/Enemy.cpp Enemy::apply_motion_position（pos += (m1+m2-pos) floor 1/100 + 0x20000 边界框钳制）"},
     {"enemy-pos-interp-init", 0x425870, "game/Enemy.hpp EnemyPosInterp（0x68 字节：current / initial / goal / bezier ×2 / Timer / end / axis_modes[3] / mode / flags）"},
@@ -553,6 +553,13 @@ constexpr AddressAnchor kAnchors[] = {
     {"anm-tick-ui", 0x46E490, "game/AnmManager.cpp AnmManager::tick_ui（更新链 9 0x46e740：UI 表 VM 推进；层 0x18..0x1f → +0xc、其余归 0x26，只重建层 0x24..0x2a；0x46e340 世界表为链 0x21 0x46e710，装载中跳过）"},
     {"help-screen", 0x42EAB0, "game/GameMenu.cpp HelpScreen::update（0x42e6a0 构造 / 0x42e760 装载线程 help.anm 槽 0x13 / 0x42efb0 目录项 VM；步 0 建 9 项、1 导航 + 确定 / 取消、2..3 装 help_%.2d.png、4 翻页 7 / 8 中断、5 换页；关闭 0x1e 帧后 +0x124）"},
     {"player-laser-hit", 0x446870, "game/Player.cpp Player::hit_laser（敌机转到激光坐标系：|perp| ≤ 半宽+r、along ≥ -(半宽+r)、端部圆；截到表面 sqrt(1-(perp/r)²)·r 再 +8；每隔一帧 pl01 脚本 8 / pl01sub 脚本 2 火花沿激光飘 64；每 4 帧结算伤害）"},
+    {"distortion-grid-create", 0x418C70, "game/Distortion.cpp DistortionGrid::DistortionGrid（17 列 × rows 网格；母 VM text.anm 0x3b 层 0x22 mode 0 + draw_callback 4；16 条 0x43d8b0 条带 VM；DAT_004c127c 为 0 时空壳）"},
+    {"distortion-grid-destroy", 0x409550, "game/Distortion.cpp DistortionGrid::~DistortionGrid（0x409d90 析构入口：标删母 VM 与各条带子树、释放缓冲）"},
+    {"distortion-strip-vm", 0x43D8B0, "game/Distortion.cpp DistortionGrid::make_strip_vm（text.anm 0x3b VM：宿主顶点缓冲 rows×2、mode 0xc、$I0 = rows、z = 0 / rhw = 1 / 白色；rows < 3 退回 mode 0）"},
+    {"distortion-grid-fill", 0x418DF0, "game/Distortion.cpp DistortionGrid::fill（场地偏移 + (x, y) 起铺 width × height 均匀网格；UV = 节点 / 渲染目标尺寸，负值截 0；末尾抄进条带）"},
+    {"distortion-grid-copy", 0x418F40, "game/Distortion.cpp DistortionGrid::copy_to_strips（条带 s 第 r 对顶点 = 网格 (s, r)、(s+1, r)）"},
+    {"distortion-draw-callback", 0x418C60, "game/Distortion.cpp distortion_draw_callback（绘制钩子表 DAT_00491b2c[4]：母 VM 绘制前抄顶点；AnmRenderer::draw_vm 分发）"},
+    {"enemy-distortion-update", 0x41CBD0, "game/Enemy.cpp Enemy::update_distortion（半径 += 2×速度至目标；重铺半边长 r+20 的网格；圈内强度 s=(r²−d²)/r² 着色向白、径向外推 32s + sin 相位 × 8s；节点截到场地开区间后重算 UV；相位 π/16 / π/32 × 速度推进）"},
 };
 
 }  // namespace th16::rebuild

@@ -409,6 +409,7 @@ bool GameSession::create_enemies() {
     game.enemies.effects = &effects;
     game.enemies.spellcard = &spellcard;
     game.enemies.stage = game.stage.get();
+    game.enemies.render_targets_ready = &compositor.render_targets_ready;
     game.player.spellcard = &spellcard;
     if (game.enemies_live) {
         // 同一关重开（DAT_004a5bec bit0 / bit3）：0x42cb60 不重建 EnemyManager，只走 0x42ca00 复位管理器计时；
