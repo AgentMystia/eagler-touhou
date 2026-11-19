@@ -977,7 +977,11 @@ void GameSession::create_screen_shake(const EnemyManager::ShakeRequest& request)
     chains.enable(entry);
 }
 
-// 0x45d150(kind ∈ {0,2,3,5}, duration, color) + 0x45d1a0：更新链 0x13（0x45c900）、绘制链 0x54（0x45c990）
+// 0x45d150 / 0x45d1a0 及其内联副本（0x40c0d0 / 0x409f90 / 0x4199f0）：更新链 0x13 + 绘制链
+//   kind 2 / 3（换关淡出 / 新关淡入）：绘制 0x45c990，优先级 0xa —— 紧跟关卡背景链 3 之后、层 3 绘制链之前，
+//     画进场地渲染目标，不改视口
+//   kind 0 / 5（结局 / 过关结束）：绘制 0x45c860，优先级 0x54 —— 先把视口拉成整幅后备缓冲再画
+// 0x45d130：更新链自删时连同绘制链一起摘除
 void GameSession::create_screen_fade(i32 kind, i32 duration, u32 color) {
     auto fade = std::make_shared<ScreenFade>();
     fade->kind = kind;
@@ -988,6 +992,18 @@ void GameSession::create_screen_fade(i32 kind, i32 duration, u32 color) {
     if (kind == 3) fade->alpha = 0xff;
     screen_fades.push_back(fade);
     const bool fade_in = kind == 0 || kind == 3;   // 0x45c630；其余 kind 走 0x45c900
+    const bool full_viewport = kind == 0 || kind == 5;
+    ChainEntry* draw = chains.create([this, fade, full_viewport]() -> ChainResult {
+        if (renderer.device == nullptr) return ChainResult::Continue;
+        const float width = float(animations.render_target_width), height = float(animations.render_target_height);
+        if (full_viewport) {
+            // 0x45c860：出批、SetViewport(0, 0, DAT_004d9d2c, DAT_004d9d30)
+            renderer.flush();
+            renderer.device->set_viewport(Viewport{0, 0, i32(animations.render_target_width), i32(animations.render_target_height)});
+        }
+        renderer.draw_screen_fill(width, height, (u32(fade->alpha) << 24) | fade->color);
+        return ChainResult::Continue;
+    }, full_viewport ? 0x54 : 0x0a, false);
     ChainEntry* entry = chains.create([this, fade, fade_in]() -> ChainResult {
         bool alive;
         if (fade_in) {
@@ -998,13 +1014,17 @@ void GameSession::create_screen_fade(i32 kind, i32 duration, u32 color) {
         }
         return alive ? ChainResult::Continue : ChainResult::Destroy;
     }, 0x13, true);
-    entry->on_destroy = [this, entry, fade]() {
+    entry->on_destroy = [this, entry, draw, fade]() {
         fade_chains_.erase(std::remove(fade_chains_.begin(), fade_chains_.end(), entry), fade_chains_.end());
+        fade_chains_.erase(std::remove(fade_chains_.begin(), fade_chains_.end(), draw), fade_chains_.end());
         screen_fades.erase(std::remove(screen_fades.begin(), screen_fades.end(), fade), screen_fades.end());
+        chains.remove(draw);
         chains.remove(entry);
     };
     fade_chains_.push_back(entry);
+    fade_chains_.push_back(draw);
     chains.enable(entry);
+    chains.enable(draw);
 }
 
 void GameSession::leave_game() {
