@@ -46,6 +46,17 @@ test('ending-script: first page reaches wait without confirm', needDat, () => {
   assert.ok(out.includes('event text'));
   assert.equal(out.includes('event end'), false, 'still waiting on op5');
   assert.match(out, /ending_live=1/);
+  assert.match(out, /paints=[1-9]/, 'op3 queues 0x46d990 paints');
+});
+
+test('ending-script: mash confirm through dialogue reaches staff', needDat, () => {
+  // 剧本时刻要走到 @152 才到 op12；noskip 关闭 >0x78 烟雾短路。
+  // injected_input 是 held：奇偶交替才能每两帧产生一次 pressed 边沿（首次结局 flags bit0 禁长按快进）。
+  const inject = Array.from({length: 320}, (_, i) => i % 2 === 0 ? `${i}:0x1` : null).filter(Boolean);
+  const out = run(['ending-smoke', dat, '320', 'noskip=1', 'diff=1', ...inject]);
+  assert.ok(out.includes('event staff'), 'op12 loads staffN.msg');
+  assert.match(out, /msg=staff2\.msg/);
+  assert.ok(out.includes('event anm-loaded'));
 });
 
 test('ending-smoke: ExtraEnding goes straight to title', needDat, () => {
