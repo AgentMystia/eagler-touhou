@@ -229,7 +229,9 @@ void GameMenu::capture_screenshot() {
 }
 
 // 0x42dbc0：把本段游戏时长累加进成绩文件（总计与本机体项）；计时源为 QueryPerformanceCounter，不影响游戏状态
-void GameMenu::accumulate_play_time() {}
+void GameMenu::accumulate_play_time() {
+    if (ctx.accumulate_play_time) ctx.accumulate_play_time();
+}
 
 // 0x43e5f0
 void GameMenu::update() {
@@ -357,7 +359,7 @@ void GameMenu::open_return_to_title() {
 
 // 0x43f6a0
 void GameMenu::resume_game() {
-    if (ctx.game->mode == 0) accumulate_play_time();
+    if (ctx.game->mode == 0 && ctx.restart_play_clock) ctx.restart_play_clock();
     ctx.game->flags &= ~GameManager::kMenuOpen;
     *ctx.game_speed = saved_game_speed;
     ctx.gui->show_dialogue();
@@ -367,7 +369,7 @@ void GameMenu::resume_game() {
 
 // 0x43f740 / 0x43f790
 void GameMenu::close_overlay() {
-    if (ctx.game->mode == 0) accumulate_play_time();
+    if (ctx.game->mode == 0 && ctx.restart_play_clock) ctx.restart_play_clock();
     ctx.animations->interrupt(screenshot_vm, 1);
     ctx.animations->interrupt(menu_vm, 1);
     *ctx.game_speed = saved_game_speed;

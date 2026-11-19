@@ -206,6 +206,25 @@ test('difficulty screen: cancel → back to main menu with difficulty = cursor, 
   assert.deepEqual(out.events.at(-1), ['screen', '1']);
 });
 
+test('play count 0x42cb60 and play clock 0x42dbc0: pause banks wall time since the stage load', needDat, () => {
+  const t = MAIN + 1;
+  const diff = t + AFTER_MAIN;
+  const shot = diff + AFTER_DIFF;
+  const season = shot + 2 + AFTER_SHOT;
+  const game = season + 2 + 0x28 + 2;
+  const base = [`${t}:${Z}`, `${diff}:${Z}`, `${shot}:${RIGHT}`, `${shot + 2}:${Z}`, `${season}:${RIGHT}`, `${season + 2}:${Z}`];
+  const scores = out => Object.fromEntries(out.split('\n').find(l => l.startsWith('scores ')).split(' ').slice(1)
+    .map(kv => kv.split('=')).map(([k, v]) => [k, Number(v)]));
+  const running = scores(run(['scene-boot', dat, String(game + 330), base.join(','), 'wall']));
+  assert.equal(running.play_count, 1, 'entering a non-replay game bumps the Cirno block play count');
+  assert.equal(running.play_time, 0, 'nothing is banked until 0x42dbc0 runs');
+  // 墙钟 = 帧号/60；0x42cb60 末在装载帧重置起点，Esc 暂停（0x43f0f0）时按 u64(Δ*100) 截断累加约 301 帧
+  const paused = scores(run(['scene-boot', dat, String(game + 330), [...base, `${game + 300}:${ESC}`].join(','), 'wall']));
+  assert.equal(paused.play_count, 1);
+  assert.equal(paused.play_time, 501);
+  assert.equal(paused.total_time, 501, 'ST total play time grows by the same ticks');
+});
+
 test('game start flow: Normal / Cirno / Autumn → scene 7 with stage 1, title destroyed', needDat, () => {
   const t = MAIN + 1;
   const diff = t + AFTER_MAIN;

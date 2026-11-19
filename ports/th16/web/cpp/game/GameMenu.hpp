@@ -108,6 +108,9 @@ struct GameMenuContext {
     i32 replay_timestamp = 0;              // 本局回放头 +0xc 的开局时刻（0x4483b0 写 time32；Replay 接入前为 0）
     // 0x42e760 装载线程：help.anm 进槽 0x13；返回 nullptr 表示仍在装载（操作说明保持等待）
     std::function<AnmFile*()> load_help_anm;
+    // 0x42dbc0 播放时长结算 / 0x45b130 取时刻重置起点 DAT_004a5c00（宿主墙钟；harness 无墙钟时为空操作）
+    std::function<void()> accumulate_play_time;
+    std::function<void()> restart_play_clock;
 };
 
 class GameMenu {
