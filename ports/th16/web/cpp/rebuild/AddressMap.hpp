@@ -431,7 +431,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"score-play-count", 0x42CB60, "game/GameSession.cpp enter_game → ScoreFile::record_play（新游戏且 +0xac == 0：+0x515c 游玩次数 +1）"},
     {"replay-file", 0x4403C5, "game/ReplayFile.cpp 路径格式 th16_%.2d.rpy / replay/%s（宿主拼路径）"},
     {"replay-load", 0x448C10, "game/ReplayFile.cpp ReplayFile::open（t16r 头、双重 0x402220、LZSS、段表）"},
-    {"replay-playback-step", 0x448130, "game/ReplayFile.cpp replay_playback_step + GameSession 记录链 mode==1"},
+    {"replay-playback-step", 0x448130, "game/ReplayFile.cpp replay_playback_step + GameSession 记录链 mode==1（只写 DAT_004a52c8 游戏输入；段尾 / 0xffff×3 终止帧时 held / pressed / released 清零且不走 0x418650，终止帧另调 0x43f240 GameMenu::open_return_to_title 并停止读段）"},
     {"replay-record-tick", 0x447FD0, "game/ReplayRecording.cpp + GameSession 记录链 mode!=1（自动低速 / 边沿 / FPS）"},
     {"replay-stage-begin", 0x448EB0, "game/ReplayRecording.cpp begin_stage（GameSession::on_stage_started）+ GameManager::on_replay_stage_start → GameSession::replay_stage_start_（回放 0x4476d0 读回；记录 set_stage_start 写 +0xc / +0x10 / +0x23c、换关时 set_stage_globals 重抄全局块）"},
     {"replay-save", 0x448400, "game/ReplayRecording.cpp write_slot / ReplayFile::encode（LZSS+双重加密+USER 尾）"},

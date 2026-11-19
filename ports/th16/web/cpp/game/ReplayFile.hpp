@@ -49,6 +49,7 @@ struct ReplayPlaybackCursor {
     i32 frame_index = 0;
     u8 fps_byte = 60;
     bool ended = false;
+    bool terminated = false;   // 读到 0xffff×3 终止帧（0x448130 → 0x43f240、+0x214 = -1）；调用方处理后清除
 };
 
 bool replay_playback_step(const ReplayFile& file, ReplayPlaybackCursor& cursor,
