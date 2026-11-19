@@ -169,6 +169,13 @@ void Spellcard::update(float game_speed) {
 int Spellcard::record_shot() const { return globals != nullptr ? globals->shot + globals->shot_aux : 0; }
 bool Spellcard::is_spell_practice() const { return globals != nullptr && globals->mode() == 2; }
 
+// 0x417bc0（由 0x45a9f0 族帧泵在更新链后调用）
+void Spellcard::tick_realtime() {
+    // Unicorn oracle / game-oracle 对 0x417bc0 做空桩（不置 kTiming、不改 +0xa4），
+    // HUD 用时因此恒为校验失败的 999.99。宿主接 QPC 前保持同口径，避免 spell_digest 漂移。
+    (void)replay_playback;
+}
+
 // 0x4182f0
 void Spellcard::end() {
     if ((flags & kActive) == 0) return;

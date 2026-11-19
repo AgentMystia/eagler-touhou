@@ -1344,6 +1344,8 @@ bool GameSession::logic_step() {
 
     // 启动幕：绘制链推进 boot_frames；标题线程等待条件（0x44abea / 0x44ac00）
     chains.run_update();
+    // 0x45a9f0 族：更新链后 0x417bc0 符卡实时计时 / 0x4262f0 FPS 测速
+    if (game_live) spellcard.tick_realtime();
     // 0x45a8a0：更新链之后 BeginScene → 绘制链 → EndScene
     if (run_draw_chains) draw_frame();
     // 标题线程（0x44abea / 0x44ac00）在帧间醒来：启动幕绘制链把 +0x638 数到 0xb4 后装 title*.anm 并登记更新链，
