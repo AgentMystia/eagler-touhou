@@ -568,6 +568,10 @@ void AnmRenderer::prepare_untextured_draw() {
 }
 
 void AnmRenderer::draw_screen_fill(float width, float height, u32 color) {
+    draw_screen_fill(0.0f, 0.0f, width, height, color);
+}
+
+void AnmRenderer::draw_screen_fill(float x0, float y0, float x1, float y1, u32 color) {
     if (device == nullptr) return;
     flush();
     PipelineState& p = device->pipeline();
@@ -578,8 +582,8 @@ void AnmRenderer::draw_screen_fill(float width, float height, u32 color) {
     p.destinationBlend = BlendFactor::InverseSourceAlpha;
     p.textureTransform = false;
     const ScreenColorVertex quad[4] = {
-        {0.0f, 0.0f, 0.0f, 1.0f, color}, {width, 0.0f, 0.0f, 1.0f, color},
-        {0.0f, height, 0.0f, 1.0f, color}, {width, height, 0.0f, 1.0f, color},
+        {x0, y0, 0.0f, 1.0f, color}, {x1, y0, 0.0f, 1.0f, color},
+        {x0, y1, 0.0f, 1.0f, color}, {x1, y1, 0.0f, 1.0f, color},
     };
     device->draw(Topology::Strip, VertexLayout::ScreenColor, 2, quad, sizeof(ScreenColorVertex));
     // +0x184fbb5..+0x184fbb7 / +0x184fbc0 / +0x184fbb0 / +0x184fbb4

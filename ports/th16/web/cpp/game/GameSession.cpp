@@ -989,24 +989,32 @@ void GameSession::create_screen_shake(const EnemyManager::ShakeRequest& request)
 //   kind 2 / 3（换关淡出 / 新关淡入）：绘制 0x45c990，优先级 0xa —— 紧跟关卡背景链 3 之后、层 3 绘制链之前，
 //     画进场地渲染目标，不改视口
 //   kind 0 / 5（结局 / 过关结束）：绘制 0x45c860，优先级 0x54 —— 先把视口拉成整幅后备缓冲再画
+//   kind 4：绘制 0x45ccc0（场地矩形），优先级取 param_6，移植侧默认 0xa
+//   kind 6 / 9：绘制 0x45cb50；kind 7：绘制 0x45cba0 固定 (128,16)-(512,464)；优先级 0x54
 // 0x45d130：更新链自删时连同绘制链一起摘除
 void GameSession::create_screen_fade(i32 kind, i32 duration, u32 color) {
     auto fade = std::make_shared<ScreenFade>();
     fade->kind = kind;
     fade->duration = duration;
-    fade->color = color;
     fade->timer.reset();
-    // 0x45d1a0：kind 3 / 9 从全不透明开始
-    if (kind == 3 || kind == 9) fade->alpha = 0xff;
+    if (kind == 4) {
+        // param_3(+0x1c) = 循环次数；param_4(+0x20) = 起始 alpha<<24 | RGB（API 的 color 为 RGB，起始 alpha 默认 0xff）
+        fade->color = 1;
+        fade->color_aux = (color & 0xffffffu) | 0xff000000u;
+        fade->alpha = 0xff;
+    } else {
+        fade->color = color;
+        // 0x45d1a0：kind 3 / 9 从全不透明开始
+        if (kind == 3 || kind == 9) fade->alpha = 0xff;
+    }
     screen_fades.push_back(fade);
-    // 更新：kind 0/3 → 0x45c630；kind 9 → 0x45cac0；其余 → 0x45c900
-    // 绘制：kind 2/3 → 0x45c990 优先级 0xa；kind 0/5 → 0x45c860 优先级 0x54（先整幅视口）；
-    //       kind 9 → 0x45cb50 优先级 0x54（不改视口）
     const bool fade_in = kind == 0 || kind == 3;
     const bool fade_hold = kind == 9;
+    const bool fade_from_aux = kind == 4;
+    const bool fade_half = kind == 6 || kind == 7;
     const bool reset_viewport = kind == 0 || kind == 5;
-    const i32 draw_priority = (kind == 0 || kind == 5 || kind == 9) ? 0x54 : 0x0a;
-    ChainEntry* draw = chains.create([this, fade, reset_viewport]() -> ChainResult {
+    const i32 draw_priority = (kind == 0 || kind == 5 || kind == 6 || kind == 7 || kind == 9) ? 0x54 : 0x0a;
+    ChainEntry* draw = chains.create([this, fade, reset_viewport, kind]() -> ChainResult {
         if (renderer.device == nullptr) return ChainResult::Continue;
         const float width = float(animations.render_target_width), height = float(animations.render_target_height);
         if (reset_viewport) {
@@ -1014,13 +1022,26 @@ void GameSession::create_screen_fade(i32 kind, i32 duration, u32 color) {
             renderer.flush();
             renderer.device->set_viewport(Viewport{0, 0, i32(animations.render_target_width), i32(animations.render_target_height)});
         }
-        renderer.draw_screen_fill(width, height, (u32(fade->alpha) << 24) | fade->color);
+        const u32 packed = (u32(fade->alpha) << 24) | ((kind == 4 ? fade->color_aux : fade->color) & 0xffffffu);
+        if (kind == 4) {
+            // 0x45ccc0：DAT_004d9d38/3c 起 DAT_004d9d44×DAT_004d9d40（场地 0,0 起 384×448）
+            renderer.draw_screen_fill(0.0f, 0.0f, 384.0f, 448.0f, packed);
+        } else if (kind == 7) {
+            // 0x45cba0：固定矩形 (128,16)-(512,464)
+            renderer.draw_screen_fill(128.0f, 16.0f, 512.0f, 464.0f, packed);
+        } else {
+            renderer.draw_screen_fill(width, height, packed);
+        }
         return ChainResult::Continue;
     }, draw_priority, false);
-    ChainEntry* entry = chains.create([this, fade, fade_in, fade_hold]() -> ChainResult {
+    ChainEntry* entry = chains.create([this, fade, fade_in, fade_hold, fade_from_aux, fade_half]() -> ChainResult {
         bool alive;
         if (fade_hold) {
             alive = screen_fade_hold_step(*fade, globals.post_load_frames, supervisor.game_speed);
+        } else if (fade_from_aux) {
+            alive = screen_fade_from_aux_step(*fade, globals.post_load_frames, supervisor.game_speed);
+        } else if (fade_half) {
+            alive = screen_fade_half_step(*fade, supervisor.game_speed);
         } else if (fade_in) {
             alive = screen_fade_in_step(*fade, globals.post_load_frames, supervisor.game_speed);
         } else {
