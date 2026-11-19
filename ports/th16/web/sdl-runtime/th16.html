@@ -65,6 +65,15 @@ try {
     const font = await fetch('assets/' + name).catch(() => null);
     if (font && font.ok) mod.FS.writeFile('/fonts/' + name, new Uint8Array(await font.arrayBuffer()));
   }
+  // 乐曲：原版 thbgm.dat（388 MiB 原始 PCM）不进浏览器；按 thbgm.fmt 曲名放 assets/music/<曲名>.ogg（帧数须与原版 PCM 相同，
+  // 不入库），有则并行取进 MEMFS /assets/music，缺则该曲静音（AudioDevice 退路路径 = th16.dat 同目录 /music）
+  mod.FS.mkdirTree('/assets/music');
+  const tracks = ['th16_01', 'th16_02', 'th16_03', 'th16_04', 'th16_05', 'th16_06', 'th16_07', 'th16_08', 'th16_09',
+    'th16_10', 'th16_11', 'th16_12', 'th16_13', 'th16_14', 'th16_15', 'th16_16', 'th16_17', 'th128_08'];
+  await Promise.all(tracks.map(async name => {
+    const ogg = await fetch('assets/music/' + name + '.ogg').catch(() => null);
+    if (ogg && ogg.ok) mod.FS.writeFile('/assets/music/' + name + '.ogg', new Uint8Array(await ogg.arrayBuffer()));
+  }));
   // scoreth16.dat / replay/*.rpy：/save 挂 IDBFS，启动前从 IndexedDB 灌入，C++ 每次写盘后回写（串行）
   mod.FS.mkdirTree('/save');
   mod.FS.mount(mod.IDBFS, {}, '/save');
