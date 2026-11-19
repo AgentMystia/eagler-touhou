@@ -1,0 +1,38 @@
+// 标题演示回放整段对拍：0x43ce10 case 0xd → 0x42d700(1) → 0x447760(1) 段头全局块读回 / 0x448eb0 自机坐标 →
+// 0x448130 逐帧取输入，直到 0x42d7b0 演示计时 0xf3c 请求标题；全部管理器摘要与 unicorn 原版一致
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join, resolve } from 'node:path';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const monorepo = resolve(root, '../..');
+const harness = process.env.TH16_HARNESS || join(root, 'tests/build/harness');
+const dat = process.env.TH16_DAT ?? resolve(monorepo, 'games/th16/original/th16.dat');
+const demosDir = process.env.TH16_REPLAY_DIR ?? resolve(monorepo, 'artifacts/th16/dat');
+const golden = JSON.parse(readFileSync(join(root, 'tests/golden/demo-replay.json'), 'utf8'));
+const need = { skip: !(existsSync(dat) && existsSync(join(demosDir, 'demo1.rpy'))) && 'th16.dat / demo*.rpy not present' };
+
+for (const [name, g] of Object.entries(golden.demos)) {
+  test(`demo-replay: ${name} matches the original through the 0xf3c title request`, need, () => {
+    const r = spawnSync(harness, ['game-digest', dat, String(g.stage), String(g.shot), String(g.season), String(g.frames), '0:0'],
+      { encoding: 'utf8', env: { ...process.env, TH16_DEMO: join(demosDir, `${name}.rpy`) } });
+    assert.equal(r.status, 0, r.stderr || r.stdout);
+    const got = Object.fromEntries(r.stdout.trim().split('\n').at(-1).split(' ').map((kv) => kv.split('=')));
+    assert.equal(Number(got.scene_exit), g.scene_exit, 'scene request');
+    assert.equal(Number(got.exit_frame), g.exit_frame, 'exit frame');
+    for (const key of ['digest', 'enemies', 'enemy_vms', 'bullets', 'items', 'spell', 'lasers', 'bombs', 'menu']) {
+      assert.equal(got[key], g[key], `${name} ${key}`);
+    }
+  });
+}
+
+test('replay-globals: stage header +0x14 snapshot decodes the 0x4a5790 block', need, () => {
+  const r = spawnSync(harness, ['replay-globals', join(demosDir, 'demo1.rpy')], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr || r.stdout);
+  assert.equal(r.stdout.trim(),
+    '0 stage=3 shot=0+0 season=1 diff=2 score=0 lives=2/0 bombs=3/0 power=400/400/100 gauge=1140/1140 pv=1000000 graze=0 ' +
+    'replay_slot=-1 pos=0,51200 focus=0 new_game=1');
+});

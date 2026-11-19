@@ -113,6 +113,7 @@ void EndingScene::begin(i32 shot, i32 shot_aux, i32 continues, ScoreFile* scores
     create_fade = std::move(fade_cb);
     animations = anm;
     text_paints = paints;
+    this->scores = scores;
     live = true;
     difficulty = difficulty_in;
     const i32 combo = shot + shot_aux;
@@ -311,6 +312,8 @@ EndingScene::ScriptResult EndingScene::step_script(const InputState& input) {
         case 10:
             last_bgm.assign(reinterpret_cast<const char*>(script_pc + 4));
             events.push_back("bgm");
+            // 0x43c3f0：曲名为 bgm/th16_14 记 0xf 号，否则 0x10 号已听过
+            if (scores != nullptr) scores->mark_bgm_heard(last_bgm == "bgm/th16_14" ? 0xf : 0x10);
             advance_pc();
             continue;
 

@@ -2,6 +2,7 @@
 
 #include "AnmManager.hpp"
 #include "GameGlobals.hpp"
+#include "ScoreFile.hpp"
 
 namespace th16 {
 
@@ -27,14 +28,22 @@ bool GameManager::first_frame(AnmManager& manager, GameGlobals& globals) {
         return true;
     }
     reset_for_stage(manager, globals);
+    // 0x42dc50 末：非回放（bit4-5 ≠ 0x20）且非演示时 0x43c3f0(0, 关卡曲)
+    if ((globals.flags & 0x30u) != 0x20u && (globals.flags & 0x40u) == 0) mark_stage_bgm_heard();
     return true;
+}
+
+void GameManager::mark_stage_bgm_heard() {
+    // 0x43c3f0：0x45ed00(2) 播放并置成绩文件 +0x19fa6 + 曲目（DAT_004a6f18 +0x28）
+    if (scores != nullptr && entry != nullptr) scores->mark_bgm_heard(entry->bgm_track);
 }
 
 void GameManager::deferred_init(AnmManager& manager, GameGlobals& globals) {
     // 0x42dee0
     if ((flags & kRetry) == 0) return;
     reset_for_stage(manager, globals);
-    // 0x45ed00 ×2/3 BGM 淡出 / 播放请求、成绩文件 +0x19fa6 关卡到达标记：Sound / ScoreFile 接入时补
+    // 0x45ed00(3 / 4) 停曲 → 0x45ed00(2) 重播关卡曲，并无条件置 +0x19fa6 + 关卡曲已听过
+    mark_stage_bgm_heard();
     timer.reset();
 }
 
@@ -48,8 +57,9 @@ void GameManager::reset_for_stage(AnmManager& manager, GameGlobals& globals) {
     if (lasers_live) lasers->reset();                  // 0x42cb00
     globals.game_frame = 0;
     globals.stage_frame = 0;
-    // 0x448eb0：Replay 链启用、0x449120 游戏输入状态清零；关卡段记录本体 Replay 接入时补
+    // 0x448eb0：Replay 链启用、0x449120 游戏输入状态清零，随后段头自机坐标 / 快照的读回或写入
     if (game_input != nullptr) *game_input = InputState{};
+    if (on_replay_stage_start) on_replay_stage_start();
     if (enemies_live) {
         if (!enemies.spawn_main()) {
             // 生成失败时置装载失败位；上层会在 failure 中看到 enemies.error
@@ -97,7 +107,17 @@ bool GameManager::update(AnmManager& manager, GameGlobals& globals, float game_s
         flags |= kFirstUpdate;
         return true;
     }
-    // DAT_004a5bec bit6（演示回放）分支：Replay 接入时补
+    if ((globals.flags & 0x40u) != 0) {
+        // 演示回放：宿主键 0x80103 或结束位 0x70 → 回标题；第 0xf00 帧起 60 帧淡出，0xf3c 帧回标题
+        const i32 title_scene = config_flags != nullptr && (*config_flags & 0x2000u) != 0 ? 2 : 4;
+        if ((system_input != nullptr && (system_input->held & 0x80103u) != 0) || (flags & kEndMask) != 0)
+            globals.scene_request = title_scene;
+        if (timer.current == 0xf00) {
+            if (on_screen_fade) on_screen_fade(5, 0x3c, 0);
+        } else if (timer.current == 0xf3c) {
+            globals.scene_request = title_scene;
+        }
+    }
     if (gui_live) gui.roll_score();  // 0x42bc10
     if ((flags & kEndMask) != 0) return false;
     if ((flags & kStageTransition) != 0) {

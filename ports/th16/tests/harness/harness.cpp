@@ -53,6 +53,7 @@
 #include "../../web/cpp/game/Replay.hpp"
 #include "../../web/cpp/game/ReplayFile.hpp"
 #include "../../web/cpp/game/ReplayRecording.hpp"
+#include "../../web/cpp/game/ReplayGlobals.hpp"
 #include "../../web/cpp/game/GameGlobals.hpp"
 #include "../../web/cpp/game/GameMenu.hpp"
 #include "../../web/cpp/game/FrameTimer.hpp"
@@ -329,6 +330,28 @@ int main(int argc, char** argv) {
             std::printf("%zu stage=%d seed=%u frames=%d input_nz=%d fps=%zu first=%d held=0x%x\n",
                         i, int(s.stage), unsigned(s.rng_seed), s.frames, nz, s.fps.size(), first,
                         unsigned(held0));
+        }
+        return 0;
+    }
+    if (command == "replay-globals" && argc >= 3) {
+        // 段头 +0x14 全局快照（0x447760 / 0x449030 读回口径）与 +0xc 自机定点坐标、+0x23c 低速标志、+0x290 新开局位
+        ReplayFile file;
+        if (!file.open_file(argv[2])) return fail(file.error.c_str());
+        for (size_t i = 0; i < file.stages.size(); ++i) {
+            const auto& s = file.stages[i];
+            if (s.header.size() != ReplayFile::kStageHeaderSize) return fail("stage header missing");
+            GameGlobals g;
+            load_replay_globals(g, s.header.data() + kReplayGlobalsOffset);
+            i32 px = 0, py = 0, focus = 0, flags = 0;
+            std::memcpy(&px, s.header.data() + 0xc, 4);
+            std::memcpy(&py, s.header.data() + 0x10, 4);
+            std::memcpy(&focus, s.header.data() + 0x23c, 4);
+            std::memcpy(&flags, s.header.data() + 0x290, 4);
+            std::printf("%zu stage=%d shot=%d+%d season=%d diff=%d score=%d lives=%d/%d bombs=%d/%d power=%d/%d/%d "
+                        "gauge=%d/%d pv=%d graze=%d replay_slot=%d pos=%d,%d focus=%d new_game=%d\n",
+                        i, g.stage, g.shot, g.shot_aux, g.season, g.difficulty, g.score, g.lives, g.life_fragments,
+                        g.bombs, g.bomb_fragments, g.power, g.power_max, g.power_per_level, g.season_gauge,
+                        g.season_gauge_max, g.point_value, g.graze, g.replay_slot, px, py, focus, flags & 1);
         }
         return 0;
     }
@@ -952,7 +975,16 @@ int main(int argc, char** argv) {
         }
         if (argc >= 11 && argv[10][0] != '\0') session.globals.difficulty = std::atoi(argv[10]);
         if (argc >= 12 && argv[11][0] != '\0') session.globals.replay_slot = std::atoi(argv[11]);
-        if (!session.start_game_direct()) return fail(session.failure.c_str());
+        // TH16_DEMO=<demoN.rpy>（game-oracle.py --demo 同口径）：0x43ce10 case 0xd 标题演示——bec bit6、0x42d700(1)，
+        // 机体 / 难度 / 季节 / 首段关卡取自回放（stage/shot/season 参数被覆盖）
+        i32 replay_mode = 0;
+        if (const char* demo = std::getenv("TH16_DEMO")) {
+            if (!session.load_replay_file(demo)) return fail(session.failure.c_str());
+            session.apply_replay_start(-1);
+            session.globals.flags |= 0x40u;
+            replay_mode = 1;
+        }
+        if (!session.start_game_direct(replay_mode)) return fail(session.failure.c_str());
         // 可选残机覆盖（game-oracle.py --lives 同口径：装载完成后写 DAT_004a57f4），用于无输入长程对拍不被 Game Over 截断
         if (argc >= 13 && argv[12][0] != '\0') session.globals.lives = std::atoi(argv[12]);
         // refill != 0：每帧开始前把残机补回 lives（game-oracle.py --refill-lives 同口径）；原版残机显示 0x42c280 只有 8 槽，
@@ -1636,6 +1668,7 @@ int main(int argc, char** argv) {
         bool dump_text = false;
         i32 title_origin = -1;
         int spell_return[3] = {-1, -1, -1};
+        bool trace_scenes = false;
         bool wall_clock = false;   // 宿主墙钟按 60Hz 推进（成绩文件计时 0x42dbc0 等）
         std::vector<std::pair<int, int>> dik_presses;
         struct Reach { int shot, difficulty, stage; };
@@ -1655,6 +1688,7 @@ int main(int argc, char** argv) {
             }
             if (std::strncmp(argv[a], "score=", 6) == 0) { session.score_path = argv[a] + 6; continue; }
             if (std::strcmp(argv[a], "wall") == 0) { wall_clock = true; continue; }
+            if (std::strcmp(argv[a], "scenes") == 0) { trace_scenes = true; continue; }
             if (std::strncmp(argv[a], "dik=", 4) == 0) {
                 // dik=帧:DIK码,…：该帧键盘快照里置 0x80（只持续一帧）
                 for (const char* p = argv[a] + 4; *p;) {
@@ -1740,7 +1774,10 @@ int main(int argc, char** argv) {
             for (const auto& [fr, code] : dik_presses)
                 if (fr == f && code >= 0 && code < 256) session.keyboard_state[code] = 0x80;
             device.begin_frame();
+            const SceneId before = session.supervisor.current;
             if (!session.logic_step()) return fail(session.failure.c_str());
+            if (trace_scenes && session.supervisor.current != before)
+                std::printf("scene-change frame=%d %d->%d\n", f, int(before), int(session.supervisor.current));
         }
         const std::vector<RecordingDevice::QuadSummary> quads = device.quads();
         const Supervisor& sup = session.supervisor;
@@ -1758,8 +1795,10 @@ int main(int argc, char** argv) {
                     g.title_origin, g.replay_slot);
         {
             const ScoreBlock& b = session.scores.blocks[g.shot + g.shot_aux];
-            std::printf("scores play_count=%u play_time=%llu total_time=%llu\n", b.play_count,
-                        (unsigned long long)b.play_time, (unsigned long long)session.scores.total_play_time());
+            u32 bgm = 0;
+            for (int i = 0; i < ScoreFile::kBgmFlags; ++i) bgm |= session.scores.stats.bgm_heard[i] != 0 ? 1u << i : 0u;
+            std::printf("scores play_count=%u play_time=%llu total_time=%llu bgm=%x\n", b.play_count,
+                        (unsigned long long)b.play_time, (unsigned long long)session.scores.total_play_time(), bgm);
         }
         for (const TitleScene::Event& e : session.title_events) std::printf("event %s %d\n", e.kind, e.value);
         for (const TitleScene::Event& e : title.events) std::printf("event %s %d\n", e.kind, e.value);

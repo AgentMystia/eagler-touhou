@@ -88,8 +88,9 @@ def f32(v):
 
 class GameOracle(Oracle):
     def __init__(self, exe, dat_dir, stage=1, shot=0, season=0, difficulty=1, seed=0, debug=False, replay_slot=-1,
-                 lives=None, mode=0, draw=False):
+                 lives=None, mode=0, draw=False, demo=None):
         dat_dir = pathlib.Path(dat_dir)
+        self.demo = demo   # (内部名 "demo/demoN.rpy", 文件字节)：0x43ce10 case 0xd 的标题演示回放
         self.mode = mode   # DAT_004a5bec bit4-5：0 普通 / 1 练习 / 2 符卡练习（0x449190）
         super().__init__(exe, 'text.anm', (dat_dir / 'text.anm').read_bytes())
         self.dat_dir = dat_dir
@@ -800,10 +801,18 @@ class GameOracle(Oracle):
         uc.mem_write(0x4A57C8, struct.pack('<i', self.replay_slot))  # DAT_004a57c8：-1 普通/练习（MainFront），≥0 符卡（MainBossSpell）
         uc.mem_write(DAT_STAGE_TABLE, struct.pack('<I', STAGE_TABLE_BASE + self.stage * STAGE_TABLE_STRIDE))
         uc.mem_write(DAT_GAME_FLAGS, struct.pack('<I', (self.mode & 3) << 4))
-        # 0x43ce10 case 7（标题 → 游戏）：Supervisor(0x4c10d0)+0x700 = 1（新开局：0x42cb60 据此创建 Player）
+        replay_mode = 0
+        if self.demo is not None:
+            # 0x44af80 空闲 0x708 帧：bec |= 0x40、演示名抄进 DAT_004a6de0；0x448c10 经 0x402440 从 th16.dat 读出
+            name, data = self.demo
+            self.files[name] = data
+            uc.mem_write(DAT_GAME_FLAGS, struct.pack('<I', ((self.mode & 3) << 4) | 0x40))
+            uc.mem_write(0x4A6DE0, name.encode('ascii') + b'\0')
+            replay_mode = 1
+        # 0x43ce10 case 7 / 0xd（标题 → 游戏）：Supervisor(0x4c10d0)+0x700 = 1（新开局：0x42cb60 据此创建 Player）
         uc.mem_write(DAT_UI_CAMERA + 0x700, struct.pack('<I', 1))
-        # GameManager 创建 + 装载（同步）
-        self.game_manager = self.call(GAME_CREATE, ecx=0)
+        # GameManager 创建 + 装载（同步）；case 0xd 为 0x42d700(1)
+        self.game_manager = self.call(GAME_CREATE, ecx=replay_mode)
         if self.u32(DAT_GAME_MANAGER) != self.game_manager:
             raise RuntimeError('DAT_004a6dd4 not set')
         rc = self.call(GAME_LOAD)
@@ -1623,13 +1632,15 @@ def main():
     ap.add_argument('--bombs', action='store_true', help='每帧附 Bomb / 季节解放对象快照（DAT_004a6da8 / DAT_004a6da4）')
     ap.add_argument('--mode', type=int, default=0, help='DAT_004a5bec 模式位：0 普通 / 1 练习（过关走 0x43f500 结算）/ 2 符卡练习')
     ap.add_argument('--replay-slot', type=int, default=-1, help='DAT_004a57c8（默认 -1 走 MainFront；0 走 MainBossSpell）')
+    ap.add_argument('--demo', default='', help='演示回放 demoN.rpy 路径：按 0x43ce10 case 0xd 进回放（bec bit6，0x42d700(1)）；机体 / 难度 / 全局取自回放')
     ap.add_argument('--trace-ecl', default='', help='把每条执行的 ECL 指令 (frame, enemy, sub, pc, time, ins_time, op) 写到此文件')
     ap.add_argument('--trace-rng', default='', help='把回放同步 RNG（DAT_004a6d88）的每次调用 (frame, 步数, 返回地址, 包装外层调用方) 写到此文件')
     ap.add_argument('--trace-game-rng', action='store_true', help='--trace-rng 改为追踪游戏逻辑 RNG（DAT_004a6d80）')
     ap.add_argument('--trace-vm', default='', help='把每次 ANM VM 生成 (frame, AnmFile 指针, 脚本号, 0x407b20 返回地址) 写到此文件')
     a = ap.parse_args()
     o = GameOracle(pathlib.Path(a.exe), a.dat_dir, a.stage, a.shot, a.season, a.difficulty, a.seed, a.debug, a.replay_slot,
-                   a.lives, a.mode, draw=a.draw)
+                   a.lives, a.mode, draw=a.draw,
+                   demo=(('demo/' + pathlib.Path(a.demo).name), pathlib.Path(a.demo).read_bytes()) if a.demo else None)
     o.enemy_snap = a.enemies
     o.bullet_snap = a.bullets
     o.item_snap = a.items

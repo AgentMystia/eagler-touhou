@@ -88,11 +88,16 @@ public:
     u32 loading_vm = 0;
     // DAT_004a52c8 族（GameSession::game_input）：0x448eb0 → 0x449120 在关卡起点整体清零（下一帧 pressed = held）
     InputState* game_input = nullptr;
+    const InputState* system_input = nullptr;   // DAT_004a50b0 组（宿主键盘，演示回放中按键回标题）
+    const u32* config_flags = nullptr;          // DAT_004c1800（bit13：回标题改为场景 2）
+    ScoreFile* scores = nullptr;                // DAT_004a6f0c：0x43c3f0 关卡曲音乐室已听过位
     // 0x45d150(kind, duration, color)：GameSession 登记 ScreenEffect 链 0x13
     std::function<void(i32, i32, u32)> on_screen_fade;
     // 0x40add0 开头：关卡的更新 / 绘制链在这里才置启用位（0x4097c0 建链时 `& ~2`）。
     // 换关过关奖励展示的 120 帧里 GameManager 整帧跳过，首帧尚未到来，背景 VM 与 std 脚本都不得推进
     std::function<void()> on_stage_started;
+    // 0x42dc50 / 0x42dee0 → 0x448eb0：自机复位之后的 ReplayManager 关卡起点（段头读回 / 写入）
+    std::function<void()> on_replay_stage_start;
     // 0x4099a0 之后：GameSession 卸载上一关背景 ANM 槽
     std::function<void(StageManager&)> on_previous_stage_destroyed;
     // 0x43f240：回放中通关倒计时结束 → GameMenu 的“回标题”流程
@@ -110,6 +115,7 @@ public:
 private:
     // 0x42dc50 / 0x42dee0 共用段：复位、帧计数清零、生成 "main"、启用链
     void reset_for_stage(AnmManager& manager, GameGlobals& globals);
+    void mark_stage_bgm_heard();   // 0x43c3f0(0, DAT_004a6f18 +0x28)
 };
 
 }  // namespace th16
