@@ -116,6 +116,14 @@ test('draw structure: stage 1 Normal STD ins 17 stage distortion (0x40c4a0 kind 
   assert.equal(checkGolden('draw-st1-distortion'), 201);
 });
 
+test('draw structure: stage 1 Easy boss dialogue (draw hook 5 = 0x42b5f0 text follow) + boss life ring markers (0x42865b), frames 6300–6560', needDat, () => {
+  assert.equal(checkGolden('draw-st1-dialogue'), 261);
+});
+
+test('draw structure: stage 1 Normal Cirno bomb burst particles (draw hook 3 = 0x406860 / 0x469890 line strips), frames 880–1300', needDat, () => {
+  assert.equal(checkGolden('draw-st1-cirno-bomb'), 421);
+});
+
 test('draw structure: stage 4 Normal st04 background (mode 8 texture-matrix cache 0x467b0d) + mode 4 projected leaf particles (0x466390, camera right = facing_norm × up), frames 2–300', needDat, () => {
   assert.equal(checkGolden('draw-st4-leaves'), 299);
 });
