@@ -51,12 +51,16 @@ const verification = Object.freeze({
   th12: {kind:'runtime', source:'portable/sdl/Application.cpp', scripts:['tests/sdl-clock.test.mjs']},
   th13: {kind:'native-clock', source:'web/cpp/sdl/BrowserRuntime.cpp'},
   th15: {kind:'native-clock', source:'web/cpp/sdl/BrowserRuntime.cpp'},
+  th16: {kind:'runtime', scripts:['portable/check-frame-cadence.mjs']},
   th17: {kind:'runtime', scripts:['portable/check-frame-cadence.mjs']},
   th19: {kind:'runtime', scripts:['portable/check-frame-cadence.mjs']},
   th20: {kind:'native-clock', source:'web/cpp/sdl/ApplicationHost.cpp'},
 });
 
-const sourceGames = [...new Set(sourceTargets().map(target => target.game))].sort();
+// managed-import Runtimes (PC-98 titles on an external precompiled core) own no
+// native presentation source; tools/ports/shared-checks.json excludes them from
+// this gate for the same reason.
+const sourceGames = [...new Set(sourceTargets().filter(target => target.recipe.kind !== "managed-import").map(target => target.game))].sort();
 assert.deepEqual(Object.keys(verification).sort(), sourceGames,
   "required presentation verification must cover every checked-in source Runtime owner");
 
