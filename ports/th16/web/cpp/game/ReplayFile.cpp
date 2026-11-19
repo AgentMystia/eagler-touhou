@@ -81,6 +81,7 @@ bool ReplayFile::open(const u8* bytes, u32 size) {
             return false;
         }
         ReplayStageSegment seg;
+        seg.header.assign(decoded.begin() + offset, decoded.begin() + offset + kStageHeaderSize);
         seg.stage = i16(read_u16(decoded.data() + offset));
         seg.rng_seed = read_u16(decoded.data() + offset + 2);
         seg.frames = read_i32(decoded.data() + offset + 4);
@@ -103,6 +104,109 @@ bool ReplayFile::open(const u8* bytes, u32 size) {
         offset += kStageHeaderSize + body;
     }
     return true;
+}
+
+namespace {
+
+void put_u16(u8* p, u16 v) { std::memcpy(p, &v, 2); }
+void put_i32(u8* p, i32 v) { std::memcpy(p, &v, 4); }
+void put_u32(u8* p, u32 v) { std::memcpy(p, &v, 4); }
+
+void append_bytes(std::vector<u8>& out, const void* p, size_t n) {
+    const auto* b = static_cast<const u8*>(p);
+    out.insert(out.end(), b, b + n);
+}
+
+std::vector<u8> synthesize_stage_header(const ReplayStageSegment& seg) {
+    std::vector<u8> header(ReplayFile::kStageHeaderSize, 0);
+    put_u16(header.data(), u16(seg.stage));
+    put_u16(header.data() + 2, seg.rng_seed);
+    put_i32(header.data() + 4, seg.frames);
+    const i32 extra = i32(seg.inputs.size() + seg.fps.size());
+    put_i32(header.data() + 8, extra);
+    return header;
+}
+
+}  // namespace
+
+bool ReplayFile::encode(std::vector<u8>& out) {
+    out.clear();
+    error.clear();
+    if (user.size() != kUserSize) {
+        error = "bad user size";
+        return false;
+    }
+    std::vector<u8> decoded;
+    decoded.reserve(kUserSize + stages.size() * (kStageHeaderSize + 64));
+    append_bytes(decoded, user.data(), kUserSize);
+    for (const ReplayStageSegment& seg : stages) {
+        std::vector<u8> header = seg.header.size() == kStageHeaderSize ? seg.header : synthesize_stage_header(seg);
+        if (header.size() != kStageHeaderSize) header.resize(kStageHeaderSize, 0);
+        put_u16(header.data(), u16(seg.stage));
+        put_u16(header.data() + 2, seg.rng_seed);
+        put_i32(header.data() + 4, seg.frames);
+        put_i32(header.data() + 8, i32(seg.inputs.size() + seg.fps.size()));
+        append_bytes(decoded, header.data(), kStageHeaderSize);
+        if (!seg.inputs.empty()) append_bytes(decoded, seg.inputs.data(), seg.inputs.size());
+        if (!seg.fps.empty()) append_bytes(decoded, seg.fps.data(), seg.fps.size());
+    }
+
+    Lzss lzss;
+    const std::vector<u8> packed_plain = lzss.encode(decoded.data(), u32(decoded.size()));
+    if (packed_plain.empty() && !decoded.empty()) {
+        error = "lzss encode empty";
+        return false;
+    }
+    const u32 packed = u32(packed_plain.size());
+    std::vector<u8> pass_b(packed), pass_a(packed);
+    const CryptParams crypt_b{0x7d, u8(':'), 0x100, packed};
+    const CryptParams crypt_a{0x5c, u8(i8(-0x1f)), 0x400, packed};
+    if (!resource_crypt(packed_plain.data(), pass_b.data(), packed, crypt_b, true) ||
+        !resource_crypt(pass_b.data(), pass_a.data(), packed, crypt_a, true)) {
+        error = "crypt encode failed";
+        return false;
+    }
+
+    out.assign(kHeaderSize, 0);
+    put_u32(out.data(), kMagic);
+    put_u16(out.data() + 4, kVersion);
+    put_u32(out.data() + 0xc, packed + kHeaderSize);
+    put_u32(out.data() + 0x1c, packed);
+    put_u32(out.data() + 0x20, u32(decoded.size()));
+    append_bytes(out, pass_a.data(), packed);
+    return true;
+}
+
+bool ReplayFile::write_file(const char* path) {
+    std::vector<u8> bytes;
+    if (!encode(bytes)) return false;
+    std::ofstream out(path, std::ios::binary);
+    if (!out) {
+        error = "write open failed";
+        return false;
+    }
+    out.write(reinterpret_cast<const char*>(bytes.data()), std::streamsize(bytes.size()));
+    if (!out) {
+        error = "write failed";
+        return false;
+    }
+    return true;
+}
+
+bool replay_slot_path(const char* directory, int slot, char* out, size_t out_n) {
+    if (directory == nullptr || out == nullptr || out_n == 0 || slot < 1 || slot > 100) return false;
+    std::snprintf(out, out_n, "%s/th16_%02d.rpy", directory, slot);
+    if (std::FILE* f = std::fopen(out, "rb")) { std::fclose(f); return true; }
+    std::snprintf(out, out_n, "%s/replay/th16_%02d.rpy", directory, slot);
+    if (std::FILE* f = std::fopen(out, "rb")) { std::fclose(f); return true; }
+    // 返回首选路径（即使尚不存在），供 save 写入
+    std::snprintf(out, out_n, "%s/th16_%02d.rpy", directory, slot);
+    return false;
+}
+
+bool replay_slot_exists(const char* directory, int slot) {
+    char path[512];
+    return replay_slot_path(directory, slot, path, sizeof(path));
 }
 
 bool replay_playback_step(const ReplayFile& file, ReplayPlaybackCursor& cursor,

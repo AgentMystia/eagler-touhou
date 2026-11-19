@@ -17,6 +17,7 @@ struct ReplayStageSegment {
     i16 stage = 0;
     u16 rng_seed = 0;
     i32 frames = 0;
+    std::vector<u8> header;  // 完整 0x294（读档保留；录制时可空，写出时合成）
     std::vector<u8> inputs;  // frames × 6
     std::vector<u8> fps;     // 每 30 帧一字节（含第 0 帧）
 };
@@ -36,6 +37,9 @@ struct ReplayFile {
 
     bool open(const u8* bytes, u32 size);
     bool open_file(const char* path);
+    // 0x448400 压缩段：user + 各段头/体 → LZSS → 双重加密 → t16r 头（不含尾部 USER 说明块）
+    bool encode(std::vector<u8>& out);
+    bool write_file(const char* path);
 };
 
 // 0x448130 单帧：从当前关卡段取 6 字节写入 game_input 口径的 held / 辅助字，并刷新 fps 字节。
@@ -49,5 +53,9 @@ struct ReplayPlaybackCursor {
 
 bool replay_playback_step(const ReplayFile& file, ReplayPlaybackCursor& cursor,
                           u32& held_low16, u32& aux0, u32& aux1, u8& fps_byte);
+
+// 目录型槽位路径：th16_XX.rpy（0x447ef0）；先查 directory/ 再 directory/replay/
+bool replay_slot_path(const char* directory, int slot, char* out, size_t out_n);
+bool replay_slot_exists(const char* directory, int slot);
 
 }  // namespace th16

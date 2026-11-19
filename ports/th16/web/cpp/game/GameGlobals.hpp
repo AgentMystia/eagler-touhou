@@ -53,6 +53,8 @@ struct GameGlobals {
     u8 bgm_volume = 100;
     u8 se_volume = 80;
     u8 option_flags = 0;  // DAT_004c12c8
+    // DAT_004c12cc：输入相关配置；bit9(0x200)=自动低速（射击且火力≥10 时记录链并上 Shift）
+    u32 input_config = 0;
     // 0x42cb60 新开局自成绩文件取本机体 × 难度的最高分（无成绩文件时 0x4497e0 默认 100000）与其续关数；
     // 0x42bc10 每帧以 Gui 显示分越过时更新并置 flags bit2；换关 0x42cb60 另取 max(最高分, 当前分)
     i32 hiscore = 100000;        // DAT_004a59b8

@@ -39,3 +39,20 @@ test('replay-file: demo1..4 decode via 0x448c10', need, () => {
     assert.deepEqual(info(`${key}.rpy`), golden.demos[key], key);
   }
 });
+
+test('replay-file: demo1 encode roundtrip preserves stages/inputs', need, () => {
+  const r = spawnSync(harness, ['replay-roundtrip', join(demosDir, 'demo1.rpy')], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr || r.stdout);
+  assert.match(r.stdout, /^ok stages=1 /);
+});
+
+test('replay-file: record → write_slot → open (0x448400)', () => {
+  const dir = '/tmp/th16-replay-write';
+  spawnSync('rm', ['-rf', dir], { encoding: 'utf8' });
+  spawnSync('mkdir', ['-p', dir], { encoding: 'utf8' });
+  const r = spawnSync(harness, ['replay-record-save', dir, '3'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr || r.stdout);
+  assert.match(r.stdout, /ok path=.*th16_03\.rpy/);
+  assert.match(r.stdout, /name=PORTTEST/);
+  assert.match(r.stdout, /frames=91/);  // 90 + terminator
+});

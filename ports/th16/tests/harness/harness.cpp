@@ -52,6 +52,9 @@
 #include "../../web/cpp/game/Laser.hpp"
 #include "../../web/cpp/game/Replay.hpp"
 #include "../../web/cpp/game/ReplayFile.hpp"
+#include "../../web/cpp/game/ReplayRecording.hpp"
+#include "../../web/cpp/game/GameGlobals.hpp"
+#include "../../web/cpp/game/GameMenu.hpp"
 #include "../../web/cpp/game/Rng.hpp"
 #include "../../web/cpp/game/ScreenEffect.hpp"
 #include "../../web/cpp/game/Stage.hpp"
@@ -208,6 +211,55 @@ int main(int argc, char** argv) {
                         i, int(s.stage), unsigned(s.rng_seed), s.frames, nz, s.fps.size(), first,
                         unsigned(held0));
         }
+        return 0;
+    }
+    if (command == "replay-roundtrip" && argc >= 3) {
+        // decode → encode → decode：段表 / 输入字节一致（LZSS 字节可不同）
+        ReplayFile a;
+        if (!a.open_file(argv[2])) return fail(a.error.c_str());
+        std::vector<u8> encoded;
+        if (!a.encode(encoded)) return fail(a.error.c_str());
+        ReplayFile b;
+        if (!b.open(encoded.data(), u32(encoded.size()))) return fail(b.error.c_str());
+        if (std::memcmp(a.name, b.name, 8) != 0) return fail("name mismatch");
+        if (a.stage_count != b.stage_count || a.stages.size() != b.stages.size()) return fail("stage count");
+        if (a.user != b.user) return fail("user mismatch");
+        for (size_t i = 0; i < a.stages.size(); ++i) {
+            if (a.stages[i].stage != b.stages[i].stage || a.stages[i].rng_seed != b.stages[i].rng_seed ||
+                a.stages[i].frames != b.stages[i].frames || a.stages[i].inputs != b.stages[i].inputs ||
+                a.stages[i].fps != b.stages[i].fps) {
+                return fail("stage body mismatch");
+            }
+        }
+        std::printf("ok stages=%d bytes=%zu\n", a.stage_count, encoded.size());
+        return 0;
+    }
+    if (command == "replay-record-save" && argc >= 4) {
+        // 合成短记录 → 写槽 → 再读回（校验 0x448400 路径与 DiskReplayStore）
+        const char* dir = argv[2];
+        const int slot = std::atoi(argv[3]);
+        ReplayRecording rec;
+        GameGlobals g;
+        g.shot = 1;
+        g.shot_aux = 0;
+        g.difficulty = 1;
+        g.season = 2;
+        g.stage = 1;
+        rec.begin_run(g, 0x12345678);
+        rec.begin_stage(1, 0xabcd);
+        for (int i = 0; i < 90; ++i) {
+            const u16 held = u16((i & 1) ? 0x11 : 0x10);
+            if (!rec.tick(held, u16(i == 0 ? held : 0), u16(i == 1 ? 0x1 : 0), 60)) return fail(rec.error.c_str());
+        }
+        if (!rec.write_slot(dir, slot, "PORTTEST", 123450, 1.25f)) return fail(rec.error.c_str());
+        ReplaySummary summary;
+        if (!ReplayRecording::slot_summary(dir, slot, summary)) return fail("slot_summary");
+        char path[512];
+        if (!replay_slot_path(dir, slot, path, sizeof(path))) return fail("missing slot file");
+        ReplayFile file;
+        if (!file.open_file(path)) return fail(file.error.c_str());
+        std::printf("ok path=%s name=%.8s stages=%d frames=%d score_line_shot=%d\n", path, summary.name,
+                    file.stage_count, file.stages.empty() ? 0 : file.stages[0].frames, summary.shot);
         return 0;
     }
     if (command == "replay-ff" && argc >= 5) {
