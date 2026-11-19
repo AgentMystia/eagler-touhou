@@ -60,6 +60,7 @@
 | 作品入口 | [ports/th15/README.md](../ports/th15/README.md) | 東方紺珠伝 TH15 |
 | 作品入口 | [ports/th17-mp/README.md](../ports/th17-mp/README.md) | TH17 MP · 东方鬼形兽联机版 |
 | 作品入口 | [ports/th17/README.md](../ports/th17/README.md) | TH17 · 东方鬼形兽 |
+| 作品入口 | [ports/th16/README.md](../ports/th16/README.md) | 东方天空璋 TH16 |
 | 作品入口 | [ports/th19/README.md](../ports/th19/README.md) | 东方兽王园 TH19 |
 | 作品入口 | [ports/th20/README.md](../ports/th20/README.md) | TH20 · 东方锦上京 |
 | 作品适配表 | [ports/th01/ADAPTATION.md](../ports/th01/ADAPTATION.md) | th01 适配检查 |
@@ -243,6 +244,7 @@
 | 作品源码文档 | [ports/th15/web/docs/mobile-gpu-diagnostics.md](../ports/th15/web/docs/mobile-gpu-diagnostics.md) | TH15 移动端 GPU 诊断 |
 | 作品源码文档 | [ports/th17-mp/docs/DEVELOPMENT.md](../ports/th17-mp/docs/DEVELOPMENT.md) | TH17 MP 开发指南 |
 | 作品源码文档 | [ports/th17/docs/DEVELOPMENT.md](../ports/th17/docs/DEVELOPMENT.md) | TH17 开发指南 |
+| 作品源码文档 | [ports/th16/docs/DEVELOPMENT.md](../ports/th16/docs/DEVELOPMENT.md) | TH16 开发、构建与启动器接入 |
 | 作品源码文档 | [ports/th19/docs/DEVELOPMENT.md](../ports/th19/docs/DEVELOPMENT.md) | TH19 开发与构建 |
 | 作品源码文档 | [ports/th19/docs/REPLAY.md](../ports/th19/docs/REPLAY.md) | 旁观与扩展录像 |
 | 作品源码文档 | [ports/th20/docs/DEVELOPMENT.md](../ports/th20/docs/DEVELOPMENT.md) | TH20 开发指南 |
