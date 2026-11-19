@@ -2,6 +2,7 @@
 #include "AnmRenderer.hpp"
 
 #include "Distortion.hpp"
+#include "Effect.hpp"
 
 #include <cmath>
 #include <cstring>
@@ -239,10 +240,14 @@ const AnmRuntimeSprite* AnmRenderer::sprite_of(const AnmVm& vm) const {
 int AnmRenderer::draw_vm(AnmVm& vm) {
     if (device == nullptr) return -1;
     // 绘制钩子表 DAT_00491b2c（在可见性检查之前调用，返回值不用）：
-    //   4 = 0x418c60 畸变网格把顶点抄进条带；1..3 / 5 / 6（0x4073a0 / 0x405ec0 / 0x406860 / 0x42b5f0 / 0x46a330）待接
-    if (vm.draw_callback != 0) {
-        if (vm.draw_callback == 4) distortion_draw_callback(vm);
-        else if (vm.draw_callback > 0 && vm.draw_callback < 8) ++unimplemented_draw_callbacks[vm.draw_callback];
+    //   2 = 0x405ec0 空函数（充能环只靠 update 钩子）；3 = 0x406860 爆散粒子折线；4 = 0x418c60 畸变网格把顶点抄进条带；
+    //   5 = 0x42b5f0 对话文字跟随文字框（Gui）；1 / 6（0x4073a0 / 0x46a330）待接
+    switch (vm.draw_callback) {
+    case 0: case 2: break;
+    case 3: draw_burst_lines(vm); break;
+    case 4: distortion_draw_callback(vm); break;
+    case 5: if (draw_hooks != nullptr) draw_hooks->dialogue_text_follow(vm); else ++unimplemented_draw_callbacks[5]; break;
+    default: if (vm.draw_callback > 0 && vm.draw_callback < 8) ++unimplemented_draw_callbacks[vm.draw_callback]; break;
     }
     if ((vm.flags_lo & AnmVm::kVisible) == 0 || (vm.flags_lo & AnmVm::kFlag2) == 0) return -1;
     if ((vm.flags_hi & AnmVm::kHiDeletingMask) != 0) return -1;
@@ -558,6 +563,25 @@ void AnmRenderer::prepare_untextured_draw() {
         p.color.second = {ArgumentSource::Diffuse};
     }
     p.textureTransform = false;
+}
+
+void AnmRenderer::draw_burst_lines(AnmVm& vm) {
+    EffectManager::BurstGeometry burst;
+    if (!EffectManager::burst_geometry(vm, burst)) return;
+    apply_vm_state(vm);   // 0x464f10
+    const Vec3 origin = geometry_.world_position(vm);
+    // 0x469890：先出批；顶点 = 原点 + 光点偏移，z 0、rhw 1，颜色逐点；FVF 0x44 线带，图元数 = 点数 − 1
+    flush();
+    if (burst.count < 1) return;   // 原版此时仍按 −1 个图元调用 DrawPrimitiveUP，被设备拒绝，不产生绘制
+    std::vector<ScreenColorVertex> vertices;
+    vertices.reserve(size_t(burst.count));
+    for (i32 i = 0; i < burst.count; ++i) {
+        u32 color;
+        std::memcpy(&color, burst.colors[i], sizeof color);
+        vertices.push_back({origin.x + burst.points[i].x, origin.y + burst.points[i].y, 0.0f, 1.0f, color});
+    }
+    prepare_untextured_draw();
+    device->draw(Topology::LineStrip, VertexLayout::ScreenColor, u32(burst.count - 1), vertices.data(), sizeof(ScreenColorVertex));
 }
 
 int AnmRenderer::draw_polygon(AnmVm& vm, AnmRenderMode mode) {
