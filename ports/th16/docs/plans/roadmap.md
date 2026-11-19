@@ -11,7 +11,7 @@
 | RNG 16/32 位 + 浮点变体位级一致（7 种子 × 64 步 + 16 浮点步） | `tests/rng.test.mjs`、`tests/golden/rng.json` |
 | THA1 档案 / LZSS / 加密：215 条目逐字节一致 | `tests/archive.test.mjs` |
 | ANM v8 解析（entry/sprite/script/哨兵）+ THTX 四格式逐像素一致 | `tests/archive.test.mjs`、`tools/oracle/thtx-compare.py` |
-| SDL3 + GLES 3.0 运行时：th16.dat 整档进 MEMFS，启动幕 `sig.anm` 静态帧上屏 | `web/cpp/sdl/`、`web/sdl-runtime/th16.html` |
+| SDL3 + GLES 3.0 运行时：th16.dat 整档进 MEMFS，启动幕 `sig.anm` 静态帧上屏 | `web/cpp/sdl/`、`web/sdl-runtime/th16-dev.html` |
 | ANM v8 VM 与管理器（0x45f980 / 0x46a3a0 族）：0x5fc 结构体逐字段镜像、全部指令、31 种缓动、计时器、VM 池与链表、子 VM；54 个 ANM 文件 1887 个脚本 × 60 帧 VM 状态与 layer 绘制链对 Unicorn 直跑原版逐字节一致；wasm32 与本机输出相同；3600 帧 < 0.3s | `game/AnmVm.cpp`、`game/AnmManager.cpp`、`tests/anm-vm.test.mjs`、`tools/oracle/anm-oracle.py` |
 | ANM 屏幕四边形绘制（0x468490 mode 0..3）+ 启动幕改由 VM 驱动：`sig.anm` script0/1 淡入上屏；纹理按 entry 声明尺寸衬垫；几何单测 + 浏览器截图 vs 纹理合成 MAD≈1.8 | `game/AnmRenderer.cpp`、`sdl/Application.cpp`、`tests/anm-draw.test.mjs` |
 | Supervisor 场景状态机 + 输入边沿：Boot→Title（0x43b290 请求；标题线程等 0xb4 帧，仅 DAT_004c1800&0x180 可放行）；`title.anm`/`title_v.anm` 装载 | `game/Supervisor.hpp`、`game/Input.hpp`、`tests/supervisor.test.mjs` |

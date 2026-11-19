@@ -98,7 +98,7 @@ const linkFlags = [...flags, '--emit-symbol-map', '-sDEFAULT_TO_CXX=1', '--no-en
   '-sALLOW_MEMORY_GROWTH=1', '-sSTACK_SIZE=1048576', '-sINITIAL_MEMORY=134217728',
   '-sMAXIMUM_MEMORY=1073741824', '-sINVOKE_RUN=0', '-sEXIT_RUNTIME=0',
   '-sMIN_WEBGL_VERSION=2', '-sMAX_WEBGL_VERSION=2', '-sGL_SUPPORT_AUTOMATIC_ENABLE_EXTENSIONS=0',
-  '-lidbfs.js', '-sEXPORTED_RUNTIME_METHODS=FS,IDBFS,UTF8ToString,HEAPU8',  // th16.html：th16.dat 进 MEMFS /assets、/save 挂 IDBFS + 错误文本解码
+  '-lidbfs.js', '-sEXPORTED_RUNTIME_METHODS=FS,IDBFS,UTF8ToString,HEAPU8',  // th16-dev.html / shell.mjs：th16.dat 进 MEMFS、存档挂 IDBFS、错误文本解码
   '-sEXPORTED_FUNCTIONS=_malloc,_free',
   ...outputs, '-o', output];
 await run(linkFlags);
@@ -106,9 +106,15 @@ const wasm = readFileSync(wasmOutput);
 checkWasm(wasm);
 if (!statSync(output).size) throw Error('Missing fresh loader');
 for (const path of sourceFiles) if (sha(readFileSync(path)) !== inventory[path]) throw Error('Build input changed: ' + path);
-const report = {builtAt, game, kind: 'cpp-sdl3', version: '0.1.0-sdl3-boot-screen',
+const module = new WebAssembly.Module(wasm);
+// features / architecture / exports 供 portable/package-eagler.mjs 生成启动器 manifest.json（eagler-touhou/1）
+const report = {builtAt, game, kind: 'cpp-sdl3', version: '1.0.0-sdl3',
+  features: {thprac: false, languages: false, focusHitbox: false},
+  architecture: {loop: 'cpp-frameclock-60hz-catchup', audio: 'miniaudio-sdl3', renderer: 'cpp-gles-semantic-batched',
+    files: 'sdl-io-idbfs', fonts: 'sdl3-ttf', input: 'cpp-sdl-gamepad-hosted-keyboard', launcher: 'eagler-touhou/1'},
   sources, sourceFiles: inventory, bytes: wasm.length, sha256: sha(wasm),
   loaderSha256: sha(readFileSync(output)),
+  imports: WebAssembly.Module.imports(module), exports: WebAssembly.Module.exports(module),
   flags, linkFlags, toolchain: {emsdkRoot: sdk, layout: 'external', ...compilerIdentity}};
 writeFileSync(manifest, JSON.stringify(report, null, 2) + '\n');
 console.log(JSON.stringify({game, bytes: wasm.length, sha256: report.sha256, output}, null, 2));

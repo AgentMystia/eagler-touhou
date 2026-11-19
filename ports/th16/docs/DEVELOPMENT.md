@@ -94,7 +94,7 @@ python3 tools/oracle/draw-compare.py /tmp/st1.draw.jsonl /tmp/st1.port.jsonl --f
 
 ## 页面壳
 
-`web/sdl-runtime/th16.html` 把 `assets/th16.dat` 整档 fetch 进 MEMFS `/assets/th16.dat`，C++ `Archive` 按名解密/LZSS 解码——与原版读档路径同构，不预解包。`python3 web/sdl-runtime/serve.py` 提供 no-store 服务。观测面：`mod._th16_frame()`、`mod._th16_phase()`、`mod._th16_audio_status()`。
+`web/sdl-runtime/th16-dev.html` 把 `assets/th16.dat` 整档 fetch 进 MEMFS `/assets/th16.dat`，C++ `Archive` 按名解密/LZSS 解码——与原版读档路径同构，不预解包。`python3 web/sdl-runtime/serve.py` 提供 no-store 服务。观测面：`mod._th16_frame()`、`mod._th16_phase()`、`mod._th16_audio_status()`。
 
 ## 音频
 
@@ -106,7 +106,13 @@ python3 tools/oracle/draw-compare.py /tmp/st1.draw.jsonl /tmp/st1.port.jsonl --f
 
 `th16.cfg`（0x43c050，`game/GameConfig.*`）：100 字节块，magic 0x160002，开机读 + 六字节上限校验（失败整块回默认）+ 总是回写，退出场景再写（0x459830）；路径 `<存档根>/th16.cfg`（浏览器 IDBFS `/save`，桌面同 `scoreth16.dat` 目录）。块内保存手柄按钮表 DAT_004a52e4（10×i16，exe 初值 `{0,1,2,5,-1,-1,-1,-1,-1,3}`）、BGM / SE 音量、Option 标志、输入配置等。
 
-键盘键位固定（0x401d50：Z / X / Shift / Ctrl / C / 方向 / Esc / Q / S / P / Enter / D / R / F10），标题 Key Config（0x44e930）配置的是**手柄按钮号**：每帧取 0x401c30 快照中首个按下的按钮写入光标槽并对调冲突槽（0x44f710），Default 重载全局表，Quit 写回；0x4018e0 按表把按钮位图合成 Shot / Bomb / Slow / Pause / Release 位。宿主 `sdl/Application.cpp` 用 SDL_Joystick 采样按钮位图交给 `GameSession::pad_buttons`，摇杆轴按原版“中心 ± 1/4 量程”出方向位（POV 帽原版不读，端口一并映射）。harness `scene-boot` 以 `Pf:button` 注入手柄按钮、`config=<path>` 走开机读写；`pad-input-bits` / `config-file` 为单元入口。
+键盘键位固定（0x401d50：Z / X / Shift / Ctrl / C / 方向 / Esc / Q / S / P / Enter / D / R / F10），标题 Key Config（0x44e930）配置的是**手柄按钮号**：每帧取 0x401c30 快照中首个按下的按钮写入光标槽并对调冲突槽（0x44f710），Default 重载全局表，Quit 写回；0x4018e0 按表把按钮位图合成 Shot / Bomb / Slow / Pause / Release 位。宿主 `sdl/Application.cpp` 用 SDL_Gamepad 采样按钮位图（标准布局序 = 按钮号）交给 `GameSession::pad_buttons`，左摇杆按原版“中心 ± 1/4 量程”出方向位（POV 帽原版不读，端口把十字键一并映射）；物理键盘（SDL_Scancode）与启动器托管键（DOM `KeyboardEvent.code`，`ScancodeMap.hpp`）先折成 0x402130 的 DIK 快照，再由 `keyboard_input_bits` 按 DirectInput 分支合成输入位。harness `scene-boot` 以 `Pf:button` 注入手柄按钮、`config=<path>` 走开机读写；`pad-input-bits` / `config-file` 为单元入口。
+
+## 启动器接入（eagler-touhou/1）
+
+`web/sdl-runtime/th16.html` + `shell.mjs`（传输层 `eagler-host.mjs`、键盘桥 `directory-keyboard.mjs` 与 th20 同源）实现启动器协议：命令 configure / resources / keyboard / keyboard-clear / touch-controls / touch-cancel / direct-touch / launch / list / read / write / remove / sync，事件 ready / transfer / first-frame / runtime-info / frame-health / audio-health / exit / error，消息绑定 `runtimeEpoch`。数据：启动器经 `__eaglerPrepareManagedRuntimeDataV1` 交付 th16.dat → MEMFS `/game/th16.dat`；OGG 乐曲 `/bgm-ogg/<曲名>.ogg`（含 th128_08）；共享字体 `/msgothic.ttc`、`/unifont.otf`；存档根 `/savesth16/<jp|chs>`（IDBFS）。原生导出见 `web/cpp/sdl/BrowserRuntime.cpp`（`sdl_game_open` / `sdl_loop_*` / `sdl_key` / `sdl_touch_controls` / `application_save` / `sdl_game_status` / `sdl_audio_stats` …；`sdl_canvas` / `sdl_stats` 来自共享 `portable/sdl/Renderer.cpp`）。画面上的触点手势只接收不解释（th16 的移动是按位输入，不接受位置注入）；触屏按钮与虚拟摇杆经 `sdl_touch_controls` 合成输入位。
+
+`node portable/package-eagler.mjs` 把 `web/artifacts/sdl3` 的 wasm / loader 与壳文件打成启动器运行时目录 `build-eagler/`（`manifest.json`、`resources.json`、`runtime-files.json`）。
 
 ## 代码质量与可读性标准
 

@@ -26,6 +26,8 @@ public:
     std::string failure;
     unsigned frames = 0;
     bool initialized = false;
+    // 启动器把 OGG 乐曲挂在 /bgm-ogg（而非 th16.dat 同目录 /music）：非空则覆盖 AudioDevice::music_directory
+    std::string music_directory;
 
     // 便捷访问（BrowserRuntime 导出用）
     Supervisor& supervisor() { return session.supervisor; }
@@ -39,10 +41,23 @@ public:
     // 只 Present 最后一帧
     bool step_at(double wall_seconds);
 
+    // 启动器托管输入（eagler-touhou/1 keyboard / touch-controls 命令）：与 SDL 物理键盘 OR 后进 0x402130 快照
+    void set_hosted_key(const char* dom_code, bool down);
+    void clear_hosted_keys();
+    struct TouchControls {
+        bool fire = false, focus = false;
+        u32 bomb_serial = 0, escape_serial = 0;
+        i32 joystick_x = 0, joystick_y = 0;   // 启动器给的有符号 16 位量
+        u32 pulse = 0;
+        void update(bool fire_on, bool focus_on, u32 bomb, u32 escape, i32 x, i32 y);
+        u32 input_bits();
+    } touch_controls;
+
 private:
     std::vector<u8> archive_bytes;
+    u8 hosted_keys[256] = {};
 #if defined(__EMSCRIPTEN__) || defined(TH16_HAS_SDL)
-    SDL_Joystick* joystick = nullptr;   // 0x401c30 / 0x4018e0：首个手柄（joyGetPosEx(0)）
+    SDL_Gamepad* gamepad = nullptr;   // 0x401c30 / 0x4018e0：首个手柄（joyGetPosEx(0)）；按钮号取 SDL 标准布局序
 #endif
 
     void sample_input();

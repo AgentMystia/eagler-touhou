@@ -38,6 +38,12 @@ public:
     bool music_open() const;     // 串流器已绑定曲目
     u64 music_cursor() const;    // 当前曲目 PCM 帧游标
     bool music_playing() const;
+    // 宿主健康上报：SDL 流当前排队帧数；自上次读取以来的最低排队帧数（读后归位）
+    u32 queued_frames() const;
+    u32 take_min_queued_frames();
+    // 启动器“音乐关闭”：串流器仍按原版推进，只把增益压为 0（不影响逻辑 / 命令队列）
+    void set_music_enabled(bool on);
+    bool music_enabled() const;
 
 private:
     struct Impl;
