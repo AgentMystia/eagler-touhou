@@ -125,7 +125,7 @@ ANM VM 的还原证据：`tests/anm-vm.test.mjs` 以 `tools/oracle/anm-oracle.py
 | 0x44ac70 | 标题场景初始化 |
 | 0x4497e0 / 0x4403c5 / 0x43b480 / 0x43aeae | score 文件 / replay 文件 / ver 文件 / thbgm.fmt |
 
-未定位：AsciiManager 的其余调用方（Replay 0x4482f0、标题子菜单、Msg 文字贴图 0x46d990、FPS 0x4263e0）、Spellcard 实时计时 0x417bc0、Boss 畸变光环 0x418c70（ECL 629，依赖场地渲染目标）、结局场景 0x419640（通关倒计时与场景请求已还原）、成绩 / 回放文件读写（更新链 0x22 / 绘制链 0x47 已占位，快进与 FPS 文字待接）；敌机、子弹、激光、道具、玩家与机体、Bomb / 季节解放、魔理沙激光、游戏内菜单（暂停 / 续关 / 练习结算，含 Credit / 回放槽 / 名字输入 / 排名文字 0x43edc0 族）、Gui HUD、AsciiManager 与 HUD / 符卡文字、得分飘字、季节解放奖励飘字已还原。Supervisor、Chain 表、帧计时、输入、标题主菜单与难度/机体/季节/关卡画面已还原；Game 场景（7）与标题余项待接。全表见 `web/cpp/rebuild/AddressMap.hpp`。
+未定位：AsciiManager 的其余调用方（Replay 0x4482f0、标题子菜单、FPS 0x4263e0）、Spellcard 实时计时 0x417bc0、结局场景 0x419640（通关倒计时与场景请求已还原）、成绩 / 回放文件读写（更新链 0x22 / 绘制链 0x47 已占位，快进与 FPS 文字待接）；Msg / 符卡名文字贴图 0x46d990 / 0x46dab0 已接逻辑入队与 flags_lo（宿主 GDI/TTF 刷入待 `TH16_HAS_TTF`）；Boss 畸变光环 0x418c70 已还原。敌机、子弹、激光、道具、玩家与机体、Bomb / 季节解放、魔理沙激光、游戏内菜单（暂停 / 续关 / 练习结算，含 Credit / 回放槽 / 名字输入 / 排名文字 0x43edc0 族）、Gui HUD、AsciiManager 与 HUD / 符卡文字、得分飘字、季节解放奖励飘字已还原。Supervisor、Chain 表、帧计时、输入、标题主菜单与难度/机体/季节/关卡画面已还原；Game 场景（7）与标题余项待接。全表见 `web/cpp/rebuild/AddressMap.hpp`。
 
 ## 与 th15 的关系
 
