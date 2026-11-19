@@ -12,12 +12,13 @@
 // 画面（+0x18）：1 主菜单 0x44b5f0；5 难度 0x44fe20；6 机体 0x4502c0；7 子季节 0x450af0；8 关卡 0x450ef0；
 //   2 = 标题结束（0x44af80 case 2 置场景请求）；3 Option 0x44c570；4 Key Config（自 Option）；
 //   0xa Player Data / 0xb Replay / 0xd Music Room / 0x10 Manual /
-//   0x11 Spell Practice / 0x12 List / 0x13 Shot / 0x14 Start 已接（符卡 id 表 0x4560b0 待补）。
+//   0x11 Spell Practice / 0x12 List / 0x13 Shot / 0x14 Start 已接（0x4560b0 名 VM + SCORE 高分）。
 #pragma once
 #include "AnmManager.hpp"
 #include "GameGlobals.hpp"
 #include "Input.hpp"
 #include "MenuCursor.hpp"
+#include "TextPaint.hpp"
 #include "Types.hpp"
 
 #include <functional>
@@ -79,7 +80,9 @@ public:
     i32 spell_list_index = 0;        // +0x5dc8：列表确认的槽（带入 0x13）
     i32 spell_entry_index = 0;       // +0x5dcc：条目页确认的下标（带入 0x14 / 开战）
     i32 spell_slot_ids[5] = {-2, -2, -2, -2, -2};  // +0x5dd0：当前列表槽对应符卡 id
+    u32 spell_name_vms[5] = {};      // +0x740：符卡名文字 VM（title.anm 0xd2+i）
     ScoreFile* scores = nullptr;     // 0x456060 解锁判定
+    std::vector<TextIntoTextureRequest>* text_paints = nullptr;  // 0x46d990 名行入队
     MenuCursor score_shot_cursor;    // +0xfc：Player Data 机体（count 5）
     MenuCursor score_page_cursor;    // +0x1d4：成绩翻页
     i32 key_bind_slot = -1;          // Key Config：正在捕获的槽 0..4；-1=无
@@ -114,6 +117,8 @@ public:
     void update(AnmManager& anm, const InputState& input);
     // 0x456d50：符卡练习 0x12/0x13/0x14 的 SCORE 行（AsciiManager 入队，每帧重打）
     void draw_spell_hud(AsciiManager& ascii);
+    // 0x4560b0：按难度填 +0x5dd0、刷 +0x740 名 VM（Nothing / No.%3d / ？？？）
+    void refresh_spell_slot_names(AnmManager& anm);
     // 主菜单空闲 demo 门控（0x708 / bit6 / 下标 %3）；供单测与 update 共用
     void tick_idle_demo(const InputState& input);
     void close_help();  // 释放标题 Manual 的 HelpScreen

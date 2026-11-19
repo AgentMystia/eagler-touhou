@@ -33,7 +33,11 @@ struct SpellRecord {
     char name[0x80] = {};   // +0x00
     u32 captures[2] = {};   // +0x80：[0] 正常 / [1] 符卡练习
     u32 attempts[2] = {};   // +0x88
+    u32 pad_90 = 0;         // +0x90
+    u32 pad_94 = 0;         // +0x94
+    u32 high_score = 0;     // +0x98：符卡练习最高分（0x42e150 写入；SCORE `%8d0`）
 };
+static_assert(sizeof(SpellRecord) == 0x9c, "SpellRecord must match scoreth16.dat 0x9c");
 
 struct ScoreFile {
     static constexpr int kShots = 5;          // 机体块数（shot + shot_aux；块 4 为全机体合计）
@@ -123,6 +127,14 @@ struct ScoreFile {
     void update_practice(int shot, int difficulty, int stage, u32 score) {
         PracticeRecord& r = practice[shot][difficulty * 8 + stage];
         if (r.score < score) r.score = score;
+    }
+
+    // 0x42e150 符卡练习：+0x970 最高分只升不降（分值先 /10*10）
+    void update_spell_high_score(int shot, int spell, u32 score) {
+        if (!spell_record_valid(shot, spell)) return;
+        const u32 floored = (score / 10u) * 10u;
+        SpellRecord& record = spells[shot][spell];
+        if (record.high_score < floored) record.high_score = floored;
     }
 };
 

@@ -58,6 +58,8 @@
 #include "../../web/cpp/game/FrameTimer.hpp"
 #include "../../web/cpp/game/KeyBindMap.hpp"
 #include "../../web/cpp/game/Spellcard.hpp"
+#include "../../web/cpp/game/SpellPracticeTable.hpp"
+#include "../../web/cpp/game/ScoreFile.hpp"
 #include "../../web/cpp/game/Rng.hpp"
 #include "../../web/cpp/game/ScreenEffect.hpp"
 #include "../../web/cpp/game/Stage.hpp"
@@ -140,6 +142,28 @@ int main(int argc, char** argv) {
         text_paint_vm(animations, vm, 0xffffffu, 0u, 0, 0, 0, "test", &queue);
         std::printf("flag=%u queued=%zu height0=%d height8=%d\n", vm.flags_lo & 1u, queue.size(),
                     text_font_height(0), text_font_height(8));
+        return 0;
+    }
+    if (command == "spell-table") {
+        // 0x4560b0：按难度字节重排；lock 参数时验证未解锁 → -1
+        ScoreFile scores;
+        const bool lock = argc >= 3 && std::strcmp(argv[2], "lock") == 0;
+        if (!lock) {
+            for (int id = 0; id < ScoreFile::kSpellRecords; ++id)
+                scores.spells[ScoreFile::kAllShotsBlock][id].attempts[0] = 1;
+        }
+        i32 out[5];
+        // group2 slot0：表 {20,21} 难度 2/3 → 槽 2/3
+        SpellPracticeTable::fill_slot_ids(2, 0, out, &scores);
+        std::printf("g2s0 %d %d %d %d %d\n", out[0], out[1], out[2], out[3], out[4]);
+        if (!lock) {
+            scores.spells[0][20].high_score = 123450;
+            scores.spells[0][20].captures[1] = 2;
+            scores.spells[0][20].attempts[1] = 5;
+            scores.update_spell_high_score(0, 20, 999999);
+            std::printf("high %u caps %u/%u\n", scores.spells[0][20].high_score,
+                        scores.spells[0][20].captures[1], scores.spells[0][20].attempts[1]);
+        }
         return 0;
     }
     if (command == "ending-smoke" && argc >= 4) {

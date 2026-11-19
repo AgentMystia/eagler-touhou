@@ -4,8 +4,10 @@
 #include "ReplayFile.hpp"
 #include "ScoreFile.hpp"
 #include "SpellPracticeTable.hpp"
+#include "TextPaint.hpp"
 
 #include <cstdio>
+#include <cstring>
 
 namespace th16 {
 
@@ -180,8 +182,106 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
     ++timer;  // 0x44af80 末尾
 }
 
+void TitleScene::refresh_spell_slot_names(AnmManager& anm) {
+    // 0x4560b0：名 VM 0xd2+i、按难度填 slot id、0x46d990 刷名行
+    if (title_file == nullptr) return;
+
+    // SJIS：挑戦可能！ /  No.%3d  ？×11（与 th16.exe .rdata 一致）
+    static constexpr char kChallenge[] = "\x92\xa7\x90\xed\x89\xc2\x94\\\x81I";
+    static constexpr char kLockedFmt[] =
+        " No.%3d  \x81H\x81H\x81H\x81H\x81H\x81H\x81H\x81H\x81H\x81H\x81H";
+
+    for (int i = 0; i < 5; ++i) spell_slot_ids[i] = -2;
+
+    for (int i = 0; i < 5; ++i) {
+        if (spell_name_vms[i] == 0) {
+            AnmVm* spawned = nullptr;
+            spell_name_vms[i] = anm.spawn(*title_file, 0xd2 + i, -1, &spawned);
+        }
+        AnmVm* name_vm = anm.find(spell_name_vms[i]);
+        if (name_vm == nullptr) {
+            spell_name_vms[i] = 0;
+            continue;
+        }
+        anm.interrupt_now(spell_name_vms[i], 2);
+        text_paint_vm(anm, *name_vm, 0x808080u, 0, 0, 0, 0, " Nothing ... ", text_paints);
+    }
+
+    i32 raw[5];
+    SpellPracticeTable::raw_slot_ids(spell_group, cursor.index, raw);
+    i32 max_used = -1;
+    int seen = 0;
+    for (int i = 0; i < 5; ++i) {
+        const i32 id = raw[i];
+        if (id < 0) break;
+        if (id >= ScoreFile::kSpellRecords) { ++seen; continue; }
+        const i32 diff = SpellPracticeTable::spell_difficulty(id);
+        i32 dest = 4;
+        if (spell_group == 6) dest = (diff != 4) ? 1 : 0;
+        else if (diff < 5) dest = diff;
+
+        bool open = false;
+        if (scores != nullptr) {
+            const SpellRecord& all = scores->spells[ScoreFile::kAllShotsBlock][id];
+            open = all.attempts[0] != 0;
+            if (!open && diff > 4) {
+                open = true;
+                for (int p = 0; p < seen; ++p) {
+                    const i32 prev = raw[p];
+                    if (prev < 0 || prev >= ScoreFile::kSpellRecords) { open = false; break; }
+                    const SpellRecord& prev_all = scores->spells[ScoreFile::kAllShotsBlock][prev];
+                    if (prev_all.captures[0] == 0 && prev_all.captures[1] == 0) { open = false; break; }
+                }
+            }
+        } else {
+            open = true;
+        }
+
+        AnmVm* name_vm = anm.find(spell_name_vms[dest]);
+        if (name_vm == nullptr) {
+            spell_name_vms[dest] = 0;
+            ++seen;
+            continue;
+        }
+
+        char line[0xc1] = {};
+        if (!open) {
+            spell_slot_ids[dest] = -1;
+            std::snprintf(line, sizeof(line), kLockedFmt, id + 1);
+            text_paint_vm(anm, *name_vm, 0xb0b0b0u, 0, 0, 0, 0, line, text_paints);
+        } else {
+            spell_slot_ids[dest] = id;
+            const SpellRecord& all = scores != nullptr
+                ? scores->spells[ScoreFile::kAllShotsBlock][id]
+                : SpellRecord{};
+            const char* body = kChallenge;
+            if ((all.attempts[0] != 0 || all.attempts[1] != 0) && all.name[0] != '\0') body = all.name;
+            std::snprintf(line, sizeof(line), " No.%3d  %s", id + 1, body);
+            u32 color = 0xefefefu;
+            if (scores != nullptr) {
+                const SpellRecord* rec = scores->spell_record(spell_shot_cursor.index, id);
+                if (rec != nullptr && rec->captures[1] != 0) color = 0xffff80u;
+            }
+            text_paint_vm(anm, *name_vm, color, 0, 0, 0, 0, line, text_paints);
+        }
+        anm.interrupt_now(spell_name_vms[dest], 2);
+        if (dest > max_used) max_used = dest;
+        ++seen;
+    }
+
+    const i32 last = (spell_group == 6) ? 1 : 4;
+    for (int i = 0; i <= last; ++i) {
+        if (spell_name_vms[i] != 0) anm.interrupt_now(spell_name_vms[i], 3);
+    }
+    for (int i = max_used + 1; i < 5; ++i) {
+        if (spell_name_vms[i] == 0) continue;
+        anm.kill(spell_name_vms[i]);
+        spell_name_vms[i] = 0;
+    }
+}
+
 void TitleScene::draw_spell_hud(AsciiManager& ascii) {
-    // 0x456d50：sub∈(0,3]（画面 0x13 时 sub==3 跳过）在 5 个槽上打 SCORE 行
+    // 0x456d50：sub∈(0,3]（画面 0x13 时 sub==3 跳过）在 5 个槽上打 SCORE / GAME MODE
     if (screen != kSpellList && screen != kSpellShot && screen != kSpellStart) return;
     if (sub < 1) return;
     if (sub == 3 && screen == kSpellShot) return;
@@ -195,7 +295,8 @@ void TitleScene::draw_spell_hud(AsciiManager& ascii) {
     for (int i = 0; i < 5; ++i) {
         const i32 id = spell_slot_ids[i];
         if (id < -1) { y += 44.0f; continue; }  // -2 = 空槽
-        if (id < 0) { y += 44.0f; continue; }
+        if (id < 0) { y += 44.0f; continue; }   // -1 = 未解锁：原版仍跳过 SCORE（id 判断 -2 起）
+        // 原版：id > -2 才进；-1 也会进但 derefer 成绩——我们跳过 -1 避免野读
         const bool selected = (screen == kSpellShot && i == cursor.index);
         const SpellRecord* rec = scores->spell_record(shot, id);
         const SpellRecord* all = (id < ScoreFile::kSpellRecords)
@@ -209,10 +310,19 @@ void TitleScene::draw_spell_hud(AsciiManager& ascii) {
         if (attempts0 == 0 && attempts1 == 0) {
             ascii.printf(Vec3{330.0f, y, 0.0f}, "SCORE        00  ----/----");
         } else {
-            const u32 caps = rec != nullptr ? rec->captures[0] : 0;
-            const u32 atts = rec != nullptr ? rec->attempts[0] : 0;
-            // 原版 "%8d0"：高分/10 后再拼尾 0；成绩表接入前用 0 占位
-            ascii.printf(Vec3{330.0f, y, 0.0f}, "SCORE %8d0  %4u/%4u", 0, caps, atts);
+            const u32 high = rec != nullptr ? rec->high_score : 0;
+            const u32 caps = rec != nullptr ? rec->captures[1] : 0;
+            const u32 atts = rec != nullptr ? rec->attempts[1] : 0;
+            ascii.printf(Vec3{330.0f, y, 0.0f}, "SCORE %8d0  %4u/%4u", int(high), caps, atts);
+            // GAME MODE 行（难度 < 5）：正常模式取得/挑战
+            if (SpellPracticeTable::spell_difficulty(id) < 5) {
+                u32 game_color = 0xff404040u;
+                if (rec != nullptr && rec->captures[0] != 0) game_color = 0xff206060u;
+                ascii.style.color = game_color;
+                ascii.printf(Vec3{330.0f, y + 10.0f, 0.0f}, "GAME MODE        %4u/%4u",
+                             rec != nullptr ? rec->captures[0] : 0,
+                             rec != nullptr ? rec->attempts[0] : 0);
+            }
         }
         y += 44.0f;
     }
@@ -1296,7 +1406,7 @@ void TitleScene::update_spell_list(AnmManager& anm, const InputState& input) {
         cursor.count = SpellPracticeTable::group_count(g);
         cursor.wrap = true;
         cursor.set(0);
-        SpellPracticeTable::fill_slot_ids(g, cursor.index, spell_slot_ids);
+        refresh_spell_slot_names(anm);  // 0x4560b0：填 spell_slot_ids + 名 VM
         if (title_file && vm[0x6b] == 0) spawn_into(anm, 0x6b, *title_file, 0x6b);  // +0x46c
         if (title_file && vm[0xd8] == 0) spawn_into(anm, 0xd8, *title_file, 0xd8);  // +0x620
         set_sub(1);
@@ -1319,7 +1429,7 @@ void TitleScene::update_spell_list(AnmManager& anm, const InputState& input) {
         if (edge & InputState::kDown) cursor.move(1);
         if (cursor.index != prev) {
             sfx(10);
-            SpellPracticeTable::fill_slot_ids(spell_group, cursor.index, spell_slot_ids);
+            refresh_spell_slot_names(anm);
             if (vm[0xd8]) {
                 anm.interrupt_now(vm[0xd8], 3);
                 anm.interrupt(vm[0xd8], to_short(cursor.index + 7));
@@ -1347,7 +1457,7 @@ void TitleScene::update_spell_list(AnmManager& anm, const InputState& input) {
             set_sub(3);
             sfx(7);
             spell_list_index = cursor.index;
-            SpellPracticeTable::fill_slot_ids(spell_group, cursor.index, spell_slot_ids);
+            SpellPracticeTable::fill_slot_ids(spell_group, cursor.index, spell_slot_ids, scores);
         }
         break;
     }
@@ -1363,6 +1473,10 @@ void TitleScene::update_spell_list(AnmManager& anm, const InputState& input) {
         if (timer > 5) {
             dismiss(anm, 0x6b);
             dismiss(anm, 0xd8);
+            for (u32& id : spell_name_vms) {
+                if (id != 0) anm.kill(id);
+                id = 0;
+            }
             set_screen(kSpellPractice);
             cursor.pop();
             events.push_back({"screen", screen});
@@ -1427,6 +1541,9 @@ void TitleScene::update_spell_shot(AnmManager& anm, const InputState& input) {
                     globals->stage = spell_group + 1;
                     globals->stage_copy = globals->stage;
                     const i32 sid = (cursor.index >= 0 && cursor.index < 5) ? spell_slot_ids[cursor.index] : -1;
+                    globals->replay_slot = sid;  // DAT_004a57c8：符卡练习 id
+                    globals->shot = spell_shot_cursor.index;
+                    globals->shot_aux = 0;
                     globals->difficulty = SpellPracticeTable::spell_difficulty(sid);  // DAT_00491700
                     globals->scene_request = kSceneGame;
                 }
@@ -1511,8 +1628,11 @@ void TitleScene::update_spell_start(AnmManager& anm, const InputState& input) {
             if (globals) {
                 globals->stage = spell_group + 1;
                 globals->stage_copy = globals->stage;
-                // 0x455d50：难度 = DAT_00491700[spell_slot_ids[+0x5dcc]]；季节 = 本页光标
+                // 0x455d50：DAT_004a57c8 = slot id；难度 = DAT_00491700；季节 = 本页光标
                 const i32 sid = (spell_entry_index >= 0 && spell_entry_index < 5) ? spell_slot_ids[spell_entry_index] : -1;
+                globals->replay_slot = sid;
+                globals->shot = spell_shot_cursor.index;
+                globals->shot_aux = 0;
                 globals->difficulty = SpellPracticeTable::spell_difficulty(sid);
                 globals->season = cursor.index;
                 globals->scene_request = kSceneGame;
