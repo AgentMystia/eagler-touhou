@@ -25,6 +25,7 @@ test('ending-smoke: skip after 0x78 frames returns to title', needDat, () => {
   assert.equal(header.ending_index, 0, 'shot0 + continues0 → e01');
   assert.ok(out.includes('event begin'));
   assert.ok(out.includes('event msg-loaded'));
+  assert.ok(out.includes('event vms'));
   assert.ok(out.includes('event end'));
 });
 

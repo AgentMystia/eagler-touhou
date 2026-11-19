@@ -31,14 +31,19 @@ struct EndingScene {
     i32 ending_index = 0;    // +0x18：机体组合×2（+1 = 有续关）
     u32 flags = 0;           // +0x1c：bit0 本结局未见过 / bit1 全机未见
     bool finished = false;
-    std::vector<u8> msg_bytes;   // +0x10：e0N.msg 载荷
+    std::vector<u8> msg_bytes;   // e0N.msg 载荷（原版 +0x10 指向解密缓冲）
     std::string msg_name;
+    u32 line_vms[5] = {};    // 0x4197c0：text.anm 脚本 0x2e..0x32
+    const u8* script_pc = nullptr;  // +0x54：剧本游标（完整解释器待接）
     std::vector<const char*> events;
 
     // 0x4191f0：shot+aux；continues==0 → 偶下标（true end），否则奇下标
     void begin(i32 shot, i32 shot_aux, i32 continues, ScoreFile* scores, i32 difficulty);
     // 从档案装 e0N.msg；失败时 events 记 "msg-missing"，仍可跳过回标题
     bool load_msg(const u8* bytes, u32 size, const char* name);
+    // 0x4197c0：text.anm 五行 VM；index≥8 时 flags|=2
+    void spawn_line_vms(AnmManager& anm, AnmFile* text_anm);
+    void destroy_line_vms(AnmManager& anm);
     bool update(const InputState& input);
     void end();
 };

@@ -120,6 +120,7 @@ private:
     ChainEntry* effect_update_chain_ = nullptr;
     ChainEntry* title_update_chain_ = nullptr;
     ChainEntry* ending_update_chain_ = nullptr;       // 0x23（0x4191f0 → LAB_004197a0）
+    ChainEntry* ending_draw_chain_ = nullptr;         // 0x43（0x4191f0 → LAB_004197b0）
     ChainEntry* game_update_chain_ = nullptr;
     ChainEntry* replay_record_chain_ = nullptr;       // 0x10（0x448e20 → 0x447fd0 记录）
     ChainEntry* replay_playback_chain_ = nullptr;     // 0x22（0x448e40：回放中按住射击则 Restart 整条更新链快进）
