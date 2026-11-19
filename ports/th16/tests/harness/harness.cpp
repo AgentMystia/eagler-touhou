@@ -438,6 +438,30 @@ int main(int argc, char** argv) {
         std::printf("enc=%d s=%d h=%d ok=%d\n", enc, s, h, ok ? 1 : 0);
         return ok ? 0 : 1;
     }
+    if (command == "spell-time-replay" && argc >= 3) {
+        // 0x417bc0：记录局把 +0xa4 写进段头槽（按 +0x88 计次），回放局读回；校验 0x417530 不符 → 0x6ad1584
+        const double sec = std::atof(argv[2]);
+        std::vector<i32> slots;
+        auto run = [&](bool playback, i32 tamper) {
+            Spellcard s;
+            s.replay_playback = playback;
+            s.record_time = [&](i32 index, i32 value) { if (i32(slots.size()) <= index) slots.resize(size_t(index) + 1); slots[size_t(index)] = value; };
+            s.replay_time = [&](i32 index) { return index < i32(slots.size()) ? slots[size_t(index)] + tamper : 0; };
+            for (int k = 0; k < 2; ++k) {
+                s.flags = Spellcard::kActive;
+                s.wall_clock_seconds = 10.0 + k * 100.0;
+                s.tick_realtime();
+                s.flags &= ~Spellcard::kActive;
+                s.wall_clock_seconds = 10.0 + k * 100.0 + sec * (k + 1);
+                s.tick_realtime();
+                std::printf("%s%s[%d]=%d count=%d\n", playback ? "play" : "rec", tamper ? "-tampered" : "", k, s.time_record, s.capture_count);
+            }
+        };
+        run(false, 0);
+        run(true, 0);
+        run(true, 1);
+        return 0;
+    }
     if (command == "frame-timer" && argc >= 2) {
         // 合成墙钟：每逻辑帧 +1/60，跑满 ≥1s 后打印 fps / slow
         FrameTimer timer;

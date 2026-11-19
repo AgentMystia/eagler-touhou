@@ -147,6 +147,7 @@ private:
     float global_fps_ = 60.0f;                       // FrameTimer+0x30（0x4262f0 测速；无墙钟时固定 60）
     ReplayFile replay_file_;                         // 0x448c10 展开后的回放
     ReplayPlaybackCursor replay_cursor_;             // 当前关卡段读指针（+0xc8 / +0xd8）
+    i32 replay_spell_time_(i32 index) const;
     i32 replay_next_stage_index_ = -1;               // 换关 0x449030(1) 已备好、待 0x448eb0 才切过去的段（+0x214 之前不动）
     u16 replay_stage_seed_ = 0;                      // 记录：0x447760 / 0x449030 装载时抄进新段头 +2 的 DAT_004a6d88
     bool replay_file_loaded_ = false;

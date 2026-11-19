@@ -89,7 +89,7 @@ void ReplayRecording::begin_stage(i16 stage, u16 rng_seed) {
         std::memcpy(header + kReplayGlobalsOffset, pending_globals.data(), kReplayGlobalsSize);
     // 0x447760：+0x240 起 0x14 个 dword 填 0, -0x21522153, -2×0x21522153, …
     u32 filler = 0;
-    for (u32 i = 0; i < 0x14; ++i, filler -= 0x21522153u) put_u32(header + 0x240 + i * 4, filler);
+    for (i32 i = 0; i < kSpellTimeSlots; ++i, filler -= 0x21522153u) put_u32(header + kSpellTimeOffset + i * 4, filler);
     put_u32(header + 0x290, pending_new_game ? 1u : 0u);
     pending_globals.clear();
     pending_new_game = false;
@@ -104,6 +104,12 @@ void ReplayRecording::set_stage_globals(const GameGlobals& globals) {
 void ReplayRecording::restamp_globals(const GameGlobals& globals) {
     if (stage_open) set_stage_globals(globals);
     else if (pending_globals.size() == kReplayGlobalsSize) store_replay_globals(globals, pending_globals.data());
+}
+
+void ReplayRecording::set_spell_time(i32 index, i32 value) {
+    if (!stage_open || current.header.size() != ReplayFile::kStageHeaderSize) return;
+    if (index < 0 || index >= kSpellTimeSlots) return;
+    put_i32(current.header.data() + kSpellTimeOffset + index * 4, value);
 }
 
 void ReplayRecording::set_stage_start(i32 fixed_x, i32 fixed_y, i32 focus) {

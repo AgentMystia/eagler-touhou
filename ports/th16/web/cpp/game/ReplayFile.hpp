@@ -22,6 +22,10 @@ struct ReplayStageSegment {
     std::vector<u8> fps;     // 每 30 帧一字节（含第 0 帧）
 };
 
+// 段头 +0x240：0x14 个符卡实时用时槽（0x417bc0 按 Spellcard+0x88 计次写 / 读）
+constexpr i32 kSpellTimeOffset = 0x240;
+constexpr i32 kSpellTimeSlots = 0x14;
+
 struct ReplayFile {
     static constexpr u32 kMagic = 0x72363174u;  // "t16r"
     static constexpr u16 kVersion = 2;
