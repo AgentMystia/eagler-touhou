@@ -99,6 +99,8 @@ Bomb / 季节解放与魔理沙激光的还原证据：`tests/bomb.test.mjs` 以
 
 GameMenu 的还原证据：`tests/menu.test.mjs` 以 `tools/oracle/game-oracle.py`（`set_input` 写 held / prev 后调用 0x405580 产生 DAT_004a50bc 边沿；0x43ef20 的 D3D 表面拷贝段 0x43f088..0x43f0df 跳过、0x471c90 BGM 缓冲重填以空函数替换）为 oracle，对 st1 灵梦 Normal 的暂停 Esc / 导航 / 射击确定（各 600 帧）与 `--lives 0` 续关（1500 帧）四个场景逐帧比对 GameMenu 快照（模式 / 状态 / 两计时 / 两光标 / VM 有无 / 保存的速度与声音线程状态 / 标志）、GameManager flags、全局速度、续关计数与本帧全部音效序列，`menu=` 与其余子系统 digest 全部一致；golden 在 `tests/golden/menu.json`。
 
+整帧绘制流的还原证据：`tests/draw.test.mjs` 以 `tools/oracle/game-oracle.py --draw`（Unicorn 跑 0x45a8a0 全部绘制链，`d3d-recorder.py` 录 D3D 调用）为 oracle，对第 1 关灵梦春 Easy 第 800–820 / 1000–1500 帧（有输入脚本：移动、射击、拾取、擦弹、飘字、HUD 文字变化）与琪露诺秋 Normal 装载后首 8 帧，每帧 Clear / 绘制的目标、视口、图元、顶点格式、纹理槽与渲染状态子集全部一致（`draw-compare.py --structure-golden` 折成每帧 sha1：`tests/golden/draw-st1.json`、`draw-st1-boot.json`）；顶点坐标与矩阵用 `draw-compare.py --eps 1e-4` 手工对拍同样 0 差异（`--eps 0` 只剩 x87 对 SSE 的 1 ulp 级差）。
+
 ANM VM 的还原证据：`tests/anm-vm.test.mjs` 以 `tools/oracle/anm-oracle.py`（Unicorn 直跑上述原版函数）为 oracle，对 54 个 ANM 文件 1887 个脚本各 60 帧的 VM 结构体（0x568 字节纯数据区）与 36 条 layer 绘制链逐字节一致；wasm32 构建与本机构建输出逐字节相同。绘制几何：`tests/anm-draw.test.mjs` 锁定 `sig.anm` 稳态四边形（512×480 + 128×480 @ layer 26，UV v=0.9375，淡入至白）。场景时序：`tests/supervisor.test.mjs`。
 
 ## 已定位、待还原

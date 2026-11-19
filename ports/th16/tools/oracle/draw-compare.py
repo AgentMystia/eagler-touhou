@@ -11,9 +11,13 @@
 
 用法：
     draw-compare.py <oracle.jsonl> <port.jsonl> [--frames a-b] [--eps 1e-4] [--max-report 20] [--ignore-state k1,k2]
+    draw-compare.py <oracle.jsonl> - --structure-golden <out.json> [--frames a-b]
+        只用原版流：把每帧绘制操作的"结构"（目标 / 视口 / 图元 / 格式 / 纹理 / 状态，不含顶点与矩阵）摘要成 sha1，
+        写成 tests/golden 用的 JSON；tests/draw.test.mjs 用同一口径（structure_lines）对移植版复算
 退出码：0 全部一致；1 有差异；2 输入问题。
 """
 import argparse
+import hashlib
 import json
 import struct
 import sys
@@ -211,6 +215,38 @@ def compare_op(o, p, eps, ignore_state):
     return compare_words(o['layout'], o['words'], p['words'], eps)
 
 
+# 结构摘要用的状态键（顺序即口径；fogNear / fogFar 为 float 位型，差 1 ulp 也会翻盘，故不入摘要）
+STRUCTURE_STATE_KEYS = ('depthTest', 'depthWrite', 'depthCompare', 'blend', 'srcBlend', 'dstBlend', 'blendOp',
+                        'alphaTest', 'alphaRef', 'alphaCompare', 'fog', 'fogColor', 'textureFactor',
+                        'colorOp', 'colorArg1', 'colorArg2', 'alphaOp', 'alphaArg1', 'alphaArg2', 'textureTransform',
+                        'minFilter', 'magFilter', 'addressU', 'addressV', 'cull')
+
+
+def structure_lines(ops):
+    """每条 Clear / 绘制一行，与 tests/draw.test.mjs 的 structureLines 逐字一致。"""
+    lines = []
+    for op in ops:
+        target = '%d,%d' % tuple(op['target'])
+        if op['op'] == 'clear':
+            rect = '-' if op['rect'] is None else ','.join(str(v) for v in op['rect'])
+            lines.append('C|%s|%d|%d|%s' % (target, op['flags'], op['color'], rect))
+            continue
+        world = op['layout'] in WORLD_LAYOUTS
+        state = []
+        for key in STRUCTURE_STATE_KEYS:
+            if key == 'textureTransform' and not world:
+                continue   # 屏幕格式不经 TnL，纹理矩阵开关无意义（compare_op 同样跳过）
+            state.append(str(op['state'][key]))
+        lines.append('D|%s|%s|%s|%d|%d,%d|%s|%s' % (target, op['topology'], op['layout'], op['primitives'],
+                                                   op['texture'][0], op['texture'][1],
+                                                   ','.join(str(v) for v in op['viewport']), ','.join(state)))
+    return lines
+
+
+def structure_digest(ops):
+    return hashlib.sha1('\n'.join(structure_lines(ops)).encode()).hexdigest()
+
+
 def describe(op):
     if op['op'] == 'clear':
         return 'clear flags=%d color=%08x rect=%s target=%s' % (op['flags'], op['color'], op['rect'], op['target'])
@@ -256,6 +292,32 @@ def dump_frames(frames_map, frames, fold):
             print('  %3d %s%s %s' % (i, tag, describe(op), describe_vertices(op)))
 
 
+def write_structure_golden(oracle_path, out_path, frame_range):
+    oracle = load_jsonl(oracle_path)
+    lo, hi = (int(x) for x in frame_range.split('-')) if frame_range else (min(oracle), max(oracle))
+    st = OracleState()
+    digests = {}
+    for frame in sorted(oracle):
+        rec = oracle[frame]
+        for call in rec.get('prefix', []):
+            st.apply(call)
+        ops = st.fold(rec['calls'])
+        if lo <= frame <= hi:
+            digests[str(frame)] = structure_digest(ops)
+    existing = {}
+    try:
+        with open(out_path) as f:
+            existing = json.load(f)
+    except (OSError, ValueError):
+        pass
+    existing.setdefault('frames', {}).update(digests)
+    with open(out_path, 'w') as f:
+        json.dump(existing, f, indent=1, sort_keys=True)
+        f.write('\n')
+    print('structure golden: %d frames → %s' % (len(digests), out_path))
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('oracle')
@@ -268,12 +330,15 @@ def main():
     ap.add_argument('--skip-textures', default='',
                     help='逗号分隔的 AnmFile 槽号（如 2 = ascii.anm）：两侧都丢弃用这些槽贴图的绘制操作，'
                          '用于暂未移植的子系统。按链地址过滤不可行：链回调里的出批会把上一层残批也记在它名下')
+    ap.add_argument('--structure-golden', default='', help='只读原版流，写出每帧结构摘要 JSON（见模块说明）')
     a = ap.parse_args()
     ignore_state = set(filter(None, a.ignore_state.split(',')))
     skip_textures = {int(x, 0) for x in filter(None, a.skip_textures.split(','))}
 
     def keep(op):
         return op['op'] != 'draw' or op['texture'][0] not in skip_textures
+    if a.structure_golden:
+        return write_structure_golden(a.oracle, a.structure_golden, a.frames)
     oracle, port = load_jsonl(a.oracle), load_jsonl(a.port)
     frames = sorted(set(oracle) & set(port)) if a.dump is None else sorted(oracle if a.dump == 'oracle' else port)
     if a.frames:
