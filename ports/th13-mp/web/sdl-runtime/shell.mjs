@@ -23,6 +23,27 @@ const invalidateCanvasBox = () => { canvasBox = null; };
 addEventListener('resize', invalidateCanvasBox);
 visualViewport?.addEventListener?.('resize', invalidateCanvasBox);
 const canvasRect = () => canvasBox ??= canvas.getBoundingClientRect();
+// 低延迟画布：SDL3 经 Emscripten 创建 WebGL2 上下文时只传入它认识的属性。
+// desynchronized 让 Chromium 把不透明画布直接送显示覆盖层，跳过合成器排队，
+// 每帧提前一个刷新周期到达屏幕；high-performance 在双显卡机器上选独显。
+// 不支持的浏览器忽略这两个提示，走原路径。实际生效情况记入 renderer 报告。
+const lowLatencyCanvas = {desynchronized: true, powerPreference: 'high-performance'};
+let canvasContext = null;
+{
+  const getContext = canvas.getContext.bind(canvas);
+  canvas.getContext = (type, attributes) => {
+    const webgl = type === 'webgl2' || type === 'webgl';
+    const context = getContext(type, webgl ? {...attributes, ...lowLatencyCanvas} : attributes);
+    if (webgl && context) canvasContext = context;
+    return context;
+  };
+}
+const canvasPresentation = () => {
+  const attributes = canvasContext?.getContextAttributes?.() ?? null;
+  return {desynchronized: attributes?.desynchronized === true,
+    powerPreference: attributes?.powerPreference ?? null};
+};
+const rendererReport = () => 'SDL3 / WebGL2' + (canvasPresentation().desynchronized ? ' (desynchronized)' : '') + ' / C++';
 const keyboard = createBrowserKeyboard({
   hostContext: {
     protocol,
@@ -149,7 +170,7 @@ function offerMultiplayerReport(message, stack) {
     browser: navigator.userAgent,
     presentation: {canvas: [canvas.width, canvas.height], devicePixelRatio,
       visibility: document.visibilityState, fps: window.__eaglerNetplayPresentationFps ?? null,
-      playerAnimation},
+      playerAnimation, ...canvasPresentation()},
     network: {route: ['rtc', 'relay'].includes(route) ? route : null,
       transport: (() => {
         const t = globalThis.__eaglerPeerTransport;
@@ -691,7 +712,8 @@ async function command(m) {
         // 会话游戏内保存的）：晚于 loop_start，与 th13.html 内置预装同一拍。
         // 多人 Replay 使用独立命名空间，不回灌单席 catalog。
         if (!runtimeBuild.multiplayer) restoreReplaysToCatalog();
-        emit('runtime-info', {renderer: 'SDL3 / WebGL2 / C++', architecture: protocol, ...runtimeBuild});
+        emit('runtime-info', {renderer: rendererReport(), presentation: canvasPresentation(),
+          architecture: protocol, ...runtimeBuild});
       }
       return {};
     case 'spectator-playback':
