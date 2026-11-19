@@ -2915,18 +2915,16 @@ void TitleScene::update_name_confirm(AnmManager& anm, const InputState& input) {
     }
 }
 
-// 待还原画面（若仍有未接线的标题页）
+// 0x44af80 case 9 / 0xc：原版无对应画面函数，只每帧 0x43c440 停 BGM（不读输入、不切画面）；
+// 本作标题流程不会置这两个值，保留以与分派表同构
 void TitleScene::update_stub(AnmManager& anm, const InputState& input) {
     (void)anm;
+    (void)input;
     if (sub == 0) {
         set_sub(1);
         events.push_back({"stub", screen});
     }
-    if (input.pressed & (InputState::kCancelMask | InputState::kConfirmMask)) {
-        sfx(9);
-        set_screen(kMainMenu);
-        events.push_back({"screen", screen});
-    }
+    play_bgm_op(3);
 }
 
 }  // namespace th16

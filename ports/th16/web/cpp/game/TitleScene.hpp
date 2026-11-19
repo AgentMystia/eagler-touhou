@@ -282,7 +282,7 @@ private:
     void print_replay_row(AsciiManager& ascii, float y, i32 slot, const ReplaySummary& s, const char* stage);
     void print_replay_list_row(AsciiManager& ascii, float y, i32 abs);    // 0x451d50 一行（No. 页 / User 页）
     void update_key_config(AnmManager& anm, const InputState& input);    // 0x44e930
-    void update_stub(AnmManager& anm, const InputState& input);          // 待还原画面：取消回上层
+    void update_stub(AnmManager& anm, const InputState& input);          // 画面 9 / 0xc：原版仅每帧 0x43c440 停 BGM
     void request_game(i32 stage, i32 table);                             // DAT_004c17c4 = 7 等
     void transition_effect();                                            // 0x41a390 + 0x418ba0
     void refresh_option_items(AnmManager& anm);                          // 0x44c8c0：面板子项 0x1e/0x1f
