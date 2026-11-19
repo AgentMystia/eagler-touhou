@@ -49,6 +49,7 @@
 #include "../../web/cpp/game/Input.hpp"
 #include "../../web/cpp/game/Laser.hpp"
 #include "../../web/cpp/game/Replay.hpp"
+#include "../../web/cpp/game/ReplayFile.hpp"
 #include "../../web/cpp/game/Rng.hpp"
 #include "../../web/cpp/game/ScreenEffect.hpp"
 #include "../../web/cpp/game/Stage.hpp"
@@ -130,6 +131,29 @@ int main(int argc, char** argv) {
         text_paint_vm(animations, vm, 0xffffffu, 0u, 0, 0, 0, "test", &queue);
         std::printf("flag=%u queued=%zu height0=%d height8=%d\n", vm.flags_lo & 1u, queue.size(),
                     text_font_height(0), text_font_height(8));
+        return 0;
+    }
+    if (command == "replay-info" && argc >= 3) {
+        // 0x448c10：打印 name / stages / 每段 stage,seed,frames,input_nz,fps_len,first_held_frame
+        ReplayFile file;
+        if (!file.open_file(argv[2])) return fail(file.error.c_str());
+        std::printf("%s stages=%d\n", file.name, file.stage_count);
+        for (size_t i = 0; i < file.stages.size(); ++i) {
+            const auto& s = file.stages[i];
+            i32 nz = 0, first = -1;
+            for (i32 f = 0; f < s.frames; ++f) {
+                const u8* p = s.inputs.data() + size_t(f) * 6u;
+                if (p[0] | p[1] | p[2] | p[3] | p[4] | p[5]) {
+                    ++nz;
+                    if (first < 0) first = f;
+                }
+            }
+            u16 held0 = 0;
+            if (first >= 0) std::memcpy(&held0, s.inputs.data() + size_t(first) * 6u, 2);
+            std::printf("%zu stage=%d seed=%u frames=%d input_nz=%d fps=%zu first=%d held=0x%x\n",
+                        i, int(s.stage), unsigned(s.rng_seed), s.frames, nz, s.fps.size(), first,
+                        unsigned(held0));
+        }
         return 0;
     }
     if (command == "replay-ff" && argc >= 5) {
