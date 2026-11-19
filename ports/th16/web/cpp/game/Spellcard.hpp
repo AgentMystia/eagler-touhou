@@ -22,6 +22,7 @@ namespace th16 {
 class Gui;
 class AsciiManager;
 struct ScoreFile;
+struct TextIntoTextureRequest;
 
 class AnmManager;
 class EnemyManager;
@@ -71,6 +72,7 @@ struct Spellcard {
     Gui* gui = nullptr;                 // DAT_004a6dcc：计时数字样式（0x4175d0 / 0x417650）、弹出通知（0x42bcf0）、extend 残机显示
     ScoreFile* scores = nullptr;        // DAT_004a6f0c：符卡挑战 / 取得记录
     bool replay_playback = false;       // DAT_004a6f08+0xc == 1（= GameManager+0xac）：回放中不写记录
+    std::vector<TextIntoTextureRequest>* text_paints = nullptr;  // 0x46dab0 入队（GameSession::text_into_texture）
 
     // 0x4178a0：memset 0 后 flags |= 2
     void reset();

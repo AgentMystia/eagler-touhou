@@ -498,6 +498,7 @@ void GameSession::bind_spellcard() {
     spellcard.sfx_sink = &sfx_events;
     spellcard.scores = &scores;
     spellcard.replay_playback = game.mode == 1;   // ReplayManager+0xc 由 0x447e20(GameManager+0xac) 赋值
+    spellcard.text_paints = &text_into_texture;
     game.gui.spellcard_flags = &spellcard.flags;
     game.gui.spellcard = &spellcard;
     if (spellcard_update_chain_ == nullptr) {
@@ -693,6 +694,7 @@ bool GameSession::enter_game(i32 replay_mode) {
             if (menu_live) menu.accumulate_play_time();
         };
         game.gui.sfx_sink = &sfx_events;
+        game.gui.text_paints = &text_into_texture;
         if (!game.gui.init(animations, animations.file(5), logo, *game.entry, std::move(msg_bytes))) {
             failure = game.gui.error;
             return false;
@@ -1109,6 +1111,7 @@ void GameSession::leave_game() {
     for (ChainEntry* fade : fade_chains_) chains.remove(fade);
     fade_chains_.clear();
     screen_fades.clear();
+    text_into_texture.clear();
     animations.camera_pos = animations.camera_pos_offset = animations.camera_facing_norm = nullptr;
     for (ChainEntry** entry : {&replay_record_chain_, &replay_playback_chain_, &replay_draw_chain_}) {
         if (*entry) { chains.remove(*entry); *entry = nullptr; }

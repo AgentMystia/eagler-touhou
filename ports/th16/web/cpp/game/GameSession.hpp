@@ -22,6 +22,7 @@
 #include "GameMenu.hpp"
 #include "ScoreFile.hpp"
 #include "ScreenCompositor.hpp"
+#include "TextPaint.hpp"
 #include "TitleScene.hpp"
 
 #include <functional>
@@ -42,6 +43,7 @@ public:
     Spellcard spellcard;          // DAT_004a6db0（0x4178a0：进游戏时创建；敌机 / 自机被弹共用其标志）
     ScreenShakeOffset screen_shake;  // DAT_004c1788 / DAT_004c1530：ECL 517 画面震动当前偏移
     std::vector<std::shared_ptr<ScreenFade>> screen_fades;  // 存活的淡入淡出 ScreenEffect（绘制链 0x54 全屏色块；渲染侧读）
+    std::vector<TextIntoTextureRequest> text_into_texture;  // 0x46d990 / 0x46dab0：逻辑帧入队，宿主绘制前刷入纹理
     Supervisor supervisor;
     ChainManager chains;
     GameGlobals globals;
