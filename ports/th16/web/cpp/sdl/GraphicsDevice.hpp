@@ -59,9 +59,8 @@ public:
     void present() { backend.present(screen); }
     void flush() { backend.flush(); }
 
-    // 0x459240 文字贴图：清矩形 / 把 RGBA32 刷进 BGRA8 表面并抬 revision
-    void clear_texture_rect(u32 handle, i32 left, i32 top, i32 right, i32 bottom);
-    void blit_rgba_to_texture(u32 handle, i32 dst_x, i32 dst_y, const u8* rgba, i32 width, i32 height, i32 pitch);
+    // 0x459240 末步 D3DXLoadSurfaceFromMemory（FILTER_NONE）：A4R4G4B4 → BGRA8 整块覆盖并抬 revision
+    void write_texture_argb4444(u32 handle, i32 left, i32 top, const u16* pixels, i32 width, i32 height);
 };
 
 }  // namespace th16::sdl

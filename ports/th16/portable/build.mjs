@@ -42,6 +42,7 @@ const run = (args) => new Promise((done, reject) => {
 // -ffp-contract=off：th16 原版为 SSE2 标量单精度，禁 FMA 融合才能逐位对齐。
 const common = ['-O2', '-g0', '-fno-strict-aliasing', '-ffp-contract=off',
   '-DTH_SDL3=1', '-DTH_NATIVE_PLATFORM=1', '--use-port=sdl3',
+  '-DTH16_HAS_TTF=1', '--use-port=sdl3_ttf',  // 0x459240 字形光栅（字体文件由宿主装入 MEMFS）
   '-I' + resolve(root, 'cpp')];
 const flags = [...common, '-std=c++17', '-fno-exceptions', '-fno-rtti'];
 

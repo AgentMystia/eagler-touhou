@@ -80,8 +80,8 @@ void Spellcard::start(i32 spell_id, const char* spell_name, i32 limit, i32 anm_i
         vm_ids[2] = text != nullptr ? anm->spawn(*text, 2, -1) : 0;
         vm_ids[3] = ascii != nullptr ? anm->spawn(*ascii, 1, -1) : 0;
         if (AnmVm* name_vm = anm->find(vm_ids[2])) {
-            // 0x46dab0(AnmManager, name_vm, 0xffffff, 0, font=8, shadow=1, name)
-            text_paint_vm_centered(*anm, *name_vm, 0xffffffu, 0u, 8, 1, name, text_paints);
+            // 0x417f00 → 0x46dab0(AnmManager, name_vm, 0xffffff, 0, font=0, spacing=0, name)
+            text_paint_vm_centered(*anm, *name_vm, 0xffffffu, 0u, 0, 0, name, text_paints);
         } else {
             vm_ids[2] = 0;
         }
