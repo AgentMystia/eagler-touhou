@@ -100,7 +100,9 @@ private:
     ChainEntry* effect_update_chain_ = nullptr;
     ChainEntry* title_update_chain_ = nullptr;
     ChainEntry* game_update_chain_ = nullptr;
-    ChainEntry* replay_record_chain_ = nullptr;
+    ChainEntry* replay_record_chain_ = nullptr;       // 0x10（0x448e20 → 0x447fd0 记录）
+    ChainEntry* replay_playback_chain_ = nullptr;     // 0x22（0x448e40：回放中按住射击则 Restart 整条更新链快进）
+    ChainEntry* replay_draw_chain_ = nullptr;         // 0x47（0x448e90 → 0x4482f0 回放 FPS 文字）
     ChainEntry* player_update_chain_ = nullptr;
     ChainEntry* player_draw_chain_ = nullptr;
     ChainEntry* enemy_update_chain_ = nullptr;

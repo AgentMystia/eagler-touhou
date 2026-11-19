@@ -202,6 +202,8 @@ constexpr AddressAnchor kAnchors[] = {
     {"enemy-manager-destroy", 0x41B1A0, "game/Enemy.cpp EnemyManager::destroy（reset + 卸载 ECL ANIM 槽）"},
     {"spellcard-destroy", 0x417790, "game/Spellcard.cpp Spellcard::destroy（+0x10 / +0x14 / +0x18 VM 标删后 reset）"},
     {"score-rng-init", 0x449720, "game/GameSession.cpp load_boot_banks（0x4497e0 ScoreFile 构造：DAT_004a6d88 做 0x1ee 次 next16）"},
+    {"replay-playback-chain", 0x448E40, "game/GameSession.cpp replay_playback_chain_（0x22：回放快进占位；非回放恒 Continue）"},
+    {"replay-draw-fps", 0x4482F0, "game/GameSession.cpp replay_draw_chain_（0x47 ← 0x448e90：回放 FPS 文字占位）"},
     {"replay-rng-reset", 0x449030, "game/GameSession.cpp enter_game（0x449e50 Replay 构造：重置 DAT_004a6d8c 调用计数）/ next_stage（DAT_004a5bec bit1：game_rng 种子 := visual_rng 种子低 16 位）"},
     {"ecl-load", 0x474530, "game/Ecl.cpp EclResource::open + EclProgram::attach（SCPT 头、ANIM/ECLI 包含、ECLH 子程序表排序）"},
     {"ecl-find-sub", 0x474740, "game/Ecl.cpp EclProgram::find_index（二分查找合并子程序表）"},
