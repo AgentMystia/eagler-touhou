@@ -11,7 +11,9 @@
 //   kind 8（炸弹震动，0x45cf10）：振幅按 attack（线性升）/ sustain（满幅）/ decay（线性降）三段包络，
 //   用 visual_rng（DAT_004a6d88）各双步一次决定 x / y 方向；DAT_004c0f40 非零时自删，GameManager 装载 / 结束 /
 //   flags & 0x72 时跳过本帧；超过三段总长自删。
-//   其余 kind（4/6/7/9 等纯绘制）渲染侧接入时补。
+//   kind 9（标题返回练习 / 符卡练习：0x44af80 在 title_origin 4 / 5 时建，0x1e 帧、色 0、绘制链 0x54）：
+//   更新 0x45cac0（alpha 恒 0xff，t ≥ duration 自删）；绘制 0x45cb50（不改视口，直接 0x45c690 整幅填色）。
+//   其余 kind（4/6/7）渲染侧接入时补。
 //
 // 震动消耗 game_rng 与敌弹共用一条随机序列，因此必须与原版同帧同序执行（链 0x13 在敌机链 0x1a 之前）。
 #pragma once
@@ -63,5 +65,7 @@ struct ScreenFade {
 bool screen_fade_step(ScreenFade& fade, i32 post_load_frames, bool game_frozen, float game_speed);
 // 0x45c630（kind 0 / 3）：alpha 由 255 递减；计时到 duration 返回 false
 bool screen_fade_in_step(ScreenFade& fade, i32 post_load_frames, float game_speed);
+// 0x45cac0（kind 9）：alpha 恒 0xff；计时到 duration 返回 false
+bool screen_fade_hold_step(ScreenFade& fade, i32 post_load_frames, float game_speed);
 
 }  // namespace th16

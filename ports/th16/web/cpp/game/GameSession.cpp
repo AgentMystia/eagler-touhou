@@ -7,6 +7,12 @@
 
 namespace th16 {
 
+namespace {
+// 0x42d200 / 0x41a390：Loading VM 位置 = 2 × (480, 392) 寄存器实参 = (960, 784)
+constexpr Vec3 kLoadingVmPos{960.0f, 784.0f, 0.0f};
+}  // namespace
+
+
 GameSession::GameSession() {
     // 0x43ba40：Supervisor 十条合成绘制链；0x46a3a0：AnmManager 各层绘制链。都在进程启动时登记、常驻
     compositor.screen_shake = &screen_shake;
@@ -174,6 +180,13 @@ bool GameSession::activate_title_menu() {
 
     // 0x44af80 case 0 → 0x44a560(1) → 0x44b5f0：标题对象在首次更新链调用时自行生成装饰/logo
     title.activate(title_file, title_v_file, animations.file(AnmManager::kAsciiSlot), globals);
+    title.on_screen_fade = [this](i32 kind, i32 duration, u32 color) { create_screen_fade(kind, duration, color); };
+    title.on_transition_effect = [this]() {
+        // 0x41a390 + 0x418ba0 + 0x46f0b0(..., 7)：Loading VM、过场种类 0、中断 7
+        spawn_loading_vm(kLoadingVmPos);
+        const u32 id = effects.attach(0, nullptr, {});
+        if (id != 0) animations.interrupt(id, 7);
+    };
     globals.scene_request = -1;
 
     // 0x44ac54：启用标题更新链（优先级 6 → 0x44af80）
@@ -731,11 +744,6 @@ bool GameSession::enter_game(i32 replay_mode) {
     return true;
 }
 
-namespace {
-// 0x42d200：各路径的 "Loading" VM 位置都是 (960, 784)：暂停重开写在栈上，0x41a390 路径由寄存器 480 / 392 加倍而来
-constexpr Vec3 kLoadingVmPos{960.0f, 784.0f, 0.0f};
-}  // namespace
-
 bool GameSession::restart_game(SceneId reason, i32 replay_mode) {
     // 0x42d200 开头按场景请求决定重开方式：
     //   0xa / 0xb（暂停菜单重开）：Loading VM（ascii.anm 0x11）放到 (960, 784)；与开局同一关 → bit0 快速重开
@@ -988,25 +996,32 @@ void GameSession::create_screen_fade(i32 kind, i32 duration, u32 color) {
     fade->duration = duration;
     fade->color = color;
     fade->timer.reset();
-    // 0x45d1a0：kind 3 从全不透明开始淡入
-    if (kind == 3) fade->alpha = 0xff;
+    // 0x45d1a0：kind 3 / 9 从全不透明开始
+    if (kind == 3 || kind == 9) fade->alpha = 0xff;
     screen_fades.push_back(fade);
-    const bool fade_in = kind == 0 || kind == 3;   // 0x45c630；其余 kind 走 0x45c900
-    const bool full_viewport = kind == 0 || kind == 5;
-    ChainEntry* draw = chains.create([this, fade, full_viewport]() -> ChainResult {
+    // 更新：kind 0/3 → 0x45c630；kind 9 → 0x45cac0；其余 → 0x45c900
+    // 绘制：kind 2/3 → 0x45c990 优先级 0xa；kind 0/5 → 0x45c860 优先级 0x54（先整幅视口）；
+    //       kind 9 → 0x45cb50 优先级 0x54（不改视口）
+    const bool fade_in = kind == 0 || kind == 3;
+    const bool fade_hold = kind == 9;
+    const bool reset_viewport = kind == 0 || kind == 5;
+    const i32 draw_priority = (kind == 0 || kind == 5 || kind == 9) ? 0x54 : 0x0a;
+    ChainEntry* draw = chains.create([this, fade, reset_viewport]() -> ChainResult {
         if (renderer.device == nullptr) return ChainResult::Continue;
         const float width = float(animations.render_target_width), height = float(animations.render_target_height);
-        if (full_viewport) {
+        if (reset_viewport) {
             // 0x45c860：出批、SetViewport(0, 0, DAT_004d9d2c, DAT_004d9d30)
             renderer.flush();
             renderer.device->set_viewport(Viewport{0, 0, i32(animations.render_target_width), i32(animations.render_target_height)});
         }
         renderer.draw_screen_fill(width, height, (u32(fade->alpha) << 24) | fade->color);
         return ChainResult::Continue;
-    }, full_viewport ? 0x54 : 0x0a, false);
-    ChainEntry* entry = chains.create([this, fade, fade_in]() -> ChainResult {
+    }, draw_priority, false);
+    ChainEntry* entry = chains.create([this, fade, fade_in, fade_hold]() -> ChainResult {
         bool alive;
-        if (fade_in) {
+        if (fade_hold) {
+            alive = screen_fade_hold_step(*fade, globals.post_load_frames, supervisor.game_speed);
+        } else if (fade_in) {
             alive = screen_fade_in_step(*fade, globals.post_load_frames, supervisor.game_speed);
         } else {
             const bool frozen = ((game.flags | (game.flags >> 2)) & 1u) != 0;

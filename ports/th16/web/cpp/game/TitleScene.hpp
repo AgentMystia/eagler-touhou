@@ -19,6 +19,7 @@
 #include "MenuCursor.hpp"
 #include "Types.hpp"
 
+#include <functional>
 #include <vector>
 
 namespace th16 {
@@ -51,6 +52,9 @@ public:
     bool has_clear_data = false;     // 0x44a850()：任一难度有通关记录（Extra 可选）
     GameGlobals* globals = nullptr;
     std::vector<Event> events;       // SFX / 画面 / 场景请求 / 过场效果（供 harness 断言）
+    // GameSession 注入：0x45d150 淡入淡出 / 0x41a390 Loading + 0x418ba0 过场
+    std::function<void(i32 kind, i32 duration, u32 color)> on_screen_fade;
+    std::function<void()> on_transition_effect;
 
     void activate(AnmFile* title, AnmFile* title_v, AnmFile* ascii, GameGlobals& g) {
         *this = TitleScene{};
@@ -90,7 +94,7 @@ private:
     void update_stage(AnmManager& anm, const InputState& input);         // 0x450ef0
     void update_stub(AnmManager& anm, const InputState& input);          // 待还原画面：取消回主菜单
     void request_game(i32 stage, i32 table);                             // DAT_004c17c4 = 7 等
-    void transition_effect();                                            // 0x41a390 + 0x418ba0（EffectManager 待接）
+    void transition_effect();                                            // 0x41a390 + 0x418ba0
 };
 
 }  // namespace th16

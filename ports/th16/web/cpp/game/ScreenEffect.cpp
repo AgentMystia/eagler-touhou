@@ -114,4 +114,13 @@ bool screen_fade_in_step(ScreenFade& fade, i32 post_load_frames, float game_spee
     return true;
 }
 
+bool screen_fade_hold_step(ScreenFade& fade, i32 post_load_frames, float game_speed) {
+    // 0x45cac0：先把 alpha 写成 0xff；到时返回 7；否则按 0x406190 推进（speed_slot 经 DAT_00490eb0，运行时恒 0）
+    if (post_load_frames != 0) return false;
+    fade.alpha = 0xff;
+    if (fade.timer.current >= fade.duration) return false;
+    fade.timer.tick(game_speed);
+    return true;
+}
+
 }  // namespace th16
