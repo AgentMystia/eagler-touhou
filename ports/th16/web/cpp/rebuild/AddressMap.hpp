@@ -263,13 +263,17 @@ constexpr AddressAnchor kAnchors[] = {
     {"spellcard-timing", 0x417BC0, nullptr},           // 实时（QueryPerformanceCounter）取得用时 → +0x90 / +0xa4；oracle 不跑主循环，恒 0
     {"spellcard-draw", 0x417D70, "game/Spellcard.cpp Spellcard::draw_text（绘制链 0xc：名牌 VM 透明度、字体 2 组 2；奖励 \"%8d\" / 已失 \"$\"；取得 / 挑战 \"%.2d/%.2d\"、≥100 次 \"99+\" / \"MASTER\"）"},
     {"spellcard-records", 0x417F00, "game/ScoreFile.hpp ScoreFile::record_spell_attempt / record_spell_capture（机体块 +0x8d8 + id×0x9c：名字、挑战 +0x88 / 取得 +0x80 [符卡练习 +4]；合计块 4 同步；回放不计；0x4182f0 取得）"},
-    // —— ScreenEffect（0x45d150：kind 1 画面震动；kind 0 / 2 / 3 / 5 淡入淡出；更新链 0x13、绘制链 0xa / 0x54）——
-    {"screen-effect-create", 0x45D150, "game/GameSession.cpp GameSession::create_screen_shake / create_screen_fade（0x45d1a0：kind 1 登记更新链 0x13；kind 2 / 3 另登记绘制链 0xa，kind 0 / 5 绘制链 0x54；ECL 517 经 EnemyManager::shake_requests 在敌机链之后创建）"},
+    // —— ScreenEffect（0x45d150：kind 0..9；更新链 0x13、绘制链 0xa / 0x54）——
+    {"screen-effect-create", 0x45D150, "game/GameSession.cpp GameSession::create_screen_shake / create_screen_fade（0x45d1a0：kind 1/8 只挂更新链；其余另挂绘制链；ECL 517 经 EnemyManager::shake_requests 在敌机链之后创建）"},
     {"screen-fade-draw", 0x45C990, "game/GameSession.cpp GameSession::create_screen_fade 绘制链回调（kind 2 / 3：不改视口，直接 0x45c690 填满场地渲染目标）"},
     {"screen-fade-draw-fullscreen", 0x45C860, "game/GameSession.cpp GameSession::create_screen_fade 绘制链回调（kind 0 / 5：先出批并 SetViewport(0,0,后备缓冲宽高) 再 0x45c690）"},
-    {"screen-fill-quad", 0x45C690, "game/AnmRenderer.cpp AnmRenderer::draw_screen_fill（出批；TSS SELECTARG1 / DIFFUSE、DESTBLEND INVSRCALPHA；FVF 0x44 四顶点条带 (0,0)-(w,h) 色 alpha<<24|color；随后清顶点格式 / 纹理矩阵 / 纹理键缓存、blend 缓存置 0xa、TSS 回 MODULATE / TEXTURE；纹理与 DESTBLEND 不恢复）"},
+    {"screen-fill-quad", 0x45C690, "game/AnmRenderer.cpp AnmRenderer::draw_screen_fill（出批；TSS SELECTARG1 / DIFFUSE、DESTBLEND INVSRCALPHA；FVF 0x44 四顶点条带；随后清顶点格式 / 纹理矩阵 / 纹理键缓存、blend 缓存置 0xa、TSS 回 MODULATE / TEXTURE；纹理与 DESTBLEND 不恢复）"},
     {"screen-fade-hold-step", 0x45CAC0, "game/ScreenEffect.cpp screen_fade_hold_step（kind 9：alpha 恒 0xff，t ≥ duration 自删）"},
-    {"screen-fade-hold-draw", 0x45CB50, "game/GameSession.cpp create_screen_fade kind 9 绘制链（不改视口，直接 0x45c690）"},
+    {"screen-fade-hold-draw", 0x45CB50, "game/GameSession.cpp create_screen_fade kind 6 / 9 绘制链（不改视口，直接 0x45c690）"},
+    {"screen-fade-from-aux-step", 0x45CBD0, "game/ScreenEffect.cpp screen_fade_from_aux_step（kind 4：从 +0x20 高字节线性淡到 0，到期按 +0x1c 次数重跑）"},
+    {"screen-fade-field-draw", 0x45CCC0, "game/GameSession.cpp create_screen_fade kind 4 绘制链（场地矩形 DAT_004d9d38 起 384×448，色取 +0x20）"},
+    {"screen-fade-half-step", 0x45C9E0, "game/ScreenEffect.cpp screen_fade_half_step（kind 6 / 7：alpha→128；+0x28≠0 时 8 帧衰减自删）"},
+    {"screen-fade-playfield-draw", 0x45CBA0, "game/GameSession.cpp create_screen_fade kind 7 绘制链（固定矩形 (128,16)-(512,464)）"},
     {"screen-shake-update", 0x45CD30, "game/ScreenEffect.cpp screen_shake_step（计时、线性振幅、game_rng %3 ×2 决定 x/y 符号、DAT_004c1788 / DAT_004c1530 输出；到时返回 7）"},
     {"screen-effect-destroy", 0x45D130, "game/Chain.cpp ChainManager::run_list（ChainResult::Destroy → on_destroy 摘除两条链）"},
     {"enemy-spawn-op", 0x423050, "game/Enemy.cpp Enemy::execute case 300..305 / 309..312 / 321（相对/绝对/镜像生成子敌人；参数块附带生成者 EnemyInf+0x28c..0x2b8 寄存器）"},
