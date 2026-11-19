@@ -190,8 +190,25 @@ void TitleScene::refresh_spell_slot_names(AnmManager& anm) {
     static constexpr char kChallenge[] = "\x92\xa7\x90\xed\x89\xc2\x94\\\x81I";
     static constexpr char kLockedFmt[] =
         " No.%3d  \x81H\x81H\x81H\x81H\x81H\x81H\x81H\x81H\x81H\x81H\x81H";
+    static constexpr i32 kDiffMarker = 0x10d;  // +0x6f4：难度角标 0x10d..0x110
 
     for (int i = 0; i < 5; ++i) spell_slot_ids[i] = -2;
+
+    // 先藏旧角标（+0x6f4 起 7 槽），非 Extra 再生成 0x10d..0x110
+    for (int i = 0; i < 7; ++i) {
+        const i32 slot = kDiffMarker + i;
+        if (slot >= kVmTable) break;
+        if (vm[slot] != 0) {
+            anm.kill(vm[slot]);
+            vm[slot] = 0;
+        }
+    }
+    if (spell_group != 6) {
+        for (int i = 0; i < 4; ++i) {
+            if (vm[kDiffMarker + i] == 0) spawn_into(anm, kDiffMarker + i, *title_file, kDiffMarker + i);
+            if (vm[kDiffMarker + i] != 0) anm.interrupt_now(vm[kDiffMarker + i], 3);
+        }
+    }
 
     for (int i = 0; i < 5; ++i) {
         if (spell_name_vms[i] == 0) {
@@ -219,6 +236,15 @@ void TitleScene::refresh_spell_slot_names(AnmManager& anm) {
         i32 dest = 4;
         if (spell_group == 6) dest = (diff != 4) ? 1 : 0;
         else if (diff < 5) dest = diff;
+
+        if (spell_group == 6) {
+            // Extra：难度 4 → +0x704 脚本 0x111；难度 5 → +0x70c 脚本 0x113
+            if (diff == 4 && vm[0x111] == 0) spawn_into(anm, 0x111, *title_file, 0x111);
+            else if (diff == 5 && vm[0x113] == 0) spawn_into(anm, 0x113, *title_file, 0x113);
+        } else if (diff > 4 && vm[0x112] == 0) {
+            spawn_into(anm, 0x112, *title_file, 0x112);
+            if (vm[0x112] != 0) anm.interrupt_now(vm[0x112], 3);
+        }
 
         bool open = false;
         if (scores != nullptr) {
@@ -1476,6 +1502,13 @@ void TitleScene::update_spell_list(AnmManager& anm, const InputState& input) {
             for (u32& id : spell_name_vms) {
                 if (id != 0) anm.kill(id);
                 id = 0;
+            }
+            for (int i = 0; i < 7; ++i) {
+                const i32 slot = 0x10d + i;
+                if (slot < kVmTable && vm[slot] != 0) {
+                    anm.kill(vm[slot]);
+                    vm[slot] = 0;
+                }
             }
             set_screen(kSpellPractice);
             cursor.pop();

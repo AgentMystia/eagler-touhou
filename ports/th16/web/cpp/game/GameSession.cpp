@@ -360,10 +360,11 @@ bool GameSession::enter_ending(bool extra) {
         return ChainResult::Continue;
     }, 0x23, true);
     chains.enable(ending_update_chain_);
-    // 绘制链 0x43（LAB_004197b0）：剧本文字贴图完整接入前为空转，保持链登记对齐
+    // 绘制链 0x43（LAB_004197b0）：原版恒返回 1（空操作）；链登记对齐优先级
     if (ending_draw_chain_) { chains.remove(ending_draw_chain_); ending_draw_chain_ = nullptr; }
     ending_draw_chain_ = chains.create([this]() -> ChainResult {
-        return ending_live ? ChainResult::Continue : ChainResult::Continue;
+        (void)this;
+        return ChainResult::Continue;
     }, 0x43, true);
     chains.enable(ending_draw_chain_);
     supervisor.current = supervisor.requested = SceneId::Ending;

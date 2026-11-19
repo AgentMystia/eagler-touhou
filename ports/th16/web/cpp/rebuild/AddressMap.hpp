@@ -395,6 +395,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"ending-script", 0x4199F0, "game/EndingScene.cpp EndingScene::step_script（op0/3/5–12；文字贴图待 TTF）"},
     {"ending-update", 0x4196C0, "game/EndingScene.cpp EndingScene::update / GameSession 链 0x23"},
     {"ending-line-vms", 0x4197C0, "game/EndingScene.cpp EndingScene::spawn_line_vms（text.anm 0x2e..0x32）"},
+    {"ending-draw", 0x4197B0, "game/GameSession.cpp ending_draw_chain_（LAB_004197b0：原版 mov eax,1 / ret 空操作）"},
     {"ending-destroy", 0x419450, "game/GameSession.cpp leave_ending"},
     {"title-draw", 0x44B530, nullptr},       // 标题绘制链 0x45
     {"score-file", 0x4497E0, nullptr},       // scoreth16.dat 读写
