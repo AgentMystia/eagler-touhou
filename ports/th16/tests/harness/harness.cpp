@@ -166,9 +166,12 @@ int main(int argc, char** argv) {
             session.injected_input = inject.count(f) ? inject[f] : 0;
             if (!session.logic_step()) { std::fprintf(stderr, "%s\n", session.failure.c_str()); return 1; }
         }
-        std::printf("scene=%d ending_live=%d ending_index=%d finished=%d title_live=%d\n",
+        std::printf("scene=%d ending_live=%d ending_index=%d finished=%d title_live=%d color=%x lines=%d bgm=%s\n",
                     int(session.supervisor.current), session.ending_live ? 1 : 0, session.ending.ending_index,
-                    session.ending.finished ? 1 : 0, session.supervisor.title_menu_live ? 1 : 0);
+                    session.ending.finished ? 1 : 0, session.supervisor.title_menu_live ? 1 : 0,
+                    session.ending.text_color, session.ending.lines_written,
+                    session.ending.last_bgm.empty() ? "-" : session.ending.last_bgm.c_str());
+        if (!session.ending.last_text.empty()) std::printf("text_bytes=%zu\n", session.ending.last_text.size());
         for (const char* e : session.ending.events) std::printf("event %s\n", e);
         return 0;
     }

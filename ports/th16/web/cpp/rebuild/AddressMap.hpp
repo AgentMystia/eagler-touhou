@@ -386,7 +386,10 @@ constexpr AddressAnchor kAnchors[] = {
     {"title-spell-shot", 0x456A20, "game/TitleScene.cpp TitleScene::update_spell_shot（符卡机体页；取消→0x12）"},
     {"title-score", 0x452330, "game/TitleScene.cpp TitleScene::update_score（Player Data 难度/机体/翻页）"},
     {"ending-create", 0x419640, "game/EndingScene.cpp EndingScene::begin / GameSession::enter_ending"},
-    {"ending-load", 0x4191F0, "game/EndingScene.cpp begin/load_msg（e0N.msg + 成绩见过位；剧本 VM 待接）"},
+    {"ending-load", 0x4191F0, "game/EndingScene.cpp begin/load_msg（e0N.msg + 成绩见过位 + 行 VM）"},
+    {"ending-script", 0x4199F0, "game/EndingScene.cpp EndingScene::step_script（op0/3/5–12；文字贴图待 TTF）"},
+    {"ending-update", 0x4196C0, "game/EndingScene.cpp EndingScene::update / GameSession 链 0x23"},
+    {"ending-line-vms", 0x4197C0, "game/EndingScene.cpp EndingScene::spawn_line_vms（text.anm 0x2e..0x32）"},
     {"ending-destroy", 0x419450, "game/GameSession.cpp leave_ending"},
     {"title-draw", 0x44B530, nullptr},       // 标题绘制链 0x45
     {"score-file", 0x4497E0, nullptr},       // scoreth16.dat 读写

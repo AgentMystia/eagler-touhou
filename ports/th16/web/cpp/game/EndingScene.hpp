@@ -1,15 +1,17 @@
-// th16 结局——原版 DAT_004a6dbc（0x419640 创建 / 0x4191f0 装载 / 更新链 0x23 / 绘制链 0x43）。
+// th16 结局——原版 DAT_004a6dbc（0x419640 创建 / 0x4191f0 装载 / 更新 0x4196c0 / 剧本 0x4199f0）。
 //
 // 锚点：
-//   0x4191f0  登记更新/绘制链；选 e0N.msg（N=ending_index+1）；成绩 +0x19f96 见过标记；ascii Loading 0x11
-//   0x4197c0  结局侧 Msg 壳（text.anm 0x2e..）；剧本推进随后接
-//   0x419450  析构：摘链、释放 msg / 结局 VM
-//
-// 本阶段：场景进出、索引/msg 装载、成绩见过位、跳过/超时回标题；完整 Msg 剧本 VM 随后接。
+//   0x4191f0  登记链 0x23/0x43；选 e0N.msg；成绩 +0x19f96；ascii Loading 0x11
+//   0x4197c0  text.anm 0x2e..0x32 行 VM
+//   0x4199f0  剧本：op0 结束、op3 写字、op5/6 等待、op7 装 e0N.anm（槽=arg+0x14）、
+//            op8 放精灵、op9 颜色、op10 BGM、op11 淡出、op12 staff.msg…
+//   0x4196c0  每帧调 0x4199f0；结束 → 场景 4/2；快进 Restart(6)
 #pragma once
+#include "AnmVm.hpp"
 #include "Input.hpp"
 #include "Types.hpp"
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -26,26 +28,52 @@ struct EndingScene {
         "e01.msg", "e02.msg", "e03.msg", "e04.msg", "e05.msg", "e06.msg", "e07.msg", "e08.msg",
     };
 
+    enum class ScriptResult : i32 { Running = 0, Finished = -1 };
+
     bool live = false;
-    i32 timer = 0;           // +0x10 族
-    i32 ending_index = 0;    // +0x18：机体组合×2（+1 = 有续关）
-    u32 flags = 0;           // +0x1c：bit0 本结局未见过 / bit1 全机未见
+    i32 timer = 0;                 // Ending 外壳 +0x20（0x4196c0 每帧 +1）
+    i32 ending_index = 0;          // +0x18
+    u32 flags = 0;                 // 外壳 +0x1c（bit0 首次本结局、bit1 首次任意结局）
     bool finished = false;
-    std::vector<u8> msg_bytes;   // e0N.msg 载荷（原版 +0x10 指向解密缓冲）
+    std::vector<u8> msg_bytes;
     std::string msg_name;
-    u32 line_vms[5] = {};    // 0x4197c0：text.anm 脚本 0x2e..0x32
-    const u8* script_pc = nullptr;  // +0x54：剧本游标（完整解释器待接）
+
+    // —— 剧本对象（0x4199f0 的 param_1）——
+    u32 line_vms[5] = {};          // +0x40
+    const u8* script_pc = nullptr; // +0x54
+    Timer script_timer;            // +0x14..+0x28：脚本时刻（current = +0x1c）
+    Timer wait_timer;              // +0x2c
+    u32 script_flags = 1;          // +0x74：bit0 活动；bit1 staff；bit2 装载中
+    i32 lines_written = 0;         // +0x78
+    u32 text_color = 0xffffff;     // +0x7c
+    AnmFile* ending_anms[4] = {};  // +0x80：op7 装入的 ANM（下标 = 剧本 arg）
+    u32 anm_vms[4] = {};           // +0x90
+    i32 pending_anm_slot = -1;     // +0xec / op7 槽
+    std::string pending_anm_name;  // +0x70 指向的名字副本
+    std::string last_text;         // 最近一次 op3 解密结果（宿主/测试）
+    std::string last_bgm;          // 最近一次 op10
+
+    // 宿主：装 ending ANM → 返回槽内 AnmFile*（失败 nullptr）
+    std::function<AnmFile*(int slot, const char* name)> load_ending_anm;
+    // 宿主：在 ending ANM 上 spawn 脚本（op8）；返回 VM id
+    std::function<u32(AnmFile* file, i32 script, i32 slot_index)> spawn_ending_anm;
+    std::function<void(u32 vm)> kill_ending_anm;
     std::vector<const char*> events;
 
-    // 0x4191f0：shot+aux；continues==0 → 偶下标（true end），否则奇下标
     void begin(i32 shot, i32 shot_aux, i32 continues, ScoreFile* scores, i32 difficulty);
-    // 从档案装 e0N.msg；失败时 events 记 "msg-missing"，仍可跳过回标题
     bool load_msg(const u8* bytes, u32 size, const char* name);
-    // 0x4197c0：text.anm 五行 VM；index≥8 时 flags|=2
     void spawn_line_vms(AnmManager& anm, AnmFile* text_anm);
     void destroy_line_vms(AnmManager& anm);
+    // 0x4199f0 一拍；返回 Finished 时 0x4196c0 请求回标题
+    ScriptResult step_script(const InputState& input);
+    // 0x4196c0 + 跳过/超时门控（烟雾测试口径：>0x78 确认结束）
     bool update(const InputState& input);
     void end();
+
+private:
+    static std::string decrypt_text(const u8* src);
+    void advance_pc();
+    bool waiting_for_input(const InputState& input) const;
 };
 
 }  // namespace th16
