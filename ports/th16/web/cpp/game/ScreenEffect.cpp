@@ -123,4 +123,39 @@ bool screen_fade_hold_step(ScreenFade& fade, i32 post_load_frames, float game_sp
     return true;
 }
 
+bool screen_fade_from_aux_step(ScreenFade& fade, i32 post_load_frames, float game_speed) {
+    // 0x45cbd0：DAT_004c0f40 非零 → 7；否则以 (+0x20>>24) 为起点按 t/duration 线性降到 0。
+    // t ≥ duration 时 alpha=0、对 +0x1c 做 --，≤0 自删，否则 0x406490(timer, 0) 重跑。
+    if (post_load_frames != 0) return false;
+    const i32 start = i32(fade.color_aux >> 24);
+    const i32 d = fade.duration;
+    if (fade.timer.current < d) {
+        const i32 delta = d != 0 ? i32(float(start) * fade.timer.current_f / float(d)) : 0;
+        fade.alpha = start - delta;
+        if (fade.alpha < 0) fade.alpha = 0;
+    } else {
+        fade.color = u32(i32(fade.color) - 1);
+        fade.alpha = 0;
+        if (i32(fade.color) <= 0) return false;
+        fade.timer.set(0);
+    }
+    fade.timer.tick(game_speed);
+    return true;
+}
+
+bool screen_fade_half_step(ScreenFade& fade, float game_speed) {
+    // 0x45c9e0：+0x28==0 → alpha = t×128/duration（t≤duration）；+0x28≠0 → t>8 自删，否则 128−t×16
+    if (fade.mode_flag == 0) {
+        const i32 d = fade.duration;
+        if (d != 0 && fade.timer.current <= d) {
+            fade.alpha = i32(fade.timer.current_f * 128.0f / float(d));
+        }
+    } else {
+        if (fade.timer.current > 8) return false;
+        fade.alpha = 0x80 - i32(fade.timer.current_f * 128.0f * 0.125f);
+    }
+    fade.timer.tick(game_speed);
+    return true;
+}
+
 }  // namespace th16
