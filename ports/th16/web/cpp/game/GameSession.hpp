@@ -112,8 +112,10 @@ private:
     ChainEntry* replay_record_chain_ = nullptr;       // 0x10（0x448e20 → 0x447fd0 记录）
     ChainEntry* replay_playback_chain_ = nullptr;     // 0x22（0x448e40：回放中按住射击则 Restart 整条更新链快进）
     ChainEntry* replay_draw_chain_ = nullptr;         // 0x47（0x448e90 → 0x4482f0 回放 FPS 文字）
+    ChainEntry* global_fps_draw_chain_ = nullptr;     // 0x4b（0x426490 → 0x4263e0：全局 "%2.1ffps"）
     i32 replay_ff_counter_ = 0;                      // ReplayManager+0x20c：快进 Restart 计数（%8）
     u8 replay_fps_byte_ = 60;                        // ReplayManager+0x208：最近测得帧率（记录链每 30 帧写）
+    float global_fps_ = 60.0f;                       // FrameTimer+0x30（0x4262f0 测速；无墙钟时固定 60）
     ReplayFile replay_file_;                         // 0x448c10 展开后的回放
     ReplayPlaybackCursor replay_cursor_;             // 当前关卡段读指针（+0xc8 / +0xd8）
     bool replay_file_loaded_ = false;

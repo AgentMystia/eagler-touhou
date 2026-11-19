@@ -21,6 +21,16 @@ GameSession::GameSession() {
     compositor.init_cameras(geometry.window_scale);
     compositor.register_draw_chains(chains, renderer);
     register_layer_draw_chains();
+    // 0x43b520：FrameTimer 绘制链 0x4b（0x426490 → 0x4263e0）；标题 / 结局不画。
+    // 测速 0x4262f0（QPC）未接前保持禁用，避免无墙钟的 harness 绘制黄金被 "%2.1ffps" 污染。
+    global_fps_draw_chain_ = chains.create([this]() -> ChainResult {
+        if (supervisor.current == SceneId::Title || supervisor.current == SceneId::Ending)
+            return ChainResult::Continue;
+        ascii.style.color = global_fps_color(global_fps_);
+        ascii.printf_small(Vec3{588.0f, 470.0f, 0.0f}, "%2.1ffps", double(global_fps_));
+        ascii.style.color = 0xffffffffu;
+        return ChainResult::Continue;
+    }, 0x4b, false);
 }
 
 bool GameSession::open(const u8* bytes, u32 size) {

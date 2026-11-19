@@ -193,6 +193,11 @@ int main(int argc, char** argv) {
         std::printf("%u\n", replay_fps_color(fps));
         return 0;
     }
+    if (command == "global-fps-color" && argc >= 3) {
+        const float fps = float(std::atof(argv[2]));
+        std::printf("%u\n", global_fps_color(fps));
+        return 0;
+    }
     if (command == "screen-fade" && argc >= 6) {
         // kind 4 / 6 / 7 / 9 更新函数对拍：每行 frame alpha alive
         const i32 kind = i32(std::atoi(argv[2]));

@@ -31,7 +31,7 @@ const MENU_LIVE = 180;       // 启动幕 +0x638 到 0xb4 的那一帧（绘制�
 const MAIN = MENU_LIVE + 12; // Timer 0x78→0x83（>0x82）进入 case 2
 // 常驻绘制链：Supervisor 画面合成 10 条（0x43ba40）+ AnmManager 层绘制 39 条（0x46a3a0：33 条普通层 + 6 条切相机的特殊层）
 // + AsciiManager 文字 3 条（0x407cb0：优先级 0x51 / 0x35 / 0x42，启动幕装载完成 0x43b290 时启用）
-const PERMANENT_DRAW_CHAINS = 52;
+const PERMANENT_DRAW_CHAINS = 53;  // +1：FrameTimer 全局 FPS 绘制链 0x4b（0x4263e0，默认禁用）
 
 test('scene-boot: boot hold is exactly 0xb4 draw-chain frames, then title decor/intro', needDat, () => {
   const before = parse(run(['scene-boot', dat, String(MENU_LIVE)]));

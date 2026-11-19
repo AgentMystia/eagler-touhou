@@ -31,3 +31,10 @@ test('replay-fps-color 0x4482f0 thresholds', () => {
     assert.equal(Number(run(['replay-fps-color', byte])), color, `fps=${byte}`);
   }
 });
+
+test('global-fps-color 0x4263e0 thresholds 30/40', () => {
+  assert.equal(Number(run(['global-fps-color', '29'])), 0xff5050ff);
+  assert.equal(Number(run(['global-fps-color', '30'])), 0xffa0a0ff);
+  assert.equal(Number(run(['global-fps-color', '39.9'])), 0xffa0a0ff);
+  assert.equal(Number(run(['global-fps-color', '40'])), 0xffffffff);
+});
