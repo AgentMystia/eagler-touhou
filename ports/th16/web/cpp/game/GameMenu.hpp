@@ -54,6 +54,7 @@ struct ReplaySummary {
     i32 stage = 0;
     i32 spell_id = 0;
     i32 season = 0;
+    float slow_rate = 0.0f;      // 用户块慢放率（标题列表 %2.1f%%）
 };
 
 // 回放文件存取（0x447ef0 读槽头 / 0x448400 保存 / 0x447fb0 释放）：由宿主接入文件系统；为空时视为全部槽位为空
