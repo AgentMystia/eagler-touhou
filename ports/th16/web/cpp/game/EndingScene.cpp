@@ -1,5 +1,6 @@
 #include "EndingScene.hpp"
 
+#include "AnmManager.hpp"
 #include "ScoreFile.hpp"
 
 #include <cstring>
@@ -36,8 +37,39 @@ bool EndingScene::load_msg(const u8* bytes, u32 size, const char* name) {
     }
     msg_bytes.assign(bytes, bytes + size);
     if (name != nullptr) msg_name = name;
+    // 原版 0x4191f0：解密后缓冲；脚本起点 = header+4 偏移表首条（与 Gui Msg 同布局时）
+    if (msg_bytes.size() >= 8) {
+        u32 count = 0, offset = 0;
+        std::memcpy(&count, msg_bytes.data(), 4);
+        std::memcpy(&offset, msg_bytes.data() + 4, 4);
+        if (count > 0 && offset < msg_bytes.size()) script_pc = msg_bytes.data() + offset;
+        else script_pc = msg_bytes.data();
+    } else {
+        script_pc = msg_bytes.data();
+    }
     events.push_back("msg-loaded");
     return true;
+}
+
+void EndingScene::spawn_line_vms(AnmManager& anm, AnmFile* text_anm) {
+    if (text_anm == nullptr) return;
+    for (int i = 0; i < 5; ++i) {
+        AnmVm* vm = nullptr;
+        line_vms[i] = anm.spawn(*text_anm, 0x2e + i, -1, &vm);
+        if (vm != nullptr) {
+            anm_set_layer(*vm, 0x10);                 // 0x4197c0：层组 0x10
+            vm->flags_lo &= ~0x1000u;                 // 清 bit12
+        }
+    }
+    if (ending_index >= 8) flags |= 2u;
+    events.push_back("vms");
+}
+
+void EndingScene::destroy_line_vms(AnmManager& anm) {
+    for (u32& id : line_vms) {
+        if (id != 0) anm.kill(id);
+        id = 0;
+    }
 }
 
 void EndingScene::end() {

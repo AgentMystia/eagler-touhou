@@ -326,6 +326,7 @@ bool GameSession::enter_ending(bool extra) {
         }
     }
     spawn_loading_vm(kLoadingVmPos);  // 0x4191f0：AsciiManager+0x19248 脚本 0x11 @ (960,784) 若尚未存在
+    ending.spawn_line_vms(animations, animations.file(0));  // text.anm 槽 0：0x4197c0
     ending_live = true;
     ending_update_chain_ = chains.create([this]() -> ChainResult {
         if (!ending_live) return ChainResult::Continue;
@@ -336,12 +337,20 @@ bool GameSession::enter_ending(bool extra) {
         return ChainResult::Continue;
     }, 0x23, true);
     chains.enable(ending_update_chain_);
+    // 绘制链 0x43（LAB_004197b0）：剧本文字贴图完整接入前为空转，保持链登记对齐
+    if (ending_draw_chain_) { chains.remove(ending_draw_chain_); ending_draw_chain_ = nullptr; }
+    ending_draw_chain_ = chains.create([this]() -> ChainResult {
+        return ending_live ? ChainResult::Continue : ChainResult::Continue;
+    }, 0x43, true);
+    chains.enable(ending_draw_chain_);
     supervisor.current = supervisor.requested = SceneId::Ending;
     return true;
 }
 
 void GameSession::leave_ending() {
     if (ending_update_chain_) { chains.remove(ending_update_chain_); ending_update_chain_ = nullptr; }
+    if (ending_draw_chain_) { chains.remove(ending_draw_chain_); ending_draw_chain_ = nullptr; }
+    ending.destroy_line_vms(animations);
     ending_live = false;
     ending.live = false;
     // 保留 ending_index / finished / events 供 harness 在回标题后断言
