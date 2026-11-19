@@ -1108,6 +1108,8 @@ int main(int argc, char** argv) {
         u64 bomb_digest = 0xcbf29ce484222325ull;
         u64 menu_digest = 0xcbf29ce484222325ull;
         auto feed_menu_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { menu_digest ^= u8(v >> (8 * i)); menu_digest *= 0x100000001b3ull; } };
+        u64 sound_digest = 0xcbf29ce484222325ull;
+        auto feed_sound_u32 = [&](u32 v) { for (int i = 0; i < 4; ++i) { sound_digest ^= u8(v >> (8 * i)); sound_digest *= 0x100000001b3ull; } };
         // GameMenu（game-oracle.py menu_digest 同口径）：[frame, game_flags, game_speed, continues, continues_left, 音效数, 音效…,
         // 菜单有无] + [mode, prev_mode, state, timer×3, timer2×3, cursor×4, name_cursor×3, vm×2, name_len, practice, no_rank,
         // kind, saved_sound, saved_speed, flags]
@@ -1117,8 +1119,8 @@ int main(int argc, char** argv) {
             w.push_back(bits(session.supervisor.game_speed));
             w.push_back(u32(g.continues));
             w.push_back(u32(g.continues_left));
-            w.push_back(u32(session.sfx_events.size()));
-            for (i32 id : session.sfx_events) w.push_back(u32(id));
+            w.push_back(u32(session.sfx_events.ids.size()));
+            for (i32 id : session.sfx_events.ids) w.push_back(u32(id));
             w.push_back(session.menu_live ? 1u : 0u);
             if (!session.menu_live) return;
             const GameMenu& m = session.menu;
@@ -1420,6 +1422,16 @@ int main(int argc, char** argv) {
                 menu_words(mw);
                 for (u32 v : mw) feed_menu_u32(v);
             }
+            // 音效请求（game-oracle.py sound_digest 同口径）：[frame, 请求数, (声部, 声像)…]
+            {
+                const SoundRequests& sr = session.sfx_events;
+                feed_sound_u32(u32(f + 1));
+                feed_sound_u32(u32(sr.ids.size()));
+                for (size_t i = 0; i < sr.ids.size(); ++i) {
+                    feed_sound_u32(u32(sr.ids[i]));
+                    feed_sound_u32(u32(sr.pans[i]));
+                }
+            }
             // 炸弹 / 季节解放（game-oracle.py bomb_digest 同口径）：[frame] + 两只对象各 [有无] + 字段
             {
                 feed_bomb_u32(u32(f + 1));
@@ -1682,7 +1694,7 @@ int main(int argc, char** argv) {
                 const GameGlobals& g = session.globals;
                 std::printf(",\"menu\":{\"game_flags\":%u,\"game_speed\":%u,\"continues_used\":%d,\"continues_left\":%d,\"sfx\":[",
                             session.game.flags, bits(session.supervisor.game_speed), g.continues, g.continues_left);
-                for (size_t i = 0; i < session.sfx_events.size(); ++i) std::printf("%s%d", i ? "," : "", session.sfx_events[i]);
+                for (size_t i = 0; i < session.sfx_events.ids.size(); ++i) std::printf("%s%d", i ? "," : "", session.sfx_events.ids[i]);
                 std::printf("],\"menu\":");
                 if (!session.menu_live) std::printf("null}");
                 else {
@@ -1707,11 +1719,11 @@ int main(int argc, char** argv) {
             std::printf("}");
         }
         if (digest_only)
-            std::printf("stage=%d shot=%d season=%d frames=%d scene_exit=%d exit_frame=%d digest=%016llx enemies=%016llx bullets=%016llx enemy_vms=%016llx items=%016llx spell=%016llx lasers=%016llx bombs=%016llx menu=%016llx\n",
+            std::printf("stage=%d shot=%d season=%d frames=%d scene_exit=%d exit_frame=%d digest=%016llx enemies=%016llx bullets=%016llx enemy_vms=%016llx items=%016llx spell=%016llx lasers=%016llx bombs=%016llx menu=%016llx sound=%016llx\n",
                         stage, shot, season, frames, scene_exit, exit_frame, (unsigned long long)digest, (unsigned long long)enm_digest,
                         (unsigned long long)bul_digest, (unsigned long long)vm_digest, (unsigned long long)item_digest,
                         (unsigned long long)spell_digest, (unsigned long long)laser_digest, (unsigned long long)bomb_digest,
-                        (unsigned long long)menu_digest);
+                        (unsigned long long)menu_digest, (unsigned long long)sound_digest);
         else std::printf("],\"scene_exit\":%d,\"exit_frame\":%d}\n", scene_exit, exit_frame);
         if (record_dir != nullptr && !session.save_replay_slot(1, "TEST")) return fail(session.failure.c_str());
         if (!session.game.enemies.unknown_ops.empty()) {

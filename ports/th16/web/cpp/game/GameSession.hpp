@@ -15,6 +15,7 @@
 #include "Effect.hpp"
 #include "EndingScene.hpp"
 #include "ScreenEffect.hpp"
+#include "Sound.hpp"
 #include "Spellcard.hpp"
 #include "Input.hpp"
 #include "Supervisor.hpp"
@@ -78,7 +79,8 @@ public:
     ScreenCompositor compositor;
     // 挂上设备后绘制链才真正出图（Application / harness game-draw）；可为空
     void attach_device(RenderDevice* device) { renderer.device = device; }
-    std::vector<i32> sfx_events;       // 本帧 0x45e1f0 音效登记（全部管理器；Sound 接入前供 harness 对拍）
+    SoundEffects sound;                // 原版 SoundManager 音效部分：请求队列 / 声部状态（宿主通过 sound.output 出声）
+    SoundRequests sfx_events;          // 本帧 0x45e150 / 0x45e1f0 音效登记（全部管理器，调用序；harness 对拍取 ids）
     std::vector<i32> player_sfx_events; // 其中由 Player 代码段（0x440000..0x449000：更新/被弹/擦弹）登记的子集
     bool run_draw_chains = true;  // harness 对拍 oracle（不跑 0x4015a0）时关掉
     // 0x45a8a0 一帧：更新链 → BeginScene → 绘制链 → 出批 → EndScene；run_draw_chains 为假时跳过绘制链

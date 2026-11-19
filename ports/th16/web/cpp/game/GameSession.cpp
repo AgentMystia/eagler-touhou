@@ -35,6 +35,7 @@ struct DiskReplayStore final : ReplayStore {
 
 
 GameSession::GameSession() {
+    sfx_events.effects = &sound;   // 各管理器的 0x45e150 / 0x45e1f0 / 0x45e2a0 请求即时进 SoundManager 队列
     // 0x43ba40：Supervisor 十条合成绘制链；0x46a3a0：AnmManager 各层绘制链。都在进程启动时登记、常驻
     compositor.screen_shake = &screen_shake;
     compositor.render_target_camera = &stage_camera;   // 同一全局 DAT_004c168c
@@ -664,7 +665,6 @@ bool GameSession::create_player() {
         // 入场态 0x416d20 / 0x431a70 的消弹音效（0x47）与炸弹音效已直接进入 sfx_events，自机自身的音效随后并入
         harvest_player_sfx();
         harvest_menu_events();   // 0x43f350 在自机更新内打开续关画面时登记的音效
-        game.player.sfx_stop_queue.clear();
         return ChainResult::Continue;
     }, 0x16, true);
     player_draw_chain_ = chains.create([this]() -> ChainResult {
@@ -870,6 +870,7 @@ void GameSession::register_game_chains() {
     game.on_screen_fade = [this](i32 kind, i32 duration, u32 color) { create_screen_fade(kind, duration, color); };
     game.on_return_to_title = [this]() { if (menu_live) menu.open_return_to_title(); };
     game.on_frame_advanced = [this]() { compositor.tick(animations); };
+    game.on_transition_finished = [this]() { sound.process(); };
     game.on_stage_started = [this]() {
         if (game.stage) enable_stage_chains(*game.stage);
         // 0x42dc50 / 0x42dee0 接着启用 GameMenu 绘制链与得分飘字的两条链
@@ -1184,7 +1185,7 @@ bool GameSession::next_stage() {
     destroy_bombs();
     spellcard.destroy();
     if (game_update_chain_) { chains.remove(game_update_chain_); game_update_chain_ = nullptr; }
-    // 0x42e4d0 声音循环：Sound 接入时补
+    sound.suspend();   // 0x42e4d0
     // 0x42d200 末：场地清屏色回到黑（换关路径 bit0 必为 0，不会走全透明分支）
     compositor.background_color = (globals.flags & 1u) != 0 ? 0u : 0xff000000u;
     globals.post_load_frames = 1;
@@ -1592,6 +1593,8 @@ void GameSession::create_menu() {
     menu.ctx.sound_thread_state = &globals.sound_thread_state;
     menu.ctx.config_flags = &config_flags;
     menu.ctx.current_bgm = &game.gui.current_bgm;
+    menu.ctx.sfx_sink = &sfx_events;
+    menu.ctx.sound = &sound;
     if (!replay_store_) {
         auto store = std::make_unique<DiskReplayStore>();
         store->session = this;
@@ -1625,7 +1628,7 @@ void GameSession::create_menu() {
 // GameMenu 登记的音效（0x45e150）并入本帧音效表；BGM 事件在 Sound 接入前无状态影响
 void GameSession::harvest_menu_events() {
     if (!menu_live) return;
-    sfx_events.insert(sfx_events.end(), menu.sfx_queue.begin(), menu.sfx_queue.end());
+    for (i32 id : menu.sfx_queue) sfx_events.push(id);
     menu.sfx_queue.clear();
     menu.bgm_events.clear();
 }
@@ -1640,6 +1643,8 @@ bool GameSession::logic_step() {
     sample_input();
     sfx_events.clear();
     player_sfx_events.clear();
+    sound.process();   // 0x43b3d0 开头的 0x45e330：上一帧登记的音效在此出声
+
 
     // 游戏中登记的 DAT_004c17c4（过关 0x42e150 → 0xc、装载失败 → 2）在下一帧主循环 0x43ce10 处被消费
     if (game_live && globals.scene_request >= 0) {

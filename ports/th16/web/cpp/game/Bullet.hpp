@@ -13,6 +13,7 @@
 #pragma once
 
 #include "AnmVm.hpp"
+#include "Sound.hpp"
 #include "Types.hpp"
 #include <functional>
 #include <vector>
@@ -268,8 +269,8 @@ public:
     i32 total_canceled = 0;             // +0x1403b14
     std::vector<u32> cancel_effect_ids; // +0x13ffc8c：按槽记录消弹特效 VM id
     std::vector<i32> sfx_queue;         // 0x45e1f0 音效登记（发射 / Ex 变换 / 擦弹 0x2a / 消弹 0x47）
-    std::vector<i32>* sfx_sink = nullptr;
-    void play_sfx(i32 id) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(id); }
+    SoundRequests* sfx_sink = nullptr;
+    void play_sfx(i32 id, float x = 0.0f) { if (sfx_sink != nullptr) sfx_sink->push(id, x); else sfx_queue.push_back(id); }
     std::function<void(const BulletLaserRequest&)> on_laser_request;  // Ex 0x8000000 → LaserManager::spawn_from_bullet
     bool spellcard_active = false;      // DAT_004a6db0->0x78 bit0（Spellcard 管理器接入前由宿主同步）
     bool season_release_active = false; // DAT_004a6da4->0x30 == 1（季节解放中；消弹模式 4 附加掉落）

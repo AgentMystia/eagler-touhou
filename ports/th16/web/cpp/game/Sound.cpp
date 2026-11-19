@@ -18,6 +18,17 @@ void SoundEffects::reset() {
     }
 }
 
+void SoundRequests::push(i32 id, float x) {
+    const i32 pan = SoundEffects::pan_for_x(x);
+    ids.push_back(id);
+    pans.push_back(pan);
+    if (effects != nullptr) effects->play_pan(id, pan);
+}
+
+void SoundRequests::stop(i32 id) {
+    if (effects != nullptr) effects->stop(id);
+}
+
 i32 SoundEffects::pan_for_x(float x) {
     return i32(float(x * 1000.0f) / 192.0f);
 }

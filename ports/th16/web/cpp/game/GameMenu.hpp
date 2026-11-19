@@ -27,6 +27,7 @@
 
 #include "AnmVm.hpp"
 #include "MenuCursor.hpp"
+#include "Sound.hpp"
 #include "Types.hpp"
 
 namespace th16 {
@@ -105,6 +106,8 @@ struct GameMenuContext {
     i32* sound_thread_state = nullptr;     // DAT_004d9d90
     const u32* config_flags = nullptr;     // DAT_004c1800
     const std::string* current_bgm = nullptr;  // DAT_004dc0f0
+    SoundRequests* sfx_sink = nullptr;     // 帧级音效表（为空时登记到 sfx_queue 由宿主取走）
+    SoundEffects* sound = nullptr;         // 0x42e4d0 暂停 / 0x440bd0 恢复 / 0x45e330 排空
     i32 replay_timestamp = 0;              // 本局回放头 +0xc 的开局时刻（0x4483b0 写 time32；Replay 接入前为 0）
     // 0x42e760 装载线程：help.anm 进槽 0x13；返回 nullptr 表示仍在装载（操作说明保持等待）
     std::function<AnmFile*()> load_help_anm;
@@ -213,7 +216,10 @@ private:
     void hide_menu();            // 0x46f340
     void show_menu();            // 0x46f300
     bool nav(u32 bit) const;     // 0x4186f0
-    void sfx(i32 id) { sfx_queue.push_back(id); }
+    void sfx(i32 id) { if (ctx.sfx_sink != nullptr) ctx.sfx_sink->push(id); else sfx_queue.push_back(id); }
+    void suspend_sound() { if (ctx.sound != nullptr) ctx.sound->suspend(); }   // 0x42e4d0
+    void resume_sound() { if (ctx.sound != nullptr) ctx.sound->resume(); }     // 0x440bd0
+    void flush_sound() { if (ctx.sound != nullptr) ctx.sound->process(); }     // 0x45e330 排空
 };
 
 }  // namespace th16

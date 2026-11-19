@@ -7,6 +7,7 @@
 #include "Distortion.hpp"
 #include "Ecl.hpp"
 #include "Motion.hpp"
+#include "Sound.hpp"
 #include "Types.hpp"
 #include <list>
 #include <memory>
@@ -274,8 +275,8 @@ public:
     // Enemy 触发的 0x45e1f0 音效（受击 0x22/0x23、死亡 3/4、ECL 516）。原版与 ECL 601 等经 BulletManager 登记的音效
     // 同在敌机链内按调用序写入声音队列；GameSession 把 sfx_sink 指向帧级汇总表以保持这一顺序
     std::vector<i32> sfx_queue;
-    std::vector<i32>* sfx_sink = nullptr;
-    void play_sfx(i32 id) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(id); }
+    SoundRequests* sfx_sink = nullptr;
+    void play_sfx(i32 id, float x = 0.0f) { if (sfx_sink != nullptr) sfx_sink->push(id, x); else sfx_queue.push_back(id); }
     // ECL 517 → 0x45d150(1, duration, from, to)：宿主在敌机链之后登记为链 0x13 的 ScreenShake（下一帧起生效）
     struct ShakeRequest { i32 duration; i32 amp_from; i32 amp_to; };
     std::vector<ShakeRequest> shake_requests;

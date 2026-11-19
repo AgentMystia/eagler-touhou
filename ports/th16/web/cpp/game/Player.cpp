@@ -265,7 +265,7 @@ void Player::graze(AnmManager& manager, AnmFile* effect_anm, GameGlobals& global
     const Vec3 mid{(bullet_pos.x + pos.x) * 0.5f, (pos.y + bullet_pos.y) * 0.5f, 0.0f};
     if (effect_anm != nullptr) manager.spawn_effect(*effect_anm, 0x18, -1, mid, 0.0f);
     if (score_popups != nullptr) score_popups->push(mid, globals.graze_total, 0xffc0c0ffu);   // 0x44a460
-    play_sfx(0x2a);
+    play_sfx(0x2a, bullet_pos.x);
 }
 
 void Player::hit(AnmManager& manager, AnmFile* effect_anm) {
@@ -687,8 +687,8 @@ void Player::update(AnmManager& manager, GameGlobals& globals, const InputState&
         shot_misc = 0;
         shot_misc_b = 0;
         // DAT_004d9e2c 音效队列：登记 0x1e / 0x37 的停止标记（循环射击音）
-        sfx_stop_queue.push_back(0x1e);
-        sfx_stop_queue.push_back(0x37);
+        stop_sfx(0x1e);
+        stop_sfx(0x37);
     }
     tick_bullets(manager, globals, world, geometry, game_speed);
 }
@@ -923,7 +923,7 @@ bool Player::spawn_bullet(AnmManager& manager, GameGlobals& globals, u32 shot_id
     case 4: d.kind = 2; break;
     default: break;
     }
-    if (e->sfx() >= 0) play_sfx(e->sfx());
+    if (e->sfx() >= 0) play_sfx(e->sfx(), b->motion.pos.x);
     if (vmp != nullptr) vmp->entity_offset = b->motion.pos;
     return true;
 }
@@ -1053,7 +1053,7 @@ i32 Player::hit_bullet_default(AnmManager& manager, PlayerBullet& b) {
 // 0x446200
 void Player::start_laser(PlayerBullet& b) {
     b.hit_w = 0.0f;
-    play_sfx(0x14);
+    play_sfx(0x14, pos.x);
     if (DamageSource* d = damage_source(b.damage_source)) {
         d->f80 = 1;
         d->size_x = 0.0f;
@@ -1125,7 +1125,7 @@ void Player::tick_laser(AnmManager& manager, const GameGlobals& globals, const P
             b.active = 2;
             manager.interrupt(b.vm, 1);   // 收束动画
             option_cooldown[cooldown_slot] = 0;
-            sfx_stop_queue.push_back(0x14);
+            stop_sfx(0x14);
         }
     }
     b.laser_hit = 0;

@@ -35,7 +35,7 @@ spec_d3d = importlib.util.spec_from_file_location('d3d_recorder', HERE / 'd3d-re
 d3d_recorder = importlib.util.module_from_spec(spec_d3d)
 spec_d3d.loader.exec_module(d3d_recorder)
 from unicorn import UC_HOOK_CODE
-from unicorn.x86_const import UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_ESI, UC_X86_REG_EDI, UC_X86_REG_ESP, UC_X86_REG_EIP
+from unicorn.x86_const import UC_X86_REG_XMM2, UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_ESI, UC_X86_REG_EDI, UC_X86_REG_ESP, UC_X86_REG_EIP
 
 STUB2 = 0x00720000
 STUB2_SIZE = 0x4000
@@ -130,9 +130,10 @@ class GameOracle(Oracle):
         for addr in (0x477FB2, 0x47BCB2, 0x475150):                                     # CRT free（oracle 堆只增不减）
             self.replaced[addr] = (0, lambda o: None)
         self.replaced[0x45ED00] = (0x0C, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0))  # 声音线程请求（BGM 装载/播放）thiscall 3 args
-        self.replaced[0x45E1F0] = (4, self.on_sfx)                                       # 音效登记（DAT_004d9e2c 队列；RET 4）→ 只记录 (id, 调用方)
+        self.replaced[0x45E1F0] = (4, self.on_sfx_at)                                    # 音效登记（DAT_004d9e2c 队列；RET 4，x 在 XMM2）→ 记录 (id, 调用方, 声像)
         self.replaced[0x45E150] = (8, self.on_sfx)                                       # 无声像变体（被弹 0x443f10、弹幕 Ex 音效；RET 8）
         self.sfx_log = []
+        self.sfx_pans = []
         self.replaced[0x4792A8] = (0, self.on_vsprintf)                                  # __stdio_common_vsprintf（CRT 需 FLS/线程数据）
         self.replaced[0x459240] = (0x20, lambda o: None)                                 # GDI 文字 → 纹理像素（无逻辑副作用）
         # 0x43ef20 暂停/续关背景截屏：text.anm 0x34 VM 照常生成（占 VM 池、计入 spawn 计数），只跳过
@@ -857,10 +858,17 @@ class GameOracle(Oracle):
         self.frame = 0
         self.scene_exit = None   # 游戏场景之外的 DAT_004c17c4 请求（标题 4 / 结局 0xf / 0x10 / 退出 2）
 
-    def on_sfx(self, o):
+    def on_sfx(self, o, pan=0):
         esp = self.uc.reg_read(UC_X86_REG_ESP)
         ret, sfx = struct.unpack('<Ii', self.uc.mem_read(esp, 8))
         self.sfx_log.append((sfx, ret))
+        self.sfx_pans.append(pan)
+
+    def on_sfx_at(self, o):
+        # 0x45e1f0 声像：(i32)(float(x × 1000) / 192)，单精度逐步舍入后截断
+        x = struct.unpack('<f', struct.pack('<I', self.uc.reg_read(UC_X86_REG_XMM2) & 0xFFFFFFFF))[0]
+        f32 = lambda v: struct.unpack('<f', struct.pack('<f', v))[0]
+        self.on_sfx(o, int(f32(f32(x * 1000.0) / 192.0)))
 
     # ---- 帧 ----
     def set_input(self, held):
@@ -963,6 +971,7 @@ class GameOracle(Oracle):
 
     def tick(self):
         self.sfx_log = []
+        self.sfx_pans = []
         self.switch_scene()
         if self.run_draw:
             # 0x45a8a0 更新前：排空批量顶点、3D 相机 DAT_004c1560 的 VIEW / PROJECTION 与视口（DAT_004c17b8 + 0xe0）
@@ -1246,6 +1255,7 @@ class GameOracle(Oracle):
             'game_speed': self.u32(DAT_GAME_SPEED),
             'continues_used': self.i32(0x4A57B8), 'continues_left': self.i32(0x4A5BFC),
             'sfx': [s for s, _ in self.sfx_log],
+            'sfx_pan': list(self.sfx_pans),
         }
         if not m:
             out['menu'] = None
@@ -1618,6 +1628,21 @@ def menu_digest(frames):
     return digest
 
 
+def sound_digest(frames):
+    """音效请求的 FNV-1a 64（harness game-digest sound= 同口径）：每帧 [frame, 请求数, (声部, 声像)…]（0x45e150 / 0x45e1f0 调用序）。"""
+    digest = 0xCBF29CE484222325
+    mask = (1 << 64) - 1
+    for f in frames:
+        s = f.get('menu') or {}
+        sfx, pans = s.get('sfx', []), s.get('sfx_pan', [])
+        words = [f['frame'], len(sfx)]
+        for sid, pan in zip(sfx, pans):
+            words += [sid, pan]
+        for b in b''.join(struct.pack('<I', w & 0xFFFFFFFF) for w in words):
+            digest = ((digest ^ b) * 0x100000001B3) & mask
+    return digest
+
+
 def parse_input(spec):
     events = {}
     if spec:
@@ -1632,9 +1657,9 @@ def main():
         for path in sys.argv[2:]:
             data = json.loads(pathlib.Path(path).read_text())
             fr = data['frames']
-            print('stage=%d shot=%d frames=%d digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x lasers=%016x bombs=%016x menu=%016x' % (
+            print('stage=%d shot=%d frames=%d digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x lasers=%016x bombs=%016x menu=%016x sound=%016x' % (
                 data['stage'], data['shot'], len(fr), frame_digest(fr), enemy_digest(fr), enemy_vm_digest(fr), bullet_digest(fr),
-                item_digest(fr), spell_digest(fr), laser_digest(fr), bomb_digest(fr), menu_digest(fr)))
+                item_digest(fr), spell_digest(fr), laser_digest(fr), bomb_digest(fr), menu_digest(fr), sound_digest(fr)))
         return 0
     ap = argparse.ArgumentParser()
     ap.add_argument('exe')
@@ -1744,7 +1769,7 @@ def main():
         pathlib.Path(a.trace_rng).write_text(json.dumps(o.rng_trace, separators=(',', ':')))
     if a.trace_vm:
         pathlib.Path(a.trace_vm).write_text(json.dumps(o.vm_trace, separators=(',', ':')))
-    print('game-oracle: %d frames → %s digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x lasers=%016x bombs=%016x menu=%016x errors=%s' % (
+    print('game-oracle: %d frames → %s digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x lasers=%016x bombs=%016x menu=%016x sound=%016x errors=%s' % (
         a.frames, a.out, frame_digest(frames),
         enemy_digest(frames) if a.enemies else 0,
         enemy_vm_digest(frames) if a.enemies else 0,
@@ -1754,6 +1779,7 @@ def main():
         laser_digest(frames) if a.lasers else 0,
         bomb_digest(frames) if a.bombs else 0,
         menu_digest(frames),
+        sound_digest(frames),
         notes[:3]))
     return 0
 
