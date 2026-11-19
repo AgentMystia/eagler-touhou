@@ -801,6 +801,7 @@ bool GameSession::enter_game(i32 replay_mode) {
     }
 
     mark_stage_reached();
+    restart_play_clock();   // 0x42cb60 末：非回放重置 DAT_004a5c00
     // 0x42cb60 新游戏段末：非回放时本机体游玩次数 +1（+0x515c）
     if (game.mode == 0) scores.record_play(globals.shot + globals.shot_aux);
     // 0x42cb60：新游戏（DAT_004c17d0，0x43ce10 case 7 置位）先建 Player，再建 Gui / Stage / …
@@ -943,7 +944,7 @@ bool GameSession::enter_game(i32 replay_mode) {
         game.gui.on_final_clear = [this]() {
             game.flags |= GameManager::kStageClear;
             game.end_counter = 0;
-            if (menu_live) menu.accumulate_play_time();
+            accumulate_play_time();
         };
         game.gui.sfx_sink = &sfx_events;
         game.gui.text_paints = &text_into_texture;
@@ -1076,6 +1077,7 @@ bool GameSession::next_stage() {
 
     // ---- 0x42d700 + 0x42cb60（DAT_004c17d0 == 0）----
     mark_stage_reached();
+    restart_play_clock();   // 0x42cb60 末：非回放重置 DAT_004a5c00
     game.flags = GameManager::kLoading;
     game.timer = Timer{};
     game.transition_frame = 0;
@@ -1318,6 +1320,27 @@ void GameSession::create_screen_fade(i32 kind, i32 duration, u32 color) {
     chains.enable(draw);
 }
 
+void GameSession::accumulate_play_time() {
+    // 0x42dbc0：非回放、DAT_004c17c4 不为 -1 / 3 时把距上次计时的 1/100 秒累加进总时长与本机体时长，并重置起点
+    const i32 scene = globals.scene_request >= 0 ? globals.scene_request : i32(supervisor.requested);
+    if (game.mode != 0 || scene == -1 || scene == 3) return;
+    if (wall_clock_seconds < 0) return;
+    const double elapsed = wall_clock_seconds - play_clock_origin;
+    if (elapsed >= 0.0) {
+        const u64 ticks = u64(elapsed * 100.0);
+        const u64 total = scores.total_play_time() + ticks;
+        scores.stats.play_time[0] = u32(total);
+        scores.stats.play_time[1] = u32(total >> 32);
+        scores.blocks[globals.shot + globals.shot_aux].play_time += ticks;
+    }
+    play_clock_origin = wall_clock_seconds;
+}
+
+void GameSession::restart_play_clock() {
+    if (game.mode != 0 || wall_clock_seconds < 0) return;
+    play_clock_origin = wall_clock_seconds;
+}
+
 bool GameSession::save_scores() {
     if (score_path.empty()) return false;
     const std::vector<u8> bytes = scores.save_image();
@@ -1444,6 +1467,8 @@ void GameSession::create_menu() {
     }
     menu.ctx.replays = replay_store_.get();
     // 0x42e760：help.anm → 槽 0x13（原版由装载线程异步完成；这里同步装入）
+    menu.ctx.accumulate_play_time = [this]() { accumulate_play_time(); };
+    menu.ctx.restart_play_clock = [this]() { restart_play_clock(); };
     menu.ctx.load_help_anm = [this]() -> AnmFile* {
         if (AnmFile* loaded = animations.file(0x13)) return loaded;
         AnmResource* res = nullptr;

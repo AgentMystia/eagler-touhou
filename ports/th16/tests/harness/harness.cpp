@@ -1632,6 +1632,7 @@ int main(int argc, char** argv) {
         bool dump_text = false;
         i32 title_origin = -1;
         int spell_return[3] = {-1, -1, -1};
+        bool wall_clock = false;   // 宿主墙钟按 60Hz 推进（成绩文件计时 0x42dbc0 等）
         struct Reach { int shot, difficulty, stage; };
         std::vector<Reach> reaches;
         std::vector<Reach> clears;
@@ -1647,6 +1648,7 @@ int main(int argc, char** argv) {
                 continue;
             }
             if (std::strncmp(argv[a], "score=", 6) == 0) { session.score_path = argv[a] + 6; continue; }
+            if (std::strcmp(argv[a], "wall") == 0) { wall_clock = true; continue; }
             if (std::strncmp(argv[a], "reach=", 6) == 0) {
                 // 练习到达位 +0x519d（机体块, 难度, 关卡）：等价于该关已非回放装载过
                 int r[3] = {-1, -1, -1};
@@ -1715,6 +1717,7 @@ int main(int argc, char** argv) {
             for (const ScanInj& s : scans) {
                 if (s.frame == f) session.title.pending_scancode = s.code;
             }
+            if (wall_clock) session.wall_clock_seconds = f / 60.0;
             device.begin_frame();
             if (!session.logic_step()) return fail(session.failure.c_str());
         }
@@ -1732,6 +1735,11 @@ int main(int argc, char** argv) {
                     title.spell_slot_ids[0], title.spell_slot_ids[1], title.spell_slot_ids[2], title.spell_slot_ids[3],
                     title.spell_slot_ids[4], g.spell_return_group, g.spell_return_list, g.spell_return_entry,
                     g.title_origin, g.replay_slot);
+        {
+            const ScoreBlock& b = session.scores.blocks[g.shot + g.shot_aux];
+            std::printf("scores play_count=%u play_time=%llu total_time=%llu\n", b.play_count,
+                        (unsigned long long)b.play_time, (unsigned long long)session.scores.total_play_time());
+        }
         for (const TitleScene::Event& e : session.title_events) std::printf("event %s %d\n", e.kind, e.value);
         for (const TitleScene::Event& e : title.events) std::printf("event %s %d\n", e.kind, e.value);
         if (dump_ascii) {

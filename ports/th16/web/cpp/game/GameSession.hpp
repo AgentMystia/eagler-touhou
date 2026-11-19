@@ -100,6 +100,9 @@ public:
     // scoreth16.dat 路径；空则不读不写（harness 默认）。启动幕 0x4497e0 读、0x42d200 / 0x43afe0 经 0x449a00 写
     std::string score_path;
     bool save_scores();   // 0x449a00
+    double play_clock_origin = 0.0;   // DAT_004a5c00：上次计时时刻（秒）
+    void accumulate_play_time();      // 0x42dbc0
+    void restart_play_clock();        // 0x45b130 → DAT_004a5c00（0x42cb60 末 / 0x43f6a0 / 0x43f740 / 0x43f790）
     // 宿主墙钟（秒）。<0 = harness/oracle 口径：跳过 0x4262f0 / 真实 0x417bc0
     double wall_clock_seconds = -1;
     i32 skip_frames = 0;                 // DAT_004c12c4：本逻辑帧额外计数（跳帧）
