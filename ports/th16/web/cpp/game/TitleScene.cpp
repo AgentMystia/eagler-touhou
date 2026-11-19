@@ -2132,6 +2132,7 @@ void TitleScene::update_score(AnmManager& anm, const InputState& input) {
             sfx(7);
             events.push_back({"score-page", score_page_cursor.index});
         }
+        if (difficulty.index == 4 && shot.index == 3) update_score_secret(input);
         if (input.pressed & InputState::kCancelMask) {
             set_sub(3);
             sfx(9);
@@ -2153,6 +2154,44 @@ void TitleScene::update_score(AnmManager& anm, const InputState& input) {
         break;
     default:
         break;
+    }
+}
+
+void TitleScene::update_score_secret(const InputState& input) {
+    // DAT_004936d8：DIK 序列 I L O V E B E E R
+    static constexpr u8 kSequence[9] = {0x17, 0x26, 0x18, 0x2f, 0x12, 0x30, 0x12, 0x12, 0x13};
+    // 0x402130 默认路径（DAT_004c1800 bit10 清）：GetKeyboardState 后只把 VK 'A'..'Z' 搬到对应 DIK 位置
+    static constexpr u8 kLetterDik[26] = {0x1e, 0x30, 0x2e, 0x20, 0x12, 0x21, 0x22, 0x23, 0x17, 0x24, 0x25, 0x26, 0x32,
+                                          0x31, 0x18, 0x19, 0x10, 0x13, 0x1f, 0x14, 0x16, 0x2f, 0x11, 0x2d, 0x15, 0x2c};
+    if (input.pressed & (InputState::kConfirmMask | InputState::kCancelMask)) {
+        secret_progress = 0;
+        secret_timer = 0;
+    }
+    std::memcpy(secret_prev_keys, secret_keys, sizeof(secret_keys));
+    std::memset(secret_keys, 0, sizeof(secret_keys));
+    if (keyboard_state != nullptr) {
+        for (u8 dik : kLetterDik) secret_keys[dik] = keyboard_state[dik];
+        u8 pressed[256];
+        for (int i = 0; i < 256; ++i) pressed[i] = u8((secret_prev_keys[i] ^ secret_keys[i]) & secret_keys[i]);
+        if (secret_progress < 9) {
+            if (pressed[kSequence[secret_progress]] & 0x80) {
+                ++secret_progress;
+                secret_timer = 0;
+            } else {
+                u8 any = 0;
+                for (int i = 0; i < 0x39; ++i) any |= pressed[i];
+                if (any & 0x80) secret_progress = 0;
+            }
+        } else {
+            if (scores != nullptr) scores->unlock_all();  // 0x44a930
+            sfx(0x11);
+            events.push_back({"score-unlock", 1});
+            secret_progress = 0;
+        }
+    }
+    if (++secret_timer > 300) {
+        secret_progress = 0;
+        secret_timer = 0;
     }
 }
 

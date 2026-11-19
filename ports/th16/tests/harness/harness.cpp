@@ -545,6 +545,10 @@ int main(int argc, char** argv) {
         u8* image = reinterpret_cast<u8*>(scores->blocks);
         if (!write_bytes(argv[3], image, kImage)) return fail("cannot write image");
         for (int a = 6; a < argc; ++a) {
+            if (std::strcmp(argv[a], "unlock-all") == 0) {
+                scores->unlock_all();
+                continue;
+            }
             const char* colon = std::strchr(argv[a], ':');
             if (colon == nullptr) return fail("bad poke");
             const size_t off = std::strtoul(argv[a], nullptr, 16);
@@ -1633,6 +1637,7 @@ int main(int argc, char** argv) {
         i32 title_origin = -1;
         int spell_return[3] = {-1, -1, -1};
         bool wall_clock = false;   // 宿主墙钟按 60Hz 推进（成绩文件计时 0x42dbc0 等）
+        std::vector<std::pair<int, int>> dik_presses;
         struct Reach { int shot, difficulty, stage; };
         std::vector<Reach> reaches;
         std::vector<Reach> clears;
@@ -1650,6 +1655,18 @@ int main(int argc, char** argv) {
             }
             if (std::strncmp(argv[a], "score=", 6) == 0) { session.score_path = argv[a] + 6; continue; }
             if (std::strcmp(argv[a], "wall") == 0) { wall_clock = true; continue; }
+            if (std::strncmp(argv[a], "dik=", 4) == 0) {
+                // dik=帧:DIK码,…：该帧键盘快照里置 0x80（只持续一帧）
+                for (const char* p = argv[a] + 4; *p;) {
+                    char* end = nullptr;
+                    const long fr = std::strtol(p, &end, 0);
+                    if (*end != ':') return fail("bad dik");
+                    const long code = std::strtol(end + 1, &end, 0);
+                    dik_presses.push_back({int(fr), int(code)});
+                    p = *end == ',' ? end + 1 : end;
+                }
+                continue;
+            }
             if (std::strncmp(argv[a], "reach=", 6) == 0) {
                 // 练习到达位 +0x519d（机体块, 难度, 关卡）：等价于该关已非回放装载过
                 int r[3] = {-1, -1, -1};
@@ -1719,6 +1736,9 @@ int main(int argc, char** argv) {
                 if (s.frame == f) session.title.pending_scancode = s.code;
             }
             if (wall_clock) session.wall_clock_seconds = f / 60.0;
+            std::memset(session.keyboard_state, 0, sizeof(session.keyboard_state));
+            for (const auto& [fr, code] : dik_presses)
+                if (fr == f && code >= 0 && code < 256) session.keyboard_state[code] = 0x80;
             device.begin_frame();
             if (!session.logic_step()) return fail(session.failure.c_str());
         }

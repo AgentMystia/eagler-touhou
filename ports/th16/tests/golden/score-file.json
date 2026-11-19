@@ -53,6 +53,19 @@
    "saved": "224ea7d35d433162b3c632efcb87a9113f732991",
    "saved_size": 15829,
    "image_after_save": "742ff3e0ff42278c069f6851f5309ffb8ffe9099"
+  },
+  {
+   "name": "unlock-all",
+   "load": "poked",
+   "pokes": [
+    "155c0:9f860100",
+    "unlock-all"
+   ],
+   "rng_seed": 16822,
+   "image": "1792f093cdb84564d61f47a1140652cfdc3f83ea",
+   "saved": "d86581271002f03b0aedf2fa3f342f8bcd068867",
+   "saved_size": 15891,
+   "image_after_save": "6d3860b81fbe20a1c1218efc43a649ac7e237ee9"
   }
  ]
 }

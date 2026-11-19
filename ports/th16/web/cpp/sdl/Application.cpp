@@ -60,6 +60,13 @@ void Application::sample_input() {
         if (down(SDL_SCANCODE_R)) held |= InputState::kR;
         if (down(SDL_SCANCODE_F10)) held |= InputState::kF10;
 
+        std::memset(session.keyboard_state, 0, sizeof(session.keyboard_state));
+        for (int i = 0; i < n && i < 512; ++i) {
+            if (!keys[i]) continue;
+            const i16 di = sdl_to_di(SDL_Scancode(i));
+            if (di >= 0 && di < 256) session.keyboard_state[di] = 0x80;
+        }
+
         // Key Config 捕获：首个新按下的可映射键 → pending_scancode（DI）
         TitleScene& title = session.title;
         if (title.live() && title.screen == TitleScene::kKeyConfig && title.key_bind_slot >= 0 &&

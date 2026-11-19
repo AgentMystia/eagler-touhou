@@ -8,6 +8,7 @@
   poked      无文件，改机体块 0 / 3 与公共块若干字段后写出
   reload     读 poked 写出的文件 → 镜像应等于 poked 写盘后镜像；再原样写出
   bad-header poked 写出的文件把 ver 改成 3 → 0x449880 丢弃，回到默认值
+  unlock-all 读 poked，合计块符卡 0 挑战数改成 99999（验封顶）后跑 0x44a930 再写出
 load 字段：null / "<用例>"（读该用例写出的文件）/ "<用例>:badver"
 """
 import hashlib, json, pathlib, subprocess, sys, tempfile
@@ -35,6 +36,7 @@ CASES = [
     {'name': 'poked', 'load': None, 'pokes': POKES},
     {'name': 'reload', 'load': 'poked', 'pokes': []},
     {'name': 'bad-header', 'load': 'poked:badver', 'pokes': []},
+    {'name': 'unlock-all', 'load': 'poked', 'pokes': ['155c0:9f860100', 'unlock-all']},
 ]
 
 
@@ -59,7 +61,7 @@ def main():
                 path.write_bytes(bytes(data))
                 args += ['--load', str(path)]
             for p in c['pokes']:
-                args += ['--poke', p]
+                args += ['--unlock-all'] if p == 'unlock-all' else ['--poke', p]
             subprocess.run(args, check=True)
             r = json.loads((tmp / 'o.json').read_text())
             saved[c['name']] = bytes.fromhex(r['saved'])

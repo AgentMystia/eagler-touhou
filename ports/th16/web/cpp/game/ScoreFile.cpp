@@ -4,6 +4,9 @@
 #include "ResourceCrypt.hpp"
 #include "SpellPracticeTable.hpp"
 
+#include <cstddef>
+#include <cstring>
+
 namespace th16 {
 
 namespace {
@@ -108,6 +111,34 @@ bool ScoreFile::load_image(const u8* bytes, u32 size) {
         at += chunk_size;
     }
     return true;
+}
+
+void ScoreFile::unlock_all() {
+    // ST +0x16..+0x25（结局位 8 + 任一结局 + 未用 7）整段写 0x11
+    std::memset(stats.ending_seen, 0x11, 16);
+    static_assert(offsetof(ScoreStats, unused_1f) + sizeof(ScoreStats::unused_1f) - offsetof(ScoreStats, ending_seen) == 16,
+                  "0x44a930 writes 16 bytes from ST +0x16");
+    // 合计块各符卡挑战次数 +1（封顶 99999）。原版同循环还对对象尾后 +0x1a748 + i×0x9c 做同样的递增，
+    // 那是 0x1a3ac 字节堆块之外的越界写，不影响成绩数据，这里不复刻
+    for (SpellRecord& spell : blocks[kAllShotsBlock].spells) {
+        if (spell.attempts[0] < 99999u) ++spell.attempts[0];
+    }
+    // 机体 0..3 × 难度 0..5：clears[d] 与 no_continue_clears[d] 各 +1（d = 5 时后者越界落在 practice[0].score），
+    // 练习到达位 practice[1 + 8d + k].reached（k = 0..7；d = 5, k = 7 落在块尾未用字节）置 1
+    for (int shot = 0; shot < 4; ++shot) {
+        u8* block = reinterpret_cast<u8*>(&blocks[shot]);
+        for (int d = 0; d < 6; ++d) {
+            for (size_t off : {offsetof(ScoreBlock, clears) + size_t(d) * 4, offsetof(ScoreBlock, no_continue_clears) + size_t(d) * 4}) {
+                u32 v;
+                std::memcpy(&v, block + off, 4);
+                ++v;
+                std::memcpy(block + off, &v, 4);
+            }
+            for (int k = 0; k < 8; ++k)
+                block[offsetof(ScoreBlock, practice) + size_t(1 + 8 * d + k) * sizeof(PracticeRecord) +
+                      offsetof(PracticeRecord, reached)] = 1;
+        }
+    }
 }
 
 std::vector<u8> ScoreFile::save_image() {

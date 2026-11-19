@@ -200,6 +200,8 @@ struct ScoreFile {
     void record_play(int shot) {
         if (blocks[shot].play_count < 9999999u) ++blocks[shot].play_count;
     }
+    // 0x44a930：Player Data 隐藏键序的全解锁
+    void unlock_all();
 
     // 0x44a800：该机体在 Easy..Lunatic 任一难度有未续关通关（+0x5184 + d × 4）→ Extra 可选该机体
     bool shot_extra_unlocked(int shot) const {
