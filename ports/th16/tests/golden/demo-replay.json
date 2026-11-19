@@ -16,7 +16,8 @@
    "spell": "3dd2f6c5d2f0b282",
    "lasers": "6bea4a14897a71a8",
    "bombs": "195519e2f42e3a3c",
-   "menu": "8f6f987d9164b5c2"
+   "menu": "8f6f987d9164b5c2",
+   "sound": "b340074988a47488"
   },
   "demo2": {
    "stage": 1,
@@ -33,7 +34,8 @@
    "spell": "db12b4fd734ca287",
    "lasers": "6bea4a14897a71a8",
    "bombs": "8f6caf3526dfd035",
-   "menu": "dcee888089e5aee8"
+   "menu": "dcee888089e5aee8",
+   "sound": "a06b28538d2f1c65"
   },
   "demo3": {
    "stage": 2,
@@ -50,7 +52,8 @@
    "spell": "cffd54ce6e1c3d97",
    "lasers": "6bea4a14897a71a8",
    "bombs": "33d7c894e5c71383",
-   "menu": "d94b652129e123f2"
+   "menu": "d94b652129e123f2",
+   "sound": "cec83692a12a1b0d"
   },
   "demo4": {
    "stage": 4,
@@ -67,7 +70,8 @@
    "spell": "ddb0671f4ad67799",
    "lasers": "6bea4a14897a71a8",
    "bombs": "0ad9766d632163e5",
-   "menu": "0e4ea3a790748feb"
+   "menu": "0e4ea3a790748feb",
+   "sound": "19618510bcae7fdf"
   }
  },
  "recorded": {
@@ -85,7 +89,8 @@
   "spell": "b7bed1319cae59e1",
   "lasers": "46916e5313814d06",
   "bombs": "42cc17fdd0ef4112",
-  "menu": "dbc5a4b33058e07d"
+  "menu": "dbc5a4b33058e07d",
+  "sound": "af50b3ffa97901d6"
  },
  "recorded_multi": {
   "_source": "stage-clear.json 第 1 例输入（残机 8、每帧补满）以 TH16_RECORD_DIR 录制两段（第 1 / 2 面），再以 game-oracle.py --replay --lives 8 --refill-lives 在原版回放 13000 帧",
@@ -110,6 +115,7 @@
   "spell": "6d5d1cd1691847e9",
   "lasers": "c5bcb01ee7d85c0f",
   "bombs": "28bf1f31ff0129aa",
-  "menu": "342d14222d6af186"
+  "menu": "342d14222d6af186",
+  "sound": "293ffe00068d17f2"
  }
 }

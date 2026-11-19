@@ -362,7 +362,7 @@ void ItemManager::update(float gs) {
         if (player->state != Player::kRespawnWait) {
             if (in_rect(it.pos, player->item_rect_min, player->item_rect_max)) {
                 collect(it);
-                play_sfx(0x25);
+                play_sfx(0x25, it.pos.x);
                 release(it);
                 continue;
             }
@@ -433,7 +433,7 @@ void ItemManager::collect_power(Item& it) {
         if ((globals->power - 1) / globals->power_per_level != globals->power / globals->power_per_level) {
             player->setup_options(*animations, *globals);
             popup(it.pos, -1, 0xffffff40u);
-            play_sfx(0xd);
+            play_sfx(0xd, it.pos.x);
         }
         value = 100;
     } else if (py <= float(line) || it.state == 4) {
@@ -477,14 +477,14 @@ void ItemManager::collect_big_power(Item& it) {
         if (globals->power > globals->power_max) { globals->power = globals->power_max; notify_full_power(); }
         if ((globals->power - per) / globals->power_per_level != globals->power / globals->power_per_level) {
             player->setup_options(*animations, *globals);
-            play_sfx(0xd);
+            play_sfx(0xd, it.pos.x);
             popup(it.pos, -1, 0xffffff40u);
         }
     } else {
         value = 20000;
         add_score(20000);
         popup(it.pos, 20000, 0xff808080u);
-        play_sfx(0xd);
+        play_sfx(0xd, it.pos.x);
     }
     add_score(value);
     if (py <= float(point_line()) || it.state == 4) record_collect(value);
@@ -496,7 +496,7 @@ void ItemManager::collect_full_power(Item& it) {
         globals->point_value = globals->point_value + 10000;
         if (globals->point_value > globals->point_value_max) globals->point_value = globals->point_value_max;
         popup(it.pos, 100, 0xff40ff40u);
-        play_sfx(0xd);
+        play_sfx(0xd, it.pos.x);
         if (globals->power >= globals->power_max) return;
     }
     const i32 max = globals->power_max;
@@ -505,7 +505,7 @@ void ItemManager::collect_full_power(Item& it) {
     if ((globals->power - max) / globals->power_per_level != globals->power / globals->power_per_level) {
         player->setup_options(*animations, *globals);
         popup(it.pos, -1, 0xffffff40u);
-        play_sfx(0xd);
+        play_sfx(0xd, it.pos.x);
     }
 }
 
@@ -574,7 +574,7 @@ void ItemManager::collect(Item& it) {
         if (add_season_gauge()) {
             player->setup_options(*animations, *globals);
             popup(it.pos, -1, 0xffffff40u);
-            play_sfx(0x3f);
+            play_sfx(0x3f, it.pos.x);
         }
         add_score(10);
         if (gui != nullptr) gui->refresh_season_gauge();   // 0x42c600

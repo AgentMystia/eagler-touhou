@@ -123,6 +123,7 @@ bool GameManager::update(AnmManager& manager, GameGlobals& globals, float game_s
     if ((flags & kStageTransition) != 0) {
         ++transition_frame;
         if (transition_frame >= transition_length) {
+            if (on_transition_finished) on_transition_finished();
             flags &= ~kStageTransition;
             transition_frame = 0;
         }

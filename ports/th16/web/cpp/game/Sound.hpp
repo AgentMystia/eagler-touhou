@@ -9,6 +9,7 @@
 //   0x42e4d0  暂停：队列槽 0 清空，全部声部停下并记下是否在播     0x440bd0  恢复：记下在播的声部重新 Play
 #pragma once
 #include <array>
+#include <vector>
 
 #include "Types.hpp"
 
@@ -45,6 +46,19 @@ struct SoundOutput {
     virtual void play(i32 voice, u32 flags) = 0;         // +0x30
 };
 
+class SoundEffects;
+
+// 本帧音效请求（0x45e150 / 0x45e1f0 调用序）：ids 供对拍，pans 为 0x45e1f0 声像（0x45e150 等同 x = 0）；
+// 挂上 effects 后每条请求按原版调用点即时进 SoundEffects 队列（0x45e2a0 停止亦然，不计入 ids）
+struct SoundRequests {
+    std::vector<i32> ids;
+    std::vector<i32> pans;
+    SoundEffects* effects = nullptr;
+    void push(i32 id, float x = 0.0f);
+    void stop(i32 id);
+    void clear() { ids.clear(); pans.clear(); }
+};
+
 class SoundEffects {
 public:
     struct Voice {
@@ -66,6 +80,7 @@ public:
     void reset();                      // 0x45d510：队列置空、声部绑定定义行
     void play(i32 voice);              // 0x45e150
     void play_at(i32 voice, float x);  // 0x45e1f0
+    void play_pan(i32 voice, i32 pan) { enqueue(voice, pan); }
     void stop(i32 voice);              // 0x45e2a0
     void process();                    // 0x45e330 尾段
     void suspend();                    // 0x42e4d0

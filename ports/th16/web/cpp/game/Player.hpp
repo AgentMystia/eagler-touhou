@@ -20,6 +20,7 @@
 #include "AnmVm.hpp"
 #include "Motion.hpp"
 #include "ShotTable.hpp"
+#include "Sound.hpp"
 #include "Types.hpp"
 
 namespace th16 {
@@ -182,12 +183,12 @@ public:
     DamageSource damage_sources[kDamageSourceCount];   // +0xd114（下标 i 对应原版 1 起的 i+1）
     i32 option_cooldown[16] = {};                      // +0x165f8：.sht 类型 2 弹按子机 [opt-1 (+8 子季节)] 记录发射时火力等级
     std::vector<i32> sfx_queue;                        // 0x45e1f0 音效登记：自机自身的子集（宿主每帧取走作对拍）
-    std::vector<i32>* sfx_sink = nullptr;              // 帧级汇总表：被弹 / 擦弹在弹幕链内触发时按调用序直接写入
-    void play_sfx(i32 id) {
+    SoundRequests* sfx_sink = nullptr;              // 帧级汇总表：被弹 / 擦弹在弹幕链内触发时按调用序直接写入
+    void play_sfx(i32 id, float x = 0.0f) {
         sfx_queue.push_back(id);
-        if (sfx_sink != nullptr) sfx_sink->push_back(id);
+        if (sfx_sink != nullptr) sfx_sink->push(id, x);
     }
-    std::vector<i32> sfx_stop_queue;                   // 不射击时对 0x1e / 0x37 的停止标记（DAT_004d9e5c = -1）
+    void stop_sfx(i32 id) { if (sfx_sink != nullptr) sfx_sink->stop(id); }   // 0x45e2a0（DAT_004d9e5c = -1）
     class Gui* gui = nullptr;                          // DAT_004a6dcc：残机 / 炸弹格显示刷新（0x42c280 / 0x42c390）、extend 弹出
     class ScorePopupManager* score_popups = nullptr;   // DAT_004a6f10：擦弹数飘字（0x444cf0）
     // 0x43f350：残机 < 0 且复活等待第 0x1e 帧（非回放）→ GameMenu::open_continue；GameSession 绑定

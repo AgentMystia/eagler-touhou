@@ -88,7 +88,7 @@ void Bomb::start() {
     // 符卡进行 60 帧以后才发动的炸弹记为「符卡中用过」（取得失败），60 帧内发动不算
     const Spellcard& spell = *ctx.spellcard;
     started_in_spell = (is_main && (spell.flags & Spellcard::kActive) != 0 && spell.timer.current > 0x3b) ? 1 : 0;
-    play_sfx(is_main ? 0x2c : 0x4d);
+    play_sfx(is_main ? 0x2c : 0x4d, player.pos.x);
     on_start();
 
     if (is_main) {
@@ -280,7 +280,7 @@ i32 ReimuBomb::on_update() {
         } else {
             // 累计伤害打满（300）即引爆
             detonate_orb(orb);
-            play_sfx(0x1b);
+            play_sfx(0x1b, orb.motion.pos.x);
             request_linear_shake(8, 6, 6);
         }
     }
@@ -369,7 +369,7 @@ void ReimuBomb::steer_orb(Orb& orb) {
 void ReimuBomb::detonate_orb(Orb& orb) {
     Player& player = *ctx.player;
     if (orb.active != 0) {
-        play_sfx(0x1b);
+        play_sfx(0x1b, orb.motion.pos.x);
         ctx.bullets->cancel_radius(orb.motion.pos, 128.0f, 1, true);
         ctx.lasers->cancel_radius(orb.motion.pos, 128.0f, 1, true);
         mark_as_bomb_damage(player, player.alloc_circle_damage_source(orb.motion.pos, 64.0f, 8.0f, 0xb, 100));

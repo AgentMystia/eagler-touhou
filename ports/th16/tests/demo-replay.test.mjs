@@ -24,7 +24,7 @@ for (const [name, g] of Object.entries(golden.demos)) {
     const got = Object.fromEntries(r.stdout.trim().split('\n').at(-1).split(' ').map((kv) => kv.split('=')));
     assert.equal(Number(got.scene_exit), g.scene_exit, 'scene request');
     assert.equal(Number(got.exit_frame), g.exit_frame, 'exit frame');
-    for (const key of ['digest', 'enemies', 'enemy_vms', 'bullets', 'items', 'spell', 'lasers', 'bombs', 'menu']) {
+    for (const key of ['digest', 'enemies', 'enemy_vms', 'bullets', 'items', 'spell', 'lasers', 'bombs', 'menu', 'sound']) {
       assert.equal(got[key], g[key], `${name} ${key}`);
     }
   });
@@ -46,7 +46,7 @@ test('replay-roundtrip: a port recording plays back identically in the port and 
     // 标题 Replay 口径（bit6 不置）与演示口径（golden 由原版 --demo 回放得出；1300 帧内两者玩法相同）
     const replayed = digests({ TH16_REPLAY: rpy }, '0:0');
     const demo = digests({ TH16_DEMO: rpy }, '0:0');
-    for (const key of ['digest', 'enemies', 'enemy_vms', 'bullets', 'items', 'spell', 'lasers', 'bombs']) {
+    for (const key of ['digest', 'enemies', 'enemy_vms', 'bullets', 'items', 'spell', 'lasers', 'bombs', 'sound']) {
       assert.equal(recorded[key], g[key], `recording run ${key}`);
       assert.equal(replayed[key], g[key], `port playback ${key}`);
       assert.equal(demo[key], g[key], `port demo playback ${key}`);
@@ -76,7 +76,7 @@ test('replay-roundtrip: a two-segment recording (stage 1 clear → stage 2) play
       .map((l) => ({ stage: Number(l.match(/ stage=(\d+)/)[1]), frames: Number(l.match(/ frames=(\d+)/)[1]) }));
     assert.deepEqual(segs, g.segments, 'segment split at the 0x448eb0 point');
     const replayed = run({ TH16_REPLAY: rpy }, '0:0');
-    for (const key of ['digest', 'enemies', 'enemy_vms', 'bullets', 'items', 'spell', 'lasers', 'bombs', 'menu']) {
+    for (const key of ['digest', 'enemies', 'enemy_vms', 'bullets', 'items', 'spell', 'lasers', 'bombs', 'menu', 'sound']) {
       assert.equal(recorded[key], g[key], `recording run ${key}`);
       assert.equal(replayed[key], g[key], `port playback ${key}`);
     }

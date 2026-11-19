@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "AnmVm.hpp"
+#include "Sound.hpp"
 #include "Types.hpp"
 
 namespace th16 {
@@ -72,8 +73,8 @@ struct Spellcard {
     StageManager* stage = nullptr;      // DAT_004a6da0（+0x66c4 绘制位）
     const StageEntry* entry = nullptr;  // DAT_004a6f18
     std::vector<i32> sfx_queue;         // 0x45e150：开始 0x21、取得 0x2e、超时 0x45、extend 0x11
-    std::vector<i32>* sfx_sink = nullptr;
-    void play_sfx(i32 id) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(id); }
+    SoundRequests* sfx_sink = nullptr;
+    void play_sfx(i32 id, float x = 0.0f) { if (sfx_sink != nullptr) sfx_sink->push(id, x); else sfx_queue.push_back(id); }
     Gui* gui = nullptr;                 // DAT_004a6dcc：计时数字样式（0x4175d0 / 0x417650）、弹出通知（0x42bcf0）、extend 残机显示
     ScoreFile* scores = nullptr;        // DAT_004a6f0c：符卡挑战 / 取得记录
     bool replay_playback = false;       // DAT_004a6f08+0xc == 1（= GameManager+0xac）：回放中不写记录

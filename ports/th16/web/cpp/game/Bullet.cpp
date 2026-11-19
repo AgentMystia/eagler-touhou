@@ -195,7 +195,7 @@ void BulletManager::shoot(const EtShooter& shooter) {
             if (spawn_single(shooter, way_idx, stack_idx, aim) == 1) { pool_empty = true; break; }
         }
     }
-    if ((shooter.flags & 0x20u) != 0) play_sfx(shooter.shoot_sfx);
+    if ((shooter.flags & 0x20u) != 0) play_sfx(shooter.shoot_sfx, shooter.pos.x);
 }
 
 // 0x412cb0：从空闲链头取槽、头插活动链，按瞄准模式算角速度，初始化 VM 与 Ex
@@ -650,7 +650,7 @@ void BulletManager::cancel_bullet(Bullet& b, i32 item_mode) {
     if ((b.flags & Bullet::kFlagHidden) == 0) {
         if (b.cancel_script >= 0)
             cancel_effect_ids[u32(b.index)] = animations->spawn_effect(*anm, b.cancel_script, -1, b.pos, 0.0f);
-        play_sfx(0x47);
+        play_sfx(0x47, b.pos.x);
         convert_cancel_item(b.pos, item_mode);
     }
     const float vy = b.velocity.y * game_speed;
@@ -862,7 +862,7 @@ void BulletManager::run_ex(Bullet& b, float gs) {
                 ++b.ex_index;
                 break;
             case kExSfx:
-                play_sfx(st.a);
+                play_sfx(st.a, b.pos.x);
                 ++b.ex_index;
                 break;
             case kExWrap:

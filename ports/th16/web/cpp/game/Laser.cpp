@@ -190,7 +190,10 @@ void LaserManager::reset() {
     sfx_queue.clear();
 }
 
-void LaserManager::push_sfx(i32 sfx) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(sfx); }
+void LaserManager::push_sfx(i32 sfx, float x) {
+    if (sfx_sink != nullptr) sfx_sink->push(sfx, x);
+    else sfx_queue.push_back(sfx);
+}
 
 // 0x431fa0
 i32 LaserManager::map_sprite_beam(AnmVm& vm, i32 index) {
@@ -712,7 +715,7 @@ void LaserManager::run_ex_line(Laser& l) {
                 animations->run(l.vm_beam);
                 break;
             case kExCancel: l.state = LaserState::Telegraph; break;
-            case kExSfx: push_sfx(st.a); break;
+            case kExSfx: push_sfx(st.a, l.pos.x); break;
             case kExWrap:
                 l.ex_flags |= kExWrap;
                 l.ex.wrap_timer.set(st.a);
@@ -1279,7 +1282,7 @@ void LaserManager::run_ex_curve(Laser& l) {
                 animations->run(l.vm_beam);
                 break;
             case kExCancel: l.state = LaserState::Telegraph; break;
-            case kExSfx: push_sfx(st.a); break;
+            case kExSfx: push_sfx(st.a, l.pos.x); break;
             case kExWrap:
                 l.ex_flags |= kExWrap;
                 l.ex.wrap_timer.set(st.a);

@@ -104,6 +104,8 @@ public:
     std::function<void()> on_return_to_title;
     // 0x42d7b0 尾（LAB_0042db05）：0x45f980 ×4 推进 Supervisor 的四个画面合成 VM（ScreenCompositor::tick）
     std::function<void()> on_frame_advanced;
+    // 0x42d7b0 换关过场结束：0x43c3f0(0, 关卡曲) 重播并 0x45e330 排空到音乐命令处理完
+    std::function<void()> on_transition_finished;
 
     // 0x42dc50 首帧初始化；返回 false 表示装载失败（原版返回 1 → 场景请求 2/3）
     bool first_frame(AnmManager& manager, GameGlobals& globals);

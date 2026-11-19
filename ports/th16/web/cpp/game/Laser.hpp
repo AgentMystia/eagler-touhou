@@ -22,6 +22,7 @@
 #include "AnmManager.hpp"
 #include "Bullet.hpp"
 #include "RenderDevice.hpp"
+#include "Sound.hpp"
 #include "Types.hpp"
 #include <memory>
 #include <vector>
@@ -248,7 +249,7 @@ public:
     Vec3 last_cancel_center;                    // +0x5ec 最近一次圆形 / 矩形消弹的中心
     Vec3 last_cancel_size;                      // +0x5f8 最近一次矩形消弹的尺寸
     std::vector<i32> sfx_queue;                 // 本帧触发的音效（生成 / Ex 折返 / 反弹）
-    std::vector<i32>* sfx_sink = nullptr;
+    SoundRequests* sfx_sink = nullptr;
 
     // —— 依赖 ——
     AnmManager* animations = nullptr;           // DAT_004c0f48
@@ -380,7 +381,7 @@ private:
     // V 取激光柱 VM 精灵的上 / 下沿），写入 l.curve_strip
     void build_curve_strip(Laser& l, float field_offset_x) const;
 
-    void push_sfx(i32 sfx);
+    void push_sfx(i32 sfx, float x = 0.0f);
 };
 
 }  // namespace th16
