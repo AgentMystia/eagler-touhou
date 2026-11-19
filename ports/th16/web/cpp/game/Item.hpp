@@ -43,13 +43,6 @@ enum ItemType : i32 {
     kItemSeason = 0x10,    // 季节量表（0x43de50）
 };
 
-// 0x44a460：得分弹出数字（DAT_004a6f10 的 10 项环）；Ascii 管理器接入前记录为事件
-struct ScorePopup {
-    Vec3 pos;
-    i32 value = 0;      // -1 = 显示 "MAX"/特殊符号（原版写 10 个数字槽的首位为 10）
-    u32 color = 0;      // ARGB
-};
-
 struct Item {
     // +0x00 链表结点：{哨兵, next, prev}
     Item* next = nullptr;          // +0x04
@@ -103,7 +96,7 @@ public:
     std::vector<i32> sfx_queue;        // 0x45e150 / 0x45e1f0 音效登记（宿主每帧取走）
     std::vector<i32>* sfx_sink = nullptr;
     void play_sfx(i32 id) { (sfx_sink != nullptr ? *sfx_sink : sfx_queue).push_back(id); }
-    std::vector<ScorePopup> popups;    // 0x44a460 弹出数字（宿主每帧取走）
+    class ScorePopupManager* score_popups = nullptr;   // DAT_004a6f10：拾取得分飘字（0x44a460）
     class Gui* gui = nullptr;          // DAT_004a6dcc：满火力 / extend 弹出（0x42bcf0）、残机 / 炸弹格 / 季节量表显示刷新
 
     AnmManager* animations = nullptr;  // DAT_004c0f48
@@ -147,7 +140,7 @@ private:
     void add_point_value(float value);                  // 0x430dc0
     bool add_season_gauge();                            // 0x43de50
     void add_score(i32 value);                          // 0x43e080（extend 时 Gui::celebrate_extend）
-    void popup(const Vec3& pos, i32 value, u32 color);  // 0x44a460
+    void popup(const Vec3& pos, i32 value, u32 color);  // 0x44a460（value < 0 → 特殊字形）
     void record_collect(i32 value);                     // DAT_004a5860/5868/5870 自动收点统计
     i32 point_line() const;                             // 128（魔理沙 148）：自机 y 低于此线自动收点
     i32 scaled_point_value(float player_y, i32 line) const;  // 0x430100 / 0x430620 的按高度折算
