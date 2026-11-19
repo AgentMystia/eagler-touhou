@@ -472,7 +472,6 @@ bool StagePresentation::capture_presentation(SnapshotData& out) const {
     out.option_rebuild_pending = effects.option_rebuild_pending;
     out.options_hidden = effects.options_hidden;
     out.death_options_queued = effects.death_options_queued;
-    out.options_draw_suppressed = effects.options_draw_suppressed;
     out.full_options = effects.full_options;
     out.frame_synced = frame_synced_;
     out.bomb_generation = effects.bomb_generation;
@@ -639,7 +638,6 @@ bool StagePresentation::restore_presentation(const SnapshotData& source,
     effects.option_rebuild_pending = source.option_rebuild_pending;
     effects.options_hidden = source.options_hidden;
     effects.death_options_queued = source.death_options_queued;
-    effects.options_draw_suppressed = source.options_draw_suppressed;
     effects.full_options = source.full_options;
     frame_synced_ = source.frame_synced;
     effects.bomb_generation = source.bomb_generation;
@@ -1040,43 +1038,6 @@ bool StagePresentation::sync_player_options(StageBattle& battle, bool power_rebu
     return sync_player_options(battle, power_rebuild, -1);
 }
 
-void StagePresentation::set_option_tree_drawn(u32 handle, bool drawn) {
-    std::vector<AnmVm*> stack;
-    if (AnmVm* root = animations.registry.find(handle)) stack.push_back(root);
-    for (size_t i = 0; i < stack.size() && i < 64; ++i) {
-        AnmVm* vm = stack[i];
-        if (drawn) {
-            if (vm->instruction_offset < 0) continue;
-            vm->visible = true;
-            vm->visual.flags |= 1u;
-        } else {
-            vm->visible = false;
-            vm->visual.flags &= ~1u;
-        }
-        for (AnmVm* child : animations.registry.children(*vm))
-            if (child) stack.push_back(child);
-    }
-}
-
-void StagePresentation::suppress_dead_option_draw() {
-    if (!battle_ || battle_->seat_count < 2) return;
-    for (i32 seat = 0; seat < battle_->seat_count && seat < 3; ++seat) {
-        auto& effects = player_effects_[size_t(seat)];
-        const auto& player = battle_->seats[size_t(seat)];
-        const bool suppress = player.ghost || player.dead ||
-                              player.phase == StageBattle::PlayerPhase::Dying;
-        if (suppress) {
-            for (u32 handle : effects.option_handles) set_option_tree_drawn(handle, false);
-            for (u32 handle : effects.full_option_handles) set_option_tree_drawn(handle, false);
-            effects.options_draw_suppressed = true;
-        } else if (effects.options_draw_suppressed) {
-            for (u32 handle : effects.option_handles) set_option_tree_drawn(handle, true);
-            for (u32 handle : effects.full_option_handles) set_option_tree_drawn(handle, true);
-            effects.options_draw_suppressed = false;
-        }
-    }
-}
-
 bool StagePresentation::sync_player_options(StageBattle& battle, bool power_rebuild, i32 seat) {
     const i32 index = battle.seat_count >= 2 ? (seat < 0 ? battle.active_seat : seat) : 0;
     auto& effects = player_effects_[size_t(index)];
@@ -1176,7 +1137,6 @@ bool StagePresentation::sync_player_options(StageBattle& battle, bool power_rebu
             }
         }
         effects.option_anchor_deferred = power_rebuild;
-        if (battle.seat_count >= 2) suppress_dead_option_draw();
         return true;
     }
     effects.death_options_queued = false;
@@ -1231,8 +1191,6 @@ bool StagePresentation::sync_player_options(StageBattle& battle, bool power_rebu
         if (!defer_anchor) animations.registry.find(effects.option_handles[i])->visual.translation = anchor;
     }
     effects.option_anchor_deferred = power_rebuild;
-    if (battle.seat_count >= 2 && effects.options_draw_suppressed)
-        suppress_dead_option_draw();
     return true;
 }
 
@@ -1367,8 +1325,6 @@ bool StagePresentation::post_chain_update() {
             shot_fades_.erase(shot_fades_.begin() + i32(n));
         else ++n;
     }
-    // Chain tick can set option sprites visible again. Dead seats stay undrawn.
-    suppress_dead_option_draw();
     return true;
 }
 
@@ -2424,7 +2380,6 @@ bool StagePresentation::sync(StageBattle& battle, u32 held) {
         ++corpse.age;
         ++n;
     }
-    suppress_dead_option_draw();
 
     // ---- 自机：00442960，0直立、1左倾、2左倾回正、3右倾、4右倾回正 ----
     const bool first_ghost = battle.seat_count >= 2 && battle.seats[0].ghost;
@@ -2577,11 +2532,17 @@ std::string StagePresentation::debug_report() const {
 
 void StagePresentation::prepare_player_opacity() {
     renderer.player_opacity.fill(255);
+    renderer.player_support_hidden.fill(false);
     if (!battle_ || battle_->seat_count < 2) return;
     const i32 local = battle_->mp_local_seat;
     const auto& viewer = battle_->seats[size_t(local)];
     for (i32 seat = 0; seat < battle_->seat_count; ++seat) {
         const auto& player = battle_->seats[size_t(seat)];
+        if (player.ghost || player.dead) {
+            // A ghost seat has no ship to anchor its options. The option
+            // trees keep ticking for RNG parity; only their draw is skipped.
+            renderer.player_support_hidden[size_t(seat + 1)] = true;
+        }
         if (player.ghost) {
             renderer.player_opacity[size_t(seat + 1)] = 140;
             continue;

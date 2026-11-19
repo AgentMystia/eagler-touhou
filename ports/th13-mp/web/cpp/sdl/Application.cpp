@@ -2045,7 +2045,10 @@ bool ApplicationState::commit(float presentation_fps) {
     // in production order, before taking the next checkpoint. Displaying the
     // completed framebuffer must not run those operations again.
     if (run && run->presentation) run->presentation->prepare_player_opacity();
-    else renderer.player_opacity.fill(255);
+    else {
+        renderer.player_opacity.fill(255);
+        renderer.player_support_hidden.fill(false);
+    }
     // M5：本地席位提示（th12-mp/th17-mp 同款 LocalPlayerCue：按住 Ctrl 时
     // DOM 层在自机上方显示本地席位标签；EMSCRIPTEN 专用，原生/无头 no-op。
     // 世界坐标→屏幕：+320/+16（0x4ae9f0/0x4ae8e0）。旁观/回放由 helper

@@ -248,6 +248,8 @@ int AnmRenderer::draw(AnmVm& vm) {
     // must not be used as an index.
     if (!vm.shot_effect_owner || vm.shot_effect_owner >= player_opacity.size())
         return draw_vm(vm);
+    // Options and focus markers of a ghost seat skip the draw pass only.
+    if (vm.player_support_effect && player_support_hidden[vm.shot_effect_owner]) return 0;
     const u8 opacity = player_opacity[vm.shot_effect_owner];
     // Options and focus markers retain their existing visibility.
     const u8 divisor = vm.player_support_effect ? 4 : 3;

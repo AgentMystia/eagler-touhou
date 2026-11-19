@@ -284,6 +284,7 @@
         "overlapping_and_repeat_reimu_bombs_restore_exactly",
         "all_four_duplicate_characters_keep_separate_bomb_families",
         "mixed_character_options_focus_and_death_stay_with_their_seat",
+        "ghost_seat_options_skip_the_draw_pass_and_keep_ticking",
         "reimu_slow_time_zero_age_births_once_and_replays_exactly",
         "teammate_presentation_fields_are_captured_and_hashed",
         "equal_generation_shot_fades_are_independent_for_every_seat",

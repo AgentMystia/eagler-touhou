@@ -43,6 +43,9 @@ class AnmRenderer {
 public:
     bool always_hitbox = false;
     std::array<u8, 4> player_opacity{255, 255, 255, 255};
+    // Seat+1 indexed like player_opacity: support effects (options, focus
+    // marker) of a ghost seat are not drawn. Their VMs keep ticking.
+    std::array<bool, 4> player_support_hidden{};
     u32 presentation_instance=0;
     void submit(AnmVm&,touhou::graphics::Topology,u32,const void*,u32);
     Vec2 offset{};GraphicsViewport viewport;AnmCamera camera;bool tint_enabled=false;u32 tint=0x80808080;

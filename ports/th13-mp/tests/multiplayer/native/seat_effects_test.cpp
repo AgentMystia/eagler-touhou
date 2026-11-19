@@ -205,21 +205,6 @@ TEST(mixed_character_options_focus_and_death_stay_with_their_seat) {
     StagePresentation::SnapshotData after; CHECK(f.presentation.capture_presentation(after));
     CHECK(!dying.death_option_rebuild);CHECK(after.teammate_effects[0].death_options_queued);
     CHECK(!after.death_options_queued && !after.teammate_effects[1].death_options_queued);
-    CHECK(after.teammate_effects[0].options_draw_suppressed);
-    CHECK(!after.options_draw_suppressed && !after.teammate_effects[1].options_draw_suppressed);
-    const auto drawn = [](AnmRegistry& registry, u32 handle) {
-        const auto* vm = registry.find(handle);
-        return vm && vm->visible && (vm->visual.flags & 1u) != 0;
-    };
-    CHECK(!drawn(f.animations.registry, after.teammate_effects[0].option_handles[0]));
-    CHECK(drawn(f.animations.registry, after.option_handles[0]));
-    dying.phase = StageBattle::PlayerPhase::Active;
-    dying.dead = false;
-    dying.ghost = false;
-    CHECK(f.presentation.initialize_player_effects(f.battle));
-    CHECK(f.presentation.capture_presentation(after));
-    CHECK(!after.teammate_effects[0].options_draw_suppressed);
-    CHECK(drawn(f.animations.registry, after.teammate_effects[0].option_handles[0]));
     CHECK(after.option_handles == before.option_handles);
     CHECK(after.teammate_effects[1].option_handles == before.teammate_effects[1].option_handles);
     CHECK(f.presentation.hide_player_options());CHECK(f.presentation.interrupt_player_options());
@@ -229,6 +214,64 @@ TEST(mixed_character_options_focus_and_death_stay_with_their_seat) {
     CHECK(f.presentation.activate_player_effects(f.battle));CHECK(f.presentation.capture_presentation(after));
     CHECK(!after.options_hidden && !after.teammate_effects[0].options_hidden && !after.teammate_effects[1].options_hidden);
     CHECK(!after.option_rebuild_pending && !after.teammate_effects[0].option_rebuild_pending && !after.teammate_effects[1].option_rebuild_pending);
+}
+TEST(ghost_seat_options_skip_the_draw_pass_and_keep_ticking) {
+    Fixture f; CHECK(f.load()); CHECK(f.boot({0,0,0},3));
+    const auto stage=asset("st01enm.anm");
+    CHECK(!stage.empty() && f.animations.load(4,stage.data(),stage.size()));
+    f.presentation.enemies_from_ecl=true; f.battle.defer_item_side=true;
+    f.environment.screen_offsets={320,240,320,16};
+    GameInput idle;
+    for(i32 frame=0;frame<32;++frame) CHECK(f.battle.step(idle));
+    for(i32 seat=0;seat<3;++seat) {
+        auto& player=f.battle.seats[size_t(seat)];
+        player.x=float((seat-1)*80); player.fixed_x=i32(player.x*128);
+        player.options[0].x=player.x; player.options[0].y=player.y-32;
+    }
+    CHECK(f.presentation.initialize_player_effects(f.battle));
+    StagePresentation::SnapshotData alive; CHECK(f.presentation.capture_presentation(alive));
+    const std::array<u32,3> roots{alive.option_handles[0],alive.teammate_effects[0].option_handles[0],alive.teammate_effects[1].option_handles[0]};
+    for(u32 root:roots) CHECK(root!=0);
+    // Draw each seat's option root while every seat is alive: all submit.
+    const auto quads=[&](u32 handle) {
+        auto* vm=f.animations.registry.find(handle); CHECK(vm); if(!vm) return size_t(0);
+        f.graphics.submitted.clear();
+        CHECK(f.renderer.draw(*vm)!=-2); f.renderer.flush();
+        return f.graphics.submitted.size();
+    };
+    f.presentation.prepare_player_opacity();
+    for(i32 seat=0;seat<3;++seat) {
+        CHECK(!f.renderer.player_support_hidden[size_t(seat+1)]);
+        CHECK(quads(roots[size_t(seat)])>0);
+    }
+    // Seat 1 reaches its final death: ghost. Its option tree keeps ticking
+    // (visible, RNG draws preserved) but produces no quads. Other seats are
+    // unaffected.
+    auto& ghost=f.battle.seats[1];
+    ghost.ghost=true; ghost.dead=true;
+    CHECK(f.presentation.sync(f.battle,0));
+    f.presentation.prepare_player_opacity();
+    CHECK(!f.renderer.player_support_hidden[1]);
+    CHECK(f.renderer.player_support_hidden[2]);
+    CHECK(!f.renderer.player_support_hidden[3]);
+    StagePresentation::SnapshotData dead; CHECK(f.presentation.capture_presentation(dead));
+    CHECK_EQ(dead.teammate_effects[0].option_handles[0],roots[1]);
+    const auto* ghost_vm=f.animations.registry.find(roots[1]); CHECK(ghost_vm && ghost_vm->visible);
+    CHECK_EQ(quads(roots[1]),size_t(0));
+    CHECK(quads(roots[0])>0);
+    CHECK(quads(roots[2])>0);
+    // Ticking the world keeps the same option tree alive for the ghost seat.
+    for(i32 frame=0;frame<8;++frame) { CHECK(f.battle.step(idle)); CHECK(f.presentation.sync(f.battle,0)); }
+    CHECK(f.animations.registry.find(roots[1]));
+    f.presentation.prepare_player_opacity();
+    CHECK(f.renderer.player_support_hidden[2]);
+    CHECK_EQ(quads(roots[1]),size_t(0));
+    // Rescue: the seat returns and its options draw again without rebuild.
+    ghost.ghost=false; ghost.dead=false;
+    CHECK(f.presentation.sync(f.battle,0));
+    f.presentation.prepare_player_opacity();
+    CHECK(!f.renderer.player_support_hidden[2]);
+    CHECK(quads(roots[1])>0);
 }
 TEST(reimu_slow_time_zero_age_births_once_and_replays_exactly) {
     // Both rates repeat integral age zero. Count the real synchronous births,
@@ -294,7 +337,6 @@ TEST(teammate_presentation_fields_are_captured_and_hashed) {
     check_mutation([](auto& v){v.option_rebuild_pending=!v.option_rebuild_pending;});
     check_mutation([](auto& v){v.options_hidden=!v.options_hidden;});
     check_mutation([](auto& v){v.death_options_queued=!v.death_options_queued;});
-    check_mutation([](auto& v){v.options_draw_suppressed=!v.options_draw_suppressed;});
     check_mutation([](auto& v){v.full_options=!v.full_options;});
     check_mutation([](auto& v){v.bomb_generation++;});
     check_mutation([](auto& v){v.bomb_background++;});
