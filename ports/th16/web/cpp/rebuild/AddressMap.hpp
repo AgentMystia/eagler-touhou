@@ -112,6 +112,8 @@ constexpr AddressAnchor kAnchors[] = {
     {"draw-chain-walk", 0x4015A0, "game/Chain.cpp ChainManager::run_draw"},
     {"chain-remove", 0x4017A0, "game/Chain.cpp ChainManager::remove"},
     {"frame-clock", 0x45A8A0, "game/FrameClock.hpp FrameClock::begin_frame（1/60 累加；浏览器按 rAF 折算步数）"},
+    {"frame-timer", 0x4262F0, "game/FrameTimer.cpp FrameTimer::tick（QPC 测速；wall_clock_seconds≥0 时启用）"},
+    {"spell-realtime", 0x417BC0, "game/Spellcard.cpp Spellcard::tick_realtime / encode_spell_time"},
     {"global-fps-draw", 0x4263E0, "game/GameSession.cpp global_fps_draw_chain_（0x4b ← 0x426490：标题/结局外画 \"%2.1ffps\"；(588,470)；色阈 30/40）"},
     {"global-fps-measure", 0x4262F0, "FrameTimer+0x30 测速（0x45a9f0 族调用；移植版无墙钟时固定 60）"},
     {"input-sample", 0x401D50, "game/Input.hpp InputState 位布局 + sdl/Application.cpp sample_input（键盘位收集）"},

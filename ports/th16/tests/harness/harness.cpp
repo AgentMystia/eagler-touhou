@@ -55,6 +55,8 @@
 #include "../../web/cpp/game/ReplayRecording.hpp"
 #include "../../web/cpp/game/GameGlobals.hpp"
 #include "../../web/cpp/game/GameMenu.hpp"
+#include "../../web/cpp/game/FrameTimer.hpp"
+#include "../../web/cpp/game/Spellcard.hpp"
 #include "../../web/cpp/game/Rng.hpp"
 #include "../../web/cpp/game/ScreenEffect.hpp"
 #include "../../web/cpp/game/Stage.hpp"
@@ -281,6 +283,29 @@ int main(int argc, char** argv) {
     if (command == "global-fps-color" && argc >= 3) {
         const float fps = float(std::atof(argv[2]));
         std::printf("%u\n", global_fps_color(fps));
+        return 0;
+    }
+    if (command == "spell-time-encode" && argc >= 3) {
+        // 0x417bc0 尾：秒.百分秒 → +0xa4；再经 0x426840 口径自检
+        const double sec = std::atof(argv[2]);
+        const i32 enc = Spellcard::encode_spell_time(sec);
+        const i32 whole = i32(sec);
+        const i32 hundredths = i32((sec - double(whole)) * 100.0);
+        const i32 s = ((enc / 100) % 1000 + 0x3a6) % 1000;
+        const i32 h = (enc % 100 + 0x43) % 100;
+        const bool ok = (enc / 100000 - 0x16 == s + h) && s == whole && h == hundredths;
+        std::printf("enc=%d s=%d h=%d ok=%d\n", enc, s, h, ok ? 1 : 0);
+        return ok ? 0 : 1;
+    }
+    if (command == "frame-timer" && argc >= 2) {
+        // 合成墙钟：每逻辑帧 +1/60，跑满 ≥1s 后打印 fps / slow
+        FrameTimer timer;
+        const i32 frames = argc >= 3 ? std::atoi(argv[2]) : 120;
+        for (i32 i = 0; i < frames; ++i) {
+            timer.tick(double(i) / 60.0, 0, true, false);
+        }
+        std::printf("fps=%.3f slow=%.3f window=%d good=%.1f total=%.1f\n", double(timer.fps),
+                    double(timer.slow_rate()), timer.window_frames, timer.elapsed_good, timer.elapsed_total);
         return 0;
     }
     if (command == "screen-fade" && argc >= 6) {

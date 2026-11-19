@@ -169,11 +169,36 @@ void Spellcard::update(float game_speed) {
 int Spellcard::record_shot() const { return globals != nullptr ? globals->shot + globals->shot_aux : 0; }
 bool Spellcard::is_spell_practice() const { return globals != nullptr && globals->mode() == 2; }
 
+i32 Spellcard::encode_spell_time(double seconds) {
+    if (seconds < 0) seconds = 0;
+    i32 whole = i32(seconds);
+    if (whole > 999) whole = 999;
+    const i32 hundredths = i32((seconds - double(whole)) * 100.0);
+    // ((s + 0x16 + h) * 1000 + (s + 0x42) % 1000) * 100 + (h + 0x21) % 100
+    return ((whole + 0x16 + hundredths) * 1000 + (whole + 0x42) % 1000) * 100 + (hundredths + 0x21) % 100;
+}
+
 // 0x417bc0（由 0x45a9f0 族帧泵在更新链后调用）
 void Spellcard::tick_realtime() {
-    // Unicorn oracle / game-oracle 对 0x417bc0 做空桩（不置 kTiming、不改 +0xa4），
-    // HUD 用时因此恒为校验失败的 999.99。宿主接 QPC 前保持同口径，避免 spell_digest 漂移。
-    (void)replay_playback;
+    // Unicorn oracle / harness 默认 wall_clock_seconds<0：完全空操作（不置 kTiming、不改 +0xa4）
+    if (wall_clock_seconds < 0) return;
+    const double now = wall_clock_seconds;
+    if ((flags & kActive) != 0) {
+        if ((flags & kTiming) == 0) {
+            flags |= kTiming;
+            timing_start = now;
+        }
+        return;
+    }
+    if ((flags & kTiming) == 0) return;
+    timed_frames = state;
+    double duration = now - timing_start;
+    // 原版再减 Sleep 残余（FUN_00487aca）；无消息泵时按 ≥0.00835 补一帧 0.0167
+    if (duration >= 0.00835) duration += 0.0167;
+    time_record = encode_spell_time(duration);
+    timing_scratch = 0;
+    flags &= ~kTiming;
+    ++capture_count;
 }
 
 // 0x4182f0
