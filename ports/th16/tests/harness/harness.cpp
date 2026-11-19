@@ -63,6 +63,7 @@
 #include "../../web/cpp/game/ScoreFile.hpp"
 #include "../../web/cpp/game/Rng.hpp"
 #include "../../web/cpp/game/ScreenEffect.hpp"
+#include "../../web/cpp/game/Sound.hpp"
 #include "../../web/cpp/game/Stage.hpp"
 #include "../../web/cpp/game/TextPaint.hpp"
 #include "../../web/cpp/game/TextRaster.hpp"
@@ -437,6 +438,55 @@ int main(int argc, char** argv) {
         const bool ok = (enc / 100000 - 0x16 == s + h) && s == whole && h == hundredths;
         std::printf("enc=%d s=%d h=%d ok=%d\n", enc, s, h, ok ? 1 : 0);
         return ok ? 0 : 1;
+    }
+    if (command == "sound-script" && argc >= 3) {
+        // 音效请求队列（tools/oracle/sound-oracle.py 同口径）：ops 逐条执行，假缓冲记录每次方法调用
+        struct LogOutput final : SoundOutput {
+            std::vector<bool> missing = std::vector<bool>(kSoundVoiceCount, false);
+            std::vector<bool> on = std::vector<bool>(kSoundVoiceCount, false);
+            bool available(i32 v) const override { return !missing[size_t(v)]; }
+            bool playing(i32 v) override { std::printf("%d status\n", v); return on[size_t(v)]; }
+            void stop(i32 v) override { on[size_t(v)] = false; std::printf("%d stop\n", v); }
+            void set_position(i32 v, u32 b) override { std::printf("%d position %d\n", v, i32(b)); }
+            void set_pan(i32 v, i32 pan) override { std::printf("%d pan %d\n", v, pan); }
+            void set_volume(i32 v, i32 vol) override { std::printf("%d volume %d\n", v, vol); }
+            void play(i32 v, u32 flags) override { on[size_t(v)] = true; std::printf("%d play %u\n", v, flags); }
+        } out;
+        SoundEffects sound;
+        sound.output = &out;
+        for (int a = 3; a < argc; ++a) {
+            if (std::strncmp(argv[a], "master=", 7) == 0) sound.master_volume = std::atoi(argv[a] + 7);
+            else if (std::strcmp(argv[a], "disabled") == 0) sound.enabled = false;
+            else if (std::strncmp(argv[a], "missing=", 8) == 0) {
+                for (const char* p = argv[a] + 8; *p != '\0';) {
+                    out.missing[size_t(std::atoi(p))] = true;
+                    while (*p != '\0' && *p != ',') ++p;
+                    if (*p == ',') ++p;
+                }
+            }
+        }
+        std::string ops = argv[2];
+        size_t at = 0;
+        while (at <= ops.size()) {
+            const size_t end = std::min(ops.find(',', at), ops.size());
+            const std::string op = ops.substr(at, end - at);
+            at = end + 1;
+            if (op.empty()) continue;
+            const char kind = op[0];
+            const char* rest = op.size() > 2 ? op.c_str() + 2 : "";
+            if (kind == 'p') sound.play(std::atoi(rest));
+            else if (kind == 'a') {
+                const i32 id = std::atoi(rest);
+                const char* colon = std::strchr(rest, ':');
+                sound.play_at(id, colon != nullptr ? float(std::atof(colon + 1)) : 0.0f);
+            } else if (kind == 's') sound.stop(std::atoi(rest));
+            else if (kind == 'P') sound.process();
+            else if (kind == 'S') sound.suspend();
+            else if (kind == 'R') sound.resume();
+            else return fail("unknown sound op");
+            std::printf("-- %s\n", op.c_str());
+        }
+        return 0;
     }
     if (command == "spell-time-replay" && argc >= 3) {
         // 0x417bc0：记录局把 +0xa4 写进段头槽（按 +0x88 计次），回放局读回；校验 0x417530 不符 → 0x6ad1584
