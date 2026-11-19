@@ -33,8 +33,8 @@ bool GraphicsDevice::initialize() {
     SDL_SetWindowSize(SDL_GL_GetCurrentWindow(), 640 * render_scale, 480 * render_scale);
     backend.state.target = screen;
     backend.state.depth = depth;
-    // 真机 D3D 设备初始 TFACTOR = 0；共享缺省 0xffffffff 是 th15 的显式配置惰性缺省。
-    backend.pipeline().textureFactor = 0;
+    // 0x45ba80：设备创建后的渲染状态起点（与 harness RecordingDevice 一致）
+    apply_original_device_defaults(backend.pipeline());
     return true;
 }
 
@@ -44,22 +44,32 @@ bool GraphicsDevice::preload(const AnmResource& file) {
     handles.reserve(file.entries.size());
     for (u32 index = 0; index < file.entries.size(); ++index) {
         const auto& entry = file.entries[index];
-        if (!entry.texture.present()) { handles.push_back(0); continue; }
-        // 原版 D3DXCreateTexture 按 entry 声明尺寸建纹理（0x46cb60），THTX 内容贴在左上；
-        // GetLevelDesc 回读的是声明尺寸，ANM UV 亦按此计算——这里把解码像素衬到声明尺寸以对齐采样。
-        const u32 dst_w = entry.width ? entry.width : entry.texture.width;
-        const u32 dst_h = entry.height ? entry.height : entry.texture.height;
-        const u32 src_w = entry.texture.width, src_h = entry.texture.height;
+        const bool render_target = entry.name.size() >= 2 && entry.name[0] == '@' && entry.name[1] == 'R';
+        if (!render_target && !entry.texture.present()) { handles.push_back(0); continue; }
         Texture t;
-        t.width = dst_w;
-        t.height = dst_h;
-        t.pixels.assign(size_t(dst_w) * dst_h * 4, 0);
-        const u32 copy_w = src_w < dst_w ? src_w : dst_w;
-        const u32 copy_h = src_h < dst_h ? src_h : dst_h;
-        for (u32 y = 0; y < copy_h; ++y) {
-            std::memcpy(t.pixels.data() + size_t(y) * dst_w * 4,
-                        entry.texture.bgra.data() + size_t(y) * src_w * 4,
-                        size_t(copy_w) * 4);
+        if (render_target) {
+            // 0x46d3b0：'@R' 头部宽高改写为后备缓冲尺寸（DAT_004d9d2c/30），D3DXCreateTexture(USAGE_RENDERTARGET)；
+            // 这里建一块空表面，内容全部来自之后的帧缓冲绘制
+            t.width = animations != nullptr ? animations->render_target_width : 640;
+            t.height = animations != nullptr ? animations->render_target_height : 480;
+            t.renderScale = render_scale;
+            t.pixels.assign(size_t(t.width) * t.height * 4, 0);
+        } else {
+            // 原版 D3DXCreateTexture 按 entry 声明尺寸建纹理（0x46cb60），THTX 内容贴在左上；
+            // GetLevelDesc 回读的是声明尺寸，ANM UV 亦按此计算——这里把解码像素衬到声明尺寸以对齐采样。
+            const u32 dst_w = entry.width ? entry.width : entry.texture.width;
+            const u32 dst_h = entry.height ? entry.height : entry.texture.height;
+            const u32 src_w = entry.texture.width, src_h = entry.texture.height;
+            t.width = dst_w;
+            t.height = dst_h;
+            t.pixels.assign(size_t(dst_w) * dst_h * 4, 0);
+            const u32 copy_w = src_w < dst_w ? src_w : dst_w;
+            const u32 copy_h = src_h < dst_h ? src_h : dst_h;
+            for (u32 y = 0; y < copy_h; ++y) {
+                std::memcpy(t.pixels.data() + size_t(y) * dst_w * 4,
+                            entry.texture.bgra.data() + size_t(y) * src_w * 4,
+                            size_t(copy_w) * 4);
+            }
         }
         t.identity = "anm:" + file.name + ":entry:" + std::to_string(index);
         const u32 id = next_handle++;
@@ -74,6 +84,7 @@ bool GraphicsDevice::preload(const AnmResource& file) {
 void GraphicsDevice::unload(const AnmResource& file) {
     auto it = resources.find(&file);
     if (it == resources.end()) return;
+    backend.flush();
     for (u32 id : it->second) if (id) { backend.release(id); textures.erase(id); }
     resources.erase(it);
 }
@@ -84,30 +95,39 @@ u32 GraphicsDevice::texture(const AnmResource& file, u32 entry) const {
     return it->second[entry];
 }
 
-void GraphicsDevice::screen_quad(u32 texture, const Vertex quad[4]) {
-    using namespace touhou::graphics;
-    auto& s = backend.state;
-    s.texture = texture;
-    s.layout = attributes(VertexLayout::ScreenColorUv);
-    backend.draw(Topology::Strip, 2, quad, sizeof(Vertex));
+u32 GraphicsDevice::handle_of(TextureRef ref) const {
+    if (!ref.valid() || animations == nullptr) return 0;
+    const AnmFile* file = animations->file(ref.slot);
+    if (file == nullptr || file->resource == nullptr || ref.entry < 0) return 0;
+    return texture(*file->resource, u32(ref.entry));
 }
 
-void GraphicsDevice::screen_quad_fog(u32 texture, const FogVertex quad[4]) {
-    using namespace touhou::graphics;
-    auto& s = backend.state;
-    s.texture = texture;
-    s.layout = VertexAttributes{true, 16, 20, 24};
-    backend.draw(Topology::Strip, 2, quad, sizeof(FogVertex));
+void GraphicsDevice::select_target(TextureRef target) {
+    const u32 handle = target.valid() ? handle_of(target) : screen;
+    if (handle == 0) { error = "render target texture was not preloaded"; return; }
+    backend.flush();
+    backend.state.target = handle;
+    // D3D SetRenderTarget 的隐含行为：视口复位为目标全幅
+    const Texture& t = textures.at(handle);
+    backend.viewport({0, 0, t.width, t.height, 0, 1});
 }
 
-void GraphicsDevice::clear_rect(u32 color, const i32 rect[4], bool with_depth) {
-    backend.clear(with_depth ? 3 : 1, color, 1.0f, 0, rect, 1);
+void GraphicsDevice::clear(u32 flags, u32 argb, const ScreenRect* rect) {
+    if (rect != nullptr) {
+        const i32 box[4] = {rect->left, rect->top, rect->right, rect->bottom};
+        backend.clear(flags, argb, 1.0f, 0, box, 1);
+    } else {
+        backend.clear(flags, argb, 1.0f, 0);
+    }
 }
 
-void GraphicsDevice::clear(u32 color, bool with_depth) {
-    backend.clear(with_depth ? 3 : 1, color, 1.0f, 0);
+void GraphicsDevice::set_viewport(const Viewport& viewport) {
+    backend.viewport({u32(viewport.x), u32(viewport.y), u32(viewport.width), u32(viewport.height), 0, 1});
 }
 
-void GraphicsDevice::present() { backend.present(screen); }
+void GraphicsDevice::draw(Topology topology, VertexLayout layout, u32 primitive_count, const void* vertices, u32 stride) {
+    backend.state.layout = touhou::graphics::attributes(layout);
+    backend.draw(topology, primitive_count, vertices, stride);
+}
 
 }  // namespace th16::sdl
