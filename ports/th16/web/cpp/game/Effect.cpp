@@ -409,13 +409,17 @@ void EffectManager::transition_draw(AnmVm& vm, AnmRenderer& renderer, u32 width,
     // 原版：mode==2，或 mode==0 且后缓冲格式 == D3DFMT_A8R8G8B8(0x15)；移植的 RT 恒为等价 32 位色
     const bool clear_first = tr->mode == 2 || tr->mode == 0;
     if (clear_first) {
-        renderer.flush();
+        // 先把目标的 alpha 通道清零（颜色不动）：ALPHATESTENABLE=0、SEPARATEALPHABLEND=1、
+        // SRCBLEND=ZERO / DESTBLEND=ONE、SRCBLENDALPHA=ONE / DESTBLENDALPHA=ZERO，SELECTARG1=DIFFUSE，
+        // 顶点色 0 的全幅（mode 2：场地 112,16–512,464）XYZRHW|DIFFUSE 条带；
+        // 之后面板按自身混合模式写 alpha，覆盖（模式 7 DESTALPHA）只在面板处显形
+        renderer.flush();   // 0x465a80
         using namespace touhou::graphics;
         PipelineState& p = renderer.device->pipeline();
-        p.depthTest = false;
-        p.blend = true;
+        p.alphaTest = false;
         p.separateAlphaBlend = true;
-        p.sourceBlend = BlendFactor::One;
+        p.sourceBlend = BlendFactor::Zero;
+        p.destinationBlend = BlendFactor::One;
         p.blendEquation = BlendEquation::Add;
         p.sourceAlphaBlend = BlendFactor::One;
         p.destinationAlphaBlend = BlendFactor::Zero;
@@ -428,12 +432,13 @@ void EffectManager::transition_draw(AnmVm& vm, AnmRenderer& renderer, u32 width,
             {x0, y0, 0, 1, 0}, {x1, y0, 0, 1, 0}, {x0, y1, 0, 1, 0}, {x1, y1, 0, 1, 0},
         };
         renderer.device->draw(Topology::Strip, VertexLayout::ScreenColor, 2, quad, sizeof(ScreenColorVertex));
-        p.depthTest = true;
+        p.alphaTest = true;
         p.alpha.operation = p.color.operation = ColorOperation::Multiply;
         p.alpha.first = p.color.first = {ArgumentSource::Texture};
-        p.destinationBlend = BlendFactor::InverseSourceAlpha;
-        p.sourceAlphaBlend = BlendFactor::One;
-        p.destinationAlphaBlend = BlendFactor::Zero;
+        renderer.invalidate_blend_cache();   // +0x184fbb4 = 10：面板首个 VM 重新下发 SRCBLEND / DESTBLEND
+        p.sourceAlphaBlend = BlendFactor::SourceAlpha;
+        p.destinationAlphaBlend = BlendFactor::One;
+        p.alphaBlendEquation = BlendEquation::Add;
     }
     for (int i = 0; i < 4; ++i) renderer.draw_vm(tr->panels[i]);
     if (clear_first) {

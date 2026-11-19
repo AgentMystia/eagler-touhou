@@ -28,8 +28,11 @@ bool GameManager::first_frame(AnmManager& manager, GameGlobals& globals) {
         return true;
     }
     reset_for_stage(manager, globals);
-    // 0x42dc50 末：非回放（bit4-5 ≠ 0x20）且非演示时 0x43c3f0(0, 关卡曲)
+    // 0x42dc50 末：非回放（bit4-5 ≠ 0x20）且非演示时 0x43c3f0(0, 关卡曲)；
+    // 随后中断 AsciiManager+0x19244（th16 内无人写入，恒 0）、+0x19248 Loading VM（reset_for_stage 已做）
+    // 与 DAT_004c12a0 标题过场效果 → 1（面板展开，露出场地）
     if ((globals.flags & 0x30u) != 0x20u && (globals.flags & 0x40u) == 0) start_stage_bgm();
+    manager.interrupt(globals.transition_effect_id, 1);
     return true;
 }
 
@@ -123,8 +126,15 @@ bool GameManager::update(AnmManager& manager, GameGlobals& globals, float game_s
     if (gui_live) gui.roll_score();  // 0x42bc10
     if ((flags & kEndMask) != 0) return false;
     if ((flags & kStageTransition) != 0) {
+        if (transition_frame == 0) {
+            // 首帧：0x43c440 停曲（非 Extra 关），DAT_004c12a0 过场效果中断 1
+            if (globals.stage < 0x2b && music != nullptr) music->stop_track();
+            manager.interrupt(globals.transition_effect_id, 1);
+        }
         ++transition_frame;
-        if (transition_frame >= transition_length) {
+        if (transition_frame < transition_length) {
+            if (transition_frame > 1) return false;   // 原版返回 3
+        } else {
             start_stage_bgm();
             if (on_transition_finished) on_transition_finished();
             flags &= ~kStageTransition;

@@ -392,7 +392,7 @@ constexpr AddressAnchor kAnchors[] = {
     // —— 绘制钩子表 DAT_00491b2c（draw_vm 可见性检查之前按 vm.draw_callback 分派）——
     {"anm-draw-hook-burst", 0x406860, "game/AnmRenderer.cpp AnmRenderer::draw_burst_lines（钩子 3：EffectManager::burst_geometry 取 64 点折线 + 顶点色，0x469890 出批后以无贴图 XYZRHW|DIFFUSE 线带绘制 count−1 段；count < 1 时原版的 −1 段 DrawPrimitiveUP 被设备拒绝，这里直接不画）"},
     {"anm-draw-hook-noop", 0x405EC0, "game/AnmRenderer.cpp AnmRenderer::draw_vm（钩子 2：xor eax,eax; ret 空函数，充能环只靠更新钩子 0x405700）"},
-    {"anm-draw-hook-transition", 0x4073A0, "game/Effect.cpp EffectManager::transition_draw（钩子 1：种类 0 过场；标题 0x418ba0 创建并 0x46f0b0 中断 7）"},
+    {"anm-draw-hook-transition", 0x4073A0, "game/Effect.cpp EffectManager::transition_draw（钩子 1：种类 0 过场；标题 0x418ba0 创建并 0x46f0b0 中断 7；mode 0/2 先以 ALPHATEST 关 + SRC ZERO/DEST ONE + 分离 alpha ONE/ZERO 的顶点色 0 条带清目标 alpha，面板写 alpha 后覆盖脚本 0xc5 以 DESTALPHA 显形，+0x184fbb4 = 10 让面板重下发混合）"},
     {"anm-draw-hook-ring-fan", 0x46A330, nullptr},     // 钩子 6：ANM 渲染模式 10（0x469e20 / 0x46a0b0 / 0x468350 扇面），全部 .anm 无 302(10) → 数据不可达
     {"anm-draw-hook-text-follow", 0x42B5F0, "game/Gui.cpp Gui::dialogue_text_follow（钩子 5 → 0x42b480：文字 VM 绘制前按文字框子 VM 0xb4+下标的屏幕位置重定 entity_offset；右侧展开中 scale.x·32−6，不同于更新尾段的 (scale.x+0.125)·32−6）"},
     {"title-has-clear", 0x44A850, "game/ScoreFile.hpp ScoreFile::extra_unlocked（机体 0..3 任一 0x44a800 → 主菜单 Extra 可选）"},
@@ -415,7 +415,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"effect-transition-init", 0x4071A0, "game/Effect.cpp EffectManager::transition_init"},
     {"effect-transition-update", 0x407330, "game/Effect.cpp EffectManager::transition_update"},
     {"effect-transition-interrupt", 0x407900, "game/Effect.cpp EffectManager::transition_interrupted"},
-    {"effect-spawn-transition", 0x418BA0, "game/Effect.cpp EffectManager::attach(0) / TitleScene::transition_effect（DAT_004c12a0，interrupt 7）"},
+    {"effect-spawn-transition", 0x418BA0, "game/Effect.cpp EffectManager::attach(0) / TitleScene::transition_effect（id 存 GameGlobals::transition_effect_id = DAT_004c12a0，interrupt 7；0x42dc50 首帧末 / 0x42d7b0 过场首帧 interrupt 1 展开）"},
     {"title-spell-practice", 0x4553D0, "game/TitleScene.cpp TitleScene::update_spell_practice（分组 7 项；DAT_004a2970 ≥ 0 时还原分组 + 机体光标并同帧进 0x12；取消/确定记 DAT_004a2974）"},
     {"title-spell-shot-cursor", 0x455790, "game/TitleScene.cpp TitleScene::move_spell_shot（←→ 机体副光标 +0x5cec，VM 0x11c 中断 idx+0x19/0xd 或 0x13/7；0x12 / 0x13 页重刷名行）"},
     {"title-spell-highlight", 0x4569A0, "game/TitleScene.cpp TitleScene::highlight_spell_entry（选中名 VM 中断 2、其余 3；+0x6f4 难度角标同步）"},

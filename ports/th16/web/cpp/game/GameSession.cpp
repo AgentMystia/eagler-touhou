@@ -370,8 +370,8 @@ bool GameSession::activate_title_menu() {
     title.on_transition_effect = [this]() {
         // 0x41a390 + 0x418ba0 + 0x46f0b0(..., 7)：Loading VM、过场种类 0、中断 7
         spawn_loading_vm(kLoadingVmPos);
-        const u32 id = effects.attach(0, nullptr, {});
-        if (id != 0) animations.interrupt(id, 7);
+        globals.transition_effect_id = effects.attach(0, nullptr, {});
+        animations.interrupt(globals.transition_effect_id, 7);
     };
     title.load_help_anm = [this]() -> AnmFile* {
         if (AnmFile* loaded = animations.file(0x13)) return loaded;
