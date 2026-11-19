@@ -65,9 +65,19 @@ public:
     i32 pending_demo = -1;           // 本帧触发的 demo 下标；GameSession 装文件后清
     // 标题 Replay 画面 0x451750
     MenuCursor page_cursor;          // +0x1d4：页（0..2），槽 = page*0x19 + cursor
+    // 0x451560 扫描：槽 0..24 = th16_01..25.rpy，槽 25..74 = th16_ud????.rpy（目录枚举序）
+    static constexpr i32 kReplayListSlots = 75;
+    struct ReplayListEntry {
+        ReplaySummary summary;
+        char ud_name[5] = {};          // 头对象 +0x223：文件名 "ud" 后 4 字节（User 页行首）
+        i32 stage_score[8] = {};       // 0x451d50 sub4：下一关段头 +0x34 或用户块 +0x14
+        i32 stage_continues[8] = {};   // 同上 +0x3c / +0x94
+        std::string path;
+    };
     bool replay_slot_live[100] = {}; // +0x5b50：槽是否有文件
     i32 replay_stage_mask[100] = {}; // 每槽已有关卡位图（bit0=stage1…）；确认后用于禁用项
     bool replay_spell_practice[100] = {};
+    ReplayListEntry replay_entries[kReplayListSlots];
     i32 replay_choice = -1;          // +0x5b48：选中的绝对槽
     i32 replay_stage_choice = 0;     // +0x5b4c：开局关卡下标（1-based 存到 DAT_004a5790）
     u32 replay_ui_flags = 0;         // +0x5ce8：bit2 离开中 / bit3 扫描完成
@@ -201,6 +211,7 @@ private:
     void draw_name_input(AsciiManager& ascii, float x, float y);         // 名字 + "_" + 字符表（0x4538b0 / 0x4541b0 共用段）
     void print_rank_row(AsciiManager& ascii, float y, i32 rank, i32 shot, i32 diff);  // 0x453030 / 0x4538b0 行格式
     void print_replay_row(AsciiManager& ascii, float y, i32 slot, const ReplaySummary& s, const char* stage);
+    void print_replay_list_row(AsciiManager& ascii, float y, i32 abs);    // 0x451d50 一行（No. 页 / User 页）
     void update_key_config(AnmManager& anm, const InputState& input);    // 0x44e930
     void update_stub(AnmManager& anm, const InputState& input);          // 待还原画面：取消回上层
     void request_game(i32 stage, i32 table);                             // DAT_004c17c4 = 7 等

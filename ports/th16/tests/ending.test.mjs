@@ -2,7 +2,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {existsSync} from 'node:fs';
+import {copyFileSync, existsSync, mkdirSync, rmSync} from 'node:fs';
 import {resolve} from 'node:path';
 
 const here = resolve(import.meta.dirname);
@@ -81,6 +81,38 @@ test('ExtraEnding → title_origin 3: name entry 0xe (0x4532f0) → replay save 
   ]);
   assert.match(out, /last_name=\[A {7}\] rank0=\[A {7}\]/);
   assert.match(out, /title_screen=1 title_origin=1/);
+});
+
+test('name entry draw (0x4538b0) and replay-save draw (0x4541b0): Ascii rows / colours / slide', needDat, () => {
+  const slots = '/tmp/th16-name-entry-slots';
+  rmSync(slots, {recursive: true, force: true});
+  mkdirSync(slots, {recursive: true});
+  copyFileSync(resolve(monorepo, 'artifacts/th16/dat/demo1.rpy'), resolve(slots, 'th16_01.rpy'));
+  const base = ['extra=1', 'diff=4', 'score=900000000', `replay_dir=${slots}`, 'ascii', '20:0x1', '22:0x40'];
+  const rows = n => run(['ending-smoke', dat, String(n), ...base, '24:0x10', '26:0x1', '50:0x1'])
+    .split('\n').filter(l => l.startsWith('ascii '));
+
+  const entry = run(['ending-smoke', dat, '23', ...base]).split('\n').filter(l => l.startsWith('ascii '));
+  assert.equal(entry[0], 'ascii 22.0 160.0 ffffffff 1 [ 1            9000000000  ----/--/-- --:-- Season  Stage -  ---%]');
+  assert.equal(entry[1].slice(0, 30), 'ascii 22.0 178.0 ff808040 1 [ ');
+  assert.equal(entry[10], 'ascii 58.0 160.0 ffffffff 1 [A       ]');
+  assert.equal(entry[11], 'ascii 67.0 160.0 ffffff00 1 [_]');
+  assert.equal(entry[12], 'ascii 212.0 360.0 ff808080 1 [A]');
+  assert.equal(entry[24], 'ascii 428.0 360.0 ffffff00 1 [M]', '← from column 0 wraps to column 12');
+  assert.equal(entry.length, 10 + 2 + 0x5b);
+
+  const list = rows(49);
+  assert.equal(list[0], 'ascii 58.0 80.0 ffffff00 1 [No.01 ZUN      17/07/31 18:16 Reimu   Hard    St3 0.0%]');
+  assert.equal(list[1], 'ascii 58.0 95.0 ff808080 1 [No.02 -------- --/--/-- --:-- ------- ------- --- ---%]');
+  assert.equal(list.length, 25);
+
+  const slide = rows(52);
+  assert.match(slide[0], /^ascii 58\.0 112\.0 ffffffff 0 \[No\.01 {10}\d\d\/\d\d\/\d\d \d\d:\d\d Reimu {3}Easy {4}All 0\.0%\]$/);
+  assert.equal(slide.length, 1, 'name input appears only from timer 10');
+  const named = rows(64);
+  assert.equal(named[1], 'ascii 112.0 240.0 ffffffff 0 [A       ]');
+  assert.equal(named[2], 'ascii 121.0 240.0 ffffff00 0 [_]');
+  assert.equal(named.length, 1 + 2 + 0x5b);
 });
 
 test('ExtraEnding with no rank: confirm skips straight to replay save', needDat, () => {

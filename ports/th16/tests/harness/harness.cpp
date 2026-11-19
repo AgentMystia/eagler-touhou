@@ -173,6 +173,7 @@ int main(int argc, char** argv) {
         bool noskip = false;
         i32 difficulty = 1;
         i32 score = 0;
+        bool dump_ascii = false;
         const char* replay_dir = nullptr;
         std::unordered_map<int, u32> inject;
         for (int a = 4; a < argc; ++a) {
@@ -180,6 +181,7 @@ int main(int argc, char** argv) {
             else if (std::strncmp(argv[a], "noskip=", 7) == 0) noskip = std::atoi(argv[a] + 7) != 0;
             else if (std::strncmp(argv[a], "diff=", 5) == 0) difficulty = std::atoi(argv[a] + 5);
             else if (std::strncmp(argv[a], "score=", 6) == 0) score = std::atoi(argv[a] + 6);
+            else if (std::strcmp(argv[a], "ascii") == 0) dump_ascii = true;
             else if (std::strncmp(argv[a], "replay_dir=", 11) == 0) replay_dir = argv[a] + 11;
             else {
                 int f = 0; u32 bits = 0;
@@ -214,6 +216,13 @@ int main(int argc, char** argv) {
                     session.ending.msg_name.c_str());
         if (!session.ending.last_text.empty()) std::printf("text_bytes=%zu\n", session.ending.last_text.size());
         for (const char* e : session.ending.events) std::printf("event %s\n", e);
+        if (dump_ascii) {
+            for (i32 i = 0; i < session.ascii.entry_count(); ++i) {
+                const AsciiManager::Entry& e = session.ascii.entry(i);
+                std::printf("ascii %.1f %.1f %08x %d [%s]\n", double(e.pos.x), double(e.pos.y), e.color,
+                            e.shadow ? 1 : 0, e.text);
+            }
+        }
         std::printf("last_name=[%s] rank0=[%s]\n", session.scores.last_name,
                     session.scores.ranks[session.globals.shot + session.globals.shot_aux][difficulty][0].name);
         for (const TitleScene::Event& e : session.title.events) {
@@ -1525,9 +1534,11 @@ int main(int argc, char** argv) {
         std::vector<Key> script;
         std::vector<ScanInj> scans;
         bool unlock_spells = false;
+        bool dump_ascii = false;
         i32 title_origin = -1;
         for (int a = 4; a < argc; ++a) {
             if (std::strcmp(argv[a], "skip") == 0) { session.supervisor.config_flags |= Supervisor::kSkipBootFlags; continue; }
+            if (std::strcmp(argv[a], "ascii") == 0) { dump_ascii = true; continue; }
             if (std::strcmp(argv[a], "unlock-spells") == 0) { unlock_spells = true; continue; }
             if (std::strncmp(argv[a], "origin=", 7) == 0) { title_origin = std::atoi(argv[a] + 7); continue; }
             const char* p = argv[a];
@@ -1584,6 +1595,13 @@ int main(int argc, char** argv) {
                     session.chains.update_count(), session.chains.draw_count(), quads.size());
         for (const TitleScene::Event& e : session.title_events) std::printf("event %s %d\n", e.kind, e.value);
         for (const TitleScene::Event& e : title.events) std::printf("event %s %d\n", e.kind, e.value);
+        if (dump_ascii) {
+            for (i32 i = 0; i < session.ascii.entry_count(); ++i) {
+                const AsciiManager::Entry& e = session.ascii.entry(i);
+                std::printf("ascii %.1f %.1f %08x %d [%s]\n", double(e.pos.x), double(e.pos.y), e.color,
+                            e.shadow ? 1 : 0, e.text);
+            }
+        }
         for (const RecordingDevice::QuadSummary& q : quads) RecordingDevice::print_quad(q);
         if (session.game_live && session.game.stage) {
             // 场景 7：GameManager / StageManager 状态与关卡背景绘制（0x409f90）
