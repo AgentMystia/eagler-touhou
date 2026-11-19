@@ -300,19 +300,35 @@ bool GameSession::create_player() {
     globals.flags &= ~0x4u;
 
     // 0x447e20 / 0x447760：ReplayManager 登记三条链——记录 0x10、回放快进 0x22、FPS 文字 0x47
-    // 本阶段只接链节点：记录链抄 held（已有）；0x22 / 0x47 在非回放（+0xc != 1）时恒 Continue / 不画字，
-    // 与原版同优先级占位，保证更新链条数与 oracle 一致（19）。回放文件读写与快进语义随后补全。
+    replay_ff_counter_ = 0;
+    replay_fps_byte_ = 60;
     replay_record_chain_ = chains.create([this]() -> ChainResult {
+        // 回放模式走 0x448130（输入从录像取）；记录模式走 0x447fd0（抄 held）。文件 I/O 接入前：
+        // 回放侧只推进 +0x20c 供 0x448e40 取模；记录侧仍抄输入并每 30 帧记帧率 60。
+        if (game.mode == 1) {
+            ++replay_ff_counter_;
+            return ChainResult::Continue;
+        }
         game_input.held = supervisor.input.held & 0xffffu;
         game_input.commit();
+        if (replay_ff_counter_ >= 0) {
+            if ((replay_ff_counter_ % 30) == 0) replay_fps_byte_ = 60;
+            ++replay_ff_counter_;
+        }
         return ChainResult::Continue;
     }, 0x10, true);
-    replay_playback_chain_ = chains.create([]() -> ChainResult {
-        // 0x448e40：仅回放模式且按住 0x201 时按帧计数 % 8 返回 Restart；记录模式直接 Continue
-        return ChainResult::Continue;
+    replay_playback_chain_ = chains.create([this]() -> ChainResult {
+        // 0x448e40：只读 +0x20c；Restart 时整条更新链从头再跑（含 0x10），约 8× 逻辑帧
+        return replay_fast_forward_result(game_live, (game.flags & GameManager::kLoading) != 0,
+                                         game.mode, supervisor.input.held, replay_ff_counter_);
     }, 0x22, true);
-    replay_draw_chain_ = chains.create([]() -> ChainResult {
-        // 0x448e90 → 0x4482f0：只在回放模式画右下角 "%3d" 实际帧率
+    replay_draw_chain_ = chains.create([this]() -> ChainResult {
+        // 0x448e90：装载中（flags&4）直接 Continue；否则 0x4482f0
+        if (!game_live || (game.flags & GameManager::kLoading) != 0) return ChainResult::Continue;
+        if (game.mode != 1) return ChainResult::Continue;
+        ascii.style.color = replay_fps_color(replay_fps_byte_);
+        ascii.printf(Vec3{383.0f, 450.0f, 0.0f}, "%3d", i32(replay_fps_byte_));
+        ascii.style.color = 0xffffffffu;
         return ChainResult::Continue;
     }, 0x47, false);
     // 0x440fb0：自机更新链 0x16（0x443720 → 0x442560）与绘制链 0x1d（0x443730）
