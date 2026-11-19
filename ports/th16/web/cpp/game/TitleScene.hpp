@@ -73,6 +73,8 @@ public:
     i32 music_scroll = 0;            // +0x5a44 窗口首项（可见约 10 条）
     MenuCursor spell_shot_cursor;    // +0x5cec：符卡练习机体副光标
     i32 spell_group = 0;             // +0x5dc4：选中的分组（确认后带入列表）
+    MenuCursor score_shot_cursor;    // +0xfc：Player Data 机体（count 5）
+    MenuCursor score_page_cursor;    // +0x1d4：成绩翻页
     GameGlobals* globals = nullptr;
     std::vector<Event> events;       // SFX / 画面 / 场景请求 / 过场效果（供 harness 断言）
     // GameSession 注入：0x45d150 淡入淡出 / 0x41a390 Loading + 0x418ba0 过场
@@ -134,6 +136,7 @@ private:
     void update_manual(AnmManager& anm, const InputState& input);        // 0x4545a0
     void update_music(AnmManager& anm, const InputState& input);         // 0x4546f0
     void update_spell_practice(AnmManager& anm, const InputState& input); // 0x4553d0
+    void update_score(AnmManager& anm, const InputState& input);         // 0x452330 Player Data
     void update_stub(AnmManager& anm, const InputState& input);          // 待还原画面：取消回上层
     void request_game(i32 stage, i32 table);                             // DAT_004c17c4 = 7 等
     void transition_effect();                                            // 0x41a390 + 0x418ba0
