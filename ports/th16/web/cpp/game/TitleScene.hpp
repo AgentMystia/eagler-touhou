@@ -11,7 +11,8 @@
 //
 // 画面（+0x18）：1 主菜单 0x44b5f0；5 难度 0x44fe20；6 机体 0x4502c0；7 子季节 0x450af0；8 关卡 0x450ef0；
 //   2 = 标题结束（0x44af80 case 2 置场景请求）；3 Option 0x44c570；4 Key Config（自 Option）；
-//   0xa Player Data / 0xb Replay / 0xd Music Room / 0x10 Manual / 0x11 Spell Practice 待还原。
+//   0xa Player Data / 0xb Replay / 0xd Music Room / 0x10 Manual /
+//   0x11 Spell Practice / 0x12 List / 0x13 Shot / 0x14 Start 已接（符卡 id 表 0x4560b0 待补）。
 #pragma once
 #include "AnmManager.hpp"
 #include "GameGlobals.hpp"
@@ -32,7 +33,7 @@ public:
     enum Screen : i32 {
         kNone = 0, kMainMenu = 1, kFinished = 2, kOption = 3, kKeyConfig = 4, kDifficulty = 5, kShot = 6,
         kSeason = 7, kStage = 8, kScore = 0xa, kReplay = 0xb, kMusicRoom = 0xd, kManual = 0x10,
-        kSpellPractice = 0x11, kSpellList = 0x12, kSpellShot = 0x13,
+        kSpellPractice = 0x11, kSpellList = 0x12, kSpellShot = 0x13, kSpellStart = 0x14,
     };
     static constexpr i32 kVmTable = 0x150;
     static constexpr i32 kLogo = 0;
@@ -138,8 +139,9 @@ private:
     void update_manual(AnmManager& anm, const InputState& input);        // 0x4545a0
     void update_music(AnmManager& anm, const InputState& input);         // 0x4546f0
     void update_spell_practice(AnmManager& anm, const InputState& input); // 0x4553d0
-    void update_spell_list(AnmManager& anm, const InputState& input);    // 0x455d50
-    void update_spell_shot(AnmManager& anm, const InputState& input);    // 0x456a20
+    void update_spell_list(AnmManager& anm, const InputState& input);    // 0x455900（分组内符卡列表 → 0x13）
+    void update_spell_shot(AnmManager& anm, const InputState& input);    // 0x456a20（条目/机体；非 Extra→0x14）
+    void update_spell_start(AnmManager& anm, const InputState& input);   // 0x455d50（最终确认开战）
     void update_score(AnmManager& anm, const InputState& input);         // 0x452330 Player Data
     void update_key_config(AnmManager& anm, const InputState& input);    // 0x44e930
     void update_stub(AnmManager& anm, const InputState& input);          // 待还原画面：取消回上层
