@@ -56,8 +56,12 @@ struct Spellcard {
     i32 capture_count = 0;  // +0x88：0x417bc0 符卡练习计次
     i32 state = 0;          // +0x8c：开始后逐帧 +1
     i32 timed_frames = 0;   // +0x90：实时计时结束时抄下的 state（Gui 0x428e70 画 "秒.百分秒"）
+    double timing_start = 0; // +0x94：开始 QPC 秒（kTiming 置位时）
+    double timing_scratch = 0; // +0x9c：结束时差（编码前）
     i32 time_record = 0;    // +0xa4：0x417bc0 按墙钟算出的取得用时，带校验的编码（0x426840 解码；0 = 未计时）
     Vec3 boss_pos;          // +0xa8：倒计时 VM 跟随的 Boss 坐标
+    // <0：无墙钟（oracle / harness 默认）→ 结束只抄 timed_frames，time_record 保持 0
+    double wall_clock_seconds = -1;
 
     // 宿主绑定（GameSession）
     AnmManager* animations = nullptr;
@@ -82,8 +86,10 @@ struct Spellcard {
     void start(i32 spell_id, const char* spell_name, i32 limit, i32 anm_index);
     // 0x417930
     void update(float game_speed);
-    // 0x417bc0：帧泵侧实时计时（QPC）；无墙钟时结束写入 timed_frames，time_record 保持 0 → HUD 999.99
+    // 0x417bc0：帧泵侧实时计时；wall_clock_seconds<0 时结束只写 timed_frames（oracle 口径）
     void tick_realtime();
+    // 编码秒.百分秒 → +0xa4（与 GuiHud::decode_spell_time 互逆）
+    static i32 encode_spell_time(double seconds);
     // 0x4182f0
     void end();
     // 0x417d70（绘制链 0xc）：符卡进行中在名牌 VM（ascii.anm 1）旁入队奖励分（或已失去奖励的 "$"）与取得 / 挑战数

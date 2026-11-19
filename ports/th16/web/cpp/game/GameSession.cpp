@@ -62,7 +62,7 @@ bool GameSession::save_replay_slot(int slot, const char* player_name) {
         failure = "replay directory empty";
         return false;
     }
-    const float slow = 0.0f;  // FrameTimer 测速未接前固定 0（原版 100 - elapsed/total*100）
+    const float slow = frame_timer.slow_rate();
     if (!replay_recording_.write_slot(demo_directory.c_str(), slot, player_name, globals.score, slow)) {
         failure = replay_recording_.error.empty() ? "replay save failed" : replay_recording_.error;
         return false;
@@ -1478,7 +1478,19 @@ bool GameSession::logic_step() {
     // 启动幕：绘制链推进 boot_frames；标题线程等待条件（0x44abea / 0x44ac00）
     chains.run_update();
     // 0x45a9f0 族：更新链后 0x417bc0 符卡实时计时 / 0x4262f0 FPS 测速
-    if (game_live) spellcard.tick_realtime();
+    if (wall_clock_seconds >= 0) {
+        const bool paused = game_live && (game.flags & (GameManager::kLoading | GameManager::kMenuOpen)) != 0;
+        frame_timer.tick(wall_clock_seconds, skip_frames, game_live, paused);
+        global_fps_ = frame_timer.fps;
+        if (global_fps_draw_chain_ != nullptr &&
+            (global_fps_draw_chain_->flags & ChainManager::kFlagEnabled) == 0) {
+            chains.enable(global_fps_draw_chain_);
+        }
+    }
+    if (game_live) {
+        spellcard.wall_clock_seconds = wall_clock_seconds;
+        spellcard.tick_realtime();
+    }
     // 0x45a8a0：更新链之后 BeginScene → 绘制链 → EndScene
     if (run_draw_chains) draw_frame();
     // 标题线程（0x44abea / 0x44ac00）在帧间醒来：启动幕绘制链把 +0x638 数到 0xb4 后装 title*.anm 并登记更新链，

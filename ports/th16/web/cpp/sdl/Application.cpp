@@ -98,6 +98,7 @@ bool Application::step_at(double wall_seconds) {
     if (!initialized) return false;
     const u32 steps = clock.begin_frame(wall_seconds);
     sample_input();
+    session.wall_clock_seconds = wall_seconds;
     for (u32 i = 0; i < steps; ++i) {
         if (!session.logic_step()) { failure = session.failure; return false; }
         fonts.flush(graphics, session.animations, session.text_into_texture);

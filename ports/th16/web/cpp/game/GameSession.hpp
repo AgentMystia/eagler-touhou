@@ -21,6 +21,7 @@
 #include "GameGlobals.hpp"
 #include "GameManager.hpp"
 #include "GameMenu.hpp"
+#include "FrameTimer.hpp"
 #include "Replay.hpp"
 #include "ReplayFile.hpp"
 #include "ReplayRecording.hpp"
@@ -96,6 +97,10 @@ public:
     std::string demo_directory;
     // 0x448400：把本局记录写入 demo_directory/replay/th16_XX.rpy（或根目录回退）
     bool save_replay_slot(int slot, const char* player_name);
+    // 宿主墙钟（秒）。<0 = harness/oracle 口径：跳过 0x4262f0 / 真实 0x417bc0
+    double wall_clock_seconds = -1;
+    i32 skip_frames = 0;                 // DAT_004c12c4：本逻辑帧额外计数（跳帧）
+    FrameTimer frame_timer;              // DAT_004a6dc8
     // 0x43b290：AsciiManager 的更新链 4 与绘制链 0x51 / 0x35 / 0x42 在启动幕装载完成时一起打开
     void enable_ascii_chains();
     // 0x43ce10 case 0xa / 0xb / 0xe / 0x13：GameMenu 重开 / Extra 续关——0x42d200 按请求决定快速重开（bit0）或整体销毁，
