@@ -10,8 +10,8 @@
 //          0x11f（+0x73c）= ascii.anm 0x13（落叶粒子发射器，0x44fe20 难度画面生成、0x44ad20 析构时 interrupt 1），0x14c = title_v script0
 //
 // 画面（+0x18）：1 主菜单 0x44b5f0；5 难度 0x44fe20；6 机体 0x4502c0；7 子季节 0x450af0；8 关卡 0x450ef0；
-//   2 = 标题结束（0x44af80 case 2 置场景请求）；3 Option / 0xa Player Data / 0xb Replay / 0xd Music Room /
-//   0x10 Manual / 0x11 Spell Practice 待还原（当前：进入后仅接受取消回主菜单）。
+//   2 = 标题结束（0x44af80 case 2 置场景请求）；3 Option 0x44c570；4 Key Config（自 Option）；
+//   0xa Player Data / 0xb Replay / 0xd Music Room / 0x10 Manual / 0x11 Spell Practice 待还原。
 #pragma once
 #include "AnmManager.hpp"
 #include "GameGlobals.hpp"
@@ -27,8 +27,9 @@ namespace th16 {
 class TitleScene {
 public:
     enum Screen : i32 {
-        kNone = 0, kMainMenu = 1, kFinished = 2, kOption = 3, kDifficulty = 5, kShot = 6, kSeason = 7,
-        kStage = 8, kScore = 0xa, kReplay = 0xb, kMusicRoom = 0xd, kManual = 0x10, kSpellPractice = 0x11,
+        kNone = 0, kMainMenu = 1, kFinished = 2, kOption = 3, kKeyConfig = 4, kDifficulty = 5, kShot = 6,
+        kSeason = 7, kStage = 8, kScore = 0xa, kReplay = 0xb, kMusicRoom = 0xd, kManual = 0x10,
+        kSpellPractice = 0x11,
     };
     static constexpr i32 kVmTable = 0x150;
     static constexpr i32 kLogo = 0;
@@ -97,9 +98,13 @@ private:
     void update_shot(AnmManager& anm, const InputState& input);          // 0x4502c0
     void update_season(AnmManager& anm, const InputState& input);        // 0x450af0
     void update_stage(AnmManager& anm, const InputState& input);         // 0x450ef0
-    void update_stub(AnmManager& anm, const InputState& input);          // 待还原画面：取消回主菜单
+    void update_option(AnmManager& anm, const InputState& input);        // 0x44c570
+    void update_stub(AnmManager& anm, const InputState& input);          // 待还原画面：取消回上层
     void request_game(i32 stage, i32 table);                             // DAT_004c17c4 = 7 等
     void transition_effect();                                            // 0x41a390 + 0x418ba0
+    void refresh_option_items(AnmManager& anm);                          // 0x44c8c0：面板子项 0x1e/0x1f
+    void apply_option_volume(AnmManager& anm);                           // 0x44dc70：音量数字 ANM（缺 VM 则跳过）
+    void panel_item_interrupt_now(AnmManager& anm, i32 script, i32 value);
 };
 
 }  // namespace th16

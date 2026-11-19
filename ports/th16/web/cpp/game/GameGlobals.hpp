@@ -49,6 +49,10 @@ struct GameGlobals {
     i32 continues = 0;           // DAT_004a57b8：续关次数（0x43f980 续关时 +1，上限 9）
     i32 continues_left = 0;      // DAT_004a5bfc：剩余续关数（0x42cb60 按难度表 DAT_00492278 {5,5,5,5,0}；续关 -1；0 时菜单禁用“续关”）
     i32 sound_thread_state = 0;  // DAT_004d9d90：声音线程状态（GameManager 计时第 5 帧置 2；菜单打开时存旧值并置 0 / 1）
+    // DAT_004c12c6 / +1 / +2（Option 0x44c570）：BGM / SE 音量 0..100；Default → 0x5064 且 +2 清零
+    u8 bgm_volume = 100;
+    u8 se_volume = 80;
+    u8 option_flags = 0;  // DAT_004c12c8
     // 0x42cb60 新开局自成绩文件取本机体 × 难度的最高分（无成绩文件时 0x4497e0 默认 100000）与其续关数；
     // 0x42bc10 每帧以 Gui 显示分越过时更新并置 flags bit2；换关 0x42cb60 另取 max(最高分, 当前分)
     i32 hiscore = 100000;        // DAT_004a59b8
