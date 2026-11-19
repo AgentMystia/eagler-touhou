@@ -122,6 +122,7 @@ private:
     ChainEntry* gui_draw_chains_[2]{};                // 0x33（0x426b00 +0x8：空回调）/ 0x30（0x428e70 HUD 文字）
     ChainEntry* spellcard_draw_chain_ = nullptr;      // 0xc（0x417d70 符卡奖励 / 取得数文字）
     ChainEntry* menu_update_chain_ = nullptr;         // 10（0x43e720 → 0x43e5f0）
+    ChainEntry* menu_draw_chain_ = nullptr;           // 0x4a（0x43ef10 → 0x43edc0）
     ChainEntry* ui_tick_chain_ = nullptr;             // 9（0x46e740 → 0x46e490：UI 表 VM 推进）
     ChainEntry* world_tick_chain_ = nullptr;          // 0x21（0x46e710 → 0x46e340：世界表 VM 推进）
     std::vector<ChainEntry*> shake_chains_;  // 0x45d150(1) 实例（链 0x13，自删）

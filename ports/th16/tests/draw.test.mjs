@@ -95,3 +95,11 @@ test('draw structure: stage 1 Cirno / Autumn Normal, first 8 frames after load (
 test('draw structure: stage 1 Reimu / Autumn Normal season release, frames 1030–1110 incl. the "+10" release bonus text (0x40de30)', needDat, () => {
   assert.equal(checkGolden('draw-st1-release'), 81);
 });
+
+test('draw structure: stage 1 continue menu Credit line (0x43edc0), frames 1050–1110', needDat, () => {
+  assert.equal(checkGolden('draw-st1-menu-credit'), 61);
+});
+
+test('draw structure: stage 1 continue → replay slots → name entry (0x43e9b0 / 0x43eb50 / 0x43e730), frames 1120–1180', needDat, () => {
+  assert.equal(checkGolden('draw-st1-menu-replay'), 61);
+});
