@@ -239,6 +239,12 @@ bool GameSession::activate_title_menu() {
         const u32 id = effects.attach(0, nullptr, {});
         if (id != 0) animations.interrupt(id, 7);
     };
+    title.load_help_anm = [this]() -> AnmFile* {
+        if (AnmFile* loaded = animations.file(0x13)) return loaded;
+        AnmResource* res = nullptr;
+        if (!load_anm("help.anm", res)) return nullptr;
+        return animations.load(0x13, *res);
+    };
     globals.scene_request = -1;
 
     // 0x44ac54：启用标题更新链（优先级 6 → 0x44af80）
@@ -267,6 +273,7 @@ void GameSession::leave_title() {
     title_events.insert(title_events.end(), title.events.begin(), title.events.end());
     // 0x44ad20：析构时对落叶发射器（ascii.anm，+0x73c）interrupt 1，发射器与其子落叶在脚本 case 1 后自删
     animations.interrupt(title.vm[TitleScene::kLeafEmitter], 1);
+    title.close_help();
     title = TitleScene{};
     animations.kill_file(0x10);
     animations.kill_file(0x11);

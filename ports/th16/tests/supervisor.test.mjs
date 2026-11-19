@@ -354,10 +354,23 @@ test('Replay screen: confirm th16_01.rpy → scene 0xd play', needDat, () => {
   }
 });
 
-test('stub screens (Manual/…): cancel returns to the main menu', needDat, () => {
+test('Manual screen (0x4545a0): cancel HelpScreen returns to main menu', needDat, () => {
   const t = MAIN + 1;
   const downs = Array.from({length: 7}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Manual(8)
   const confirmAt = t + 14 + 2;
+  // 进 Manual 约 +20；HelpScreen Menu 需 >0x13；Closing 再 >0x1d
+  const ready = confirmAt + 50;
+  const out = parse(run(['scene-boot', dat, String(ready + 40), [
+    ...downs, `${confirmAt}:${Z}`, `${ready}:${X}`,
+  ].join(',')]));
+  assert.equal(out.header.screen, 1);
+  assert.ok(out.events.some(e => e[0] === 'manual'));
+});
+
+test('stub screens (Music/…): cancel returns to the main menu', needDat, () => {
+  const t = MAIN + 1;
+  const downs = Array.from({length: 5}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Music(6)
+  const confirmAt = t + 10 + 2;
   const out = parse(run(['scene-boot', dat, String(confirmAt + 21 + 4), [...downs, `${confirmAt}:${Z}`, `${confirmAt + 22}:${X}`].join(',')]));
   assert.equal(out.header.screen, 1);
   assert.ok(out.events.some(e => e[0] === 'stub'));
