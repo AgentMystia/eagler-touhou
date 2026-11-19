@@ -1,5 +1,6 @@
 // th16 符卡练习条目表——原版 DAT_00490ee0（0x456060 解锁判定 / 0x4560b0 装列表）。
 // 每组最多 0xd 槽，每槽最多 5 个符卡 id（-1 终止）；组大小见 kGroupCounts。
+// 0x4560b0 按 DAT_00491700 难度字节把 id 填进 out[diff]（Extra 组 diff==4 → 槽 0）。
 #pragma once
 #include "ScoreFile.hpp"
 #include "Types.hpp"
@@ -48,25 +49,63 @@ struct SpellPracticeTable {
         return i32(kSpellDifficulty[spell_id]);
     }
 
-    // 写入最多 5 个 id 到 out（不足填 -2，对齐 0x4560b0 初值）
-    static void fill_slot_ids(i32 group, i32 slot, i32 out[kIdsPerSlot]) {
-        for (int i = 0; i < kIdsPerSlot; ++i) out[i] = -2;
+    // 表行原始 id（遇 -1 终止）；供 0x456060 解锁扫描
+    static void raw_slot_ids(i32 group, i32 slot, i32 out[kIdsPerSlot]) {
+        for (int i = 0; i < kIdsPerSlot; ++i) out[i] = -1;
         if (group < 0 || group >= kGroups || slot < 0 || slot >= kSlots) return;
         for (int i = 0; i < kIdsPerSlot; ++i) {
-            const i32 id = kIds[group][slot][i];
-            out[i] = id;
+            out[i] = kIds[group][slot][i];
+            if (out[i] < 0) break;
+        }
+    }
+
+    // 0x4560b0：按难度字节填 out[0..4]（初值 -2；未解锁 -1；已解锁 = id）
+    static void fill_slot_ids(i32 group, i32 slot, i32 out[kIdsPerSlot], const ScoreFile* scores = nullptr) {
+        for (int i = 0; i < kIdsPerSlot; ++i) out[i] = -2;
+        if (group < 0 || group >= kGroups || slot < 0 || slot >= kSlots) return;
+
+        i32 raw[kIdsPerSlot];
+        raw_slot_ids(group, slot, raw);
+        int filled = 0;
+        for (int i = 0; i < kIdsPerSlot; ++i) {
+            const i32 id = raw[i];
             if (id < 0) break;
+            if (id >= ScoreFile::kSpellRecords) continue;
+            const i32 diff = spell_difficulty(id);
+            i32 dest = 4;
+            if (group == 6) dest = (diff != 4) ? 1 : 0;
+            else if (diff < 5) dest = diff;
+
+            bool open = false;
+            if (scores != nullptr) {
+                const SpellRecord& all = scores->spells[ScoreFile::kAllShotsBlock][id];
+                open = all.attempts[0] != 0;
+                // Extra 难度（>4）：同行前序符卡任一侧取得非 0 也可开
+                if (!open && diff > 4) {
+                    open = true;
+                    for (int p = 0; p < filled; ++p) {
+                        const i32 prev = raw[p];
+                        if (prev < 0 || prev >= ScoreFile::kSpellRecords) { open = false; break; }
+                        const SpellRecord& prev_all = scores->spells[ScoreFile::kAllShotsBlock][prev];
+                        if (prev_all.captures[0] == 0 && prev_all.captures[1] == 0) { open = false; break; }
+                    }
+                }
+            } else {
+                open = true;  // 无成绩表时按已解锁填（测试 / 占位）
+            }
+
+            out[dest] = open ? id : -1;
+            ++filled;
         }
     }
 
     // 0x456060：全机体合计块 attempts[0]（+0x155c0 起）非 0 则解锁
     static bool unlocked(i32 group, i32 slot, const ScoreFile& scores) {
         i32 ids[kIdsPerSlot];
-        fill_slot_ids(group, slot, ids);
+        raw_slot_ids(group, slot, ids);
         for (i32 id : ids) {
             if (id < 0) break;
             if (id >= ScoreFile::kSpellRecords) continue;
-            // 合计块 kAllShotsBlock；attempts[0] ≡ 文件 +0x155c0 + id×0x9c
             if (scores.spells[ScoreFile::kAllShotsBlock][id].attempts[0] != 0) return true;
         }
         return false;

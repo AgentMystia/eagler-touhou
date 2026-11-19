@@ -325,12 +325,17 @@ void Gui::stage_clear() {
     if (bomb != nullptr) bomb->on_stage_clear();   // 灵梦：把尚未引爆的阴阳玉全部引爆
     const int shot = globals->shot + globals->shot_aux;
     if (mode != 0) {
-        // 练习 / 符卡练习：回放中直接回标题；否则记练习解锁位（符卡练习另记 +0x970 最高分，符卡练习接入时补）并进结算菜单
+        // 练习 / 符卡练习：回放中直接回标题；否则记练习解锁位 / 符卡练习 +0x970 最高分，并进结算菜单
         if (replay_playback) {
             if (on_return_to_title) on_return_to_title();
             return;
         }
-        if (mode != 2 && scores != nullptr) scores->mark_practice_cleared(shot, globals->difficulty, globals->stage);
+        if (mode == 2) {
+            // 0x42e150：符卡练习最高分写入机体块 + spell_id×0x9c + 0x970
+            if (scores != nullptr) scores->update_spell_high_score(shot, globals->replay_slot, u32(globals->score));
+        } else if (scores != nullptr) {
+            scores->mark_practice_cleared(shot, globals->difficulty, globals->stage);
+        }
         if (on_practice_result) on_practice_result();
         return;
     }
