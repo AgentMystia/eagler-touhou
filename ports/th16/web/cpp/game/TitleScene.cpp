@@ -54,16 +54,9 @@ void TitleScene::dismiss(AnmManager& anm, i32 slot) {
     vm[slot] = 0;
 }
 
-void TitleScene::reveal(AnmManager& anm, u32 id) {
-    AnmVm* root = anm.find(id);
-    if (root == nullptr) return;
-    struct Rec {
-        static void go(AnmVm& v) {
-            v.flags_lo &= ~0x2u;
-            for (AnmListNode* n = v.children.next; n != nullptr; n = n->next) if (n->owner) go(*n->owner);
-        }
-    };
-    Rec::go(*root);
+// 0x46f340：根与整棵子树清可见位
+void TitleScene::hide_medal(AnmManager& anm, u32 id) {
+    if (AnmVm* root = anm.find(id)) AnmManager::hide_tree(*root);
 }
 
 void TitleScene::spawn_into(AnmManager& anm, i32 slot, AnmFile& file, i32 script) {
@@ -680,7 +673,7 @@ void TitleScene::refresh_main_items(AnmManager& anm) {
             item_interrupt_now(anm, i, 0x1f);
         }
     }
-    if (!has_clear_data) {
+    if (!extra_unlocked()) {
         item_interrupt(anm, 4, 0x1d);
         item_interrupt(anm, 0xe, 0x1d);
     }
@@ -693,7 +686,7 @@ void TitleScene::update_main_menu(AnmManager& anm, const InputState& input) {
     case 0: {
         cursor.count = 10;
         cursor.wrap = true;
-        if (!has_clear_data) cursor.disable(1);
+        if (!extra_unlocked()) cursor.disable(1);
         const i32 mode = g.mode();
         if (mode == 2) { cursor.set(3); g.set_mode(0); }
         else if (mode != 0) { cursor.set(2); g.set_mode(0); }
@@ -857,11 +850,12 @@ void TitleScene::update_difficulty(AnmManager& anm, const InputState& input) {
         }
         spawn_into(anm, kDifficultyBack, *title_file, kDifficultyBack);
         set_sub(1);
-        // 无通关记录的难度显示提示标记（0x44a8e0 == 0 → reveal 子 0x9e+d）；当前无存档 → 全部显示
+        // 通关章：0x44a8e0(d) == 0（并非四机体都未续关通关）→ 隐藏子 0x9e+d；Extra 面板看 d = 4 → 0xa2
         if (!extra) {
-            for (i32 d = 0; d < 4; ++d) reveal(anm, child_id(anm, panel, 0x9e + d));
-        } else {
-            reveal(anm, child_id(anm, panel, 0xa2));
+            for (i32 d = 0; d < 4; ++d)
+                if (!difficulty_cleared_by_all(d)) hide_medal(anm, child_id(anm, panel, 0x9e + d));
+        } else if (!difficulty_cleared_by_all(4)) {
+            hide_medal(anm, child_id(anm, panel, 0xa2));
         }
         [[fallthrough]];
     }
@@ -953,8 +947,14 @@ void TitleScene::update_shot(AnmManager& anm, const InputState& input) {
     case 0: {
         cursor.count = 4;
         if (extra) {
-            // 0x44a800：该机体是否解锁 Extra；无存档 → 全部禁用
-            for (i32 s = 0; s < 4; ++s) cursor.disable(s);
+            // 0x44a800：光标所在机体未解锁 Extra 时移到首个已解锁机体，再禁用其余未解锁项
+            if (!shot_extra_unlocked(cursor.index)) {
+                for (i32 s = 0; s < 4; ++s) {
+                    if (shot_extra_unlocked(s)) { cursor.set(s); break; }
+                }
+            }
+            for (i32 s = 0; s < 4; ++s)
+                if (!shot_extra_unlocked(s)) cursor.disable(s);
         }
         if (anm.find(vm[kShotBack]) == nullptr) spawn_into(anm, kShotBack, *title_file, kShotBack);
         if (anm.find(vm[panel]) == nullptr) {
@@ -965,8 +965,10 @@ void TitleScene::update_shot(AnmManager& anm, const InputState& input) {
         anm.interrupt_now(vm[panel], 3);
         anm.interrupt(vm[panel], to_short(cursor.index + 7));
         set_sub(1);
-        // 该难度下各机体无通关记录 → reveal 0x9a..0x9d（当前无存档 → 全部）
-        for (i32 k = 0; k < 4; ++k) reveal(anm, child_id(anm, panel, 0x9a + k));
+        // 通关章：机体 k 在当前难度无未续关通关（+0x5184 + k × 0x5318 + d × 4 == 0）→ 隐藏 0x9a+k
+        for (i32 k = 0; k < 4; ++k)
+            if (scores == nullptr || scores->no_continue_clears[k][g.difficulty] == 0)
+                hide_medal(anm, child_id(anm, panel, 0x9a + k));
         if (g.title_origin == 4) {
             cursor.set(g.shot);
             anm.interrupt_now(vm[panel], to_short(cursor.index + 7));

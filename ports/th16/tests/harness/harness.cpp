@@ -1597,6 +1597,7 @@ int main(int argc, char** argv) {
         int spell_return[3] = {-1, -1, -1};
         struct Reach { int shot, difficulty, stage; };
         std::vector<Reach> reaches;
+        std::vector<Reach> clears;
         for (int a = 4; a < argc; ++a) {
             if (std::strcmp(argv[a], "skip") == 0) { session.supervisor.config_flags |= Supervisor::kSkipBootFlags; continue; }
             if (std::strcmp(argv[a], "ascii") == 0) { dump_ascii = true; continue; }
@@ -1613,6 +1614,13 @@ int main(int argc, char** argv) {
                 int r[3] = {-1, -1, -1};
                 std::sscanf(argv[a] + 6, "%d,%d,%d", &r[0], &r[1], &r[2]);
                 reaches.push_back({r[0], r[1], r[2]});
+                continue;
+            }
+            if (std::strncmp(argv[a], "clear=", 6) == 0) {
+                // 未续关通关次数 +0x5184（机体块, 难度）置 1：0x44a800 / 0x44a850 / 0x44a8e0 的输入
+                int c[2] = {-1, -1};
+                std::sscanf(argv[a] + 6, "%d,%d", &c[0], &c[1]);
+                clears.push_back({c[0], c[1], 0});
                 continue;
             }
             const char* p = argv[a];
@@ -1648,6 +1656,11 @@ int main(int argc, char** argv) {
                 r.difficulty * 8 + r.stage >= ScoreFile::kPracticeSlots)
                 return fail("bad reach");
             session.scores.mark_practice_reached(r.shot, r.difficulty, r.stage);
+        }
+        for (const Reach& c : clears) {
+            if (c.shot < 0 || c.shot >= ScoreFile::kShots || c.difficulty < 0 || c.difficulty >= ScoreFile::kDifficulties)
+                return fail("bad clear");
+            session.scores.no_continue_clears[c.shot][c.difficulty] = 1;
         }
         if (unlock_spells) {
             // 标题符卡练习导航自测：把合计块 attempts[0] 置 1，等价于已在主线见过全部符卡

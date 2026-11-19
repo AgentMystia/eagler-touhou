@@ -19,6 +19,7 @@
 #include "GameMenu.hpp"
 #include "Input.hpp"
 #include "MenuCursor.hpp"
+#include "ScoreFile.hpp"
 #include "TextPaint.hpp"
 #include "Types.hpp"
 
@@ -59,7 +60,6 @@ public:
     AnmFile* title_file = nullptr;   // +0x10
     AnmFile* title_v_file = nullptr; // +0x14
     AnmFile* ascii_file = nullptr;   // AsciiManager 槽 2
-    bool has_clear_data = false;     // 0x44a850()：任一难度有通关记录（Extra 可选）
     i32 idle_frames = 0;             // DAT_004a5bf0：主菜单无输入帧计数
     i32 demo_index = 0;              // DAT_004a5bf4：demo1..3 轮转（%3）
     i32 pending_demo = -1;           // 本帧触发的 demo 下标；GameSession 装文件后清
@@ -113,6 +113,10 @@ public:
     i32 spell_slot_ids[5] = {-2, -2, -2, -2, -2};  // +0x5dd0：当前列表槽对应符卡 id
     u32 spell_name_vms[5] = {};      // +0x740：符卡名文字 VM（title.anm 0xd2+i）
     ScoreFile* scores = nullptr;     // 0x456060 解锁判定
+    // 0x44a850：任一机体在 Easy..Lunatic 有未续关通关（主菜单 Extra 项可选）
+    bool extra_unlocked() const { return scores != nullptr && scores->extra_unlocked(); }
+    bool shot_extra_unlocked(i32 shot) const { return scores != nullptr && scores->shot_extra_unlocked(shot); }        // 0x44a800
+    bool difficulty_cleared_by_all(i32 d) const { return scores != nullptr && scores->difficulty_cleared_by_all(d); } // 0x44a8e0
     std::vector<TextIntoTextureRequest>* text_paints = nullptr;  // 0x46d990 名行入队
     MenuCursor score_shot_cursor;    // +0xfc：Player Data 机体（count 5）
     MenuCursor score_page_cursor;    // +0x1d4：成绩翻页
@@ -211,7 +215,7 @@ private:
     // 0x44a650：interrupt(vm[slot],1) 并清零
     void dismiss(AnmManager& anm, i32 slot);
     // 0x46f340：清 flags_lo bit1（隐藏）并递归子树
-    static void reveal(AnmManager& anm, u32 id);
+    static void hide_medal(AnmManager& anm, u32 id);
     void spawn_into(AnmManager& anm, i32 slot, AnmFile& file, i32 script);
 
     void update_main_menu(AnmManager& anm, const InputState& input);     // 0x44b5f0

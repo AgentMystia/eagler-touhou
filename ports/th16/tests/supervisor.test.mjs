@@ -93,6 +93,30 @@ test('title menu: cursor wraps and skips disabled Extra (no clear data), SFX 10 
   assert.equal(upToExtra.header.cursor, 0, '2 − 1 = 1 is disabled → 0');
 });
 
+test('title menu: a no-continue clear (+0x5184) enables Extra (0x44a850); Extra shot cursor jumps to the unlocked shot (0x44a800)', needDat, () => {
+  const t = MAIN + 1;
+  const down = parse(run(['scene-boot', dat, String(t + 4), `${t}:${DOWN}`, 'clear=2,1']));
+  assert.equal(down.header.cursor, 1, 'Extra selectable once any shot has a no-continue clear on Easy..Lunatic');
+  const extraOnly = parse(run(['scene-boot', dat, String(t + 4), `${t}:${DOWN}`, 'clear=2,4']));
+  assert.equal(extraOnly.header.cursor, 2, 'an Extra clear alone does not count');
+  const diff = t + 2 + AFTER_MAIN;
+  const shot = parse(run(['scene-boot', dat, String(diff + 17), `${t}:${DOWN},${t + 2}:${Z},${diff}:${Z}`, 'clear=2,1']));
+  assert.equal(shot.header.screen, 6);
+  assert.equal(shot.header.difficulty, 4);
+  assert.equal(shot.header.cursor, 2, 'last shot 0 is locked → first unlocked shot');
+});
+
+test('difficulty clear medal 0x9e+d stays visible only when all four shots cleared d without continues (0x44a8e0)', needDat, () => {
+  const t = MAIN + 1;
+  const frames = String(t + 150);
+  const none = parse(run(['scene-boot', dat, frames, `${t}:${Z}`]));
+  const three = parse(run(['scene-boot', dat, frames, `${t}:${Z}`, 'clear=0,1', 'clear=1,1', 'clear=2,1']));
+  const four = parse(run(['scene-boot', dat, frames, `${t}:${Z}`, 'clear=0,1', 'clear=1,1', 'clear=2,1', 'clear=3,1']));
+  assert.equal(none.header.screen, 5);
+  assert.equal(three.header.quads, none.header.quads);
+  assert.equal(four.header.quads, none.header.quads + 1, 'Normal medal drawn');
+});
+
 test('title menu: held DOWN auto-repeats after 0x19 frames every 8 frames (0x405580)', needDat, () => {
   const t = MAIN + 1;
   const script = Array.from({length: 40}, (_, i) => `${t + i}:${DOWN}`).join(',');

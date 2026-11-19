@@ -365,9 +365,9 @@ constexpr AddressAnchor kAnchors[] = {
     {"anm-draw-hook-transition", 0x4073A0, "game/Effect.cpp EffectManager::transition_draw（钩子 1：种类 0 过场；标题 0x418ba0 创建并 0x46f0b0 中断 7）"},
     {"anm-draw-hook-ring-fan", 0x46A330, nullptr},     // 钩子 6：ANM 渲染模式 10（0x469e20 / 0x46a0b0 / 0x468350 扇面），全部 .anm 无 302(10) → 数据不可达
     {"anm-draw-hook-text-follow", 0x42B5F0, "game/Gui.cpp Gui::dialogue_text_follow（钩子 5 → 0x42b480：文字 VM 绘制前按文字框子 VM 0xb4+下标的屏幕位置重定 entity_offset；右侧展开中 scale.x·32−6，不同于更新尾段的 (scale.x+0.125)·32−6）"},
-    {"title-has-clear", 0x44A850, nullptr},  // 任一难度通关记录 → Extra 可选（当前恒 0：无存档）
-    {"title-difficulty-cleared", 0x44A8E0, nullptr}, // 某难度四项记录齐全（难度面板 0x9e+d 标记）
-    {"title-extra-unlocked", 0x44A800, nullptr}, // 机体是否解锁 Extra
+    {"title-has-clear", 0x44A850, "game/ScoreFile.hpp ScoreFile::extra_unlocked（机体 0..3 任一 0x44a800 → 主菜单 Extra 可选）"},
+    {"title-difficulty-cleared", 0x44A8E0, "game/ScoreFile.hpp ScoreFile::difficulty_cleared_by_all（四机体 +0x5184 + d × 4 均非 0 → 难度通关章 0x9e+d / 0xa2 保留）"},
+    {"title-extra-unlocked", 0x44A800, "game/ScoreFile.hpp ScoreFile::shot_extra_unlocked（该机体 Easy..Lunatic 任一未续关通关；0x4502c0 Extra 光标 / 禁用）"},
     {"title-demo", 0x44AF80, "game/TitleScene.cpp TitleScene::tick_idle_demo（0x708 无输入 → flags bit6 + scene 0xd；demo 下标 %3；DAT_004a59c0 存难度，回标题 case 0 还原并清 bit6）"},
     {"title-option", 0x44C570, "game/TitleScene.cpp TitleScene::update_option（BGM/SE 音量、Default、取消两段退出）"},
     {"title-key-config", 0x44E930, "game/TitleScene.cpp TitleScene::update_key_config（7 项；捕获 sub3）"},
