@@ -535,10 +535,11 @@ float wrap_angle(float angle) {
     return angle;
 }
 
-// 0x469e00：半径 r、角 a 的点（x87 cos / sin 后截成 float）
+// 0x469e00：半径 r、角 a 的点。原版 FSINCOS 在 x87 扩展精度里算完再乘半径、截成 float，
+// 这里用双精度 cos / sin 与乘法逼近（单精度 cosf 会在 ~200 像素半径上差出 1 ulp）
 void polar_point(float angle, float radius, float& x, float& y) {
-    x = float(std::cos(angle) * radius);
-    y = float(std::sin(angle) * radius);
+    x = float(std::cos(double(angle)) * double(radius));
+    y = float(std::sin(double(angle)) * double(radius));
 }
 
 }  // namespace
@@ -651,7 +652,7 @@ u32 half_alpha(u32 color) { return ((color >> 1) & 0x7f000000u) | (color & 0x00f
 void AnmRenderer::submit_rectangle(float x, float y, float width, float height, float rotation, u32 c1, u32 c2,
                                    u32 anchor_x, u32 anchor_y) {
     flush();
-    const float c = float(std::cos(rotation)), s = float(std::sin(rotation));
+    const float c = float(std::cos(double(rotation))), s = float(std::sin(double(rotation)));
     float left, right, top, bottom;
     anchor_extent(anchor_x, width, left, right);
     anchor_extent(anchor_y, height, top, bottom);
@@ -709,7 +710,7 @@ int AnmRenderer::draw_rectangle(AnmVm& vm, AnmRenderMode mode) {
     case AnmRenderMode::Line: {
         // 0x469330：只沿 X 延伸的两点线段，旋转后平移到 VM 位置
         flush();
-        const float c = float(std::cos(rotation)), s = float(std::sin(rotation));
+        const float c = float(std::cos(double(rotation))), s = float(std::sin(double(rotation)));
         float from, to;
         anchor_extent(anchor_x, width, from, to);
         const ScreenColorVertex line[2] = {
@@ -724,7 +725,7 @@ int AnmRenderer::draw_rectangle(AnmVm& vm, AnmRenderMode mode) {
     default: {
         // 0x468fc0：左上 → 右上 → 右下 → 左下 → 左上 的线段带；上边两角与左下取 color，右侧取第二色
         flush();
-        const float c = float(std::cos(rotation)), s = float(std::sin(rotation));
+        const float c = float(std::cos(double(rotation))), s = float(std::sin(double(rotation)));
         float left, right, top, bottom;
         anchor_extent(anchor_x, width, left, right);
         anchor_extent(anchor_y, height, top, bottom);

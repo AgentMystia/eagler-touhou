@@ -36,7 +36,7 @@ Vec3 AnmGeometry::transform_position(const AnmVm& vm, Vec3 p) const {
     if (vm.root != nullptr && (vm.flags_hi & AnmVm::kHiDetached) == 0) {
         if ((vm.flags_hi & AnmVm::kHi314) != 0) {
             // 随父 Z 旋转（0x405510 / 0x4054f0 = sin / cos(root.rotation.z)）
-            const float sn = std::sin(vm.root->rotation.z), cs = std::cos(vm.root->rotation.z);
+            const float sn = float(std::sin(double(vm.root->rotation.z))), cs = float(std::cos(double(vm.root->rotation.z)));
             const float x = p.x;
             p.x = x * cs - p.y * sn;
             p.y = p.y * cs + x * sn;
@@ -83,7 +83,7 @@ void AnmGeometry::axis_corners(const AnmVm& vm, float out[4][2]) const {
 void AnmGeometry::rotated_corners(const AnmVm& vm, float out[4][2]) const {
     // 0x4660b0：x 先乘 scale，y 的缩放并入旋转式；保持 (lx·c − (sy·ly)·s) 的单精度顺序
     const float angle = anm_world_rotation(const_cast<AnmVm&>(vm)).z;
-    const float c = std::cos(angle), s = std::sin(angle);
+    const float c = float(std::cos(double(angle))), s = float(std::sin(double(angle)));
     const int ax = int((vm.flags_lo >> 21) & 3u);
     const int ay = int((vm.flags_lo >> 23) & 3u);
     float lx[4], ly[4];
@@ -128,7 +128,7 @@ bool AnmGeometry::projected_corners(const AnmVm& vm, const Camera& camera, float
     const float height = vm.sprite_size.y * k * vm.scale.y * vm.scale2.y;
 
     const float angle = anm_world_rotation(const_cast<AnmVm&>(vm)).z;
-    const float c = std::cos(angle), s = std::sin(angle);
+    const float c = float(std::cos(double(angle))), s = float(std::sin(double(angle)));
     // 锚点：0 居中、1 左/上对齐、2 右/下对齐；3 在原版里读到的是未初始化的 sin 值，照搬
     float left, right, top, bottom;
     switch ((vm.flags_lo >> 21) & 3u) {
