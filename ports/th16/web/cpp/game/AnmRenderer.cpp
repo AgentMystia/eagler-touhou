@@ -293,6 +293,29 @@ int AnmRenderer::draw_screen_sprite(AnmVm& vm) {
     return submit_screen_quad(vm, *sprite, corners, true);
 }
 
+// 0x4681f0
+int AnmRenderer::draw_host_strip(AnmVm& vm, const ScreenColorUvVertex* vertices, u32 vertex_count) {
+    if (device == nullptr) return -1;
+    if ((vm.flags_lo & AnmVm::kVisible) == 0 || (vm.flags_lo & AnmVm::kFlag2) == 0 || vm.color[3] == 0) return -1;
+    // 原版不检查顶点数；条带不足一个三角形时 DrawPrimitiveUP 会被 D3D 拒绝，这里直接跳过
+    if (vertex_count < 3) return -1;
+    flush();
+    const AnmRuntimeSprite* sprite = sprite_of(vm);
+    if (sprite != nullptr) bind_sprite_texture(*sprite);
+    PipelineState& p = device->pipeline();
+    if (vertex_format_cache_ != VertexFormat::HostBuffer) {
+        // SetFVF(XYZRHW|DIFFUSE|TEX1) + ALPHAARG2 / COLORARG2 = DIFFUSE
+        p.alpha.second = {ArgumentSource::Diffuse};
+        p.color.second = {ArgumentSource::Diffuse};
+        p.textureTransform = false;
+        vertex_format_cache_ = VertexFormat::HostBuffer;
+    }
+    apply_vm_state(vm);
+    ensure_modulate_combiner();
+    device->draw(Topology::Strip, VertexLayout::ScreenColorUv, vertex_count - 2, vertices, sizeof(ScreenColorUvVertex));
+    return 0;
+}
+
 int AnmRenderer::submit_screen_quad(AnmVm& vm, const AnmRuntimeSprite& sprite, float corners[4][2], bool pixel_align) {
     // 0x465c40 / 0x4660b0 末尾：加位置；0x465280 开头：加绘制偏移（抖动）
     const Vec3 origin = geometry_.world_position(vm);

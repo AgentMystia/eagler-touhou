@@ -13,6 +13,8 @@
 //   0x468c70 / 0x469570 / 0x469330 / 0x468fc0  mode 0x10 / 0x14 / 0x15 / 0x16 / 0x1a / 0x1b：无贴图矩形（实心 /
 //             描边 / 线段 / 线框），宽高 = ins_606 族的精灵尺寸 × scale，锚点取 ins_421
 //   0x465b50  入批（每四边形 6 顶点 XYZRHW|DIFFUSE|TEX1）  0x465a80  出批 DrawPrimitiveUP
+//   0x4681f0  宿主顶点条带：出批、绑精灵贴图、FVF XYZRHW|DIFFUSE|TEX1 + ARG2 = DIFFUSE、0x464f10 状态、
+//             MODULATE，再按 TRIANGLESTRIP 直接 DrawPrimitiveUP（曲线激光 0x438750）
 //   0x46e750  遍历一层绘制链
 //   0x43c710  切相机：下发 view / projection，抖动偏移进绘制偏移
 //   0x43c4b0 / 0x43c4f0 / 0x43c530 / 0x43c570  Supervisor 上的雾 / Z 写缓存（0x4c10d0 +0xa0c / +0xa10）
@@ -84,6 +86,7 @@ public:
     // 0x43c710 + SetViewport：出批、下发 view / projection、绘制偏移 = 相机抖动偏移、视口 = 相机视口
     void use_camera(const Camera& camera);
     const Camera* camera() const { return camera_; }
+    const AnmGeometry& geometry() const { return geometry_; }
 
     // ---- Supervisor 设备状态缓存 ----
     void set_fog(bool enabled);          // 0x43c4b0（开）/ 0x43c4f0（关）
@@ -117,6 +120,9 @@ public:
     // 0x465c40 + 0x465280(…, 1)：不经 0x468490 分派、不看可见位，直接按 mode 0 像素对齐入批
     // （AsciiManager 字形 / Item 得分弹出的字形 VM 走这条路）
     int draw_screen_sprite(AnmVm& vm);
+    // 0x4681f0：宿主自备的屏幕空间顶点条带（曲线激光 0x438750 等）。只取 vm 的可见位 / 顶点 alpha、贴图与
+    // 混合 / 过滤 / 寻址状态，顶点由调用方算好（XYZRHW|DIFFUSE|TEX1）。返回 0 已绘制，-1 跳过
+    int draw_host_strip(AnmVm& vm, const ScreenColorUvVertex* vertices, u32 vertex_count);
     // 0x46e750：遍历一层绘制链
     void draw_layer(int layer);
     // 未实现的 render mode 计数（按模式号），对拍时据此发现缺口

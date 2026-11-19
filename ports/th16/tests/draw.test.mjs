@@ -46,7 +46,9 @@ function structureLines(ops) {
   return lines;
 }
 
-function structureDigest(ops) {
+// golden.texture_slots 存在时只摘要用这些 AnmFile 槽贴图的绘制操作（draw-compare.py --only-textures 同口径）
+function structureDigest(ops, textureSlots) {
+  if (textureSlots) ops = ops.filter(op => op.op === 'draw' && textureSlots.has(op.texture[0]));
   return createHash('sha1').update(structureLines(ops).join('\n')).digest('hex');
 }
 
@@ -57,7 +59,8 @@ function recordPort(golden, lastFrame, fromFrame) {
   const c = golden.config;
   try {
     execFileSync(harness, ['game-draw', dat, String(c.stage), String(c.shot), String(c.season), String(lastFrame + 1),
-      c.input, '', '', String(c.difficulty), '-1', String(c.lives), String(c.refill ?? 0), '0', out, String(fromFrame)],
+      c.input, '', '', String(c.difficulty), String(c.replay_slot ?? -1), String(c.lives), String(c.refill ?? 0), '0', out,
+      String(fromFrame)],
     {encoding: 'utf8', maxBuffer: 1 << 28});
     const frames = {};
     for (const line of readFileSync(out, 'utf8').split('\n')) {
@@ -75,10 +78,11 @@ function checkGolden(name) {
   const golden = JSON.parse(readFileSync(resolve(here, 'golden', `${name}.json`), 'utf8'));
   const wanted = Object.keys(golden.frames).map(Number).sort((a, b) => a - b);
   const port = recordPort(golden, wanted.at(-1), wanted[0]);
+  const textureSlots = golden.texture_slots ? new Set(golden.texture_slots) : null;
   const bad = [];
   for (const frame of wanted) {
     assert.ok(port[frame], `port recorded frame ${frame}`);
-    if (structureDigest(port[frame]) !== golden.frames[String(frame)]) bad.push(frame);
+    if (structureDigest(port[frame], textureSlots) !== golden.frames[String(frame)]) bad.push(frame);
   }
   assert.deepEqual(bad, [], `${name}: draw structure differs from the original on frames ${bad.slice(0, 10).join(', ')}${bad.length > 10 ? ' …' : ''}`);
   return wanted.length;
@@ -102,4 +106,16 @@ test('draw structure: stage 1 continue menu Credit line (0x43edc0), frames 1050�
 
 test('draw structure: stage 1 continue → replay slots → name entry (0x43e9b0 / 0x43eb50 / 0x43e730), frames 1120–1180', needDat, () => {
   assert.equal(checkGolden('draw-st1-menu-replay'), 61);
+});
+
+test('draw structure (bullet.anm only): stage 3 Normal spell 26 curve lasers (0x438750 strips via 0x4681f0 + tail glow), frames 230–330', needDat, () => {
+  assert.equal(checkGolden('draw-st3-curve-laser'), 101);
+});
+
+test('draw structure (bullet.anm only): stage 5 Normal spell 46 line lasers (0x433720 beam / tip / origin VMs), frames 400–500', needDat, () => {
+  assert.equal(checkGolden('draw-st5-line-laser'), 101);
+});
+
+test('draw structure (bullet.anm only): Extra spell 115 infinite lasers (0x4357a0 beam / origin VMs), frames 210–330', needDat, () => {
+  assert.equal(checkGolden('draw-st7-infinite-laser'), 121);
 });

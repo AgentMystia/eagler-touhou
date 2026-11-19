@@ -85,7 +85,10 @@ python3 tools/oracle/draw-compare.py /tmp/st1.draw.jsonl /tmp/st1.port.jsonl --f
 回归守护在 `tests/draw.test.mjs`：原版流经 `draw-compare.py <oracle.jsonl> - --structure-golden tests/golden/draw-st1.json --frames a-b`
 折叠成每帧一条 sha1（口径 = `structure_lines`：目标 / 视口 / 图元 / 格式 / 纹理 / 状态子集，**不含顶点与矩阵**——原版 x87 与
 移植版 SSE 单精度在个别顶点差 1 ulp，位级摘要会误报），测试跑 `game-draw` 后按同一口径复算；原版 jsonl 本身（数十 MB）不入库。
-顶点级对拍仍用上面的 `--eps` 命令手工做。
+顶点级对拍仍用上面的 `--eps` 命令手工做。场景里还有未移植子系统时加 `--only-textures 7`：摘要只含用该 AnmFile 槽贴图的绘制
+（Clear 一并丢弃），槽号写进 golden 的 `texture_slots`，测试侧按同一过滤复算——`draw-st3-curve-laser.json` 等激光黄金就是这样
+只守 bullet.anm（弹幕 + 激光），不被同场景尚未移植的 Boss 畸变光环 / 特效条带 / Boss 血环拖住。golden 的 `config.replay_slot`
+（默认 −1）用于符卡练习槽直入。
 
 `scene-boot` / `anm-draw` 也经 RecordingDevice 输出可读的 `quad` 行（屏幕四边形直接取顶点，世界四边形按 world·view·projection 投影并算线性顶点雾）。XYZRHW 顶点不经 TnL，原版从不关 TEXTURETRANSFORMFLAGS 而移植版对屏幕批显式关掉，draw-compare 对屏幕格式不比较该位。
 

@@ -21,12 +21,14 @@
 
 #include "AnmManager.hpp"
 #include "Bullet.hpp"
+#include "RenderDevice.hpp"
 #include "Types.hpp"
 #include <memory>
 #include <vector>
 
 namespace th16 {
 
+class AnmRenderer;
 class EffectManager;
 class EnemyManager;
 struct GameGlobals;
@@ -227,6 +229,7 @@ struct Laser {
 
     // —— 曲线激光专属 ——
     std::vector<CurveNode> curve_nodes;    // +0x1524 采样点数组
+    std::vector<ScreenColorUvVertex> curve_strip;  // +0x1528 绘制条带顶点（每采样点左右各一个，0x438750 每帧重算）
     std::vector<CurveSegment> curve_segments; // +0x152c 起的轨迹段链（按时间顺序追加）
     float curve_full_width = 0;            // +0x94c（Inf 复用同偏移：原版仅清零）
 };
@@ -263,9 +266,14 @@ public:
                 Player* pl, EnemyManager* enm_mgr, EffectManager* eff_mgr, const PlayerWorld* w);
     void reset();
 
-    // 0x4316b0 → 0x431510：更新链 0x1b 每帧入口；0x431720：绘制链 0x23 的 VM 坐标 / 朝向同步
+    // 0x4316b0 → 0x431510：更新链 0x1b 每帧入口
     void update(float game_speed);
-    void prepare_draw();
+    // 0x431720：绘制链 0x23——跳过待摘除（state 1）的激光，其余按种类绘制：
+    //   直线 0x433720  激光柱 VM 同步起点 / 朝向后直绘，再画前端光球，起点未越过时画根部光球
+    //   照射 0x4357a0  激光柱 VM 同步后直绘，起点未越过时画根部光球
+    //   曲线 0x438750  按采样点生成屏幕空间条带（draw_curve_strip）经 0x4681f0 直绘，采样已满时在末节点画根部光球
+    //   占位 0x43ac10  不绘制
+    void draw(AnmRenderer& renderer);
 
     // 0x431760：创建一条激光并跑初始化，返回分配的句柄（槽满返回 0 且不创建）
     i32 spawn_line(const LineLaserArgs& args);
@@ -363,6 +371,14 @@ private:
                                   float& speed, float& angle);
     void recompute_curve_nodes(Laser& l);
     bool curve_in_bounds(const Laser& l) const;
+
+    // 0x433720 / 0x4357a0 / 0x438750：三类激光的绘制回调（Beam 0x43ac10 为空）
+    void draw_line(Laser& l, AnmRenderer& renderer);
+    void draw_infinite(Laser& l, AnmRenderer& renderer);
+    void draw_curve(Laser& l, AnmRenderer& renderer);
+    // 0x438750 前半：把采样点展开成屏幕空间三角条带（每点沿相邻方向角平分线左右各半宽，U 沿条带 0 → 1，
+    // V 取激光柱 VM 精灵的上 / 下沿），写入 l.curve_strip
+    void build_curve_strip(Laser& l, float field_offset_x) const;
 
     void push_sfx(i32 sfx);
 };

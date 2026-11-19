@@ -1,6 +1,7 @@
 // th16 LaserManager 实现（原版函数锚点见各函数头；总览见 Laser.hpp）
 #include "Laser.hpp"
 
+#include "AnmRenderer.hpp"
 #include "Effect.hpp"
 #include "Enemy.hpp"
 #include "Motion.hpp"
@@ -338,27 +339,103 @@ void LaserManager::update(float gs) {
 }
 
 // 0x431720
-void LaserManager::prepare_draw() {
+void LaserManager::draw(AnmRenderer& renderer) {
     for (auto& ptr : lasers) {
         Laser& l = *ptr;
         if (l.state == LaserState::Dead) continue;
         switch (l.kind) {
-            case LaserKind::Line:       // 0x433720
-            case LaserKind::Infinite: { // 0x4357a0
-                l.vm_beam.pos = l.pos;
-                l.vm_beam.rotation.z = wrap_angle(l.angle + kHalfPi);
-                l.vm_beam.flags_lo |= AnmVm::kRotationDirty;
-                if (l.kind == LaserKind::Line) {
-                    const Vec3 tip = polar(l.angle, l.length);
-                    l.vm_tip.pos = {tip.x + l.pos.x, l.pos.y + tip.y, 0.0f};
-                }
-                if (l.start_drawn_len == 0.0f) l.vm_origin.pos = l.pos;
-                break;
-            }
-            case LaserKind::Curve:  // 0x438750：曲线由渲染端按采样点生成条带，此处无状态写入
-            case LaserKind::Beam:   // 0x43ac10：不绘制
-                break;
+            case LaserKind::Line: draw_line(l, renderer); break;
+            case LaserKind::Infinite: draw_infinite(l, renderer); break;
+            case LaserKind::Curve: draw_curve(l, renderer); break;
+            case LaserKind::Beam: break;   // 0x43ac10
         }
+    }
+}
+
+// 0x433720
+void LaserManager::draw_line(Laser& l, AnmRenderer& renderer) {
+    l.vm_beam.pos = l.pos;
+    l.vm_beam.rotation.z = wrap_angle(l.angle + kHalfPi);
+    l.vm_beam.flags_lo |= AnmVm::kRotationDirty;
+    renderer.draw_vm(l.vm_beam);
+    const Vec3 tip = polar(l.angle, l.length);
+    l.vm_tip.pos = {tip.x + l.pos.x, l.pos.y + tip.y, 0.0f};
+    renderer.draw_vm(l.vm_tip);
+    if (l.start_drawn_len == 0.0f) {
+        l.vm_origin.pos = l.pos;
+        renderer.draw_vm(l.vm_origin);
+    }
+}
+
+// 0x4357a0
+void LaserManager::draw_infinite(Laser& l, AnmRenderer& renderer) {
+    l.vm_beam.pos = l.pos;
+    l.vm_beam.rotation.z = wrap_angle(l.angle + kHalfPi);
+    l.vm_beam.flags_lo |= AnmVm::kRotationDirty;
+    renderer.draw_vm(l.vm_beam);
+    if (l.start_drawn_len == 0.0f) {
+        l.vm_origin.pos = l.pos;
+        renderer.draw_vm(l.vm_origin);
+    }
+}
+
+// 0x438750
+void LaserManager::draw_curve(Laser& l, AnmRenderer& renderer) {
+    const i32 n = l.curve.node_count;
+    if (n <= 0 || i32(l.curve_nodes.size()) < n) return;
+    build_curve_strip(l, renderer.geometry().field_offset_x);
+    renderer.draw_host_strip(l.vm_beam, l.curve_strip.data(), u32(n) * 2);
+    // 采样时刻已覆盖全部节点（frame_timer.current ≤ 节点数时尾节点仍在原点附近）→ 在末节点画根部光球
+    if (l.frame_timer.current <= n) {
+        l.vm_origin.pos = l.curve_nodes[u32(n - 1)].pos;
+        renderer.draw_vm(l.vm_origin);
+    }
+}
+
+// 0x438750 前半
+void LaserManager::build_curve_strip(Laser& l, float field_offset_x) const {
+    const i32 n = l.curve.node_count;
+    const float half_width = l.curve.width * 0.5f;
+    // 场地 → 屏幕：x 加 DAT_004d9d50（场地中线，整数值）、y 加 DAT_004d9d3c（场地矩形原点，恒 0——原版此处
+    // 并未加场地上沿 DAT_004d9d54），z 清零
+    const float screen_x = field_offset_x;
+    const float screen_y = 0.0f;
+    const float v_top = l.vm_beam.uv[0].y;      // +0x3ac
+    const float v_bottom = l.vm_beam.uv[2].y;   // +0x3bc
+    // 0x405390 形：prev − cur 跨 ±π 时取另一侧
+    auto signed_difference = [](float prev, float cur) {
+        const float d = prev - cur;
+        if (d <= kPi) return (kPi < cur - prev) ? prev - (cur - kTwoPi) : d;
+        return prev - (cur + kTwoPi);
+    };
+    // 第 i 点的侧向角：首点取自身朝向 ± π/2；其余取与前一点朝向（同样 ± π/2）的角平分线
+    auto side_angle = [&](i32 i, float quarter_turn) {
+        const float cur = wrap_angle(l.curve_nodes[u32(i)].angle + quarter_turn);
+        if (i == 0) return cur;
+        const float prev = wrap_angle(l.curve_nodes[u32(i - 1)].angle + quarter_turn);
+        const float half = wrap_angle(wrap_angle(signed_difference(prev, cur)) * 0.5f);
+        return wrap_angle(half + cur);
+    };
+
+    l.curve_strip.resize(u32(n) * 2);
+    float u = 0.0f;
+    const float u_step = 1.0f / float(n - 1);   // n == 1 时为 +∞，与原版一致（只写第一对顶点的 u = 0）
+    for (i32 i = 0; i < n; ++i) {
+        const Vec3& p = l.curve_nodes[u32(i)].pos;
+        ScreenColorUvVertex* pair = &l.curve_strip[u32(i) * 2];
+        const float sides[2] = {kHalfPi, -kHalfPi};
+        const float vs[2] = {v_top, v_bottom};
+        for (int k = 0; k < 2; ++k) {
+            const Vec3 offset = polar(side_angle(i, sides[k]), half_width);
+            pair[k].x = offset.x + p.x + screen_x;
+            pair[k].y = offset.y + p.y + screen_y;
+            pair[k].z = 0.0f;
+            pair[k].rhw = 1.0f;
+            pair[k].color = 0xffffffffu;
+            pair[k].u = u;
+            pair[k].v = vs[k];
+        }
+        u = u_step + u;
     }
 }
 
