@@ -26,8 +26,8 @@ struct ScoreEntry {
 
 struct PracticeRecord {
     u32 score = 0;          // +0x00（文件 +0x5198）
-    u8 pad_04 = 0;          // +0x04
-    u8 cleared = 0;         // +0x05（文件 +0x519d 解锁判定）
+    u8 cleared = 0;         // +0x04（文件 +0x519c：0x42e150 过关置 1）
+    u8 reached = 0;         // +0x05（文件 +0x519d：0x42cb60 非回放装载该关置 1；练习选关 / 分数表据此解锁）
     u8 pad_06[2] = {};
 };
 static_assert(sizeof(PracticeRecord) == 8, "PracticeRecord must be 8 bytes");
@@ -129,8 +129,10 @@ struct ScoreFile {
         if (clears[shot][difficulty] < 99999) ++clears[shot][difficulty];
         if (no_continue && no_continue_clears[shot][difficulty] < 99999) ++no_continue_clears[shot][difficulty];
     }
-    // 0x42e150 过关（非回放、非符卡练习）：练习选关解锁位 +0x519c
+    // 0x42e150 过关（非回放、非符卡练习）：+0x519c
     void mark_practice_cleared(int shot, int difficulty, int stage) { practice[shot][difficulty * 8 + stage].cleared = 1; }
+    // 0x42cb60 装载关卡（非回放）：+0x519d
+    void mark_practice_reached(int shot, int difficulty, int stage) { practice[shot][difficulty * 8 + stage].reached = 1; }
 
     // 0x43f7e0 练习分支：练习最高分只升不降
     void update_practice(int shot, int difficulty, int stage, u32 score) {

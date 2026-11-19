@@ -766,6 +766,12 @@ void GameSession::register_game_chains() {
     };
 }
 
+void GameSession::mark_stage_reached() {
+    // 0x42cb60 开头：GameManager+0xac == 0 的装载即置该关练习到达位（+0x519d）
+    if (game.mode != 0) return;
+    scores.mark_practice_reached(globals.shot + globals.shot_aux, globals.difficulty, globals.stage);
+}
+
 bool GameSession::enter_game(i32 replay_mode) {
     // 0x42d700：flags |= 4、+0xac = 回放标志；0x42cb60 装载线程（此处同步）。GameManager 对象已由 leave_game 复位
     //（快速重开时其中保留 EnemyManager 与 Loading VM）
@@ -784,6 +790,7 @@ bool GameSession::enter_game(i32 replay_mode) {
         replay_recording_.begin_run(globals, time32);
     }
 
+    mark_stage_reached();
     // 0x42cb60：新游戏（DAT_004c17d0，0x43ce10 case 7 置位）先建 Player，再建 Gui / Stage / …
     globals.new_game = true;
     if (!create_player()) return false;
@@ -1056,6 +1063,7 @@ bool GameSession::next_stage() {
     globals.post_load_frames = 1;
 
     // ---- 0x42d700 + 0x42cb60（DAT_004c17d0 == 0）----
+    mark_stage_reached();
     game.flags = GameManager::kLoading;
     game.timer = Timer{};
     game.transition_frame = 0;

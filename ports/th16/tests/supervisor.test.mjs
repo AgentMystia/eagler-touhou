@@ -293,6 +293,25 @@ test('practice: season confirm goes to Stage select (8); locked stages refuse wi
   assert.deepEqual(out.events.at(-1), ['sfx', '16'], 'no clear data → stage locked');
 });
 
+test('practice: stage unlock reads +0x51a5 (reached flag of cursor+1 for shot×difficulty)', needDat, () => {
+  const t = MAIN + 1;
+  const diff = t + 2 + AFTER_MAIN;
+  const shot = diff + AFTER_DIFF;
+  const season = shot + AFTER_SHOT;
+  const stage = season + AFTER_SEASON_PRACTICE;
+  const script = [`${t}:${DOWN}`, `${t + 2}:${Z}`, `${diff}:${Z}`, `${shot}:${Z}`, `${season}:${Z}`, `${stage}:${Z}`].join(',');
+  const probe = parse(run(['scene-boot', dat, String(stage), script]));
+  const block = probe.header.shot;
+  const d = probe.header.difficulty;
+  const other = parse(run(['scene-boot', dat, String(stage + 2), script, `reach=${block},${d},2`]));
+  assert.deepEqual(other.events.at(-1), ['sfx', '16'], 'stage 2 reached does not unlock stage 1');
+  const out = parse(run(['scene-boot', dat, String(stage + 2), script, `reach=${block},${d},1`]));
+  assert.equal(out.header.screen, 8);
+  assert.notDeepEqual(out.events.filter(e => e[0] === 'sfx').at(-1), ['sfx', '16']);
+  assert.ok(out.events.some(e => e[0] === 'sfx' && e[1] === '7'), 'confirm SFX 7');
+  assert.ok(out.events.some(e => e[0] === 'bgm-fade'));
+});
+
 test('Option screen (0x44c570): cancel to Quit then back to main menu', needDat, () => {
   const t = MAIN + 1;
   const downs = Array.from({length: 6}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Option (7)

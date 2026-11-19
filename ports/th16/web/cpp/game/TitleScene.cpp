@@ -352,7 +352,7 @@ void TitleScene::draw_stage_practice_scores(AsciiManager& ascii) {
         const PracticeRecord& rec = scores->practice[shot][diff * 8 + stage];
         const bool selected = (cursor.index == stage - 1);
         if (selected) {
-            if (rec.cleared == 0) ascii.style.color = 0xffdfdfdfu;
+            if (rec.reached == 0) ascii.style.color = 0xffdfdfdfu;
             else if (sub == 3) {
                 // 闪烁：timer & 3 在 {2,3} 时黑
                 const u32 phase = u32(timer) & 3u;
@@ -363,7 +363,7 @@ void TitleScene::draw_stage_practice_scores(AsciiManager& ascii) {
         } else {
             ascii.style.color = 0xff808080u;
         }
-        if (rec.cleared == 0) {
+        if (rec.reached == 0) {
             ascii.printf(Vec3{240.0f, y, 0.0f}, "%s  ---------", kStageNames[stage]);
         } else {
             ascii.printf(Vec3{240.0f, y, 0.0f}, "%s  %.8d0", kStageNames[stage], int(rec.score));
@@ -1173,8 +1173,11 @@ void TitleScene::update_stage(AnmManager& anm, const InputState& input) {
             return;
         }
         if (input.pressed & InputState::kConfirmMask) {
-            // 存档中 (机体+季节, 难度, 关卡) 的练习解锁位；无存档 → 全部未解锁
-            const bool unlocked = false;
+            // +0x51a5：所选关卡（光标 + 1）在该机体 × 难度下非回放到达过（0x42cb60 +0x519d）
+            const i32 shot = g.shot + g.shot_aux;
+            const i32 slot = g.difficulty * 8 + cursor.index + 1;
+            const bool unlocked = scores != nullptr && shot >= 0 && shot < ScoreFile::kShots && slot >= 0 &&
+                                  slot < ScoreFile::kPracticeSlots && scores->practice[shot][slot].reached != 0;
             if (!unlocked) { sfx(0x10); return; }
             set_sub(3);
             sfx(7);

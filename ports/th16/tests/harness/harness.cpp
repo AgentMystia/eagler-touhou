@@ -1595,6 +1595,8 @@ int main(int argc, char** argv) {
         bool dump_text = false;
         i32 title_origin = -1;
         int spell_return[3] = {-1, -1, -1};
+        struct Reach { int shot, difficulty, stage; };
+        std::vector<Reach> reaches;
         for (int a = 4; a < argc; ++a) {
             if (std::strcmp(argv[a], "skip") == 0) { session.supervisor.config_flags |= Supervisor::kSkipBootFlags; continue; }
             if (std::strcmp(argv[a], "ascii") == 0) { dump_ascii = true; continue; }
@@ -1604,6 +1606,13 @@ int main(int argc, char** argv) {
             if (std::strncmp(argv[a], "spell-return=", 13) == 0) {
                 // DAT_004a2970 / 0049f2dc / 0049f2d8：符卡练习返回标题时要还原的分组 / 列表 / 条目
                 std::sscanf(argv[a] + 13, "%d,%d,%d", &spell_return[0], &spell_return[1], &spell_return[2]);
+                continue;
+            }
+            if (std::strncmp(argv[a], "reach=", 6) == 0) {
+                // 练习到达位 +0x519d（机体块, 难度, 关卡）：等价于该关已非回放装载过
+                int r[3] = {-1, -1, -1};
+                std::sscanf(argv[a] + 6, "%d,%d,%d", &r[0], &r[1], &r[2]);
+                reaches.push_back({r[0], r[1], r[2]});
                 continue;
             }
             const char* p = argv[a];
@@ -1634,6 +1643,12 @@ int main(int argc, char** argv) {
         session.globals.spell_return_group = spell_return[0];
         session.globals.spell_return_list = spell_return[1];
         session.globals.spell_return_entry = spell_return[2];
+        for (const Reach& r : reaches) {
+            if (r.shot < 0 || r.shot >= ScoreFile::kShots || r.difficulty < 0 || r.stage < 0 ||
+                r.difficulty * 8 + r.stage >= ScoreFile::kPracticeSlots)
+                return fail("bad reach");
+            session.scores.mark_practice_reached(r.shot, r.difficulty, r.stage);
+        }
         if (unlock_spells) {
             // 标题符卡练习导航自测：把合计块 attempts[0] 置 1，等价于已在主线见过全部符卡
             for (int id = 0; id < ScoreFile::kSpellRecords; ++id)
