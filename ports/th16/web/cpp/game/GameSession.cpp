@@ -612,7 +612,7 @@ bool GameSession::enter_game(i32 replay_mode) {
             return ChainResult::Continue;
         }, 0x1b, true);
         laser_draw_chain_ = chains.create([this]() -> ChainResult {
-            if (game.lasers_live && !game.chains_suspended && (game.flags & GameManager::kLoading) == 0) game.lasers->prepare_draw();
+            if (game.lasers_live && !game.chains_suspended && (game.flags & GameManager::kLoading) == 0) game.lasers->draw(renderer);
             return ChainResult::Continue;
         }, 0x23, false);
     }

@@ -1,4 +1,4 @@
-// LaserManager（0x4314a0 / 0x431510 更新 / 0x431720 绘制准备 / 直线 0x431b30 / 照射 0x435050 / 曲线 0x4370a0 / 占位 0x43a860 +
+// LaserManager（0x4314a0 / 0x431510 更新 / 0x431720 绘制（见 draw.test.mjs） / 直线 0x431b30 / 照射 0x435050 / 曲线 0x4370a0 / 占位 0x43a860 +
 // 消弹 0x431950..0x431b30 / ECL 700..714、545 / 敌机每帧钩子表 DAT_004917b8）：
 // harness game-run / game-digest 对 tools/oracle/game-oracle.py --enemies --bullets --items --lasers（Unicorn 直跑原版全游戏）的
 // 逐帧激光池 FNV-1a 64 对照，并用快照核对几处可读的原版行为。

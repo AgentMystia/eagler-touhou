@@ -11,9 +11,11 @@
 
 用法：
     draw-compare.py <oracle.jsonl> <port.jsonl> [--frames a-b] [--eps 1e-4] [--max-report 20] [--ignore-state k1,k2]
-    draw-compare.py <oracle.jsonl> - --structure-golden <out.json> [--frames a-b]
+    draw-compare.py <oracle.jsonl> - --structure-golden <out.json> [--frames a-b] [--only-textures 7]
         只用原版流：把每帧绘制操作的"结构"（目标 / 视口 / 图元 / 格式 / 纹理 / 状态，不含顶点与矩阵）摘要成 sha1，
-        写成 tests/golden 用的 JSON；tests/draw.test.mjs 用同一口径（structure_lines）对移植版复算
+        写成 tests/golden 用的 JSON；tests/draw.test.mjs 用同一口径（structure_lines）对移植版复算。
+        --only-textures 把摘要限定在用这些 AnmFile 槽贴图的绘制操作（Clear 一并丢弃），并把槽号列表写进 golden 的
+        texture_slots，供在其它子系统尚未对齐的场景里单独守住一个管理器（如 7 = bullet.anm：弹幕与激光）
 退出码：0 全部一致；1 有差异；2 输入问题。
 """
 import argparse
@@ -243,7 +245,9 @@ def structure_lines(ops):
     return lines
 
 
-def structure_digest(ops):
+def structure_digest(ops, texture_slots=None):
+    if texture_slots is not None:
+        ops = [op for op in ops if op['op'] == 'draw' and op['texture'][0] in texture_slots]
     return hashlib.sha1('\n'.join(structure_lines(ops)).encode()).hexdigest()
 
 
@@ -292,7 +296,7 @@ def dump_frames(frames_map, frames, fold):
             print('  %3d %s%s %s' % (i, tag, describe(op), describe_vertices(op)))
 
 
-def write_structure_golden(oracle_path, out_path, frame_range):
+def write_structure_golden(oracle_path, out_path, frame_range, texture_slots=None):
     oracle = load_jsonl(oracle_path)
     lo, hi = (int(x) for x in frame_range.split('-')) if frame_range else (min(oracle), max(oracle))
     st = OracleState()
@@ -303,7 +307,7 @@ def write_structure_golden(oracle_path, out_path, frame_range):
             st.apply(call)
         ops = st.fold(rec['calls'])
         if lo <= frame <= hi:
-            digests[str(frame)] = structure_digest(ops)
+            digests[str(frame)] = structure_digest(ops, texture_slots)
     existing = {}
     try:
         with open(out_path) as f:
@@ -311,6 +315,8 @@ def write_structure_golden(oracle_path, out_path, frame_range):
     except (OSError, ValueError):
         pass
     existing.setdefault('frames', {}).update(digests)
+    if texture_slots is not None:
+        existing['texture_slots'] = sorted(texture_slots)
     with open(out_path, 'w') as f:
         json.dump(existing, f, indent=1, sort_keys=True)
         f.write('\n')
@@ -331,6 +337,8 @@ def main():
                     help='逗号分隔的 AnmFile 槽号（如 2 = ascii.anm）：两侧都丢弃用这些槽贴图的绘制操作，'
                          '用于暂未移植的子系统。按链地址过滤不可行：链回调里的出批会把上一层残批也记在它名下')
     ap.add_argument('--structure-golden', default='', help='只读原版流，写出每帧结构摘要 JSON（见模块说明）')
+    ap.add_argument('--only-textures', default='',
+                    help='--structure-golden 用：逗号分隔的 AnmFile 槽号，摘要只含用这些槽贴图的绘制操作')
     a = ap.parse_args()
     ignore_state = set(filter(None, a.ignore_state.split(',')))
     skip_textures = {int(x, 0) for x in filter(None, a.skip_textures.split(','))}
@@ -338,7 +346,8 @@ def main():
     def keep(op):
         return op['op'] != 'draw' or op['texture'][0] not in skip_textures
     if a.structure_golden:
-        return write_structure_golden(a.oracle, a.structure_golden, a.frames)
+        only = {int(x, 0) for x in filter(None, a.only_textures.split(','))} or None
+        return write_structure_golden(a.oracle, a.structure_golden, a.frames, only)
     oracle, port = load_jsonl(a.oracle), load_jsonl(a.port)
     frames = sorted(set(oracle) & set(port)) if a.dump is None else sorted(oracle if a.dump == 'oracle' else port)
     if a.frames:
