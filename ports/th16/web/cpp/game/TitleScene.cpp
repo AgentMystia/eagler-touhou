@@ -167,8 +167,8 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
     case kManual: update_manual(anm, input); break;
     case kMusicRoom: update_music(anm, input); break;
     case kSpellPractice: update_spell_practice(anm, input); break;
+    case kSpellList: update_spell_list(anm, input); break;
     case kScore: update_score(anm, input); break;
-    case kSpellList:
     case kSpellShot: update_stub(anm, input); break;
     case kKeyConfig: update_key_config(anm, input); break;
     default: update_stub(anm, input); break;
@@ -1231,6 +1231,85 @@ void TitleScene::update_score(AnmManager& anm, const InputState& input) {
             dismiss(anm, 0x6d);
             dismiss(anm, kLeafEmitter);
             set_screen(kMainMenu);
+            cursor.pop();
+            events.push_back({"screen", screen});
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+// 0x455d50：符卡列表（count 4；确定开战；取消 → 画面 0x13）
+void TitleScene::update_spell_list(AnmManager& anm, const InputState& input) {
+    switch (sub) {
+    case 0:
+        cursor.count = 4;
+        cursor.wrap = true;
+        cursor.set(0);
+        if (title_file && vm[0xd9] == 0) spawn_into(anm, 0xd9, *title_file, 0xd9);  // +0x624
+        set_sub(1);
+        events.push_back({"spell-list", spell_group});
+        [[fallthrough]];
+    case 1:
+        if (timer > 10) {
+            set_sub(2);
+            if (vm[0xd9]) {
+                anm.interrupt_now(vm[0xd9], 3);
+                anm.interrupt(vm[0xd9], to_short(cursor.index + 7));
+            }
+        }
+        break;
+    case 2: {
+        const i32 prev = cursor.index;
+        const u32 edge = input.pressed | input.repeat;
+        if (edge & InputState::kUp) cursor.move(-1);
+        if (edge & InputState::kDown) cursor.move(1);
+        if (cursor.index != prev) {
+            sfx(10);
+            if (vm[0xd9]) {
+                anm.interrupt_now(vm[0xd9], 3);
+                anm.interrupt(vm[0xd9], to_short(cursor.index + 7));
+            }
+        }
+        // ←/→ 机体副光标（0x455790）
+        const i32 prev_shot = spell_shot_cursor.index;
+        if (edge & InputState::kLeft) spell_shot_cursor.move(-1);
+        if (edge & InputState::kRight) spell_shot_cursor.move(1);
+        if (spell_shot_cursor.index != prev_shot) {
+            sfx(10);
+            globals->shot = spell_shot_cursor.index;
+        }
+        if (input.pressed & InputState::kCancelMask) {
+            set_sub(4);
+            sfx(9);
+            break;
+        }
+        if (input.pressed & InputState::kConfirmMask) {
+            if (vm[0xd9]) anm.interrupt(vm[0xd9], 6);
+            set_sub(3);
+            sfx(7);
+            sfx(0x32);
+            events.push_back({"bgm-fade", 0});
+        }
+        break;
+    }
+    case 3:
+        if (timer == 10) transition_effect();
+        if (timer > 0x27) {
+            // 符卡练习开战：场景 7，mode 已在主菜单置 2
+            globals->stage = spell_group + 1;
+            globals->stage_copy = globals->stage;
+            globals->difficulty = cursor.index;  // 列表项暂作难度/条目；精确表见 0x5dd0
+            globals->scene_request = kSceneGame;
+            events.push_back({"scene", kSceneGame});
+            set_screen(kFinished);
+        }
+        break;
+    case 4:
+        if (timer > 5) {
+            dismiss(anm, 0xd9);
+            set_screen(kSpellShot);
             cursor.pop();
             events.push_back({"screen", screen});
         }
