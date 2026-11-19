@@ -201,6 +201,9 @@ bool ReplayRecording::slot_summary(const char* directory, int slot, ReplaySummar
     out.stage = load_i32(file.user.data() + 0x90);
     out.spell_id = load_i32(file.user.data() + 0x98);
     out.season = load_i32(file.user.data() + 0x9c);
+    float slow = 0.0f;
+    if (file.user.size() >= 0x80) std::memcpy(&slow, file.user.data() + 0x7c, sizeof(slow));
+    out.slow_rate = slow;
     return true;
 }
 

@@ -2,6 +2,7 @@
 #include "Ascii.hpp"
 #include "GameMenu.hpp"
 #include "ReplayFile.hpp"
+#include "ReplayRecording.hpp"
 #include "ScoreFile.hpp"
 #include "SpellPracticeTable.hpp"
 #include "TextPaint.hpp"
@@ -311,6 +312,7 @@ void TitleScene::draw(AsciiManager& ascii) {
     switch (screen) {
     case kStage: draw_stage_practice_scores(ascii); break;  // 0x4513c0
     case kScore: draw_player_data(ascii); break;            // 0x453030
+    case kReplay: draw_replay_list(ascii); break;           // 0x451d50
     case kSpellList:
     case kSpellShot:
     case kSpellStart: draw_spell_hud(ascii); break;         // 0x456d50（0x14 亦走 SCORE）
@@ -413,6 +415,67 @@ void TitleScene::draw_player_data(AsciiManager& ascii) {
     ascii.printf(Vec3{328.0f, 378.0f, 0.0f}, "    %5d", int(scores->clears[shot][diff]));
     ascii.printf(Vec3{328.0f, 396.0f, 0.0f}, "%3d:%.2d:%.2d", 0, 0, 0);
     ascii.printf(Vec3{328.0f, 414.0f, 0.0f}, "    %5d", int(scores->no_continue_clears[shot][diff]));
+    ascii.style.shadow = false;
+}
+
+void TitleScene::draw_replay_list(AsciiManager& ascii) {
+    // 0x451d50：sub==2 时当前页 25 槽；空槽占位，有文件则摘要行
+    if (sub != 2) return;
+    static constexpr const char* kShotNames[4] = {"Reimu  ", "Cirno  ", "Aya    ", "Marisa "};
+    static constexpr const char* kSeasonShort[5] = {"Sp", "Sm", "At", "Wt", "Fl"};
+    static constexpr const char* kDiffShort[6] = {"E ", "N ", "H ", "L ", "EX", "OD"};
+    static constexpr const char* kStageShort[8] = {"tst", "St1", "St2", "St3", "St4", "St5", "St6", "Ex "};
+
+    const i32 page = page_cursor.index;
+    const i32 base = page * 0x19;
+    float y = 80.0f;
+    ascii.style.shadow = true;
+    ascii.style.group = AsciiManager::Group::Ui;
+    for (int i = 0; i < 0x19; ++i) {
+        const i32 abs = base + i;
+        ascii.style.color = (cursor.index == i) ? 0xffffff00u : 0xff808080u;
+        ReplaySummary summary{};
+        const bool live = abs >= 0 && abs < 100 && replay_slot_live[abs] &&
+                          ReplayRecording::slot_summary(replay_directory.c_str(), abs + 1, summary);
+        if (!live) {
+            // page0 / 非 page0 空槽格式略有差异；统一用短占位
+            ascii.printf(Vec3{32.0f, y, 0.0f}, "No.%.2d -------- --/--/-- ------ -- -- St-", abs + 1);
+        } else {
+            const i64 sec = summary.timestamp;
+            const i64 days = sec / 86400;
+            i64 z = days + 719468;
+            const i64 era = (z >= 0 ? z : z - 146096) / 146097;
+            const i64 doe = z - era * 146097;
+            const i64 yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+            const i64 doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+            const i64 mp = (5 * doy + 2) / 153;
+            const i32 day = i32(doy - (153 * mp + 2) / 5 + 1);
+            const i32 month = i32(mp < 10 ? mp + 3 : mp - 9);
+            const i32 year = i32(yoe + era * 400 + (month <= 2 ? 1 : 0));
+            const i32 tod = int(sec % 86400);
+            const i32 hour = tod / 3600;
+            const i32 minute = (tod / 60) % 60;
+            const char* shot = (summary.shot >= 0 && summary.shot < 4) ? kShotNames[summary.shot] : "------ ";
+            const char* season = (summary.season >= 0 && summary.season < 5) ? kSeasonShort[summary.season] : "--";
+            if (summary.spell_practice) {
+                ascii.printf(Vec3{32.0f, y, 0.0f},
+                             "No.%.2d %s %.2d/%.2d/%.2d %.2d:%.2d %s %s SpellPr %3d %2.1f%%",
+                             abs + 1, summary.name, year % 100, month, day, hour, minute, shot, season,
+                             summary.spell_id + 1, double(summary.slow_rate));
+            } else {
+                const char* diff = (summary.difficulty >= 0 && summary.difficulty < 6)
+                                       ? kDiffShort[summary.difficulty]
+                                       : "--";
+                const char* stage = (summary.stage >= 0 && summary.stage < 8) ? kStageShort[summary.stage] : "St-";
+                ascii.printf(Vec3{32.0f, y, 0.0f},
+                             "No.%.2d %s %.2d/%.2d/%.2d %.2d:%.2d %s %s %s %s %2.1f%%",
+                             abs + 1, summary.name, year % 100, month, day, hour, minute, shot, season, diff, stage,
+                             double(summary.slow_rate));
+            }
+        }
+        y += 15.0f;
+    }
+    ascii.style.color = 0xffffffffu;
     ascii.style.shadow = false;
 }
 
