@@ -120,6 +120,8 @@ public:
     void flush();                 // 0x465a80
     void reset_state_cache();     // 0x43d140 中段：纹理 / 混合 / 过滤 / 寻址 / 顶点格式缓存全部置"未知"，色调关、偏移清零
     void reset_state_cache_after_device_defaults();  // 0x45ba80 尾
+    // +0x184fbb4 = 10：外部直接改过 SRCBLEND / DESTBLEND 后，让下一个 VM 重新下发自己的混合模式（0x4073a0 过场清 alpha 后）
+    void invalidate_blend_cache() { blend_cache_ = 0x0a; }
     bool batch_pending() const { return !batch_.empty(); }
 
     // ---- 绘制 ----

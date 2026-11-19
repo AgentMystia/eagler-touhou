@@ -53,6 +53,9 @@ struct GameGlobals {
     i32 continues = 0;           // DAT_004a57b8：续关次数（0x43f980 续关时 +1，上限 9）
     i32 continues_left = 0;      // DAT_004a5bfc：剩余续关数（0x42cb60 按难度表 DAT_00492278 {5,5,5,5,0}；续关 -1；0 时菜单禁用“续关”）
     i32 sound_thread_state = 0;  // DAT_004d9d90：声音线程状态（GameManager 计时第 5 帧置 2；菜单打开时存旧值并置 0 / 1）
+    // DAT_004c12a0：标题 → 游戏过场效果（EffectManager 种类 0，0x418ba0）的 VM id；标题各入口生成后中断 7（合拢），
+    // 0x42dc50 首帧末 / 0x42d7b0 换关过场首帧中断 1（面板切 7..10 展开，全部停止后 0x407330 返回 1 删除）
+    u32 transition_effect_id = 0;
     // th16.cfg 配置块 DAT_004c12a4（布局见 GameConfig.hpp）；DAT_004c12c6 / +1（Option 0x44c570）BGM / SE 音量，
     // Default → 0x5064 且 +2 清零
     u8 window_mode = 0;   // DAT_004c12c0（0x459830：窗口样式 0x15 / 0x17）

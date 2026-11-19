@@ -310,6 +310,22 @@ test('game start flow: Normal / Cirno / Autumn → scene 7 with stage 1, title d
   assert.ok(settled.quads.length > 0, 'player option VM keeps drawing');
 });
 
+test('title → game transition (effect kind 0): 0x42dc50 interrupts DAT_004c12a0 with 1, panels open (effect.anm 7..10) and self-delete', needDat, () => {
+  const t = MAIN + 1;
+  const diff = t + AFTER_MAIN;
+  const shot = diff + AFTER_DIFF;
+  const season = shot + 2 + AFTER_SHOT;
+  const script = [`${t}:${Z}`, `${diff}:${Z}`, `${shot}:${RIGHT}`, `${shot + 2}:${Z}`, `${season}:${RIGHT}`, `${season + 2}:${Z}`].join(',');
+  const gameFrame1 = season + 2 + 0x28 + 2;
+  const panels = frame => parse(run(['scene-boot', dat, String(frame), script])).quads.filter(l => /^quad s slot=8 entry=0 /.test(l));
+  const overlay = frame => parse(run(['scene-boot', dat, String(frame), script])).quads.filter(l => /^quad s slot=8 entry=12 /.test(l));
+  // 中断 7 合拢的面板（脚本 3..6）跨进游戏场景；首帧 0x42dc50 末中断 1 后切到脚本 7..10（op 1 自删于 t=40/45/50/55）
+  assert.equal(panels(gameFrame1 + 20).length, 4, 'four panels still animating 20 frames into the game');
+  assert.equal(panels(gameFrame1 + 60).length, 0, 'all panels gone 60 frames into the game (never opened before this fix: the switchbg overlay covered the whole screen)');
+  // 覆盖脚本 0xc5（eff_switchbg，模式 7 DESTALPHA）本身是 stop 不自删：VM 留着，但目标 alpha 被 0x4073a0 清零后不可见
+  assert.equal(overlay(gameFrame1 + 60).length, 1, 'overlay VM stays alive (invisible through DESTALPHA once panels are gone)');
+});
+
 test('season panel (title script 145, mode 8): Y-flip through the UI camera, then settles on the mode-0 rectangle', needDat, () => {
   const t = MAIN + 1;
   const diff = t + AFTER_MAIN;
