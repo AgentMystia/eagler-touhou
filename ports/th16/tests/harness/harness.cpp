@@ -1202,6 +1202,9 @@ int main(int argc, char** argv) {
             for (u32 mode = 0; mode < 32; ++mode)
                 if (session.renderer.unimplemented_modes[mode] != 0)
                     std::fprintf(stderr, "unimplemented_render_mode=%u count=%u\n", mode, session.renderer.unimplemented_modes[mode]);
+            for (u32 hook = 0; hook < 8; ++hook)
+                if (session.renderer.unimplemented_draw_callbacks[hook] != 0)
+                    std::fprintf(stderr, "unimplemented_draw_callback=%u count=%u\n", hook, session.renderer.unimplemented_draw_callbacks[hook]);
         }
         return 0;
     }
