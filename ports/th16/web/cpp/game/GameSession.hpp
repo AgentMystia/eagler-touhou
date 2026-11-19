@@ -23,6 +23,7 @@
 #include "GameMenu.hpp"
 #include "Replay.hpp"
 #include "ReplayFile.hpp"
+#include "ReplayRecording.hpp"
 #include "ScoreFile.hpp"
 #include "ScreenCompositor.hpp"
 #include "TextPaint.hpp"
@@ -91,8 +92,10 @@ public:
     // 0x448c10：装入回放文件；随后 enter_game(1) / start_game_direct 走回放输入链
     bool load_replay(const u8* bytes, u32 size);
     bool load_replay_file(const char* path);
-    // 标题 demo 目录（内含 demo/demo1.rpy…）；空则跳过自动装载
+    // 标题 demo 目录（内含 demo/demo1.rpy…）；空则跳过自动装载；亦为 th16_XX.rpy 写出根目录
     std::string demo_directory;
+    // 0x448400：把本局记录写入 demo_directory/replay/th16_XX.rpy（或根目录回退）
+    bool save_replay_slot(int slot, const char* player_name);
     // 0x43b290：AsciiManager 的更新链 4 与绘制链 0x51 / 0x35 / 0x42 在启动幕装载完成时一起打开
     void enable_ascii_chains();
     // 0x43ce10 case 0xa / 0xb / 0xe / 0x13：GameMenu 重开 / Extra 续关——0x42d200 按请求决定快速重开（bit0）或整体销毁，
@@ -123,6 +126,8 @@ private:
     ReplayFile replay_file_;                         // 0x448c10 展开后的回放
     ReplayPlaybackCursor replay_cursor_;             // 当前关卡段读指针（+0xc8 / +0xd8）
     bool replay_file_loaded_ = false;
+    ReplayRecording replay_recording_;               // 非回放局 0x447fd0 缓冲；0x448400 经 ReplayStore 落盘
+    std::unique_ptr<ReplayStore> replay_store_;       // 目录型 th16_XX.rpy
     ChainEntry* player_update_chain_ = nullptr;
     ChainEntry* player_draw_chain_ = nullptr;
     ChainEntry* enemy_update_chain_ = nullptr;

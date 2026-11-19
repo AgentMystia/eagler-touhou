@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <ctime>
 #include <memory>
 #include <string>
 #include <vector>
@@ -11,6 +12,23 @@ namespace th16 {
 namespace {
 // 0x42d200 / 0x41a390：Loading VM 位置 = 2 × (480, 392) 寄存器实参 = (960, 784)
 constexpr Vec3 kLoadingVmPos{960.0f, 784.0f, 0.0f};
+
+// 目录型 ReplayStore：读槽 0x447ef0 / 写槽 0x448400（经 ReplayRecording）
+struct DiskReplayStore final : ReplayStore {
+    GameSession* session = nullptr;
+    bool slot_exists(int slot) override {
+        if (session == nullptr || session->demo_directory.empty()) return false;
+        return ReplayRecording::slot_exists(session->demo_directory.c_str(), slot);
+    }
+    void save(int slot, const char* name) override {
+        if (session == nullptr) return;
+        session->save_replay_slot(slot, name);
+    }
+    bool slot_summary(int slot, ReplaySummary& out) override {
+        if (session == nullptr || session->demo_directory.empty()) return false;
+        return ReplayRecording::slot_summary(session->demo_directory.c_str(), slot, out);
+    }
+};
 }  // namespace
 
 
@@ -36,6 +54,20 @@ GameSession::GameSession() {
 
 bool GameSession::open(const u8* bytes, u32 size) {
     if (!archive_.open(bytes, size)) { failure = archive_.error; return false; }
+    return true;
+}
+
+bool GameSession::save_replay_slot(int slot, const char* player_name) {
+    if (demo_directory.empty()) {
+        failure = "replay directory empty";
+        return false;
+    }
+    const float slow = 0.0f;  // FrameTimer 测速未接前固定 0（原版 100 - elapsed/total*100）
+    if (!replay_recording_.write_slot(demo_directory.c_str(), slot, player_name, globals.score, slow)) {
+        failure = replay_recording_.error.empty() ? "replay save failed" : replay_recording_.error;
+        return false;
+    }
+    globals.replay_slot = slot;
     return true;
 }
 
@@ -416,10 +448,22 @@ bool GameSession::create_player() {
             ++replay_ff_counter_;
             return ChainResult::Continue;
         }
+        // 0x447fd0：DAT_004a52c8 ← DAT_004a50b0；自动低速；边沿；每 30 帧 FPS；写 6 字节
         game_input.held = supervisor.input.held & 0xffffu;
+        if ((globals.input_config & 0x200u) != 0 && (game_input.held & InputState::kShot) != 0 &&
+            globals.power >= 10) {
+            game_input.held |= InputState::kSlow;
+        }
         game_input.commit();
         if (replay_ff_counter_ >= 0) {
-            if ((replay_ff_counter_ % 30) == 0) replay_fps_byte_ = 60;
+            if ((replay_ff_counter_ % 30) == 0) {
+                const float rounded = global_fps_ + 0.5f;
+                replay_fps_byte_ = rounded >= 256.0f ? 255 : u8(i32(rounded));
+            }
+            if (game_live && !game.chains_suspended) {
+                replay_recording_.tick(u16(game_input.held & 0xffffu), u16(game_input.pressed & 0xffffu),
+                                       u16(game_input.released & 0xffffu), replay_fps_byte_);
+            }
             ++replay_ff_counter_;
         }
         return ChainResult::Continue;
@@ -654,6 +698,12 @@ void GameSession::register_game_chains() {
         if (menu_draw_chain_) chains.enable(menu_draw_chain_);
         if (popup_update_chain_) chains.enable(popup_update_chain_);
         if (popup_draw_chain_) chains.enable(popup_draw_chain_);
+        // 0x448eb0：非回放局开新段；seed = visual_rng 低 16（与 0x449030 对齐）
+        if (game.mode != 1) {
+            replay_ff_counter_ = 0;
+            const u16 seed = u16(animations.visual_rng.seed & 0xffffu);
+            replay_recording_.begin_stage(i16(globals.stage), seed);
+        }
     };
     game.on_previous_stage_destroyed = [this](StageManager& stage) {
         remove_stage_chains(stage);
@@ -673,6 +723,11 @@ bool GameSession::enter_game(i32 replay_mode) {
     game.chains_suspended = true;
     // 0x42cb60 → 0x449e50 → 0x449030（Replay 构造）：重置 DAT_004a6d8c 调用计数
     animations.visual_rng.calls = 0;
+    if (replay_mode != 1) {
+        const i32 time32 = i32(std::time(nullptr));
+        menu.ctx.replay_timestamp = time32;
+        replay_recording_.begin_run(globals, time32);
+    }
 
     // 0x42cb60：新游戏（DAT_004c17d0，0x43ce10 case 7 置位）先建 Player，再建 Gui / Stage / …
     globals.new_game = true;
@@ -1297,6 +1352,12 @@ void GameSession::create_menu() {
     menu.ctx.sound_thread_state = &globals.sound_thread_state;
     menu.ctx.config_flags = &config_flags;
     menu.ctx.current_bgm = &game.gui.current_bgm;
+    if (!replay_store_) {
+        auto store = std::make_unique<DiskReplayStore>();
+        store->session = this;
+        replay_store_ = std::move(store);
+    }
+    menu.ctx.replays = replay_store_.get();
     // 0x42e760：help.anm → 槽 0x13（原版由装载线程异步完成；这里同步装入）
     menu.ctx.load_help_anm = [this]() -> AnmFile* {
         if (AnmFile* loaded = animations.file(0x13)) return loaded;

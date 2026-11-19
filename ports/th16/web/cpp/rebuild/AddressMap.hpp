@@ -30,6 +30,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"archive-directory", 0x4574B0, "game/Archive.cpp Archive::open（目录项）"},
     {"archive-read-entry", 0x457120, "game/Archive.cpp Archive::read"},
     {"archive-lzss", 0x457F00, "game/Lzss.cpp Lzss::decode"},
+    {"archive-lzss-encode", 0x457B20, "game/Lzss.cpp Lzss::encode（回放 0x448400 载荷）"},
     {"anm-bank-load", 0x46CDD0, "game/AnmResource.cpp AnmResource::parse（格式面）"},
     {"anm-entry-check", 0x46D0C0, "game/AnmResource.cpp（version==8 / hasdata / '@'）"},
     {"anm-bank-slot", 0x46CF80, "game/AnmManager.cpp AnmManager::load"},  // 31 个 bank 槽（param_1 ≤ 0x1e），对象 0x13c 字节
@@ -388,6 +389,10 @@ constexpr AddressAnchor kAnchors[] = {
     {"replay-file", 0x4403C5, "game/ReplayFile.cpp 路径格式 th16_%.2d.rpy / replay/%s（宿主拼路径）"},
     {"replay-load", 0x448C10, "game/ReplayFile.cpp ReplayFile::open（t16r 头、双重 0x402220、LZSS、段表）"},
     {"replay-playback-step", 0x448130, "game/ReplayFile.cpp replay_playback_step + GameSession 记录链 mode==1"},
+    {"replay-record-tick", 0x447FD0, "game/ReplayRecording.cpp + GameSession 记录链 mode!=1（自动低速 / 边沿 / FPS）"},
+    {"replay-stage-begin", 0x448EB0, "game/ReplayRecording.cpp begin_stage（GameSession::on_stage_started）"},
+    {"replay-save", 0x448400, "game/ReplayRecording.cpp write_slot / ReplayFile::encode（LZSS+双重加密+USER 尾）"},
+    {"replay-slot-header", 0x447EF0, "game/ReplayRecording.cpp slot_summary（GameMenu DiskReplayStore）"},
     {"ver-file", 0x43B480, nullptr},         // th16_%.4x%c.ver
     {"music-fmt", 0x43AEAE, nullptr},        // ../../bgm/thbgm.fmt
     // —— EffectManager（DAT_004a6db8）——
