@@ -1,7 +1,15 @@
-// th16 设备层：ANM 纹理句柄 → 共享语义 GLES3 后端（portable/sdl/Renderer，与 th13/th15 同源不分叉）。
+// th16 设备层：RenderDevice 的真机实现——ANM 纹理句柄 → 共享语义 GLES3 后端（portable/sdl/Renderer，与 th13/th15 同源不分叉）。
+//
 // 原版 0x46cdd0 族把 THTX 交给 D3D9 纹理；这里 CPU 解码为 BGRA8 后由 Renderer::surface() 惰性上传。
+// text.anm 的 '@R' 渲染目标 entry（0x46d3b0 改写为后备缓冲尺寸）对应一块空 BGRA8 表面，由帧缓冲纹理承接；
+// 所有目标共用同一块深度缓冲（D3D 的自动深度 / 模板面不随 SetRenderTarget 切换）。
+//
+// 纹理身份：游戏侧用 TextureRef{ANM 槽, entry}（与 harness RecordingDevice 同口径），这里经 AnmManager 槽表
+// 解析到 AnmResource，再查本设备为该资源建的句柄表。
 #pragma once
+#include "../game/AnmManager.hpp"
 #include "../game/AnmResource.hpp"
+#include "../game/RenderDevice.hpp"
 #include "../game/Types.hpp"
 #include "../../../portable/sdl/Renderer.hpp"
 
@@ -11,7 +19,7 @@
 
 namespace th16::sdl {
 
-class GraphicsDevice {
+class GraphicsDevice final : public RenderDevice {
     struct Texture {
         u32 width = 0, height = 0, revision = 0, renderScale = 1;
         touhou::graphics::PixelFormat format = touhou::graphics::PixelFormat::Bgra8;
@@ -22,29 +30,33 @@ class GraphicsDevice {
     std::map<const AnmResource*, std::vector<u32>> resources;
     u32 next_handle = 3;
     static touhou::sdl::Surface resolve(void*, u32);
+    u32 handle_of(TextureRef ref) const;
 
 public:
     static constexpr u32 screen = 1, depth = 2;
     touhou::sdl::Renderer backend{10, resolve, this};
     std::string error;
     u32 render_scale = 1;
+    // TextureRef 槽号 → AnmFile → AnmResource 的解析来源（GameSession::animations）
+    const AnmManager* animations = nullptr;
 
     bool initialize();
-    // 为 AnmResource 的每个 entry 建纹理句柄；无纹理的 entry 句柄为 0。
+    // 为 AnmResource 的每个 entry 建纹理句柄；无贴图且非 '@R' 的 entry 句柄为 0
     bool preload(const AnmResource&);
     void unload(const AnmResource&);
     u32 texture(const AnmResource&, u32 entry) const;
 
-    struct Vertex { float x, y, z, w; u32 color; float u, v; };
-    // 屏幕空间（640x480 逻辑像素）带色纹理四边形：Strip 2 三角形。
-    void screen_quad(u32 texture, const Vertex quad[4]);
-    // 带镜面色（specular.a = 顶点雾因子，D3D XYZRHW 语义）的屏幕四边形
-    struct FogVertex { float x, y, z, w; u32 color; u32 specular; float u, v; };
-    void screen_quad_fog(u32 texture, const FogVertex quad[4]);
-    void clear(u32 color, bool depth = true);
-    // 矩形清屏（D3D Clear 带 rect；x0,y0,x1,y1 屏幕像素）
-    void clear_rect(u32 color, const i32 rect[4], bool depth = true);
-    void present();
+    // ---- RenderDevice ----
+    touhou::graphics::PipelineState& pipeline() override { return backend.pipeline(); }
+    void select_target(TextureRef target) override;
+    void clear(u32 flags, u32 argb, const ScreenRect* rect) override;
+    void set_viewport(const Viewport& viewport) override;
+    void set_matrix(MatrixKind kind, const float matrix[16]) override { backend.transform(kind, matrix); }
+    void bind_texture(TextureRef texture) override { backend.state.texture = handle_of(texture); }
+    void draw(Topology topology, VertexLayout layout, u32 primitive_count, const void* vertices, u32 stride) override;
+
+    // 0x45a8a0 EndScene / Present：把后备缓冲表面送上窗口
+    void present() { backend.present(screen); }
     void flush() { backend.flush(); }
 };
 

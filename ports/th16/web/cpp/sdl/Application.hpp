@@ -1,7 +1,7 @@
-// th16 应用：SDL/GLES 宿主——打开 th16.dat，驱动 GameSession（逻辑层）并把 ANM 四边形提交到 GraphicsDevice。
+// th16 应用：SDL/GLES 宿主——打开 th16.dat，把 GraphicsDevice 挂为 GameSession 的 RenderDevice，
+// 每个逻辑帧由绘制链（0x45a8a0 帧序）直接向设备出图，最后 Present。
 #pragma once
 #include "GraphicsDevice.hpp"
-#include "../game/AnmRenderer.hpp"
 #include "../game/FrameClock.hpp"
 #include "../game/GameSession.hpp"
 
@@ -13,7 +13,6 @@ namespace th16::sdl {
 class Application {
 public:
     GraphicsDevice graphics;
-    AnmRenderer renderer;
     GameSession session;
     FrameClock clock;
     std::string failure;
@@ -25,16 +24,16 @@ public:
     TitleScene& title() { return session.title; }
 
     bool initialize(const char* archive_path);
-    // 固定一个逻辑步 + 绘制（测试/步进用）。返回 false = 致命错误。
+    // 固定一个逻辑步（含绘制链）+ Present（测试/步进用）。返回 false = 致命错误。
     bool step();
-    // 按墙钟推进（rAF 时间戳秒），可能执行 0..kMaxSteps 个逻辑步，再绘制一帧
+    // 按墙钟推进（rAF 时间戳秒），可能执行 0..kMaxSteps 个逻辑步（每步都跑绘制链——0x409f90 等链带逻辑），
+    // 只 Present 最后一帧
     bool step_at(double wall_seconds);
 
 private:
     std::vector<u8> archive_bytes;
 
     void sample_input();
-    void draw_frame();
 };
 
 }  // namespace th16::sdl
