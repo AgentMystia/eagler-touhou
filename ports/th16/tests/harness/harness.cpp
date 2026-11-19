@@ -56,6 +56,7 @@
 #include "../../web/cpp/game/GameGlobals.hpp"
 #include "../../web/cpp/game/GameMenu.hpp"
 #include "../../web/cpp/game/FrameTimer.hpp"
+#include "../../web/cpp/game/KeyBindMap.hpp"
 #include "../../web/cpp/game/Spellcard.hpp"
 #include "../../web/cpp/game/Rng.hpp"
 #include "../../web/cpp/game/ScreenEffect.hpp"
@@ -320,6 +321,12 @@ int main(int argc, char** argv) {
         g.assign_key_bind(2, 0x1e);  // Slow ← A
         std::printf("slow=%d\n", int(g.key_binds[2]));
         return (g.key_binds[0] == bomb0 && g.key_binds[1] == shot0 && g.key_binds[2] == 0x1e) ? 0 : 1;
+    }
+    if (command == "key-bind-bits") {
+        // 可配置槽 → InputState 位
+        std::printf("0=%x 1=%x 2=%x 3=%x 4=%x\n", key_bind_bit(0), key_bind_bit(1), key_bind_bit(2),
+                    key_bind_bit(3), key_bind_bit(4));
+        return (key_bind_bit(0) == InputState::kShot && key_bind_bit(4) == InputState::kRelease) ? 0 : 1;
     }
     if (command == "screen-fade" && argc >= 6) {
         // kind 4 / 6 / 7 / 9 更新函数对拍：每行 frame alpha alive

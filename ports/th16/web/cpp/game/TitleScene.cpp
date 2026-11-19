@@ -1142,8 +1142,10 @@ void TitleScene::update_spell_practice(AnmManager& anm, const InputState& input)
                 anm.interrupt_now(vm[0x11c], 3);
                 anm.interrupt(vm[0x11c], to_short(spell_shot_cursor.index + 7));
             }
+            // 0x456a20：DAT_004a57a4 = 机体光标；DAT_004a57a8 = 0；DAT_004a57ac = 4（土用）
             globals->shot = spell_shot_cursor.index;
-            globals->shot_aux = 0;  // 精确 shot/aux 组合表见 0x4560b0，随后接
+            globals->shot_aux = 0;
+            globals->season = 4;
         }
         if (input.pressed & InputState::kCancelMask) {
             set_sub(4);
