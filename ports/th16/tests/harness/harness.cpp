@@ -1334,6 +1334,13 @@ int main(int argc, char** argv) {
         const int frames = std::atoi(argv[3]);
         GameSession session;
         if (!session.open(dat.data(), u32(dat.size()))) return fail(session.failure.c_str());
+        if (const char* demo = std::getenv("TH16_REPLAY_DIR")) session.demo_directory = demo;
+        else {
+            // games/th16/original 同级的 demo/，或 artifacts/th16/dat 扁平 demoN.rpy
+            session.demo_directory = std::string(argv[2]);
+            auto slash = session.demo_directory.find_last_of("/\\");
+            if (slash != std::string::npos) session.demo_directory.resize(slash);
+        }
         struct Key { int frame; u32 bits; };
         std::vector<Key> script;
         for (int a = 4; a < argc; ++a) {
