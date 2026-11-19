@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstring>
 
+#include "AnmGeometry.hpp"
 #include "Motion.hpp"   // wrap_angle / sin_f / cos_f（0x402d90 / 0x405510 / 0x4054f0）
 
 namespace th16 {
@@ -274,11 +275,25 @@ void StageManager::run_script(AnmManager& manager, float game_speed) {
             layer_ids[idx] = ins.arg_i(2);
             break;
         }
-        case 17:
-            // 原版：释放旧畸变特效对象，重置其计时/参数并按 arg0（1 → 效果 7，否则 0x11）向 EffectManager
-            // 申请新对象；EffectManager 未接入前只记录种类
+        case 17: {
+            // 0x40b3b0 case 0x11：释放旧畸变网格，半径 / 计时 / 相位复位，按 arg0（1 → 7 行，否则 17 行）新建
+            distortion.reset();
+            distortion_radius_min = 112.0f;
+            distortion_radius = 192.0f;
+            distortion_unused = -1;
+            distortion_angle_a = 0.0f;
+            distortion_angle_b = 0.0f;
+            distortion_timer.reset();
             distortion_kind = ins.arg_i(0);
+            if (0.0f < distortion_radius_min) {
+                AnmFile* text = manager.file(0);   // DAT_004c17f8 text.anm
+                if (text != nullptr) {
+                    const bool ready = render_targets_ready != nullptr && *render_targets_ready;
+                    distortion = std::make_unique<DistortionGrid>(manager, *text, ready, distortion_kind == 1 ? 7 : 0x11);
+                }
+            }
             break;
+        }
         case 18:
             up_interp.end_time = ins.arg_i(0);
             up_interp.mode = ins.arg_i(1);
@@ -414,7 +429,96 @@ void StageManager::update(AnmManager& manager, float game_speed, const Rng*) {
     // 使关卡脚本瞬移相机（如背景循环）时跟随相机的 VM 同步位移
     manager.entity_offset_delta = camera.pos_delta;
     for (AnmVm& vm : layer_vms) manager.run(vm);
+    update_distortion(manager, game_speed);
     ++frame;
+}
+
+// 0x40c4a0
+void StageManager::update_distortion(AnmManager& manager, float game_speed) {
+    if (!distortion) return;
+    DistortionGrid& grid = *distortion;
+    static const AnmGeometry kDefaultGeometry;
+    const AnmGeometry& geometry = manager.geometry != nullptr ? *manager.geometry : kDefaultGeometry;
+    const u32 target_w = manager.render_target_width;
+    const u32 target_h = manager.render_target_height;
+    float angle_a = distortion_angle_a;
+    float angle_b = distortion_angle_b;
+    if (distortion_kind == 1) {
+        // 种类 1：符卡进行中不动网格；否则在场地底部 (−192, 320) 起铺 384 × 128（7 行），内部节点按
+        // sin(列相位) × 行振幅 / sin(行相位) 位移，振幅前 60 帧由 0 线性升到 6；全部顶点 alpha = 0x80
+        if (spellcard_flags == nullptr || (*spellcard_flags & 1u) == 0) {
+            grid.fill(-192.0f, 320.0f, 384.0f, 128.0f, geometry, target_w, target_h);
+            const float amplitude = distortion_timer.current_f < 60.0f ? distortion_timer.current_f * 6.0f / 60.0f : 6.0f;
+            const i32 columns = grid.columns();
+            const i32 rows = grid.rows();
+            ScreenColorUvVertex* vertex = grid.vertices().data();
+            Vec3* node = grid.nodes().data();
+            for (i32 column = 0; column < columns; ++column) {
+                if (rows > 0) {
+                    const float sin_b = float(std::sin(double(angle_b)));
+                    for (i32 row = 0; row < rows; ++row, ++vertex, ++node) {
+                        vertex->color = (vertex->color & 0x00ffffffu) | 0x80000000u;
+                        const float t = float(row) * amplitude / float(rows - 1);
+                        const float sin_a = float(std::sin(double(angle_a)));
+                        const float offset_x = sin_a * t;
+                        const float offset_y = sin_b * t;
+                        if (column != 0 && row != 0 && column != columns - 1 && row != rows - 1) {
+                            vertex->x = vertex->x + offset_x;
+                            vertex->z = 0.0f;
+                            vertex->y = vertex->y + offset_y;
+                            node->z = 0.0f;
+                        }
+                        angle_a = wrap_angle(angle_a + 0.668424f);
+                    }
+                }
+                angle_b = wrap_angle(angle_b - 1.4959966f);
+            }
+            distortion_angle_a = wrap_angle(distortion_angle_a + 0.049087387f);
+            distortion_angle_b = wrap_angle(distortion_angle_b + 0.03926991f);
+        }
+    } else if (distortion_kind == 2) {
+        // 种类 2（本作数据未用）：半径每帧 −2 至下限，以 (224, 240) 为中心的透镜；dz 用 r² 而非中心 z，照抄原版
+        const float radius = distortion_radius;
+        if (distortion_radius_min < radius) distortion_radius = radius - 2.0f;
+        grid.fill(224.0f - radius, -radius, radius + radius, radius + radius, geometry, target_w, target_h);
+        const float radius_sq = radius * radius;
+        ScreenColorUvVertex* vertex = grid.vertices().data();
+        Vec3* node = grid.nodes().data();
+        const i32 total = grid.columns() * grid.rows();
+        for (i32 i = 0; i < total; ++i, ++vertex, ++node) {
+            float dz = node->z - radius_sq;
+            float dx = node->x - 224.0f;
+            float dy = node->y - 240.0f;
+            const float inside = radius_sq - (dx * dx + dy * dy);
+            if (inside < 0.0f) {
+                vertex->color &= 0x00ffffffu;
+            } else {
+                const float strength = inside / radius_sq;
+                u32 color = 0x60ffffffu;
+                for (int shift = 16; shift >= 0; shift -= 8) {
+                    const u32 channel = (color >> shift) & 0xffu;
+                    const u32 lifted = u32(i32(255.0f - float(i32(0xff - channel)) * strength)) & 0xffu;
+                    color = (color & ~(0xffu << shift)) | (lifted << shift);
+                }
+                vertex->color = color;
+                const float push = strength * 32.0f;
+                const float length = std::sqrt(dx * dx + dy * dy + dz * dz);
+                if (length != 0.0f) { dx /= length; dy /= length; dz /= length; }
+                const float offset_x = float(std::sin(double(angle_a))) * strength * 8.0f + push * dx;
+                const float offset_y = float(std::sin(double(angle_b))) * strength * 8.0f + push * dy;
+                vertex->x = vertex->x + offset_x;
+                vertex->z = 0.0f;
+                vertex->y = vertex->y + offset_y;
+                node->z = 0.0f;
+            }
+            angle_a = wrap_angle(angle_a + 1.5707964f);
+            angle_b = wrap_angle(angle_b - 0.69813174f);
+        }
+        distortion_angle_a = wrap_angle(distortion_angle_a + 0.049087387f);
+        const float random = manager.game_rng.unit();   // 0x402c70(DAT_004a6d80)
+        distortion_angle_b = wrap_angle(random * 3.1415927f / 40.0f + 0.03926991f + distortion_angle_b);
+    }
+    distortion_timer.tick(game_speed);
 }
 
 void StageManager::begin_end(i32 frames, u32 flag) {
