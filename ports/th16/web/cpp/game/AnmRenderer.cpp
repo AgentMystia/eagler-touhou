@@ -241,7 +241,7 @@ int AnmRenderer::draw_vm(AnmVm& vm) {
     if (device == nullptr) return -1;
     // 绘制钩子表 DAT_00491b2c（在可见性检查之前调用，返回值不用）：
     //   2 = 0x405ec0 空函数（充能环只靠 update 钩子）；3 = 0x406860 爆散粒子折线；4 = 0x418c60 畸变网格把顶点抄进条带；
-    //   5 = 0x42b5f0 对话文字跟随文字框（Gui）；1 / 6（0x4073a0 / 0x46a330）待接
+    //   5 = 0x42b5f0 对话文字跟随文字框（Gui）；1 / 6（0x4073a0 过场 / 0x46a330 模式 10 扇面）th16 数据不可达，不移植
     switch (vm.draw_callback) {
     case 0: case 2: break;
     case 3: draw_burst_lines(vm); break;
