@@ -29,12 +29,13 @@ bool GameManager::first_frame(AnmManager& manager, GameGlobals& globals) {
     }
     reset_for_stage(manager, globals);
     // 0x42dc50 末：非回放（bit4-5 ≠ 0x20）且非演示时 0x43c3f0(0, 关卡曲)
-    if ((globals.flags & 0x30u) != 0x20u && (globals.flags & 0x40u) == 0) mark_stage_bgm_heard();
+    if ((globals.flags & 0x30u) != 0x20u && (globals.flags & 0x40u) == 0) start_stage_bgm();
     return true;
 }
 
-void GameManager::mark_stage_bgm_heard() {
-    // 0x43c3f0：0x45ed00(2) 播放并置成绩文件 +0x19fa6 + 曲目（DAT_004a6f18 +0x28）
+void GameManager::start_stage_bgm() {
+    // 0x43c3f0：0x45ed00(2, 槽 0) 播放并置成绩文件 +0x19fa6 + 曲目（DAT_004a6f18 +0x28）
+    if (music != nullptr) music->play_slot(0);
     if (scores != nullptr && entry != nullptr) scores->mark_bgm_heard(entry->bgm_track);
 }
 
@@ -43,7 +44,8 @@ void GameManager::deferred_init(AnmManager& manager, GameGlobals& globals) {
     if ((flags & kRetry) == 0) return;
     reset_for_stage(manager, globals);
     // 0x45ed00(3 / 4) 停曲 → 0x45ed00(2) 重播关卡曲，并无条件置 +0x19fa6 + 关卡曲已听过
-    mark_stage_bgm_heard();
+    if (music != nullptr) music->stop_track();
+    start_stage_bgm();
     timer.reset();
 }
 
@@ -123,6 +125,7 @@ bool GameManager::update(AnmManager& manager, GameGlobals& globals, float game_s
     if ((flags & kStageTransition) != 0) {
         ++transition_frame;
         if (transition_frame >= transition_length) {
+            start_stage_bgm();
             if (on_transition_finished) on_transition_finished();
             flags &= ~kStageTransition;
             transition_frame = 0;

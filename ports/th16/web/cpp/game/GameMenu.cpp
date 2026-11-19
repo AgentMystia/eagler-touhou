@@ -267,7 +267,7 @@ void GameMenu::open_pause() {
     anm.interrupt(menu_vm, 3);
     suspend_sound();
     sfx(0xe);
-    if ((ctx.globals->flags & GameGlobals::kModeMask) != 0x20) bgm_events.push_back({6, 0, "Pause"});
+    if ((ctx.globals->flags & GameGlobals::kModeMask) != 0x20) bgm(6, 0, "Pause");
     flush_sound();
     capture_screenshot();
     saved_game_speed = *ctx.game_speed;
@@ -293,15 +293,18 @@ void GameMenu::open_continue() {
     suspend_sound();
     sfx(0xe);
     const bool spell_practice = (ctx.globals->flags & GameGlobals::kModeMask) == 0x20;
-    if (!spell_practice) bgm_events.push_back({6, 0, "Pause"});
+    if (!spell_practice) bgm(6, 0, "Pause");
     flush_sound();
     capture_screenshot();
     front = ctx.gui->front;
     if (!spell_practice) {
         // 保存当前曲名与播放位置（0x471bd0），切到 Game Over 曲 th128_08；原版置的是音乐室 0 号位 +0x19fa6
-        saved_bgm = ctx.current_bgm != nullptr ? *ctx.current_bgm : std::string();
-        bgm_events.push_back({1, 0, "th128_08"});
-        bgm_events.push_back({2, 0, "dummy"});
+        if (ctx.music != nullptr) {
+            saved_bgm = ctx.music->current;
+            saved_bgm_position = ctx.music->output != nullptr ? ctx.music->output->position_seconds() : 0.0;
+            ctx.music->register_track(0, "th128_08");   // 0x43c370
+            ctx.music->play_slot(0);                     // 0x43c3f0 的命令部分
+        }
         if (ctx.scores != nullptr) ctx.scores->mark_bgm_heard(0);
     }
     practice = 0;
@@ -351,7 +354,7 @@ void GameMenu::open_return_to_title() {
     menu_vm = front != nullptr ? ctx.animations->spawn_ui(*front, 0x9f) : 0;
     ctx.animations->interrupt(menu_vm, 3);
     suspend_sound();
-    bgm_events.push_back({6, 0, "Pause"});
+    bgm(6, 0, "Pause");
     saved_game_speed = *ctx.game_speed;
     *ctx.game_speed = 1.0f;
     saved_sound_state = *ctx.sound_thread_state;
@@ -411,9 +414,10 @@ void GameMenu::continue_game() {
     --g.continues_left;
     ctx.game->flags &= ~GameManager::kMenuOpen;
     resume_sound();
-    // 0x45ed00(2, -1, 保存曲名) 续播 → 0x45e330 排空 → 0x471c90 缓冲重填
-    bgm_events.push_back({2, -1, saved_bgm});
+    // 0x45ed00(2, -1, 保存曲名) 续播 → 0x45e330 排空 → 0x471c90 从保存时刻重填缓冲
+    bgm(2, -1, saved_bgm.c_str());
     flush_sound();
+    if (ctx.music != nullptr && ctx.music->output != nullptr) ctx.music->output->restart_at(saved_bgm_position);
     *ctx.game_speed = saved_game_speed;
     ctx.gui->show_dialogue();
     ctx.gui->show_hud();
@@ -430,7 +434,7 @@ void GameMenu::execute_selection() {
     case Resume:
         if (mode == Pause) {
             resume_sound();
-            bgm_events.push_back({7, 0, "UnPause"});
+            bgm(7, 0, "UnPause");
         } else if (mode == Continue) {
             if (practice == 0) continue_game();
             else ctx.globals->scene_request = 10;

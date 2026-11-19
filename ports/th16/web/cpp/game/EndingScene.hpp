@@ -9,6 +9,7 @@
 #pragma once
 #include "AnmVm.hpp"
 #include "Input.hpp"
+#include "Music.hpp"
 #include "TextPaint.hpp"
 #include "Types.hpp"
 
@@ -59,6 +60,8 @@ struct EndingScene {
     std::string last_text;         // 最近一次 op3 解密结果（宿主/测试）
     std::string last_bgm;          // 最近一次 op10
     ScoreFile* scores = nullptr;   // DAT_004a6f0c（begin 时记下）
+    MusicManager* music = nullptr;   // op 10 换曲（0x43c370 + 0x43c3f0）/ op 11 淡出 3 秒
+    const float* game_speed = nullptr;   // DAT_004a5788
     i32 text_paint_count = 0;      // 入队 0x46d990 次数（测试）
 
     AnmManager* animations = nullptr;

@@ -27,6 +27,7 @@
 
 #include "AnmRenderer.hpp"
 #include "AnmVm.hpp"
+#include "Music.hpp"
 #include "Sound.hpp"
 #include "TextPaint.hpp"
 #include "Types.hpp"
@@ -210,11 +211,7 @@ public:
     SoundRequests* sfx_sink = nullptr;
     void play_sfx(i32 id, float x = 0.0f) { if (sfx_sink != nullptr) sfx_sink->push(id, x); else sfx_queue.push_back(id); }
     std::vector<TextIntoTextureRequest>* text_paints = nullptr;  // 0x46d990 入队
-    // 0x43c3f0(1, 曲目) / 0x43c470：op 19 切 Boss 曲、op 22 / 27 淡出（Sound 接入前供宿主取走）
-    // kind：0 淡出（0x43c470）/ 1 Boss 曲（0x43c3f0）/ 2 直接切曲（0x45ed00(2, 序号)，ECL 518 -1 / -3）
-    struct BgmEvent { i32 kind; i32 track; };
-    std::vector<BgmEvent> bgm_events;
-    std::string current_bgm;                 // DAT_004dc0f0：当前曲文件名（Sound 接入前仅由本类的切曲事件维护）
+    MusicManager* music = nullptr;           // 0x43c3f0 切曲（ECL 518 -1 / -3、op 19）/ 0x43c470 淡出（op 22 / 27）
     std::string error;
 
     // 0x427ca0 构造 + 0x426c10：进游戏时一次性绑定 front.anm 并做关卡初始化
@@ -312,7 +309,7 @@ private:
     void destroy_dialogue();
     // 0x42a1d0：返回 true 表示脚本结束（op 0）
     bool run_dialogue(float game_speed);
-    void execute(Msg& m, const MsgInstruction& ins);
+    void execute(Msg& m, const MsgInstruction& ins, float game_speed);
     // 0x42ba30 / 0x42bb30
     void create_text_box(Msg& m, i32 index);
     void resize_text_box(Msg& m, i32 index);

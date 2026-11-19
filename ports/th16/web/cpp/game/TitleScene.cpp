@@ -144,7 +144,7 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
             set_screen(kMainMenu);
         } else if (origin == 2) {
             // 回放结束：0x43c370 th16_01 + 0x43c3f0(0, 0)，模式清 0，主光标压栈停在 Replay
-            events.push_back({"bgm-default", 1});
+            bgm_default();
             if ((g.input_config & 0x10u) != 0) play_bgm_op(4);
             play_bgm_op(2);
             if (scores != nullptr) scores->mark_bgm_heard(0);
@@ -1111,7 +1111,7 @@ void TitleScene::update_season(AnmManager& anm, const InputState& input) {
             sfx(7);
             set_sub(3);
             sfx(0x32);
-            if ((g.flags & GameGlobals::kModeMask) == 0) events.push_back({"bgm-fade", 0});  // 0x43c470
+            if ((g.flags & GameGlobals::kModeMask) == 0) bgm_fade();  // 0x43c470
         }
         break;
     }
@@ -1194,7 +1194,7 @@ void TitleScene::update_stage(AnmManager& anm, const InputState& input) {
             sfx(7);
             sfx(0x32);
             g.last_practice_stage = cursor.index;
-            events.push_back({"bgm-fade", 0});
+            bgm_fade();
         }
         break;
     }
@@ -1515,8 +1515,7 @@ void TitleScene::update_replay(AnmManager& anm, const InputState& input) {
                 set_sub(3);
                 replay_ui_flags |= 4u;
                 sfx(0x32);
-                if (on_screen_fade) {/* BGM fade 0x43c470 */}
-                events.push_back({"bgm-fade", 0});
+                bgm_fade();
             }
         }
         break;
@@ -1554,7 +1553,7 @@ void TitleScene::update_replay(AnmManager& anm, const InputState& input) {
                 set_sub(3);
                 replay_ui_flags |= 4u;
                 sfx(0x32);
-                events.push_back({"bgm-fade", 0});
+                bgm_fade();
             }
         }
         break;
@@ -1721,6 +1720,23 @@ void TitleScene::parse_music_tracks() {
 void TitleScene::play_bgm_op(i32 op) {
     // 0x45ed00(&DAT_004d9e10, op, 0, "dummy")：2 播放已载入曲 / 3 停止 / 4（DAT_004c12cc bit4 时先发）
     events.push_back({"bgm-op", op});
+    if (bgm != nullptr) bgm->enqueue(op, 0, "dummy");
+}
+
+void TitleScene::bgm_default() {
+    events.push_back({"bgm-default", 1});   // FUN_0043c370(0, "th16_01")
+    if (bgm != nullptr) bgm->register_track(0, "th16_01");
+}
+
+void TitleScene::bgm_name_entry() {
+    events.push_back({"bgm-name-entry", 0});   // FUN_0043c370(0, "th128_08")
+    if (bgm != nullptr) bgm->register_track(0, "th128_08");
+}
+
+void TitleScene::bgm_fade() {
+    // 0x43c470(0.05)：标题各处进游戏 / 练习前的淡出——0.05 秒 ÷ 游戏速度截断为 0 帧
+    events.push_back({"bgm-fade", 0});
+    if (bgm != nullptr) bgm->fade_out(0.05f, game_speed != nullptr ? *game_speed : 1.0f);
 }
 
 void TitleScene::tick_title_bgm() {
@@ -1728,7 +1744,7 @@ void TitleScene::tick_title_bgm() {
     if (!title_bgm_pending || ++title_bgm_delay <= 9) return;
     const bool alt = globals != nullptr && (globals->input_config & 0x10u) != 0;
     play_bgm_op(alt ? 4 : 3);
-    events.push_back({"bgm-default", 1});  // FUN_0043c370(0,"th16_01")
+    bgm_default();  // FUN_0043c370(0,"th16_01")
     if (alt) play_bgm_op(4);
     play_bgm_op(2);
     if (scores != nullptr) scores->mark_bgm_heard(0);
@@ -1895,7 +1911,7 @@ void TitleScene::update_music(AnmManager& anm, const InputState& input) {
             dismiss(anm, kMusicPanel);
             dismiss(anm, kLeafEmitter);
             set_screen(kMainMenu);
-            events.push_back({"bgm-default", 1});  // FUN_0043c370(0,"th16_01")
+            bgm_default();  // FUN_0043c370(0,"th16_01")
             // 0x43c3f0(0, 0)
             if (globals != nullptr && (globals->input_config & 0x10u) != 0) play_bgm_op(4);
             play_bgm_op(2);
@@ -2386,7 +2402,7 @@ void TitleScene::update_spell_shot(AnmManager& anm, const InputState& input) {
             set_sub(3);
             sfx(7);
             if (spell_group == 6) {
-                events.push_back({"bgm-fade", 0});  // 0x43c470
+                bgm_fade();  // 0x43c470
                 sfx(0x32);
             }
         }
@@ -2455,7 +2471,7 @@ void TitleScene::update_spell_start(AnmManager& anm, const InputState& input) {
             anm.interrupt(vm[0xd9], 6);
             set_sub(3);
             sfx(7);
-            events.push_back({"bgm-fade", 0});  // 0x43c470
+            bgm_fade();  // 0x43c470
             sfx(0x32);
         }
         break;
@@ -2626,7 +2642,7 @@ void TitleScene::update_name_entry(AnmManager& anm, const InputState& input) {
     switch (sub) {
     case 0: {
         cursor.count = 0x1e;
-        events.push_back({"bgm-name-entry", 0});  // FUN_0043c370(0,"th128_08")
+        bgm_name_entry();  // FUN_0043c370(0,"th128_08")
         if (scores != nullptr) scores->mark_bgm_heard(0x11);   // 0x43c3f0(0, 0x11)
         if (vm[kLeafEmitter] == 0 && ascii_file) spawn_into(anm, kLeafEmitter, *ascii_file, kLeafEmitterScript);
         if (title_file) spawn_into(anm, 0x6f, *title_file, 0x6f);
@@ -2711,7 +2727,7 @@ void TitleScene::update_name_entry(AnmManager& anm, const InputState& input) {
             dismiss(anm, kLeafEmitter);
             cursor.pop();
             set_screen(kMainMenu);
-            events.push_back({"bgm-default", 1});  // FUN_0043c370(0,"th16_01")
+            bgm_default();  // FUN_0043c370(0,"th16_01")
             if (scores != nullptr) scores->mark_bgm_heard(0);   // 0x43c3f0(0, 0)
             events.push_back({"screen", screen});
         }
@@ -2797,7 +2813,7 @@ void TitleScene::update_name_confirm(AnmManager& anm, const InputState& input) {
             dismiss(anm, kLeafEmitter);
             set_screen(kMainMenu);
             cursor.pop();
-            events.push_back({"bgm-default", 1});  // FUN_0043c370(0,"th16_01")
+            bgm_default();  // FUN_0043c370(0,"th16_01")
             events.push_back({"screen", screen});
             for (i32 i = 0; i < 0x19; ++i) {
                 save_slot_live[i] = false;

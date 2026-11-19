@@ -312,12 +312,18 @@ EndingScene::ScriptResult EndingScene::step_script(const InputState& input) {
         case 10:
             last_bgm.assign(reinterpret_cast<const char*>(script_pc + 4));
             events.push_back("bgm");
-            // 0x43c3f0：曲名为 bgm/th16_14 记 0xf 号，否则 0x10 号已听过
+            // 0x43c370(0, 名) + 0x43c3f0(0, 曲目)：曲名为 bgm/th16_14 记 0xf 号，否则 0x10 号已听过
+            if (music != nullptr) {
+                music->register_track(0, last_bgm.c_str());
+                music->play_slot(0);
+            }
             if (scores != nullptr) scores->mark_bgm_heard(last_bgm == "bgm/th16_14" ? 0xf : 0x10);
             advance_pc();
             continue;
 
         case 11:
+            // 0x45ed00(5, 3 秒 ÷ 游戏速度)
+            if (music != nullptr) music->fade_out(3.0f, game_speed != nullptr ? *game_speed : 1.0f);
             script_flags &= ~1u;
             events.push_back("fade");
             advance_pc();
