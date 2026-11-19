@@ -42,7 +42,7 @@
 | 0x45a8a0 | 帧计时：逻辑时间按 1/60 追到墙钟，再跑更新链、按跳帧计数跑绘制链 | `game/FrameClock.hpp` |
 | 0x401d50 / 0x4018e0 / 0x405580 | 键盘位布局（Z=1 X=2 Shift=8 方向 0x10..0x80 Esc=0x100 Ctrl=0x200 Q=0x10000 S=0x20000 P=0x40000 Enter=0x80000）、手柄合并、边沿/连发 | `game/Input.hpp` |
 | 0x44af80 / 0x44b5f0 / 0x44a700 / 0x44a680 / 0x44a790 / 0x44a650 / 0x44a560 / 0x44a5e0 | 标题更新：主菜单 case 0/1/2/4（装饰、Timer 0x78/0x82/0x13、光标、确定 0x80001 / 取消 0x102、画面表）；子项查找/中断/收起；画面与子状态切换 | `game/TitleScene.cpp` |
-| 0x44fe20 / 0x4502c0 / 0x450af0 / 0x450ef0 | 难度 / 机体 / 子季节 / 练习关卡画面（VM 表 +0x2c0 按脚本号索引；面板 0x7e·0x7f / 0x96·0x98 / 0x97·0x99 / 0x71；季节 case 3 请求场景 7） | `game/TitleScene.cpp` |
+| 0x44fe20 / 0x4502c0 / 0x450af0 / 0x450ef0 | 难度 / 机体 / 子季节 / 练习关卡画面（VM 表 +0x2c0 按脚本号索引；面板 0x7e·0x7f / 0x96·0x98 / 0x97·0x99 / 0x71；季节 case 3 请求场景 7；练习关卡确定读 +0x51a5 = 所选关卡（光标 + 1）的到达位，未到达播 0x10） | `game/TitleScene.cpp` |
 | 0x449190 | 模式位（DAT_004a5bec bit4-5）与 Replay 槽复位 | `game/GameGlobals.hpp` |
 | 0x402e70 / 0x418720 / 0x440c00 / 0x402de0 / 0x402e20 | MenuCursor：移动（wrap + 跳禁用）、设置、禁用、压栈、出栈 | `game/MenuCursor.hpp` |
 | 0x46f340 / 0x46f3b0 | 清 flags_lo bit1（显示）并递归子树 | `game/TitleScene.cpp` |
@@ -54,7 +54,7 @@
 | 0x401d50 / 0x405580 | 输入采样与边沿 | `game/Input.hpp` |
 | 0x44aee0 / 0x44abc0 / 0x44ac70 | 标题创建；线程等启动幕 0xb4 帧（或 DAT_004c1800&0x180）后卸 sig、装 title*.anm、注册更新链 6 / 绘制链 0x45 | `game/GameSession.cpp` |
 | 0x46f270 / 0x46d770 | 按槽杀 VM / 卸 bank | `game/AnmManager.cpp` |
-| 0x42d700 / 0x42cb60 / 0x42d7b0 / 0x42dc50 / 0x42d200 | GameManager（0xb4，DAT_004a6dd4）：创建（flags|=4、更新链 0xf / 绘制链 2、装载线程）、装载（目前仅 StageManager + 背景 ANM）、每帧（timer 0 → 首帧 0x42dc50；DAT_004a579c/57a0++）、析构（0x41a390 Loading VM 位置 = 2 × 寄存器实参 (480, 392) = (960, 784)；DAT_004c1b0c 清屏色回黑，bit0 快速重开为透明） | `game/GameManager.cpp`、`game/GameSession.cpp` |
+| 0x42d700 / 0x42cb60 / 0x42d7b0 / 0x42dc50 / 0x42d200 | GameManager（0xb4，DAT_004a6dd4）：创建（flags|=4、更新链 0xf / 绘制链 2、装载线程）、装载（目前仅 StageManager + 背景 ANM）、每帧（timer 0 → 首帧 0x42dc50；DAT_004a579c/57a0++）、0x42cb60 开头在 GameManager+0xac == 0 时置成绩文件练习到达位 +0x519d（[机体 + 副][难度 × 8 + 关卡]，8 字节记录 +5；+4 为 0x42e150 过关位），析构（0x41a390 Loading VM 位置 = 2 × 寄存器实参 (480, 392) = (960, 784)；DAT_004c1b0c 清屏色回黑，bit0 快速重开为透明） | `game/GameManager.cpp`、`game/GameSession.cpp` |
 | 0x45d150 / 0x45d1a0 / 0x45d130 / 0x45c630 / 0x45c900 / 0x45cd30 / 0x45c990 / 0x45c860 / 0x45c690 / 0x45cac0 / 0x45cb50 / 0x45cbd0 / 0x45ccc0 / 0x45c9e0 / 0x45cba0 | ScreenEffect：kind 1 画面震动（更新链 0x13，game_rng 决定 x/y 符号，输出 DAT_004c1788 / DAT_004c1530）；kind 0 / 2 / 3 / 5 淡入淡出（更新链 0x13：kind 0 / 3 走 0x45c630 alpha 255→0，其余 0x45c900 0→255）另登记绘制链 —— kind 2 / 3 优先级 0xa（0x45c990：画进场地渲染目标，紧跟关卡背景链 3），kind 0 / 5 优先级 0x54（0x45c860：先 SetViewport 整幅后备缓冲）；两者都调 0x45c690 用 FVF 0x44 四顶点条带以 alpha<<24|color 填满 (0,0)-(w,h)，之后清顶点格式 / 纹理矩阵 / 纹理键缓存并把 TSS 回 MODULATE / TEXTURE，纹理与 DESTBLEND 不恢复；kind 9（标题 title_origin 4/5）：更新 0x45cac0（alpha 恒 0xff）、绘制 0x45cb50（优先级 0x54，不改视口）；kind 4：更新 0x45cbd0 / 绘制 0x45ccc0（场地 384×448，色取 +0x20）；kind 6/7：更新 0x45c9e0（alpha→128），绘制 0x45cb50 / 0x45cba0（固定 (128,16)-(512,464)）；0x45d130 自删时两链一起摘除 | `game/ScreenEffect.cpp`、`game/GameSession.cpp` create_screen_shake / create_screen_fade、`game/AnmRenderer.cpp` draw_screen_fill |
 | 0x4a22d0 | 关卡表 8 × 0xd4：std / ecl / bgm×2 / msg×4 / logo anm / 曲号 | `game/StageTable.hpp` |
 | 0x40ac30 | STD：头 {i16 对象数, i16 面 VM 数, u32 实例偏移, u32 脚本偏移} + anm_name[0x80] + 对象偏移表；对象 {id, layer, flags, pos, size} + 四边形 {type, size, anm_script, vm_index(运行时), pos, w, h}；实例 {object, flags, pos}…0xffff；脚本 {time, op, size, args}；背景 ANM → 槽 3 + (stage & 1) | `game/Std.cpp`、`game/Stage.cpp` |

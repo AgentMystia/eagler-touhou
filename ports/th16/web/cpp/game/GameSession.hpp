@@ -167,6 +167,7 @@ private:
     bool enter_title_assets();
     bool activate_title_menu();
     void leave_title();
+    void mark_stage_reached();  // 0x42cb60 +0x519d
     bool enter_game(i32 replay_mode = 0);  // 0x43ce10 case 7 → 0x42d700(回放标志) + 0x42cb60（同步装载）
     bool bind_loaded_replay_();            // 0x448c10 成功后：选段、记 RNG 种子、复位游标
     bool next_stage();     // 0x43ce10 case 0xc：0x42d780 → 0x42d200（bit1）；0x42d700 + 0x42cb60 换关装载

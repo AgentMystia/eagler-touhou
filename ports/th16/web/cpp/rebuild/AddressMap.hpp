@@ -126,7 +126,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"title-difficulty", 0x44FE20, "game/TitleScene.cpp TitleScene::update_difficulty（DAT_004a6f1c == 4 按上次难度同帧确认 → LAB_004501a0 enter_shot_select）"},
     {"title-shot", 0x4502C0, "game/TitleScene.cpp TitleScene::update_shot（DAT_004a6f1c == 4 同帧确认 → LAB_004509e1 enter_season_select）"},
     {"title-season", 0x450AF0, "game/TitleScene.cpp TitleScene::update_season（case 3 请求场景 7；练习 / DAT_004a6f1c == 4 → LAB_00450d8f enter_practice_stage）"},
-    {"title-stage", 0x450EF0, "game/TitleScene.cpp TitleScene::update_stage（练习关卡）"},
+    {"title-stage", 0x450EF0, "game/TitleScene.cpp TitleScene::update_stage（练习关卡；确定解锁读 +0x51a5 = practice[机体][难度*8+光标+1].reached）"},
     {"title-item-interrupt-run", 0x44A700, "game/TitleScene.cpp TitleScene::item_interrupt_now"},
     {"title-item-interrupt", 0x44A680, "game/TitleScene.cpp TitleScene::item_interrupt"},
     {"title-child-id", 0x44A790, "game/TitleScene.cpp TitleScene::child_id"},
@@ -632,6 +632,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"distortion-grid-copy", 0x418F40, "game/Distortion.cpp DistortionGrid::copy_to_strips（条带 s 第 r 对顶点 = 网格 (s, r)、(s+1, r)）"},
     {"distortion-draw-callback", 0x418C60, "game/Distortion.cpp distortion_draw_callback（绘制钩子表 DAT_00491b2c[4]：母 VM 绘制前抄顶点；AnmRenderer::draw_vm 分发）"},
     {"enemy-distortion-update", 0x41CBD0, "game/Enemy.cpp Enemy::update_distortion（半径 += 2×速度至目标；重铺半边长 r+20 的网格；圈内强度 s=(r²−d²)/r² 着色向白、径向外推 32s + sin 相位 × 8s；节点截到场地开区间后重算 UV；相位 π/16 / π/32 × 速度推进）"},
+    {"game-practice-reached", 0x42CB60, "game/GameSession.cpp GameSession::mark_stage_reached（+0xac == 0 时置 ScoreFile 练习到达位 +0x519d）"},
     {"game-extra-difficulty", 0x42CB60, "game/GameSession.cpp GameSession::create_player（新游戏段：第 7 关难度 < 4 抬到 4）"},
 };
 
