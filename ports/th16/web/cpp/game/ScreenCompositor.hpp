@@ -42,7 +42,10 @@ public:
     Camera field_camera;            // 0x4c1308：(32,16,384,448)，kind 0
     Camera wide_field_camera;       // 0x4c1434：(128,16,384,448)，kind 1
     Camera ui_camera;               // 0x4c1560：(0,0,640,480)，kind 2
-    Camera render_target_camera;    // 0x4c168c：((w-408)/2,(h-472)/2,408,472)，kind 3；StageManager 每帧整体抄入
+    // 0x4c168c：((w-408)/2,(h-472)/2,408,472)，kind 3。StageManager 每帧把关卡相机整体抄入同一全局（fov 随 STD 脚本），
+    // 合成步骤 0x43d2f0 / 0x43d4a0 再 0x43c780 复位后用它——与 GameSession::stage_camera 必须是同一对象，
+    // 由 GameSession 构造时绑定；init_cameras 只写初值
+    Camera* render_target_camera = nullptr;
 
     u32 background_color = 0xff000000;   // DAT_004c1b0c：场地清屏色（STD ins 13 写；离开游戏复位）
     bool render_targets_ready = false;   // DAT_004c127c != 0：text.anm 已装载、'@R' 表面可用

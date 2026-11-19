@@ -24,10 +24,10 @@ void ScreenCompositor::init_cameras(float window_scale) {
     wide_field_camera.viewport = {i32(window_scale * 128.0f), i32(window_scale * 16.0f), i32(window_scale * 384.0f), i32(window_scale * 448.0f)};
     wide_field_camera.reset_to_viewport_center();
 
-    render_target_camera = field_camera;
-    render_target_camera.kind = Camera::kRenderTarget;
-    render_target_camera.viewport = {i32((640.0f - 408.0f) * 0.5f), i32((480.0f - 472.0f) * 0.5f), 0x198, 0x1d8};
-    render_target_camera.reset_to_viewport_center();
+    *render_target_camera = field_camera;
+    render_target_camera->kind = Camera::kRenderTarget;
+    render_target_camera->viewport = {i32((640.0f - 408.0f) * 0.5f), i32((480.0f - 472.0f) * 0.5f), 0x198, 0x1d8};
+    render_target_camera->reset_to_viewport_center();
 }
 
 void ScreenCompositor::create(AnmManager& manager, AnmFile& text) {
@@ -104,7 +104,7 @@ ChainResult ScreenCompositor::pass_begin_frame(AnmRenderer& renderer) {
         } else {
             device->clear(kClearColor | kClearDepth, 0xffffffffu, nullptr);
             device->select_target({kTextSlot, kRenderTarget1Entry});
-            const ScreenRect field = viewport_rect(render_target_camera);
+            const ScreenRect field = viewport_rect(*render_target_camera);
             device->clear(kClearColor | kClearDepth, background_color, &field);
         }
     }
@@ -118,7 +118,7 @@ ChainResult ScreenCompositor::pass_select_rt2_clear_depth(AnmRenderer& renderer)
     if (!render_targets_ready || renderer.device == nullptr) return ChainResult::Continue;
     renderer.flush();
     renderer.device->select_target({kTextSlot, kRenderTarget2Entry});
-    const ScreenRect field = viewport_rect(render_target_camera);
+    const ScreenRect field = viewport_rect(*render_target_camera);
     renderer.device->clear(kClearDepth, background_color, &field);
     return ChainResult::Continue;
 }
@@ -129,7 +129,7 @@ void ScreenCompositor::copy_with_vm(AnmRenderer& renderer, AnmVm& vm, bool use_r
     device.pipeline().blendEquation = BlendEquation::Add;
     device.pipeline().alphaTest = false;
     renderer.set_depth_write(false);
-    if (use_render_target_camera) renderer.use_camera(render_target_camera);
+    if (use_render_target_camera) renderer.use_camera(*render_target_camera);
     renderer.draw_vm(vm);
     set_color(vm, 0xffffffffu);
     if (extra_layer >= 0) renderer.draw_layer(extra_layer);
@@ -148,7 +148,7 @@ ChainResult ScreenCompositor::pass_select_rt1_clear_depth(AnmRenderer& renderer)
     if (!render_targets_ready || renderer.device == nullptr) return ChainResult::Continue;
     renderer.flush();
     renderer.device->select_target({kTextSlot, kRenderTarget1Entry});
-    const ScreenRect field = viewport_rect(render_target_camera);
+    const ScreenRect field = viewport_rect(*render_target_camera);
     renderer.device->clear(kClearDepth, background_color, &field);
     return ChainResult::Continue;
 }
