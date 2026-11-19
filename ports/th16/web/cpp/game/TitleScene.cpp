@@ -1,4 +1,7 @@
 #include "TitleScene.hpp"
+#include "ReplayFile.hpp"
+
+#include <cstdio>
 
 namespace th16 {
 
@@ -159,6 +162,7 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
     case kSeason: update_season(anm, input); break;
     case kStage: update_stage(anm, input); break;
     case kOption: update_option(anm, input); break;
+    case kReplay: update_replay(anm, input); break;
     case kKeyConfig: update_stub(anm, input); break;
     default: update_stub(anm, input); break;
     }
@@ -800,7 +804,160 @@ void TitleScene::update_option(AnmManager& anm, const InputState& input) {
     }
 }
 
-// 待还原画面（Key Config / Player Data / Replay / Music Room / Manual / Spell Practice）
+void TitleScene::scan_replay_slots() {
+    // 同步完成原版 0x402fb0 工作线程：标记 th16_01..th16_100.rpy
+    for (int i = 0; i < 100; ++i) {
+        replay_slot_live[i] = false;
+        replay_stage_mask[i] = 0;
+        replay_spell_practice[i] = false;
+        if (replay_directory.empty()) continue;
+        char path[512];
+        std::snprintf(path, sizeof(path), "%s/th16_%02d.rpy", replay_directory.c_str(), i + 1);
+        ReplayFile file;
+        if (!file.open_file(path)) {
+            // 兼容扁平 replay/ 子目录
+            std::snprintf(path, sizeof(path), "%s/replay/th16_%02d.rpy", replay_directory.c_str(), i + 1);
+            if (!file.open_file(path)) continue;
+        }
+        replay_slot_live[i] = true;
+        if (file.user.size() >= 0xb) replay_spell_practice[i] = (file.user[0xa] & 2) != 0;
+        for (const ReplayStageSegment& seg : file.stages) {
+            if (seg.stage >= 1 && seg.stage <= 7) replay_stage_mask[i] |= 1 << (seg.stage - 1);
+        }
+    }
+    replay_ui_flags = (replay_ui_flags & 0xfffffff3u) | 8u;  // 清 bit2、置 bit3 扫描完成
+}
+
+// 0x451750：标题 Replay（25 槽 × 3 页；确认 → 关卡选择 → 场景 0xd）
+void TitleScene::update_replay(AnmManager& anm, const InputState& input) {
+    switch (sub) {
+    case 0: {
+        cursor.count = 0x19;
+        cursor.wrap = true;
+        cursor.set(last_replay_slot % 0x19);
+        page_cursor.count = 3;
+        page_cursor.wrap = true;
+        page_cursor.set(last_replay_slot / 0x19);
+        // *(+0x2a4)=1：原版列表滚动相关；端口不需要独立字段
+        last_replay_slot = 0;
+        if (vm[kLeafEmitter] == 0 && ascii_file) spawn_into(anm, kLeafEmitter, *ascii_file, kLeafEmitterScript);
+        if (title_file) spawn_into(anm, 0x6c, *title_file, 0x6c);
+        set_sub(1);
+        for (bool& live : replay_slot_live) live = false;
+        replay_ui_flags &= 0xfffffff3u;
+        replay_choice = -1;
+        scan_replay_slots();
+        if (vm[0x61] == 0 && title_file) {
+            spawn_into(anm, 0x61, *title_file, 0x61);
+            anm.interrupt_now(vm[0x61], 3);
+        }
+        events.push_back({"replay", 0});
+        [[fallthrough]];
+    }
+    case 1:
+        if (timer > 6) set_sub(2);
+        break;
+    case 2: {
+        const i32 prev_slot = cursor.index;
+        const i32 prev_page = page_cursor.index;
+        const u32 edge = input.pressed | input.repeat;
+        if (edge & InputState::kUp) cursor.move(-1);
+        if (edge & InputState::kDown) cursor.move(1);
+        if (edge & InputState::kLeft) page_cursor.move(-1);
+        if (edge & InputState::kRight) page_cursor.move(1);
+        if (page_cursor.index != prev_page) sfx(10);
+        if (cursor.index != prev_slot) sfx(10);
+        if (input.pressed & InputState::kCancelMask) {
+            set_sub(5);
+            sfx(9);
+            replay_ui_flags |= 4u;
+            break;
+        }
+        if (input.pressed & InputState::kConfirmMask) {
+            const i32 abs = replay_abs_slot();
+            if (abs < 0 || abs >= 100 || !replay_slot_live[abs]) break;
+            set_sub(4);
+            replay_choice = abs;
+            cursor.push();
+            sfx(7);
+            cursor.count = 7;
+            cursor.set(0);
+            for (i32 i = 0; i < 7; ++i) {
+                if ((replay_stage_mask[abs] & (1 << i)) == 0) cursor.disable(i);
+            }
+            // 原版：落在首个可用项上（move -1/+1 跳过禁用）
+            cursor.move(-1);
+            cursor.move(1);
+            if (replay_spell_practice[abs]) {
+                replay_stage_choice = cursor.index;
+                set_sub(3);
+                replay_ui_flags |= 4u;
+                sfx(0x32);
+                if (on_screen_fade) {/* BGM fade 0x43c470 */}
+                events.push_back({"bgm-fade", 0});
+            }
+        }
+        break;
+    }
+    case 3:
+        if (timer == 2) transition_effect();
+        if (timer > 0x1f && (replay_ui_flags & 8u) != 0) {
+            set_screen(kFinished);  // 原版 set_screen(2) 后写 DAT_004c17c4=0xd
+            char path[512];
+            std::snprintf(path, sizeof(path), "%s/th16_%02d.rpy", replay_directory.c_str(), replay_choice + 1);
+            pending_replay_path = path;
+            {
+                ReplayFile probe;
+                if (!probe.open_file(path)) {
+                    std::snprintf(path, sizeof(path), "%s/replay/th16_%02d.rpy", replay_directory.c_str(), replay_choice + 1);
+                    pending_replay_path = path;
+                }
+            }
+            last_replay_slot = replay_choice;
+            globals->scene_request = 0xd;
+            globals->replay_slot = replay_stage_choice;  // DAT_004a57c8 路径相关；阶段选择另见 pending
+            events.push_back({"scene", 0xd});
+            events.push_back({"replay-play", replay_choice});
+        }
+        break;
+    case 4:
+        if (timer > 0xe) {
+            const i32 prev = cursor.index;
+            const u32 edge = input.pressed | input.repeat;
+            if (edge & InputState::kUp) cursor.move(-1);
+            if (edge & InputState::kDown) cursor.move(1);
+            if (cursor.index != prev) sfx(10);
+            if (input.pressed & InputState::kCancelMask) {
+                cursor.pop();
+                cursor.count = 0x19;
+                set_sub(2);
+                sfx(9);
+                break;
+            }
+            if (input.pressed & InputState::kConfirmMask) {
+                replay_stage_choice = cursor.index;
+                set_sub(3);
+                replay_ui_flags |= 4u;
+                sfx(0x32);
+                events.push_back({"bgm-fade", 0});
+            }
+        }
+        break;
+    case 5:
+        if (timer > 5 && (replay_ui_flags & 8u) != 0) {
+            dismiss(anm, 0x6c);
+            dismiss(anm, kLeafEmitter);
+            set_screen(kMainMenu);
+            cursor.pop();
+            events.push_back({"screen", screen});
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+// 待还原画面（Key Config / Player Data / Music Room / Manual / Spell Practice）
 void TitleScene::update_stub(AnmManager& anm, const InputState& input) {
     (void)anm;
     if (sub == 0) {

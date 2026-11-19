@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace th16 {
@@ -230,6 +231,7 @@ bool GameSession::activate_title_menu() {
 
     // 0x44af80 case 0 → 0x44a560(1) → 0x44b5f0：标题对象在首次更新链调用时自行生成装饰/logo
     title.activate(title_file, title_v_file, animations.file(AnmManager::kAsciiSlot), globals);
+    title.replay_directory = demo_directory;
     title.on_screen_fade = [this](i32 kind, i32 duration, u32 color) { create_screen_fade(kind, duration, color); };
     title.on_transition_effect = [this]() {
         // 0x41a390 + 0x418ba0 + 0x46f0b0(..., 7)：Loading VM、过场种类 0、中断 7
@@ -1297,8 +1299,10 @@ bool GameSession::logic_step() {
     }
     SceneId leave = SceneId::Invalid, enter = SceneId::Invalid;
     if (supervisor.consume_switch(leave, enter)) {
-        // 0x43ce10 case 0xd 需要在 leave_title 前抄出 demo 下标
+        // 0x43ce10 case 0xd 需要在 leave_title 前抄出 demo 下标 / 选中的回放路径
         const i32 pending_demo = (leave == SceneId::Title) ? title.pending_demo : -1;
+        const std::string pending_replay = (leave == SceneId::Title) ? title.pending_replay_path : std::string{};
+        const i32 pending_replay_stage = (leave == SceneId::Title) ? title.replay_stage_choice : 0;
         if (leave == SceneId::Title && enter != SceneId::PracticeFromTitle) leave_title();
         if (enter == SceneId::Title && !enter_title_assets()) return false;
         if (enter == SceneId::NextStage) {
@@ -1311,8 +1315,12 @@ bool GameSession::logic_step() {
             if (!restart_game(enter, enter == SceneId::RestartPractice ? 1 : 0)) return false;
             supervisor.current = supervisor.requested = SceneId::Game;
         } else if (enter == SceneId::PracticeFromTitle) {
-            // 0x43ce10 case 0xd：标题 demo / 练习进游戏，0x42d700(1)
-            if (pending_demo >= 0 && !demo_directory.empty()) {
+            // 0x43ce10 case 0xd：标题 demo / Replay 选槽 / 练习进游戏，0x42d700(1)
+            bool loaded = false;
+            if (!pending_replay.empty()) {
+                loaded = load_replay_file(pending_replay.c_str());
+                if (!loaded) return false;
+            } else if (pending_demo >= 0 && !demo_directory.empty()) {
                 char path[512];
                 std::snprintf(path, sizeof(path), "%s/demo/demo%d.rpy", demo_directory.c_str(), pending_demo + 1);
                 if (!load_replay_file(path)) {
@@ -1320,9 +1328,18 @@ bool GameSession::logic_step() {
                     std::snprintf(path, sizeof(path), "%s/demo%d.rpy", demo_directory.c_str(), pending_demo + 1);
                     if (!load_replay_file(path)) return false;
                 }
+                loaded = true;
+            }
+            if (loaded) {
                 if (!replay_file_.stages.empty()) {
-                    // 与 0x44af80 一致：取首个有段的关卡号
-                    globals.stage = replay_file_.stages[0].stage;
+                    // 标题 Replay：按关卡选择下标取段；demo：首段
+                    i32 stage_i = 0;
+                    if (!pending_replay.empty()) {
+                        for (i32 i = 0; i < i32(replay_file_.stages.size()); ++i) {
+                            if (replay_file_.stages[i].stage == pending_replay_stage + 1) { stage_i = i; break; }
+                        }
+                    }
+                    globals.stage = replay_file_.stages[stage_i].stage;
                     globals.stage_copy = globals.stage;
                 }
                 if (replay_file_.user.size() >= 0xa0) {

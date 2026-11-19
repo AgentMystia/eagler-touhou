@@ -2,7 +2,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {existsSync} from 'node:fs';
+import {copyFileSync, existsSync, mkdirSync} from 'node:fs';
 import {resolve} from 'node:path';
 
 const here = resolve(import.meta.dirname);
@@ -319,9 +319,44 @@ test('Option screen: ←/→ adjust BGM, Default restores 100/80', needDat, () =
   assert.equal(restored.header.se, 80);
 });
 
-test('stub screens (Replay/…): cancel returns to the main menu', needDat, () => {
+test('Replay screen (0x451750): cancel returns to the main menu', needDat, () => {
   const t = MAIN + 1;
-  const downs = Array.from({length: 7}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Player Data / Replay 一带
+  // Extra 禁用：↓×3 → Replay(4)；主菜单 case4 等 0x13 后进 Replay，再等 timer>6
+  const downs = Array.from({length: 3}, (_, i) => `${t + i * 2}:${DOWN}`);
+  const confirmAt = t + 6 + 2;
+  const ready = confirmAt + 30;
+  const out = parse(run(['scene-boot', dat, String(ready + 20), [
+    ...downs, `${confirmAt}:${Z}`, `${ready}:${X}`,
+  ].join(',')]));
+  assert.equal(out.header.screen, 1);
+  assert.ok(out.events.some(e => e[0] === 'replay'));
+});
+
+test('Replay screen: confirm th16_01.rpy → scene 0xd play', needDat, () => {
+  const slots = resolve('/tmp/th16-replay-slots');
+  mkdirSync(slots, {recursive: true});
+  copyFileSync(resolve(monorepo, 'artifacts/th16/dat/demo1.rpy'), resolve(slots, 'th16_01.rpy'));
+  const t = MAIN + 1;
+  const downs = Array.from({length: 3}, (_, i) => `${t + i * 2}:${DOWN}`);
+  const confirmAt = t + 8;
+  const ready = confirmAt + 30;
+  const prev = process.env.TH16_REPLAY_DIR;
+  process.env.TH16_REPLAY_DIR = slots;
+  try {
+    const out = parse(run(['scene-boot', dat, String(ready + 60), [
+      ...downs, `${confirmAt}:${Z}`, `${ready}:${Z}`, `${ready + 20}:${Z}`,
+    ].join(',')]));
+    assert.ok(out.events.some(e => e[0] === 'replay-play' && e[1] === '0'));
+    assert.ok(out.events.some(e => e[0] === 'scene' && e[1] === '13'));
+  } finally {
+    if (prev === undefined) delete process.env.TH16_REPLAY_DIR;
+    else process.env.TH16_REPLAY_DIR = prev;
+  }
+});
+
+test('stub screens (Manual/…): cancel returns to the main menu', needDat, () => {
+  const t = MAIN + 1;
+  const downs = Array.from({length: 7}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Manual(8)
   const confirmAt = t + 14 + 2;
   const out = parse(run(['scene-boot', dat, String(confirmAt + 21 + 4), [...downs, `${confirmAt}:${Z}`, `${confirmAt + 22}:${X}`].join(',')]));
   assert.equal(out.header.screen, 1);

@@ -20,6 +20,7 @@
 #include "Types.hpp"
 
 #include <functional>
+#include <string>
 #include <vector>
 
 namespace th16 {
@@ -54,6 +55,17 @@ public:
     i32 idle_frames = 0;             // DAT_004a5bf0：主菜单无输入帧计数
     i32 demo_index = 0;              // DAT_004a5bf4：demo1..3 轮转（%3）
     i32 pending_demo = -1;           // 本帧触发的 demo 下标；GameSession 装文件后清
+    // 标题 Replay 画面 0x451750
+    MenuCursor page_cursor;          // +0x1d4：页（0..2），槽 = page*0x19 + cursor
+    bool replay_slot_live[100] = {}; // +0x5b50：槽是否有文件
+    i32 replay_stage_mask[100] = {}; // 每槽已有关卡位图（bit0=stage1…）；确认后用于禁用项
+    bool replay_spell_practice[100] = {};
+    i32 replay_choice = -1;          // +0x5b48：选中的绝对槽
+    i32 replay_stage_choice = 0;     // +0x5b4c：开局关卡下标（1-based 存到 DAT_004a5790）
+    u32 replay_ui_flags = 0;         // +0x5ce8：bit2 离开中 / bit3 扫描完成
+    i32 last_replay_slot = 0;        // DAT_004a6f28：再次进入时恢复
+    std::string replay_directory;    // 宿主：th16_XX.rpy 所在目录
+    std::string pending_replay_path; // 确认播放：GameSession case 0xd 装载
     GameGlobals* globals = nullptr;
     std::vector<Event> events;       // SFX / 画面 / 场景请求 / 过场效果（供 harness 断言）
     // GameSession 注入：0x45d150 淡入淡出 / 0x41a390 Loading + 0x418ba0 过场
@@ -99,12 +111,15 @@ private:
     void update_season(AnmManager& anm, const InputState& input);        // 0x450af0
     void update_stage(AnmManager& anm, const InputState& input);         // 0x450ef0
     void update_option(AnmManager& anm, const InputState& input);        // 0x44c570
+    void update_replay(AnmManager& anm, const InputState& input);        // 0x451750
     void update_stub(AnmManager& anm, const InputState& input);          // 待还原画面：取消回上层
     void request_game(i32 stage, i32 table);                             // DAT_004c17c4 = 7 等
     void transition_effect();                                            // 0x41a390 + 0x418ba0
     void refresh_option_items(AnmManager& anm);                          // 0x44c8c0：面板子项 0x1e/0x1f
     void apply_option_volume(AnmManager& anm);                           // 0x44dc70：音量数字 ANM（缺 VM 则跳过）
     void panel_item_interrupt_now(AnmManager& anm, i32 script, i32 value);
+    void scan_replay_slots();                                            // 同步替代 0x402fb0 扫描线程
+    i32 replay_abs_slot() const { return page_cursor.index * 0x19 + cursor.index; }
 };
 
 }  // namespace th16
