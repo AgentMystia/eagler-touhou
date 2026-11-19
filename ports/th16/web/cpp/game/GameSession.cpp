@@ -494,7 +494,8 @@ void GameSession::register_game_chains() {
     game.on_frame_advanced = [this]() { compositor.tick(animations); };
     game.on_stage_started = [this]() {
         if (game.stage) enable_stage_chains(*game.stage);
-        // 0x42dc50 / 0x42dee0 接着启用得分飘字的两条链
+        // 0x42dc50 / 0x42dee0 接着启用 GameMenu 绘制链与得分飘字的两条链
+        if (menu_draw_chain_) chains.enable(menu_draw_chain_);
         if (popup_update_chain_) chains.enable(popup_update_chain_);
         if (popup_draw_chain_) chains.enable(popup_draw_chain_);
     };
@@ -1005,7 +1006,9 @@ void GameSession::leave_game() {
         if (entry) { chains.remove(entry); entry = nullptr; }
     }
     // 0x43e4c0：GameMenu 随 GameManager 一起销毁
-    if (menu_update_chain_) { chains.remove(menu_update_chain_); menu_update_chain_ = nullptr; }
+    for (ChainEntry** entry : {&menu_update_chain_, &menu_draw_chain_}) {
+        if (*entry) { chains.remove(*entry); *entry = nullptr; }
+    }
     if (menu_live) {
         menu.destroy();
         menu_live = false;
@@ -1067,6 +1070,7 @@ void GameSession::create_menu() {
         menu.destroy();
         menu_live = false;
     }
+    if (menu_draw_chain_) { chains.remove(menu_draw_chain_); menu_draw_chain_ = nullptr; }
     menu = GameMenu{};
     menu.reset_timers();   // 0x43e3f0 末：两只计时复位
     menu.ctx.animations = &animations;
@@ -1096,6 +1100,11 @@ void GameSession::create_menu() {
         return ChainResult::Continue;
     }, 10, true);
     chains.enable(menu_update_chain_);
+    // 绘制链 0x4a（0x43ef10 → 0x43edc0）建为禁用，关卡首帧 0x42dee0 启用（on_stage_started）
+    menu_draw_chain_ = chains.create([this]() -> ChainResult {
+        if (menu_live) menu.draw(ascii, compositor);
+        return ChainResult::Continue;
+    }, 0x4a, false);
 }
 
 // GameMenu 登记的音效（0x45e150）并入本帧音效表；BGM 事件在 Sound 接入前无状态影响

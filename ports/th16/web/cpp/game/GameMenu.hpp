@@ -15,6 +15,9 @@
 //   0x43f6a0  恢复游戏：清 flags & 0x10、恢复游戏速度 / 对话 / HUD / 声音线程状态
 //   0x43f7e0  续关首帧排名：普通模式 0x43e250 入榜（→ 名字输入）、练习更新练习最高分
 //   0x43e250  排名插入（ScoreFile::insert_rank）
+//   0x43edc0  绘制链：截屏框 VM（text.anm 0x34）的子 VM 0x39 颜色 → 画面合成 VM2（暂停时场地的蒙色）；AsciiManager 开阴影后
+//             按模式出字——暂停 / 结算：回放槽列表 0x43e9b0 或回放名字输入 0x43eb50；续关：排名 0x43ec10（状态 0xf）、
+//             回放列表 / 名字输入，否则（非操作说明）"Credit %d" 剩余续关数
 //
 // 操作说明（0x42ea30 / 0x42eab0，help.anm + help_NN.png，由装载线程异步装入）在 HelpScreen 中还原。
 #pragma once
@@ -33,15 +36,33 @@ struct AnmFile;
 struct GameGlobals;
 class GameManager;
 class Gui;
+class AsciiManager;
 class Player;
+class ScreenCompositor;
 struct InputState;
 struct ScoreFile;
+
+// 回放头里菜单列表要显示的那部分（原版回放头 0x4483b0：+0x00 名字 / +0x0a 标志 bit1 符卡练习 / +0x0c 时刻（time32）/
+// +0x84 机体 / +0x88 机体副号 / +0x8c 难度 / +0x90 关卡 / +0x98 符卡号 / +0x9c 子季节）
+struct ReplaySummary {
+    char name[9] = "        ";
+    i32 timestamp = 0;           // 1970 起算的秒数（UTC）；0x43e9b0 用 gmtime 拆成 年/月/日
+    bool spell_practice = false;
+    i32 shot = 0;
+    i32 shot_aux = 0;
+    i32 difficulty = 0;
+    i32 stage = 0;
+    i32 spell_id = 0;
+    i32 season = 0;
+};
 
 // 回放文件存取（0x447ef0 读槽头 / 0x448400 保存 / 0x447fb0 释放）：由宿主接入文件系统；为空时视为全部槽位为空
 struct ReplayStore {
     virtual ~ReplayStore() = default;
     virtual bool slot_exists(int slot) = 0;                 // th16_%.2d.rpy 是否存在
     virtual void save(int slot, const char* name) = 0;      // 以当前记录写入该槽
+    // 槽列表一行要显示的头信息；返回 false 表示该槽为空（画 "--------" 占位行）
+    virtual bool slot_summary(int slot, ReplaySummary& out) { (void)slot; (void)out; return false; }
 };
 
 // 操作说明画面——原版 DAT_004a6dd8（0x42e6a0 构造，0x1bc 字节；更新链 0xb、绘制链 0x48）。
@@ -83,6 +104,7 @@ struct GameMenuContext {
     i32* sound_thread_state = nullptr;     // DAT_004d9d90
     const u32* config_flags = nullptr;     // DAT_004c1800
     const std::string* current_bgm = nullptr;  // DAT_004dc0f0
+    i32 replay_timestamp = 0;              // 本局回放头 +0xc 的开局时刻（0x4483b0 写 time32；Replay 接入前为 0）
     // 0x42e760 装载线程：help.anm 进槽 0x13；返回 nullptr 表示仍在装载（操作说明保持等待）
     std::function<AnmFile*()> load_help_anm;
 };
@@ -151,6 +173,8 @@ public:
     void reset_timers() { timer.reset(); timer2.reset(); }
     // 0x43e5f0
     void update();
+    // 0x43edc0（绘制链 0x4a）：截屏框子 VM 0x39 的颜色传给画面合成 VM2；按模式画 Credit / 排名 / 回放槽列表 / 名字输入
+    void draw(AsciiManager& text, ScreenCompositor& compositor);
     // 0x43f0f0 / 0x43f350 / 0x43f500 / 0x43f240
     void open_pause();
     void open_continue();
@@ -174,6 +198,11 @@ private:
     void enter_main_menu_after_rank();   // 0x43f980 LAB_004404ae
     void enter_replay_slots();   // case 10
     void begin_name_entry();     // case 0xb 确认 / 0x43f7e0 入榜：名字缓冲与光标初值
+    void draw_name_entry(AsciiManager& text, Vec3 pos) const;   // 0x43e730
+    void draw_replay_row(AsciiManager& text, Vec3 pos, int slot, const ReplaySummary& summary) const;   // 0x43e8c0
+    void draw_replay_slots(AsciiManager& text) const;          // 0x43e9b0
+    void draw_replay_name_entry(AsciiManager& text) const;     // 0x43eb50
+    void draw_score_ranking(AsciiManager& text) const;         // 0x43ec10
     void capture_screenshot();   // 0x43ef20
     void cursor_interrupt(i32 base);            // 0x46f0b0(menu_vm, cursor + base)
     void child_interrupt(i32 script, i32 value);// 0x46f5a0 + 0x46f0b0

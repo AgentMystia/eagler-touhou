@@ -99,7 +99,7 @@ Bomb / 季节解放与魔理沙激光的还原证据：`tests/bomb.test.mjs` 以
 
 GameMenu 的还原证据：`tests/menu.test.mjs` 以 `tools/oracle/game-oracle.py`（`set_input` 写 held / prev 后调用 0x405580 产生 DAT_004a50bc 边沿；0x43ef20 的 D3D 表面拷贝段 0x43f088..0x43f0df 跳过、0x471c90 BGM 缓冲重填以空函数替换）为 oracle，对 st1 灵梦 Normal 的暂停 Esc / 导航 / 射击确定（各 600 帧）与 `--lives 0` 续关（1500 帧）四个场景逐帧比对 GameMenu 快照（模式 / 状态 / 两计时 / 两光标 / VM 有无 / 保存的速度与声音线程状态 / 标志）、GameManager flags、全局速度、续关计数与本帧全部音效序列，`menu=` 与其余子系统 digest 全部一致；golden 在 `tests/golden/menu.json`。
 
-整帧绘制流的还原证据：`tests/draw.test.mjs` 以 `tools/oracle/game-oracle.py --draw`（Unicorn 跑 0x45a8a0 全部绘制链，`d3d-recorder.py` 录 D3D 调用）为 oracle，对第 1 关灵梦春 Easy 第 800–820 / 1000–1500 帧（有输入脚本：移动、射击、拾取、擦弹、飘字、HUD 文字变化）、琪露诺秋 Normal 装载后首 8 帧与灵梦秋 Normal 季节解放奖励飘字段 1030–1110 帧，每帧 Clear / 绘制的目标、视口、图元、顶点格式、纹理槽与渲染状态子集全部一致（`draw-compare.py --structure-golden` 折成每帧 sha1：`tests/golden/draw-st1.json`、`draw-st1-boot.json`、`draw-st1-release.json`）；顶点坐标与矩阵用 `draw-compare.py --eps 1e-4` 手工对拍同样 0 差异（`--eps 0` 只剩 x87 对 SSE 的 1 ulp 级差）。
+整帧绘制流的还原证据：`tests/draw.test.mjs` 以 `tools/oracle/game-oracle.py --draw`（Unicorn 跑 0x45a8a0 全部绘制链，`d3d-recorder.py` 录 D3D 调用）为 oracle，对第 1 关灵梦春 Easy 第 800–820 / 1000–1500 帧（有输入脚本：移动、射击、拾取、擦弹、飘字、HUD 文字变化）、琪露诺秋 Normal 装载后首 8 帧、灵梦秋 Normal 季节解放奖励飘字段 1030–1110 帧与续关菜单 Credit / 回放槽 / 名字输入段，每帧 Clear / 绘制的目标、视口、图元、顶点格式、纹理槽与渲染状态子集全部一致（`draw-compare.py --structure-golden` 折成每帧 sha1：`tests/golden/draw-st1.json`、`draw-st1-boot.json`、`draw-st1-release.json`、`draw-st1-menu-credit.json`、`draw-st1-menu-replay.json`）；顶点坐标与矩阵用 `draw-compare.py --eps 1e-4` 手工对拍同样 0 差异（`--eps 0` 只剩 x87 对 SSE 的 1 ulp 级差）。
 
 ANM VM 的还原证据：`tests/anm-vm.test.mjs` 以 `tools/oracle/anm-oracle.py`（Unicorn 直跑上述原版函数）为 oracle，对 54 个 ANM 文件 1887 个脚本各 60 帧的 VM 结构体（0x568 字节纯数据区）与 36 条 layer 绘制链逐字节一致；wasm32 构建与本机构建输出逐字节相同。绘制几何：`tests/anm-draw.test.mjs` 锁定 `sig.anm` 稳态四边形（512×480 + 128×480 @ layer 26，UV v=0.9375，淡入至白）。场景时序：`tests/supervisor.test.mjs`。
 
@@ -120,7 +120,7 @@ ANM VM 的还原证据：`tests/anm-vm.test.mjs` 以 `tools/oracle/anm-oracle.py
 | 0x44ac70 | 标题场景初始化 |
 | 0x4497e0 / 0x4403c5 / 0x43b480 / 0x43aeae | score 文件 / replay 文件 / ver 文件 / thbgm.fmt |
 
-未定位：AsciiManager 的其余调用方（GameMenu 文字 0x43e730 族、Replay 0x4482f0、标题子菜单、Msg 文字贴图 0x46d990、FPS 0x4263e0）、Spellcard 实时计时 0x417bc0、Boss 畸变光环 0x418c70（ECL 629，依赖场地渲染目标）、结局场景 0x419640（通关倒计时与场景请求已还原）、成绩 / 回放文件读写；敌机、子弹、激光、道具、玩家与机体、Bomb / 季节解放、魔理沙激光、游戏内菜单（暂停 / 续关 / 练习结算）、Gui HUD、AsciiManager 与 HUD / 符卡文字、得分飘字已还原。Supervisor、Chain 表、帧计时、输入、标题主菜单与难度/机体/季节/关卡画面已还原；Game 场景（7）与标题余项待接。全表见 `web/cpp/rebuild/AddressMap.hpp`。
+未定位：AsciiManager 的其余调用方（Replay 0x4482f0、标题子菜单、Msg 文字贴图 0x46d990、FPS 0x4263e0）、Spellcard 实时计时 0x417bc0、Boss 畸变光环 0x418c70（ECL 629，依赖场地渲染目标）、结局场景 0x419640（通关倒计时与场景请求已还原）、成绩 / 回放文件读写；敌机、子弹、激光、道具、玩家与机体、Bomb / 季节解放、魔理沙激光、游戏内菜单（暂停 / 续关 / 练习结算，含 Credit / 回放槽 / 名字输入 / 排名文字 0x43edc0 族）、Gui HUD、AsciiManager 与 HUD / 符卡文字、得分飘字、季节解放奖励飘字已还原。Supervisor、Chain 表、帧计时、输入、标题主菜单与难度/机体/季节/关卡画面已还原；Game 场景（7）与标题余项待接。全表见 `web/cpp/rebuild/AddressMap.hpp`。
 
 ## 与 th15 的关系
 

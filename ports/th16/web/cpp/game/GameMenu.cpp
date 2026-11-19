@@ -3,12 +3,14 @@
 #include <cstring>
 
 #include "AnmManager.hpp"
+#include "Ascii.hpp"
 #include "GameGlobals.hpp"
 #include "GameManager.hpp"
 #include "Gui.hpp"
 #include "Input.hpp"
 #include "Player.hpp"
 #include "ScoreFile.hpp"
+#include "ScreenCompositor.hpp"
 
 namespace th16 {
 
@@ -21,6 +23,41 @@ constexpr int kNameColumns = 13;
 constexpr i32 kContinueLives = 2;
 constexpr i32 kContinueBombs = 2;
 constexpr i32 kMaxContinues = 9;
+
+// 名字输入字符表末尾三个功能键在 ascii.anm 里的专用字形（0x43e730：空格 0x81、退格 0x7f、结束 0x80）
+constexpr u8 kNameSpaceGlyph = 0x81, kNameBackspaceGlyph = 0x7f, kNameEndGlyph = 0x80;
+// 菜单列表文字的两种颜色：当前行黄、其余灰
+constexpr u32 kListHighlight = 0xffffff00, kListNormal = 0xff808080;
+
+// 0x43e9b0 / 0x43ec10 列表里的名称表（.rdata 0x491970 / 0x4918ac / 0x4918d4 / 0x4918f0 / 0x491920）
+constexpr const char* kShotNames[4] = {"Reimu  ", "Cirno  ", "Aya    ", "Marisa "};
+constexpr const char* kSeasonShortNames[5] = {"Sp", "Sm", "At", "Wt", "Fl"};
+constexpr const char* kDifficultyShortNames[6] = {"E ", "N ", "H ", "L ", "EX", "OD"};
+constexpr const char* kStageShortNames[8] = {"tst", "St1", "St2", "St3", "St4", "St5", "St6", "Ex "};
+constexpr const char* kStageNames[8] = {"test   ", "Stage 1", "Stage 2", "Stage 3", "Stage 4", "Stage 5", "Stage 6", "Extra  "};
+
+// gmtime 的日期部分（UTC，不处理负数）：原版用 CRT gmtime 拆回放 / 排名时刻，列表只显示 年%100 / 月 / 日
+struct CivilDate { i32 year; i32 month; i32 day; };
+
+CivilDate civil_date(i64 seconds) {
+    i64 days = seconds / 86400;
+    // Howard Hinnant 的 days → civil 公式（纪元 1970-01-01 平移到 0000-03-01）
+    days += 719468;
+    const i64 era = (days >= 0 ? days : days - 146096) / 146097;
+    const i64 doe = days - era * 146097;
+    const i64 yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    const i64 doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const i64 mp = (5 * doy + 2) / 153;
+    const i32 day = i32(doy - (153 * mp + 2) / 5 + 1);
+    const i32 month = i32(mp < 10 ? mp + 3 : mp - 9);
+    const i32 year = i32(yoe + era * 400 + (month <= 2 ? 1 : 0));
+    return {year, month, day};
+}
+
+template <size_t N>
+const char* lookup(const char* const (&table)[N], i32 index) {
+    return index >= 0 && size_t(index) < N ? table[index] : "";
+}
 
 // 0x43f980：主菜单各项对应的子脚本组（选中后中断 6 退场）
 constexpr i32 kItemScripts[5][5] = {
@@ -820,6 +857,146 @@ void GameMenu::destroy() {
     for (bool& used : replay_slot_used) used = false;
     delete help;
     help = nullptr;
+}
+
+// ---- 绘制链 0x4a ----
+
+// 0x43edc0
+void GameMenu::draw(AsciiManager& text, ScreenCompositor& compositor) {
+    text.style.shadow = true;
+    // 原版连查三次同一 id（每次失败都清零 id），效果等于查一次
+    if (AnmVm* frame = ctx.animations->find(screenshot_vm)) {
+        if (const AnmVm* tint = AnmManager::find_child(*frame, 0x39, 0)) {
+            u32 argb;
+            std::memcpy(&argb, tint->color, 4);   // VM 颜色字（b,g,r,a 字节序即小端 ARGB 字）
+            compositor.set_pause_tint(argb);
+        }
+    } else {
+        screenshot_vm = 0;
+    }
+
+    const u32 overlay = flags & (kFlagReplaySave | kFlagNameEntry);
+    switch (mode) {
+    case Pause:
+    case PracticeResult:
+        if (overlay == kFlagNameEntry) draw_replay_name_entry(text);
+        else if (overlay == kFlagReplaySave) draw_replay_slots(text);
+        break;
+    case Continue:
+        if (state == RankName) draw_score_ranking(text);
+        if (overlay == kFlagReplaySave) draw_replay_slots(text);
+        else if (overlay == kFlagNameEntry) draw_replay_name_entry(text);
+        else if (state != HelpPages) text.printf({184.0f, 448.0f, 0.0f}, "Credit %d", ctx.globals->continues_left);
+        break;
+    default:
+        break;
+    }
+    text.style.shadow = false;
+}
+
+// 0x43e730：名字 + 黄色下划线光标，下方 13 列 × 7 行的字符表（当前项黄、其余灰）
+void GameMenu::draw_name_entry(AsciiManager& text, Vec3 pos) const {
+    text.printf(pos, "%s", name);
+    pos.x += float(name_length * 9);
+    if (name_length == 8) pos.x -= 9.0f;   // 第 8 字已满：光标压在末字上
+    text.style.color = kListHighlight;
+    text.print(pos, "_");
+    text.style.color = 0xffffffff;
+
+    Vec3 cell{112.0f, 320.0f, 0.0f};
+    for (i32 i = 0; i < kNameCharCount; ++i) {
+        text.style.color = name_cursor.index == i ? kListHighlight : kListNormal;
+        u8 glyph;
+        if (i < kNameSpace) glyph = u8(kNameChars[i]);
+        else if (i == kNameSpace) glyph = kNameSpaceGlyph;
+        else if (i == kNameBackspace) glyph = kNameBackspaceGlyph;
+        else glyph = kNameEndGlyph;
+        text.printf(cell, "%c", glyph);
+        if (i % kNameColumns == kNameColumns - 1) {
+            cell.x = 112.0f;
+            cell.y += 16.0f;
+        } else {
+            cell.x += 18.0f;
+        }
+    }
+    text.style.color = 0xffffffff;
+}
+
+// 0x43e8c0：回放槽一行——"No.NN 名字 年/月/日 机体 季节 难度 关卡"，符卡练习改为 "Sp 符卡号"
+void GameMenu::draw_replay_row(AsciiManager& text, Vec3 pos, int slot, const ReplaySummary& summary) const {
+    const CivilDate date = civil_date(summary.timestamp);
+    const char* shot = lookup(kShotNames, summary.shot + summary.shot_aux);
+    const char* season = lookup(kSeasonShortNames, summary.season);
+    if (summary.spell_practice) {
+        text.printf(pos, "No.%.2d %s %.2d/%.2d/%.2d %s%s Sp %3d", slot, summary.name,
+                    date.year % 100, date.month, date.day, shot, season, summary.spell_id + 1);
+        return;
+    }
+    text.printf(pos, "No.%.2d %s %.2d/%.2d/%.2d %s%s %s %s", slot, summary.name,
+                date.year % 100, date.month, date.day, shot, season,
+                lookup(kDifficultyShortNames, summary.difficulty), lookup(kStageShortNames, summary.stage));
+}
+
+// 0x43e9b0：25 个回放槽，行距 15，空槽画占位横线
+void GameMenu::draw_replay_slots(AsciiManager& text) const {
+    Vec3 pos{36.0f, 64.0f, 0.0f};
+    for (int slot = 1; slot <= kReplaySlots; ++slot) {
+        text.style.color = cursor.index == slot - 1 ? kListHighlight : kListNormal;
+        ReplaySummary summary;
+        if (replay_slot_used[slot - 1] && ctx.replays != nullptr && ctx.replays->slot_summary(slot, summary)) {
+            draw_replay_row(text, pos, slot, summary);
+        } else {
+            text.printf(pos, "No.%.2d -------- --/--/-- ------ -- -- St-", slot);
+        }
+        pos.y += 15.0f;
+    }
+    text.style.color = 0xffffffff;
+}
+
+// 0x43eb50：回放名字输入——选中行在前 10 帧从列表位置滑到 y = 224，名字输入画在 x = 90，
+// 其右侧（x = 36 起）重画本局回放头那一行（名字栏先清成 8 个空格，所以显示为空）
+void GameMenu::draw_replay_name_entry(AsciiManager& text) const {
+    float y = 224.0f;
+    if (timer.current < 10) {
+        const float from = float(cursor.index) * 15.0f + 64.0f;
+        y = (224.0f - from) * float(timer.current) / 10.0f + from;
+    }
+    draw_name_entry(text, {90.0f, y, 0.0f});
+
+    const GameGlobals& g = *ctx.globals;
+    ReplaySummary current;
+    current.timestamp = ctx.replay_timestamp;
+    current.spell_practice = (g.flags & GameGlobals::kModeMask) == 0x20;
+    current.shot = g.shot;
+    current.shot_aux = g.shot_aux;
+    current.difficulty = g.difficulty;
+    current.stage = g.stage;
+    current.spell_id = g.spell_id;
+    current.season = g.season;
+    draw_replay_row(text, {36.0f, y, 0.0f}, cursor.index + 1, current);
+}
+
+// 0x43ec10：Game Over 排名——标题、入榜行的名字输入（x = 75）、本机体 × 难度的 10 条记录（行距 18）
+void GameMenu::draw_score_ranking(AsciiManager& text) const {
+    text.printf({48.0f, 64.0f, 0.0f}, "            Score Ranking!!");
+    const i32 highlight = no_rank == 0 ? cursor.index : -1;
+    if (no_rank == 0) draw_name_entry(text, {75.0f, float(cursor.index) * 18.0f + 96.0f, 0.0f});
+
+    const GameGlobals& g = *ctx.globals;
+    Vec3 pos{48.0f, 96.0f, 0.0f};
+    for (i32 rank = 0; rank < ScoreFile::kRanks; ++rank) {
+        text.style.color = rank == highlight ? kListHighlight : kListNormal;
+        const ScoreEntry& entry = ctx.scores->ranks[score_block()][g.difficulty][rank];
+        if (entry.time == 0) {
+            text.printf(pos, "%2d %s %9ld%d --/--/-- Stage -", rank + 1, entry.name, long(entry.score), i32(entry.continues));
+        } else {
+            const CivilDate date = civil_date(entry.time);
+            text.printf(pos, "%2d %s %9ld%d %.2d/%.2d/%.2d %s", rank + 1, entry.name, long(entry.score), i32(entry.continues),
+                        date.year % 100, date.month, date.day, lookup(kStageNames, i32(entry.stage)));
+        }
+        pos.y += 18.0f;
+    }
+    text.style.color = 0xffffffff;
 }
 
 }  // namespace th16
