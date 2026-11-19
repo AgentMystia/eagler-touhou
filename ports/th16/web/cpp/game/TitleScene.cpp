@@ -168,8 +168,8 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
     case kMusicRoom: update_music(anm, input); break;
     case kSpellPractice: update_spell_practice(anm, input); break;
     case kSpellList: update_spell_list(anm, input); break;
+    case kSpellShot: update_spell_shot(anm, input); break;
     case kScore: update_score(anm, input); break;
-    case kSpellShot: update_stub(anm, input); break;
     case kKeyConfig: update_key_config(anm, input); break;
     default: update_stub(anm, input); break;
     }
@@ -1319,6 +1319,77 @@ void TitleScene::update_spell_list(AnmManager& anm, const InputState& input) {
     }
 }
 
+// 0x456a20：符卡机体/条目页（count 5；取消回列表 0x12）
+void TitleScene::update_spell_shot(AnmManager& anm, const InputState& input) {
+    (void)anm;
+    switch (sub) {
+    case 0:
+        cursor.count = 5;
+        cursor.wrap = true;
+        cursor.set(0);
+        set_sub(1);
+        events.push_back({"spell-shot", spell_group});
+        [[fallthrough]];
+    case 1:
+        if (timer > 10) set_sub(2);
+        break;
+    case 2: {
+        const i32 prev = cursor.index;
+        const u32 edge = input.pressed | input.repeat;
+        if (edge & InputState::kUp) cursor.move(-1);
+        if (edge & InputState::kDown) cursor.move(1);
+        if (cursor.index != prev) sfx(10);
+        const i32 prev_shot = spell_shot_cursor.index;
+        if (edge & InputState::kLeft) spell_shot_cursor.move(-1);
+        if (edge & InputState::kRight) spell_shot_cursor.move(1);
+        if (spell_shot_cursor.index != prev_shot) {
+            sfx(10);
+            globals->shot = spell_shot_cursor.index;
+        }
+        if (input.pressed & InputState::kCancelMask) {
+            set_sub(4);
+            sfx(9);
+            break;
+        }
+        if (input.pressed & InputState::kConfirmMask) {
+            set_sub(3);
+            sfx(7);
+            if (spell_group == 6) {
+                sfx(0x32);
+                events.push_back({"bgm-fade", 0});
+            }
+        }
+        break;
+    }
+    case 3:
+        if (spell_group == 6) {
+            if (timer == 10) transition_effect();
+            if (timer > 0x27) {
+                globals->stage = spell_group + 1;
+                globals->stage_copy = globals->stage;
+                globals->scene_request = kSceneGame;
+                events.push_back({"scene", kSceneGame});
+                set_screen(kFinished);
+            }
+        } else if (timer > 0xd) {
+            // 非 Extra 组：进更深页 0x14（未接）→ 暂回列表
+            set_screen(kSpellList);
+            cursor.push();
+            events.push_back({"screen", screen});
+        }
+        break;
+    case 4:
+        if (timer > 5) {
+            set_screen(kSpellList);
+            cursor.pop();
+            events.push_back({"screen", screen});
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 // 0x44e930：Key Config（7 项：5 键位 + Default + Quit；真实键捕获待 0x44f710）
 void TitleScene::update_key_config(AnmManager& anm, const InputState& input) {
     switch (sub) {
@@ -1396,7 +1467,7 @@ void TitleScene::update_key_config(AnmManager& anm, const InputState& input) {
     }
 }
 
-// 待还原画面（Spell List 0x12 / Spell Shot 0x13）
+// 待还原画面（若仍有未接线的标题页）
 void TitleScene::update_stub(AnmManager& anm, const InputState& input) {
     (void)anm;
     if (sub == 0) {
@@ -1405,13 +1476,8 @@ void TitleScene::update_stub(AnmManager& anm, const InputState& input) {
     }
     if (input.pressed & InputState::kCancelMask) {
         sfx(9);
-        if (screen == kSpellList || screen == kSpellShot) {
-            set_screen(kSpellPractice);
-            cursor.pop();
-        } else {
-            set_screen(kMainMenu);
-            cursor.pop();
-        }
+        set_screen(kMainMenu);
+        cursor.pop();
         events.push_back({"screen", screen});
     }
 }

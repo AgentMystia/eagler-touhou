@@ -422,6 +422,21 @@ test('Spell List (0x455d50): from Spell Practice confirm, cancel → screen 0x13
   assert.equal(out.header.screen, 0x13);
 });
 
+test('Spell Shot (0x456a20): cancel returns to Spell List', needDat, () => {
+  const t = MAIN + 1;
+  const downs = Array.from({length: 2}, (_, i) => `${t + i * 2}:${DOWN}`);
+  const confirmAt = t + 4 + 2;
+  const spReady = confirmAt + 35;
+  const listReady = spReady + 40;
+  const shotReady = listReady + 25;
+  const out = parse(run(['scene-boot', dat, String(shotReady + 25), [
+    ...downs, `${confirmAt}:${Z}`, `${spReady}:${Z}`, `${listReady}:${X}`,
+    `${shotReady}:${X}`,
+  ].join(',')]));
+  assert.ok(out.events.some(e => e[0] === 'spell-shot'));
+  assert.equal(out.header.screen, 0x12);
+});
+
 test('Player Data (0x452330): cancel returns to the main menu', needDat, () => {
   const t = MAIN + 1;
   const downs = Array.from({length: 4}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Score/Player Data(5)
