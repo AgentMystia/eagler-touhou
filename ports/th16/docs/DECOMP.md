@@ -50,7 +50,7 @@
 | 0x467410 / 0x46b900 / 0x464dd0 / 0x464f10 / 0x45ba80 | ANM mode 8：世界矩阵 × 相机投影、±128 单位四边形锚点变体、父链旋转累加、混合/采样/寻址状态、设备缺省状态 | `game/AnmRenderer.cpp`、`game/AnmVm.cpp`、`sdl/Application.cpp` |
 | 0x43cb10 / 0x43c780 / 0x43c710 / 0x43c940 | 四台相机（UI 0x4c1560 全窗口 / 场地 0x4c1308 (32,16,384,448) / 宽场地 0x4c1434 (128,16,384,448) / 渲染目标 0x4c168c (116,4,408,472)）：以视口中心为眼位建 LookAtLH / PerspectiveFovLH；0x43c940 按 pos + pos_offset / facing_norm 建关卡相机（zn 30、zf 8000）；0x43c710 出批后下发 view / projection，抖动偏移转为绘制偏移，再 SetViewport | `game/Camera.cpp`、`game/ScreenCompositor.cpp` init_cameras、`game/AnmRenderer.cpp` use_camera |
 | 0x44ad20 | 标题析构：摘两条链、卸载槽 0x10/0x11、落叶发射器（+0x73c）interrupt 1 | `game/GameSession.cpp` |
-| 0x43ba40 / 0x43b3d0 / 0x43ce10 | Supervisor 注册 / 每帧泵 / 场景切换（+0x6f0/+0x6f4，DAT_004c17c4） | `game/Supervisor.hpp` |
+| 0x43ba40 / 0x43b3d0 / 0x43ce10 | Supervisor 注册 / 每帧泵 / 场景切换（+0x6f0/+0x6f4，DAT_004c17c4）；标题退出 0x44af80 case 2 请求 3（case 3 销毁并退出进程），DAT_004c1800 bit13 时请求 2（无 case，仅记当前场景）并经 0x43c440 停 BGM | `game/Supervisor.hpp` |
 | 0x401d50 / 0x405580 | 输入采样与边沿 | `game/Input.hpp` |
 | 0x44aee0 / 0x44abc0 / 0x44ac70 | 标题创建；线程等启动幕 0xb4 帧（或 DAT_004c1800&0x180）后卸 sig、装 title*.anm、注册更新链 6 / 绘制链 0x45 | `game/GameSession.cpp` |
 | 0x46f270 / 0x46d770 | 按槽杀 VM / 卸 bank | `game/AnmManager.cpp` |

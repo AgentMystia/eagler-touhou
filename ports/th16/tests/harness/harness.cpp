@@ -1638,6 +1638,7 @@ int main(int argc, char** argv) {
         std::vector<Reach> clears;
         for (int a = 4; a < argc; ++a) {
             if (std::strcmp(argv[a], "skip") == 0) { session.supervisor.config_flags |= Supervisor::kSkipBootFlags; continue; }
+            if (std::strncmp(argv[a], "cfg=", 4) == 0) { session.config_flags = u32(std::strtoul(argv[a] + 4, nullptr, 0)); continue; }
             if (std::strcmp(argv[a], "ascii") == 0) { dump_ascii = true; continue; }
             if (std::strcmp(argv[a], "text") == 0) { dump_text = true; continue; }
             if (std::strcmp(argv[a], "unlock-spells") == 0) { unlock_spells = true; continue; }

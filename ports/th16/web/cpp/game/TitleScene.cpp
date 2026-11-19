@@ -178,10 +178,13 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
         update_main_menu(anm, input);
         break;
     case kFinished: {
-        // 场景请求：游戏开始路径在上一帧已置 7（Supervisor 先于本链消费）；否则为退出 2/3
+        // 0x44af80 case 2：DAT_004c17c4 = bit13 ? 2 : 3，再经 0x43c440 停 BGM（DAT_004c12cc bit4 → 4，否则 3）。
+        // 游戏开始路径在上一帧已置 7（Supervisor 先于本链消费并销毁标题），不会走到这里
         if (globals->scene_request < 0) {
-            globals->scene_request = 2;
-            events.push_back({"scene", 2});
+            const bool halt = config_flags != nullptr && (*config_flags & 0x2000u) != 0;
+            globals->scene_request = halt ? 2 : 3;
+            events.push_back({"scene", globals->scene_request});
+            play_bgm_op((globals->input_config & 0x10u) != 0 ? 4 : 3);
         }
         break;
     }

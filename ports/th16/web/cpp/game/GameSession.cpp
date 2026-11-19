@@ -275,6 +275,7 @@ bool GameSession::activate_title_menu() {
     // 0x44af80 case 0 → 0x44a560(1) → 0x44b5f0：标题对象在首次更新链调用时自行生成装饰/logo
     title.activate(title_file, title_v_file, animations.file(AnmManager::kAsciiSlot), globals);
     title.scores = &scores;
+    title.config_flags = &config_flags;
     title.text_paints = &text_into_texture;
     title.replay_directory = replay_directory();
     title.read_replay_slot = [this](int slot, ReplaySummary& out) {
@@ -1583,7 +1584,7 @@ bool GameSession::logic_step() {
         } else {
             if (leave == SceneId::Ending) leave_ending();
             if (leave == SceneId::Game) leave_game();
-            if (enter == SceneId::Quit) {
+            if (enter == SceneId::Exit) {
                 // 退出进程：0x43afe0 Supervisor 析构先经 0x449a00 写成绩文件
                 quit_requested = true;
                 save_scores();

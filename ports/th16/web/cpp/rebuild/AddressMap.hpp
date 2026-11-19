@@ -105,6 +105,8 @@ constexpr AddressAnchor kAnchors[] = {
     {"supervisor-register", 0x43BA40, "game/Supervisor.hpp（主更新 0x43b3d0 / 场景切换 0x43ce10）"},
     {"supervisor-frame", 0x43B3D0, "game/GameSession.cpp GameSession::logic_step"},
     {"supervisor-switch", 0x43CE10, "game/Supervisor.hpp Supervisor::consume_switch"},
+    {"supervisor-exit", 0x43CE10, "game/GameSession.cpp GameSession::logic_step（case 3：0x43b950 销毁后返回 4 → quit_requested；请求 2 无 case，Supervisor::consume_switch 只置 current）"},
+    {"title-quit-bgm-stop", 0x43C440, "game/TitleScene.cpp TitleScene::update kFinished（0x45ed00(DAT_004c12cc bit4 ? 4 : 3) 停 BGM）"},
     {"chain-alloc", 0x401730, "game/Chain.cpp ChainManager::create"},
     {"update-chain-insert", 0x401300, "game/Chain.cpp ChainManager::insert_sorted（含 init 回调）"},
     {"draw-chain-insert", 0x4013B0, "game/Chain.cpp ChainManager::insert_sorted"},
