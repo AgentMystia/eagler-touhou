@@ -58,6 +58,10 @@ public:
     // 0x45a8a0 EndScene / Present：把后备缓冲表面送上窗口
     void present() { backend.present(screen); }
     void flush() { backend.flush(); }
+
+    // 0x459240 文字贴图：清矩形 / 把 RGBA32 刷进 BGRA8 表面并抬 revision
+    void clear_texture_rect(u32 handle, i32 left, i32 top, i32 right, i32 bottom);
+    void blit_rgba_to_texture(u32 handle, i32 dst_x, i32 dst_y, const u8* rgba, i32 width, i32 height, i32 pitch);
 };
 
 }  // namespace th16::sdl

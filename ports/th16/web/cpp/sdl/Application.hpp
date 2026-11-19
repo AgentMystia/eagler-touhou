@@ -1,6 +1,7 @@
 // th16 应用：SDL/GLES 宿主——打开 th16.dat，把 GraphicsDevice 挂为 GameSession 的 RenderDevice，
 // 每个逻辑帧由绘制链（0x45a8a0 帧序）直接向设备出图，最后 Present。
 #pragma once
+#include "FontPainter.hpp"
 #include "GraphicsDevice.hpp"
 #include "../game/FrameClock.hpp"
 #include "../game/GameSession.hpp"
@@ -13,6 +14,7 @@ namespace th16::sdl {
 class Application {
 public:
     GraphicsDevice graphics;
+    FontPainter fonts;
     GameSession session;
     FrameClock clock;
     std::string failure;
