@@ -50,15 +50,18 @@ void zero_vm(AnmVm& vm) {
 
 }  // namespace
 
-bool StageManager::load(const u8* bytes, u32 size, i32 stage) {
+bool StageManager::load(const u8* bytes, u32 size, i32 stage, const Camera& global_camera) {
     stage_number = stage;
     if (!std.parse(bytes, size)) { error = std.error; return false; }
-    // 相机先取全局 0x4c168c（0x43cb10：fov π/6，视口 (116,4,408,472)），再由 0x4097c0 覆盖：
+    // 相机整份抄自全局 0x4c168c（0x4b 个 dword：开局为 0x43cb10 的 fov π/6、视口 (116,4,408,472)；换关时是
+    // 上一关最后抄出的相机，雾色 / 雾距因此沿用到本关 STD 设雾为止），再由 0x4097c0 覆盖：
     // pos=(0,0,-600) facing=(0,300,600) up=(0,1,0)，pos_offset / facing_offset 清零
-    camera = StageCamera{};
+    camera = global_camera;
     camera.pos = {0, 0, -600.0f};
     camera.facing = {0, 300.0f, 600.0f};
     camera.up = {0, 1.0f, 0};
+    camera.pos_offset = {};
+    camera.facing_offset = {};
     cull_distance_sq = 9610000.0f;  // +0x331c = 0x4b12a310（3100²）
     flags = 1;
     timer.reset();
@@ -632,8 +635,9 @@ void StageManager::draw_background(AnmManager& manager, AnmRenderer& renderer, C
         renderer.set_depth_write(true);
         renderer.set_depth_compare(Compare::LessEqual);
         renderer.set_fog_parameters(camera.fog.color, camera.fog.near_, camera.fog.far_);
-        // 清场地矩形（渲染目标相机视口）：颜色取雾色；新关淡入且计时 ≤ 0x21 的几帧清成全黑
-        const bool fading_in_black = (flags & 4u) != 0 && end_timer.current <= 0x21;
+        // 清场地矩形（渲染目标相机视口）：颜色取雾色；新关淡入（bit2）且本关更新帧数 +0x66e0 ≤ 0x21 时清成全黑
+        // （0x409f90 读的是帧计数而非结束计时）
+        const bool fading_in_black = (flags & 4u) != 0 && frame <= 0x21;
         const ScreenRect field = viewport_rect(global_camera);
         renderer.device->clear(kClearColor | kClearDepth, fading_in_black ? 0u : camera.fog.color, &field);
     }

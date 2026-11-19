@@ -331,7 +331,7 @@ bool GameSession::create_stage() {
     auto stage = std::make_unique<StageManager>();
     std::vector<u8> std_bytes;
     if (!archive_.read(game.entry->std_name, std_bytes)) { failure = archive_.error; return false; }
-    if (!stage->load(std_bytes.data(), u32(std_bytes.size()), globals.stage)) { failure = stage->error; return false; }
+    if (!stage->load(std_bytes.data(), u32(std_bytes.size()), globals.stage, stage_camera)) { failure = stage->error; return false; }
     AnmResource* stage_anm = nullptr;
     if (!load_anm(stage->std.anm_name.c_str(), stage_anm)) return false;
     const int slot = 3 + (globals.stage & 1);
