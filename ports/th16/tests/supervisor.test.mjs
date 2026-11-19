@@ -211,13 +211,14 @@ test('game start flow: Normal / Cirno / Autumn → scene 7 with stage 1, title d
   assert.ok(text.some(l => / 183.5 451.5 /.test(l) && / 60606060 /.test(l)), 'season level "0" at (183.5, 451.5) colour 60606060, as the oracle draw dump shows (group 1, field viewport)');
   assert.ok(text.some(l => / 527.5 41.5 /.test(l)), 'hiscore "100,000" starts at (527.5, 41.5) (right-aligned at 620, font 4)');
   assert.ok(leaves.length > 0, 'leaf particles still present');
-  assert.ok(others.length > 0 && others.every(l => / slot=(5|6|9) entry=/.test(l)), 'only ascii.anm leaves + HUD frame (front.anm) + stage logo (st01logo.anm) + player option (pl02.anm) remain: ' + others.filter(l => !/ slot=(5|6|9) entry=/.test(l)).slice(0, 3).join(' | '));
+  // slot 8 = effect.anm：标题确定后 0x418ba0 过场种类 0（中断 7）的面板 / 覆盖，会跨进 Game 场景前几帧
+  assert.ok(others.length > 0 && others.every(l => / slot=(5|6|8|9) entry=/.test(l)), 'ascii leaves + HUD + logo + player option + effect transition remain: ' + others.filter(l => !/ slot=(5|6|8|9) entry=/.test(l)).slice(0, 3).join(' | '));
   assert.ok(others.some(l => / slot=6 entry=1 /.test(l)), 'stage logo title (script 1) drawn from the first game frame, as in the original');
   assert.ok(others.some(l => / slot=5 entry=0 /.test(l)), 'HUD frame (front.anm) drawn from the first game frame, as in the original');
   assert.ok(leaves.every(l => / zw=1 /.test(l)), 'mode 8 writes Z (0x43c530)');
   assert.deepEqual(started.events.at(-1), ['scene', '7']);
   const settled = parse(run(['scene-boot', dat, String(season + 2 + 0x28 + 2 + 16), script]));
-  assert.ok(settled.quads.filter(l => !/ slot=(0|4) entry=/.test(l) && !/^quad s slot=2 entry=0 /.test(l)).every(l => / slot=(5|6|9) entry=/.test(l)), 'emitter (interrupt 1 → ins_1 after 14 frames) and its leaves are gone; only the HUD (frame + text), the stage logo and the player option remain');
+  assert.ok(settled.quads.filter(l => !/ slot=(0|4) entry=/.test(l) && !/^quad s slot=2 entry=0 /.test(l)).every(l => / slot=(5|6|8|9) entry=/.test(l)), 'emitter gone; HUD / logo / option / optional effect transition remain');
   assert.ok(settled.quads.length > 0, 'player option VM keeps drawing');
 });
 
