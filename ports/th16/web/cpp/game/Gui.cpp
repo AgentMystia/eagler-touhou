@@ -187,8 +187,10 @@ bool Gui::start_dialogue(i32 entry_index) {
         // 符卡练习且非回放：当前曲已是目标曲（DAT_004dc0f0 文件名 == name + ".wav"）则什么都不做
         if (globals != nullptr && globals->mode() == 2 && !replay_playback && current_bgm == std::string(name) + ".wav")
             return true;
-        // 0x45ed00(2, which)：切曲；成绩文件 +0x19fa6 + 曲目序号 的音乐室解锁位在 ScoreFile 接入时补
-        bgm_events.push_back({2, which != 0 ? entry->bgm_boss_track : entry->bgm_track});
+        // 0x45ed00(2, which)：切曲；成绩文件 +0x19fa6 + 曲目序号 置音乐室已听过
+        const i32 track = which != 0 ? entry->bgm_boss_track : entry->bgm_track;
+        bgm_events.push_back({2, track});
+        if (scores != nullptr) scores->mark_bgm_heard(track);
         current_bgm = std::string(name) + ".wav";
         if (logo != nullptr && animations != nullptr) animations->spawn(*logo, which + 1, -1);
         return true;

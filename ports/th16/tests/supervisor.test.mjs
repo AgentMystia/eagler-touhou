@@ -25,6 +25,9 @@ function parse(out) {
   return {header, events, quads};
 }
 
+// 0x44af80 进标题第 10 帧的延迟重播 th16_01（bgm-op / bgm-default）与菜单 SE 无关
+const ui = events => events.filter(e => !e[0].startsWith('bgm'));
+
 // 位：0x1 Z，0x2 X，0x10 ↑，0x20 ↓，0x100 Esc，0x80000 Enter
 const Z = '0x1', X = '0x2', UP = '0x10', DOWN = '0x20', LEFT = '0x40', RIGHT = '0x80', ESC = '0x100', ENTER = '0x80000';
 const MENU_LIVE = 180;       // 启动幕 +0x638 到 0xb4 的那一帧（绘制之后）标题线程登记更新链；该链从下一帧起运行
@@ -60,6 +63,12 @@ test('scene-boot: input cannot skip the boot hold; DAT_004c1800&0x180 can', need
   assert.equal(skipped.header.sub, 2);
 });
 
+test('title BGM (0x44af80 LAB_0044b0c6): th16_01 restarts on the 10th frame after title entry', needDat, () => {
+  const bgm = f => parse(run(['scene-boot', dat, String(f)])).events.filter(e => e[0].startsWith('bgm'));
+  assert.deepEqual(bgm(MENU_LIVE + 10), []);
+  assert.deepEqual(bgm(MENU_LIVE + 11), [['bgm-op', '3'], ['bgm-default', '1'], ['bgm-op', '2']]);
+});
+
 test('title menu: Main at Timer>0x82, input before that is ignored', needDat, () => {
   const early = parse(run(['scene-boot', dat, String(MAIN + 1), `${MAIN - 2}:${DOWN}`]));
   assert.equal(early.header.sub, 2);
@@ -74,7 +83,7 @@ test('title menu: cursor wraps and skips disabled Extra (no clear data), SFX 10 
   const t = MAIN + 1;
   const down = parse(run(['scene-boot', dat, String(t + 4), `${t}:${DOWN}`]));
   assert.equal(down.header.cursor, 2, 'item 1 (Extra) is disabled by 0x440c00 when 0x44a850()==0');
-  assert.deepEqual(down.events, [['sfx', '10']]);
+  assert.deepEqual(ui(down.events), [['sfx', '10']]);
   const up = parse(run(['scene-boot', dat, String(t + 4), `${t}:${UP}`]));
   assert.equal(up.header.cursor, 9, 'wrap=1 (+0xf4) → 0 − 1 → 9');
   const upTwice = parse(run(['scene-boot', dat, String(t + 6), `${t}:${UP},${t + 2}:${UP},${t + 4}:${UP}`]));
@@ -97,12 +106,12 @@ test('title menu: confirm Game Start → sub 4, SFX 7, Difficulty(5) after 0x13 
   const z = parse(run(['scene-boot', dat, String(t + 19), `${t}:${Z}`]));
   assert.equal(z.header.sub, 4);
   assert.equal(z.header.screen, 1, 'Timer must exceed 0x13 first');
-  assert.deepEqual(z.events, [['sfx', '7']]);
+  assert.deepEqual(ui(z.events), [['sfx', '7']]);
   const enter = parse(run(['scene-boot', dat, String(t + 21), `${t}:${ENTER}`]));
   assert.equal(enter.header.screen, 5);
   assert.equal(enter.header.cursor, 1, 'DAT_0049f274 initial = 1 (Normal)');
   assert.equal(enter.header.difficulty, 1);
-  assert.deepEqual(enter.events, [['sfx', '7'], ['screen', '5']]);
+  assert.deepEqual(ui(enter.events), [['sfx', '7'], ['screen', '5']]);
 });
 
 test('title menu: cancel (X|Esc) jumps to Quit with SFX 9; cancel on Quit confirms Quit → scene 2 request', needDat, () => {
@@ -110,12 +119,12 @@ test('title menu: cancel (X|Esc) jumps to Quit with SFX 9; cancel on Quit confir
   const esc = parse(run(['scene-boot', dat, String(t + 3), `${t}:${ESC}`]));
   assert.equal(esc.header.cursor, 9);
   assert.equal(esc.header.sub, 2);
-  assert.deepEqual(esc.events, [['sfx', '9']]);
+  assert.deepEqual(ui(esc.events), [['sfx', '9']]);
   const quit = parse(run(['scene-boot', dat, String(t + 27), `${t}:${ESC},${t + 2}:${X}`]));
   assert.equal(quit.header.scene, 2, 'Supervisor consumed DAT_004c17c4 = 2');
   assert.equal(quit.header.quit, 1);
   assert.equal(quit.header.title_live, 0, 'title object destroyed on scene switch');
-  assert.deepEqual(quit.events, [['sfx', '9'], ['sfx', '9'], ['screen', '2'], ['scene', '2']]);
+  assert.deepEqual(ui(quit.events), [['sfx', '9'], ['sfx', '9'], ['screen', '2'], ['scene', '2']]);
 });
 
 test('title menu: per-item target screens (0x44b5f0 case 4)', needDat, () => {
@@ -452,13 +461,18 @@ test('Music Room (0x4546f0): cancel returns to main and restores default BGM', n
   const t = MAIN + 1;
   const downs = Array.from({length: 5}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Music(6)
   const confirmAt = t + 10 + 2;
-  const ready = confirmAt + 30;
-  const out = parse(run(['scene-boot', dat, String(ready + 20), [
-    ...downs, `${confirmAt}:${Z}`, `${ready}:${X}`,
-  ].join(',')]));
+  // 主菜单 Timer>0x13 换屏 → case 0 生成 10 帧 → case 1 Timer>4 → case 2 才收取消
+  const ready = confirmAt + 0x14 + 10 + 6 + 1;
+  const script = [...downs, `${confirmAt}:${Z}`, `${ready}:${X}`].join(',');
+  const early = parse(run(['scene-boot', dat, String(ready + 20), [...downs, `${confirmAt}:${Z}`, `${ready - 2}:${X}`].join(',')]));
+  assert.equal(early.header.screen, 0xd, 'cancel during case 0/1 is ignored');
+  const before = parse(run(['scene-boot', dat, String(ready + 10), script]));
+  assert.equal(before.header.screen, 0xd, 'case 3 waits Timer>9');
+  const out = parse(run(['scene-boot', dat, String(ready + 11), script]));
   assert.equal(out.header.screen, 1);
-  assert.ok(out.events.some(e => e[0] === 'music' && Number(e[1]) >= 1));
-  assert.ok(out.events.some(e => e[0] === 'bgm-default'));
+  const music = out.events.findIndex(e => e[0] === 'music');
+    assert.deepEqual(out.events.slice(music),
+    [['music', '17'], ['sfx', '9'], ['bgm-default', '1'], ['bgm-op', '2'], ['screen', '1']]);
 });
 
 test('Spell Practice (0x4553d0): cancel returns to the main menu', needDat, () => {

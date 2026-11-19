@@ -85,8 +85,26 @@ public:
     std::string replay_directory;    // 宿主：th16_XX.rpy 所在目录
     std::string pending_replay_path; // 确认播放：GameSession case 0xd 装载
     HelpScreen* help = nullptr;      // DAT_004a6dd8：标题 Manual 0x4545a0
-    std::vector<std::string> music_tracks;  // musiccmt.txt 的 @bgm/... 路径
-    i32 music_scroll = 0;            // +0x5a44 窗口首项（可见约 10 条）
+    // 画面 6 Music Room 0x4546f0：musiccmt.txt 每次进入画面重新解析（0x402440 读档）
+    static constexpr i32 kMusicTracks = 32;      // +0x804 路径 / +0x1004 标题 / +0x1844 注释 的容量
+    static constexpr i32 kMusicTrackVms = 20;    // +0x780..+0x7cc（其后即注释 VM 表）
+    struct MusicTrack {
+        char path[0x40] = {};        // +0x804 + i×0x40："bgm/th16_01"（'@' 之后）
+        char title[0x42] = {};       // +0x1004 + i×0x42
+        char comment[8][0x42] = {};  // +0x1844 + (i×8 + k)×0x42
+    };
+    std::string music_cmt;           // musiccmt.txt 原文
+    MusicTrack music[kMusicTracks];
+    i32 music_count = 0;             // +0x7f4
+    i32 music_scroll = 0;            // +0x5a44 窗口首项（可见 10 条）
+    u32 music_track_vms[kMusicTrackVms] = {};  // +0x780：title.anm 0xbc+i
+    u32 music_comment_vms[8] = {};   // +0x7d0：text.anm 0x13+k
+    i32 music_comment_line = 0;      // +0x7f8：注释逐行刷入进度
+    i32 music_comment_track = 0;     // +0x7fc：注释所属曲目
+    i32 music_notice = 0;            // +0x800：未听过曲目的提示已显示（再按确认才播放）
+    // 0x44af80 +0x5ce8 bit0 / +0x5ce4：进标题 10 帧后重播 th16_01
+    bool title_bgm_pending = false;
+    i32 title_bgm_delay = 0;
     MenuCursor spell_shot_cursor;    // +0x5cec：符卡练习机体副光标
     i32 spell_group = 0;             // +0x5dc4：选中的分组（确认后带入列表）
     i32 spell_list_index = 0;        // +0x5dc8：列表确认的槽（带入 0x13）
@@ -168,7 +186,7 @@ public:
     // 主菜单空闲 demo 门控（0x708 / bit6 / 下标 %3）；供单测与 update 共用
     void tick_idle_demo(const InputState& input);
     void close_help();  // 释放标题 Manual 的 HelpScreen
-    void parse_music_cmt(const char* text, size_t len);  // musiccmt.txt → music_tracks
+    void parse_music_cmt(const char* text, size_t len) { music_cmt.assign(text ? text : "", text ? len : 0); }
 
 private:
     // 0x44a560 / 0x44a5e0
@@ -197,6 +215,12 @@ private:
     void update_replay(AnmManager& anm, const InputState& input);        // 0x451750
     void update_manual(AnmManager& anm, const InputState& input);        // 0x4545a0
     void update_music(AnmManager& anm, const InputState& input);         // 0x4546f0
+    void parse_music_tracks();                                           // 0x455330 / 0x455370 逐行切分
+    void layout_music_items(AnmManager& anm);                            // 光标移动后重排曲目 VM
+    void paint_music_comment(AnmManager& anm);                           // 偶数帧刷一行注释
+    void leave_music(AnmManager& anm);                                   // LAB_00455228：收起并 → 子状态 3
+    void play_bgm_op(i32 op);                                            // 0x45ed00(op)：宿主声音命令（事件）
+    void tick_title_bgm();                                               // 0x44af80 LAB_0044b0c6
     void update_spell_practice(AnmManager& anm, const InputState& input); // 0x4553d0
     void update_spell_list(AnmManager& anm, const InputState& input);    // 0x455900（分组内符卡列表 → 0x13）
     void update_spell_shot(AnmManager& anm, const InputState& input);    // 0x456a20（条目/机体；非 Extra→0x14）
