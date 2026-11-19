@@ -19,16 +19,16 @@ constexpr Vec3 kLoadingVmPos{960.0f, 784.0f, 0.0f};
 struct DiskReplayStore final : ReplayStore {
     GameSession* session = nullptr;
     bool slot_exists(int slot) override {
-        if (session == nullptr || session->demo_directory.empty()) return false;
-        return ReplayRecording::slot_exists(session->demo_directory.c_str(), slot);
+        if (session == nullptr || session->replay_directory().empty()) return false;
+        return ReplayRecording::slot_exists(session->replay_directory().c_str(), slot);
     }
     void save(int slot, const char* name) override {
         if (session == nullptr) return;
         session->save_replay_slot(slot, name);
     }
     bool slot_summary(int slot, ReplaySummary& out) override {
-        if (session == nullptr || session->demo_directory.empty()) return false;
-        return ReplayRecording::slot_summary(session->demo_directory.c_str(), slot, out);
+        if (session == nullptr || session->replay_directory().empty()) return false;
+        return ReplayRecording::slot_summary(session->replay_directory().c_str(), slot, out);
     }
 };
 }  // namespace
@@ -60,16 +60,17 @@ bool GameSession::open(const u8* bytes, u32 size) {
 }
 
 bool GameSession::save_replay_slot(int slot, const char* player_name) {
-    if (demo_directory.empty()) {
+    if (replay_directory().empty()) {
         failure = "replay directory empty";
         return false;
     }
     const float slow = frame_timer.slow_rate();
-    if (!replay_recording_.write_slot(demo_directory.c_str(), slot, player_name, globals.score, slow)) {
+    if (!replay_recording_.write_slot(replay_directory().c_str(), slot, player_name, globals.score, slow)) {
         failure = replay_recording_.error.empty() ? "replay save failed" : replay_recording_.error;
         return false;
     }
     globals.replay_slot = slot;
+    if (on_saved) on_saved();
     return true;
 }
 
@@ -275,15 +276,18 @@ bool GameSession::activate_title_menu() {
     title.activate(title_file, title_v_file, animations.file(AnmManager::kAsciiSlot), globals);
     title.scores = &scores;
     title.text_paints = &text_into_texture;
-    title.replay_directory = demo_directory;
+    title.replay_directory = replay_directory();
     title.read_replay_slot = [this](int slot, ReplaySummary& out) {
-        return !demo_directory.empty() && ReplayRecording::slot_summary(demo_directory.c_str(), slot, out);
+        return !replay_directory().empty() && ReplayRecording::slot_summary(replay_directory().c_str(), slot, out);
     };
     // 0x448400 写失败（目录不可写 / 本局无记录段）时原版只是不落盘，标题照常回到槽列表
     title.write_replay_slot = [this](int slot, const char* name) {
-        if (demo_directory.empty()) return false;
-        return replay_recording_.write_slot(demo_directory.c_str(), slot, name, globals.score,
-                                            frame_timer.slow_rate());
+        if (replay_directory().empty()) return false;
+        if (!replay_recording_.write_slot(replay_directory().c_str(), slot, name, globals.score,
+                                          frame_timer.slow_rate()))
+            return false;
+        if (on_saved) on_saved();
+        return true;
     };
     title.current_replay_summary = [this]() { return replay_recording_.summary(); };
     title.on_replay_full_run = [this]() { replay_recording_.mark_full_run(i32(std::time(nullptr))); };
@@ -1347,7 +1351,10 @@ bool GameSession::save_scores() {
     std::ofstream out(score_path, std::ios::binary);
     if (!out) return false;
     out.write(reinterpret_cast<const char*>(bytes.data()), std::streamsize(bytes.size()));
-    return bool(out);
+    out.close();
+    if (!out) return false;
+    if (on_saved) on_saved();
+    return true;
 }
 
 void GameSession::leave_game() {

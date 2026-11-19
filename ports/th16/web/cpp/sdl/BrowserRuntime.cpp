@@ -1,5 +1,5 @@
 // th16 浏览器宿主：Emscripten 导出集中一处（页面壳 th16.html 调用）。
-//   th16_initialize()      打开 /assets/th16.dat、建 SDL3 窗口 + GLES 3.0 上下文、装载启动幕资源
+//   th16_initialize()      打开 /assets/th16.dat、建 SDL3 窗口 + GLES 3.0 上下文、装载启动幕资源；存档根 /save
 //   th16_loop_start()      requestAnimationFrame 主循环
 //   th16_frame_tick()      手动泵一帧（无 rAF 环境 / 截图自证）
 //   th16_frame()/th16_error()/th16_phase() 观测面
@@ -23,6 +23,9 @@ extern "C" {
 EMSCRIPTEN_KEEPALIVE int th16_initialize() {
     if (app && app->initialized) return 1;
     app = std::make_unique<th16::sdl::Application>();
+    // scoreth16.dat 与 replay/th16_XX.rpy 落在页面壳挂的 IDBFS /save，写盘后由壳回写 IndexedDB
+    app->session.save_directory = "/save";
+    app->session.on_saved = [] { EM_ASM({ if (Module.th16_persist) Module.th16_persist(); }); };
     if (!app->initialize("/assets/th16.dat")) {
         last_error = app->failure;
         app.reset();

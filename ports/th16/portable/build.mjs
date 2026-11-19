@@ -98,7 +98,7 @@ const linkFlags = [...flags, '--emit-symbol-map', '-sDEFAULT_TO_CXX=1', '--no-en
   '-sALLOW_MEMORY_GROWTH=1', '-sSTACK_SIZE=1048576', '-sINITIAL_MEMORY=134217728',
   '-sMAXIMUM_MEMORY=1073741824', '-sINVOKE_RUN=0', '-sEXIT_RUNTIME=0',
   '-sMIN_WEBGL_VERSION=2', '-sMAX_WEBGL_VERSION=2', '-sGL_SUPPORT_AUTOMATIC_ENABLE_EXTENSIONS=0',
-  '-sEXPORTED_RUNTIME_METHODS=FS,UTF8ToString,HEAPU8',  // th16.html：th16.dat 进 MEMFS /assets + 错误文本解码
+  '-lidbfs.js', '-sEXPORTED_RUNTIME_METHODS=FS,IDBFS,UTF8ToString,HEAPU8',  // th16.html：th16.dat 进 MEMFS /assets、/save 挂 IDBFS + 错误文本解码
   '-sEXPORTED_FUNCTIONS=_malloc,_free',
   ...outputs, '-o', output];
 await run(linkFlags);
