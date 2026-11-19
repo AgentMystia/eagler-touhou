@@ -10,6 +10,7 @@ namespace th16 {
 GameSession::GameSession() {
     // 0x43ba40：Supervisor 十条合成绘制链；0x46a3a0：AnmManager 各层绘制链。都在进程启动时登记、常驻
     compositor.screen_shake = &screen_shake;
+    animations.geometry = &geometry;   // 0x4632f0 条带几何的屏幕常量
     compositor.init_cameras(geometry.window_scale);
     compositor.register_draw_chains(chains, renderer);
     register_layer_draw_chains();

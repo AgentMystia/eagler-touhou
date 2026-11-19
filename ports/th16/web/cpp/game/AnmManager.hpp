@@ -14,6 +14,8 @@
 
 namespace th16 {
 
+struct AnmGeometry;
+
 // 运行时精灵记录（0x44 字节，0x46d3b0 填充 + 0x46d8a0 归一化）。
 struct AnmRuntimeSprite {
     i32 file_slot = 0;       // +0x00
@@ -148,6 +150,9 @@ public:
     const Vec3* camera_pos_offset = nullptr;
     const Vec3* camera_facing_norm = nullptr;
     Vec3 entity_offset_delta;         // DAT_004c1790..98（= 全局相机副本的 pos_delta，StageManager::update 每帧写入）
+    // DAT_004d9d34 / DAT_004d9d48..54 屏幕几何常量：600 系列条带几何（0x4632f0 → 0x406c40）要用；
+    // GameSession 绑定自己的 AnmGeometry，未绑定时用默认值（640×480，缩放 1）
+    const AnmGeometry* geometry = nullptr;
     bool paused = false;              // DAT_004a6dd4->0x88 & 2
     u32 spawn_count = 0;              // +0x134（文件计数）
     u32 world_count = 0;              // +0xd8
