@@ -333,6 +333,9 @@ bool GameSession::enter_ending(bool extra) {
     ending.read_archive = [this](const char* name, std::vector<u8>& out) -> bool {
         return archive_.read(name, out);
     };
+    ending.create_fade = [this](i32 kind, i32 duration, u32 color) {
+        create_screen_fade(kind, duration, color);
+    };
     ending.begin(globals.shot, globals.shot_aux, globals.continues, &scores, globals.difficulty);
     {
         std::vector<u8> msg;

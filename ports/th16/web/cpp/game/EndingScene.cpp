@@ -102,6 +102,7 @@ void EndingScene::begin(i32 shot, i32 shot_aux, i32 continues, ScoreFile* scores
     auto spawn_cb = std::move(spawn_ending_anm);
     auto kill_cb = std::move(kill_ending_anm);
     auto read_cb = std::move(read_archive);
+    auto fade_cb = std::move(create_fade);
     AnmManager* anm = animations;
     auto* paints = text_paints;
     *this = EndingScene{};
@@ -109,6 +110,7 @@ void EndingScene::begin(i32 shot, i32 shot_aux, i32 continues, ScoreFile* scores
     spawn_ending_anm = std::move(spawn_cb);
     kill_ending_anm = std::move(kill_cb);
     read_archive = std::move(read_cb);
+    create_fade = std::move(fade_cb);
     animations = anm;
     text_paints = paints;
     live = true;
@@ -347,8 +349,18 @@ EndingScene::ScriptResult EndingScene::step_script(const InputState& input) {
             continue;
         }
 
+        case 0xd:
+        case 0xe: {
+            // 0x45d150：op0xd → kind 0（0x45c630 淡入）；op0xe → kind 5（0x45c900 淡出）
+            const i32 duration = ins->size >= 4 ? arg_i32(script_pc, 0) : 0;
+            const i32 kind = ins->op == 0xd ? 0 : 5;
+            if (create_fade) create_fade(kind, duration, 0);
+            events.push_back(ins->op == 0xd ? "fade-in" : "fade-out");
+            advance_pc();
+            continue;
+        }
+
         default:
-            // 0xd/0xe ScreenEffect 等：按 size 跳过
             advance_pc();
             continue;
         }

@@ -70,6 +70,8 @@ struct EndingScene {
     std::function<void(u32 vm)> kill_ending_anm;
     // 宿主：读 archive 条目（op12 staffN.msg）
     std::function<bool(const char* name, std::vector<u8>& out)> read_archive;
+    // 宿主：0x45d150 淡入淡出（op 0xd → kind0 / op 0xe → kind5）
+    std::function<void(i32 kind, i32 duration, u32 color)> create_fade;
     std::vector<const char*> events;
 
     void begin(i32 shot, i32 shot_aux, i32 continues, ScoreFile* scores, i32 difficulty);
