@@ -1,5 +1,5 @@
 {
- "$comment": "tools/oracle/game-oracle.py --enemies --bullets --items --lasers --bombs --lives 8 --refill-lives（Unicorn 直跑 th16.exe v1.00a）第 1..7 面各一组机体 × 子季节 × 难度的 6000 帧对拍：持续射击 + 向上移动，第 1500 / 3000 帧按一次炸弹。九组 FNV-1a 64 摘要与 harness game-digest 同口径（含全部音效的 GameMenu 快照 menu 摘要）。 第二组为 14000 / 16000 帧长程（第 2500 / 5000 / 7500 / 10000 帧各一次炸弹），覆盖各面中 Boss 与 Boss 前半段。第三组补第 1 面与 Extra 灵梦土用，以及第 2 / 4 / 5 面尚未入库的机体 × 难度。",
+ "$comment": "tools/oracle/game-oracle.py --enemies --bullets --items --lasers --bombs --lives 8 --refill-lives（Unicorn 直跑 th16.exe v1.00a）第 1..7 面各一组机体 × 子季节 × 难度的 6000 帧对拍：持续射击 + 向上移动，第 1500 / 3000 帧按一次炸弹。九组 FNV-1a 64 摘要与 harness game-digest 同口径（含全部音效的 GameMenu 快照 menu 摘要）。 第二组为 14000 / 16000 帧长程（第 2500 / 5000 / 7500 / 10000 帧各一次炸弹），覆盖各面中 Boss 与 Boss 前半段。第三组补第 1 面与 Extra 灵梦土用，以及第 2 / 3 / 4 / 5 面尚未入库的机体 × 难度。",
  "cases": [
   {
    "name": "st2-easy-reimu-winter-shoot-bomb-6000",
@@ -390,6 +390,29 @@
     "lasers": "2de39c6e438a3e58",
     "bombs": "a29b68e43fb2ffe6",
     "menu": "9399478f3bc71389"
+   }
+  },
+  {
+   "name": "st3-easy-reimu-summer-shoot-bomb-6000",
+   "stage": 3,
+   "shot": 0,
+   "season": 1,
+   "difficulty": 0,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "dc38f0d744cd56b3",
+    "enemies": "de137efde631e4b5",
+    "enemy_vms": "917a78da1975019e",
+    "bullets": "8679dba566712f75",
+    "items": "0b7b15792ae1c0a6",
+    "spell": "fc3baaf9f44334d3",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "d45393b5dcee5a51",
+    "menu": "c293648b3aa95797"
    }
   }
  ]
