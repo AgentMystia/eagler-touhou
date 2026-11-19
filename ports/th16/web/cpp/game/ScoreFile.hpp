@@ -61,6 +61,12 @@ struct ScoreFile {
     // +0x19f96：8 个结局「见过」位图（bit0 见过；bit1.. 难度标记）；+0x19f9e 任一结局见过
     u8 ending_seen[8] = {};
     u8 any_ending_seen = 0;
+    // +0x19fa6：音乐室「已听过」位（0x43c3f0 / 0x429ff0 / 0x42dee0 播曲时置 1；0x4546f0 据此显示曲名或 ？？？）
+    static constexpr int kBgmFlags = 32;
+    u8 bgm_heard[kBgmFlags] = {};
+    void mark_bgm_heard(int track) {
+        if (track >= 0 && track < kBgmFlags) bgm_heard[track] = 1;
+    }
 
     ScoreFile() {
         for (auto& shot : ranks)

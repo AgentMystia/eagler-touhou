@@ -294,10 +294,11 @@ void GameMenu::open_continue() {
     capture_screenshot();
     front = ctx.gui->front;
     if (!spell_practice) {
-        // 保存当前曲名与播放位置（0x471bd0），切到 Game Over 曲 th128_08；音乐室解锁位 +0x19fa6 在成绩文件接入时补
+        // 保存当前曲名与播放位置（0x471bd0），切到 Game Over 曲 th128_08；原版置的是音乐室 0 号位 +0x19fa6
         saved_bgm = ctx.current_bgm != nullptr ? *ctx.current_bgm : std::string();
         bgm_events.push_back({1, 0, "th128_08"});
         bgm_events.push_back({2, 0, "dummy"});
+        if (ctx.scores != nullptr) ctx.scores->mark_bgm_heard(0);
     }
     practice = 0;
     saved_game_speed = *ctx.game_speed;

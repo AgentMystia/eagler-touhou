@@ -8,6 +8,7 @@
 #include "TextPaint.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <dirent.h>
@@ -114,10 +115,16 @@ void TitleScene::tick_idle_demo(const InputState& input) {
 void TitleScene::update(AnmManager& anm, const InputState& input) {
     if (title_file == nullptr) return;
     tick_idle_demo(input);
+    tick_title_bgm();
     switch (screen) {
     case kNone: {
         // 0x44af80 case 0：按 DAT_004a6f1c（title_origin）分流
         const i32 origin = globals->title_origin;
+        if (origin != 3) {
+            // 非 demo 返回：10 帧后重播 th16_01（+0x5ce8 bit0）
+            title_bgm_pending = (globals->flags & 0x40u) == 0;
+            title_bgm_delay = 0;
+        }
         if (origin == 0) {
             globals->title_origin = 1;
             set_screen(kMainMenu);
@@ -1557,48 +1564,242 @@ void TitleScene::update_manual(AnmManager& anm, const InputState& input) {
     }
 }
 
-void TitleScene::parse_music_cmt(const char* text, size_t len) {
-    music_tracks.clear();
-    if (text == nullptr || len == 0) return;
-    size_t i = 0;
-    while (i < len) {
-        size_t line = i;
-        while (i < len && text[i] != '\n' && text[i] != '\r') ++i;
-        if (i > line && text[line] == '@') {
-            std::string path(text + line + 1, text + i);
-            while (!path.empty() && (path.back() == ' ' || path.back() == '\t')) path.pop_back();
-            if (!path.empty()) music_tracks.push_back(path);
+namespace {
+
+// SJIS（th16.exe .rdata）：DAT_004935e0 未听过曲名；PTR_DAT_004936b8 未听过曲目的 8 行提示
+constexpr char kMusicLockedTitle[] = "No.%2d  ""\x81\x48\x81\x48\x81\x48\x81\x48\x81\x48\x81\x48\x81\x48\x81\x48\x81\x48\x81\x48\x81\x48";
+constexpr const char* kMusicNotice[8] = {
+    // （空行）
+    "\x81\x40",
+    // ＊＊選択した曲はまだゲーム中で再生されていません＊＊
+    "\x81\x40\x81\x40\x81\x96\x81\x96\x91\x49\x91\xf0\x82\xb5\x82\xbd\x8b\xc8\x82\xcd\x82\xdc\x82\xbe"
+    "\x83\x51\x81\x5b\x83\x80\x92\x86\x82\xc5\x8d\xc4\x90\xb6\x82\xb3\x82\xea\x82\xc4\x82\xa2\x82\xdc"
+    "\x82\xb9\x82\xf1\x81\x96\x81\x96",
+    // （空行）
+    "\x20",
+    // 曲のコメントがネタバレになる恐れがあります。
+    "\x81\x40\x81\x40\x81\x40\x81\x40\x8b\xc8\x82\xcc\x83\x52\x83\x81\x83\x93\x83\x67\x82\xaa\x83\x6c"
+    "\x83\x5e\x83\x6f\x83\x8c\x82\xc9\x82\xc8\x82\xe9\x8b\xb0\x82\xea\x82\xaa\x82\xa0\x82\xe8\x82\xdc"
+    "\x82\xb7\x81\x42",
+    // それでも再生しますか？
+    "\x81\x40\x81\x40\x81\x40\x81\x40\x81\x40\x81\x40\x81\x40\x81\x40\x81\x40\x82\xbb\x82\xea\x82\xc5"
+    "\x82\xe0\x8d\xc4\x90\xb6\x82\xb5\x82\xdc\x82\xb7\x82\xa9\x81\x48",
+    // （空行）
+    "\x81\x40",
+    // 再生したい方は、もう一度決定ボタンを押してください。
+    "\x81\x40\x81\x40\x81\x40\x8d\xc4\x90\xb6\x82\xb5\x82\xbd\x82\xa2\x95\xfb\x82\xcd\x81\x41\x82\xe0"
+    "\x82\xa4\x88\xea\x93\x78\x8c\x88\x92\xe8\x83\x7b\x83\x5e\x83\x93\x82\xf0\x89\x9f\x82\xb5\x82\xc4"
+    "\x82\xad\x82\xbe\x82\xb3\x82\xa2\x81\x42",
+    // 再生したくない方は、カーソルを移動してください。
+    "\x81\x40\x81\x40\x81\x40\x8d\xc4\x90\xb6\x82\xb5\x82\xbd\x82\xad\x82\xc8\x82\xa2\x95\xfb\x82\xcd"
+    "\x81\x41\x83\x4a\x81\x5b\x83\x5c\x83\x8b\x82\xf0\x88\xda\x93\xae\x82\xb5\x82\xc4\x82\xad\x82\xbe"
+    "\x82\xb3\x82\xa2\x81\x42",
+};
+constexpr i32 kMusicTrackScript = 0xbc;   // title.anm：曲名行
+constexpr i32 kMusicCommentScript = 0x13; // text.anm：注释行
+constexpr i32 kMusicPanel = 0x6e;         // title.anm：+0x478
+
+bool is_newline(char c) { return c == '\n' || c == '\r'; }
+
+// 0x455330：跳过本行及其后连续换行
+const char* music_skip_line(const char* p, i32& len) {
+    while (!is_newline(*p)) {
+        if (len == 0) return p;
+        ++p;
+        --len;
+    }
+    if (len != 0) {
+        while (is_newline(*p) && len != 0) {
+            ++p;
+            --len;
         }
-        if (i < len && text[i] == '\r') ++i;
-        if (i < len && text[i] == '\n') ++i;
+    }
+    return p;
+}
+
+// 0x455370：本行 strcpy 到 dst（行尾写 NUL），再跳过连续换行
+char* music_copy_line(char* dst, size_t cap, char* p, i32& len) {
+    char* q = p;
+    while (!is_newline(*q)) {
+        if (len == 0) return q;
+        ++q;
+        --len;
+    }
+    if (len != 0) {
+        *q = '\0';
+        if (dst != nullptr) {
+            std::strncpy(dst, p, cap - 1);
+            dst[cap - 1] = '\0';
+        }
+        do {
+            --len;
+            ++q;
+            if (!is_newline(*q)) return q;
+        } while (len != 0);
+    }
+    return q;
+}
+
+}  // namespace
+
+void TitleScene::parse_music_tracks() {
+    for (MusicTrack& t : music) t = MusicTrack{};
+    // '@' 行以 p+1 起拷贝却不减 len，末尾会越过原文若干字节：按 '@' 数补零
+    std::vector<char> buf(music_cmt.begin(), music_cmt.end());
+    buf.resize(buf.size() + size_t(std::count(music_cmt.begin(), music_cmt.end(), '@')) + 16, '\0');
+    i32 len = i32(music_cmt.size());
+    char* p = buf.data();
+    i32 n = 0;
+    while (len > 0) {
+        if (*p == '#' || *p != '@') {
+            p = const_cast<char*>(music_skip_line(p, len));
+            continue;
+        }
+        MusicTrack* t = n < kMusicTracks ? &music[n] : nullptr;
+        p = music_copy_line(t ? t->path : nullptr, sizeof(MusicTrack::path), p + 1, len);
+        p = music_copy_line(t ? t->title : nullptr, sizeof(MusicTrack::title), p, len);
+        for (int k = 0; k < 8; ++k) p = music_copy_line(t ? t->comment[k] : nullptr, sizeof(MusicTrack::comment[0]), p, len);
+        ++n;
+    }
+    music_count = std::min(n, kMusicTracks);
+}
+
+void TitleScene::play_bgm_op(i32 op) {
+    // 0x45ed00(&DAT_004d9e10, op, 0, "dummy")：2 播放已载入曲 / 3 停止 / 4（DAT_004c12cc bit4 时先发）
+    events.push_back({"bgm-op", op});
+}
+
+void TitleScene::tick_title_bgm() {
+    // 0x44af80 LAB_0044b0c6：进标题后第 10 帧停旧曲 → 载 th16_01 → 播放，并置音乐室 0 号已听过
+    if (!title_bgm_pending || ++title_bgm_delay <= 9) return;
+    const bool alt = globals != nullptr && (globals->input_config & 0x10u) != 0;
+    play_bgm_op(alt ? 4 : 3);
+    events.push_back({"bgm-default", 1});  // FUN_0043c370(0,"th16_01")
+    if (alt) play_bgm_op(4);
+    play_bgm_op(2);
+    if (scores != nullptr) scores->mark_bgm_heard(0);
+    title_bgm_pending = false;
+    title_bgm_delay = 0;
+}
+
+void TitleScene::layout_music_items(AnmManager& anm) {
+    // 0x4546f0 case 2 光标移动：10 行窗口内显示，选中行左移 8；与目标相距 ≥80 直接落位，否则 4 帧插值
+    float x = 128.0f;
+    float y = 96.0f - float(music_scroll) * 20.0f;
+    y = y + y;
+    for (i32 i = 0; i < music_count && i < kMusicTrackVms; ++i) {
+        AnmVm* v = anm.find(music_track_vms[i]);
+        if (v == nullptr) {
+            music_track_vms[i] = 0;
+            y += 40.0f;
+            continue;
+        }
+        if (i < music_scroll || i >= music_scroll + 10) AnmManager::hide_tree(*v);
+        else AnmManager::show_tree(*v);
+        if (i == cursor.index) x = float(double(x) - 8.0);
+        const Vec3 goal{x, y, 0.0f};
+        if (std::fabs(v->pos.y - y) >= 80.0f) v->pos = goal;
+        else anm_begin_vec3_interp(v->pos_interp, 4, 0, v->pos, goal);
+        if (i == cursor.index) x = float(double(x) + 8.0);
+        y += 40.0f;
+        anm.request_interrupt(*v, i != cursor.index ? 3 : 2);
     }
 }
 
-// 0x4546f0：Music Room（曲目列表导航 / 确定播 BGM / 取消回主菜单并恢复 th16_01）
+void TitleScene::paint_music_comment(AnmManager& anm) {
+    // 0x4546f0 case 1/2：偶数帧刷一行（8 行）；未听过且已提示 → 提示文案（0x8080ff），否则曲目注释
+    if ((timer & 1) != 0 || music_comment_line >= 8) return;
+    AnmVm* v = anm.find(music_comment_vms[music_comment_line]);
+    if (v == nullptr) {
+        music_comment_vms[music_comment_line] = 0;
+    } else {
+        const bool heard = scores != nullptr && music_comment_track >= 0 && music_comment_track < ScoreFile::kBgmFlags &&
+                           scores->bgm_heard[music_comment_track] != 0;
+        if (!heard && music_notice != 0) {
+            text_paint_vm(anm, *v, 0x8080ffu, 0, 0, 0, 0, kMusicNotice[music_comment_line], text_paints);
+        } else {
+            const char* line = music_comment_track >= 0 && music_comment_track < kMusicTracks
+                ? music[music_comment_track].comment[music_comment_line] : "";
+            text_paint_vm(anm, *v, 0xffffffu, 0, 0, 0, 0, line, text_paints);
+        }
+        anm.request_interrupt(*v, 2);
+    }
+    ++music_comment_line;
+}
+
+void TitleScene::leave_music(AnmManager& anm) {
+    // LAB_00455228：曲目 / 注释 VM 中断 1 收起，SE 9，→ 子状态 3
+    for (i32 i = 0; i < music_count && i < kMusicTrackVms; ++i) anm.interrupt(music_track_vms[i], 1);
+    for (u32 id : music_comment_vms) anm.interrupt(id, 1);
+    sfx(9);
+    set_sub(3);
+}
+
+// 0x4546f0：Music Room
 void TitleScene::update_music(AnmManager& anm, const InputState& input) {
     switch (sub) {
     case 0: {
-        if (vm[kLeafEmitter] == 0 && ascii_file) spawn_into(anm, kLeafEmitter, *ascii_file, kLeafEmitterScript);
-        if (title_file) spawn_into(anm, 0x6e, *title_file, 0x6e);  // +0x478
-        if (music_tracks.empty()) {
-            for (int n = 1; n <= 17; ++n) {
-                char buf[32];
-                std::snprintf(buf, sizeof(buf), "bgm/th16_%02d", n);
-                music_tracks.emplace_back(buf);
+        if (timer == 1) {
+            cursor.count = 6;
+            cursor.set(0);
+            if (vm[kLeafEmitter] == 0 && ascii_file) spawn_into(anm, kLeafEmitter, *ascii_file, kLeafEmitterScript);
+            spawn_into(anm, kMusicPanel, *title_file, kMusicPanel);
+            if (music_cmt.empty()) {
+                leave_music(anm);
+                return;
             }
+            parse_music_tracks();
+            cursor.count = music_count;
+            cursor.set(0);
+            music_scroll = 0;
+            AnmFile* text = anm.file(0);
+            for (i32 k = 0; k < 8; ++k) music_comment_vms[k] = text ? anm.spawn(*text, kMusicCommentScript + k, -1) : 0;
+            music_comment_line = 0;
+            music_comment_track = 0;
+            music_notice = 0;
+            events.push_back({"music", music_count});
         }
-        cursor.count = i32(music_tracks.size());
-        cursor.wrap = true;
-        cursor.set(0);
-        music_scroll = 0;
+        if (timer < 10) {
+            // 每帧生成两行曲名（下标 timer×2−2 起），4 帧插值滑到 (128 或 120, 2×(96 − 20×scroll + 20×i))
+            float y = (96.0f - float(music_scroll) * 20.0f) + float(timer * 0x28 - 0x28);
+            y = y + y;
+            float x = 128.0f;
+            for (i32 i = timer * 2 - 2; i < timer * 2; ++i) {
+                if (i >= music_count || i >= kMusicTrackVms) break;
+                AnmVm* v = nullptr;
+                music_track_vms[i] = anm.spawn(*title_file, kMusicTrackScript + i, -1, &v);
+                if (v == nullptr) {
+                    music_track_vms[i] = 0;
+                    y += 40.0f;
+                    continue;
+                }
+                const bool heard = scores != nullptr && i < ScoreFile::kBgmFlags && scores->bgm_heard[i] != 0;
+                if (heard) {
+                    text_paint_vm(anm, *v, 0xffffffu, 0, 0, 0, 0, music[i].title, text_paints);
+                } else {
+                    char line[0x40];
+                    std::snprintf(line, sizeof(line), kMusicLockedTitle, i + 1);
+                    text_paint_vm(anm, *v, 0xffffffu, 0, 0, 0, 0, line, text_paints);
+                }
+                if (i < music_scroll || i >= music_scroll + 10) AnmManager::hide_tree(*v);
+                else AnmManager::show_tree(*v);
+                if (i == cursor.index) x = float(double(x) - 8.0);
+                anm_begin_vec3_interp(v->pos_interp, 4, 0, v->pos, Vec3{x, y, 0.0f});
+                if (i == cursor.index) x = float(double(x) + 8.0);
+                y += 40.0f;
+                anm.request_interrupt(*v, i != cursor.index ? 3 : 2);
+            }
+            return;
+        }
         set_sub(1);
-        events.push_back({"music", i32(music_tracks.size())});
         break;
     }
     case 1:
+        paint_music_comment(anm);
         if (timer > 4) set_sub(2);
         break;
     case 2: {
+        paint_music_comment(anm);
         const i32 prev = cursor.index;
         const u32 edge = input.pressed | input.repeat;
         if (edge & InputState::kUp) cursor.move(-1);
@@ -1607,26 +1808,45 @@ void TitleScene::update_music(AnmManager& anm, const InputState& input) {
             sfx(10);
             if (cursor.index < music_scroll) music_scroll = cursor.index;
             else if (cursor.index >= music_scroll + 10) music_scroll = cursor.index - 9;
+            layout_music_items(anm);
+            if (music_comment_line > 7) music_notice = 0;
         }
         if (input.pressed & InputState::kConfirmMask) {
-            if (cursor.index >= 0 && cursor.index < i32(music_tracks.size())) {
-                events.push_back({"bgm", cursor.index});
-                // 路径事件：用正数下标；具体名由 harness 侧查 music_tracks
+            for (u32 id : music_comment_vms) anm.interrupt(id, 3);
+            music_comment_track = cursor.index;
+            music_comment_line = 0;
+            timer = 0;
+            const bool alt = globals != nullptr && (globals->input_config & 0x10u) != 0;
+            const bool heard = scores != nullptr && cursor.index >= 0 && cursor.index < ScoreFile::kBgmFlags &&
+                               scores->bgm_heard[cursor.index] != 0;
+            if (!heard && music_notice == 0) {
+                play_bgm_op(alt ? 4 : 3);
+                music_notice = 1;
+                events.push_back({"music-notice", cursor.index});
+                return;
             }
+            // 0x43c370(0, 路径)：载入所选曲；随后 0x45ed00(2) 播放。原版此处只置 0 号已听过位
+            events.push_back({"music-play", cursor.index});
+            if (alt) play_bgm_op(4);
+            play_bgm_op(2);
+            if (scores != nullptr) scores->mark_bgm_heard(0);
+            music_notice = 0;
+            return;
         }
-        if (input.pressed & InputState::kCancelMask) {
-            sfx(9);
-            set_sub(3);
-        }
+        if (input.pressed & InputState::kCancelMask) leave_music(anm);
         break;
     }
     case 3:
         if (timer > 9) {
-            dismiss(anm, 0x6e);
+            dismiss(anm, kMusicPanel);
             dismiss(anm, kLeafEmitter);
             set_screen(kMainMenu);
-            cursor.pop();
             events.push_back({"bgm-default", 1});  // FUN_0043c370(0,"th16_01")
+            // 0x43c3f0(0, 0)
+            if (globals != nullptr && (globals->input_config & 0x10u) != 0) play_bgm_op(4);
+            play_bgm_op(2);
+            if (scores != nullptr) scores->mark_bgm_heard(0);
+            cursor.pop();
             events.push_back({"screen", screen});
         }
         break;
