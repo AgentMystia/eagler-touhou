@@ -121,13 +121,13 @@ void EndingScene::begin(i32 shot, i32 shot_aux, i32 continues, ScoreFile* scores
     if (ending_index > 7) ending_index = 7;
 
     if (scores != nullptr) {
-        if (scores->ending_seen[ending_index] == 0) flags |= 1u;
-        if (!scores->any_ending_seen) flags |= 2u;
-        scores->ending_seen[ending_index] = u8(scores->ending_seen[ending_index] | 1);
-        if (difficulty == 1) scores->ending_seen[ending_index] = u8(scores->ending_seen[ending_index] | 2);
-        else if (difficulty == 2) scores->ending_seen[ending_index] = u8(scores->ending_seen[ending_index] | 4);
-        else if (difficulty == 3) scores->ending_seen[ending_index] = u8(scores->ending_seen[ending_index] | 8);
-        if (ending_index < 8) scores->any_ending_seen = 1;
+        if (scores->stats.ending_seen[ending_index] == 0) flags |= 1u;
+        if (!scores->stats.any_ending_seen) flags |= 2u;
+        scores->stats.ending_seen[ending_index] = u8(scores->stats.ending_seen[ending_index] | 1);
+        if (difficulty == 1) scores->stats.ending_seen[ending_index] = u8(scores->stats.ending_seen[ending_index] | 2);
+        else if (difficulty == 2) scores->stats.ending_seen[ending_index] = u8(scores->stats.ending_seen[ending_index] | 4);
+        else if (difficulty == 3) scores->stats.ending_seen[ending_index] = u8(scores->stats.ending_seen[ending_index] | 8);
+        if (ending_index < 8) scores->stats.any_ending_seen = 1;
     }
     msg_name = kMsgNames[ending_index];
     events.push_back("begin");

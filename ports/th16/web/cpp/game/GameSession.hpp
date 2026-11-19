@@ -58,7 +58,7 @@ public:
     GameMenu menu;                 // DAT_004a6ef4（0x43e5a0：新开局时与各管理器一起建，换关沿用，离开游戏时销毁）
     bool menu_live = false;
     bool ending_live = false;
-    ScoreFile scores;              // DAT_004a6f0c（成绩文件读写接入前为默认值）
+    ScoreFile scores;              // DAT_004a6f0c
     u32 config_flags = 0;          // DAT_004c1800（bit4 失焦自动暂停 / bit13 回标题改为退出）
     StageCamera stage_camera;      // DAT_004c168c：当前运行中关卡每帧抄出的全局相机（ANM 变量 10016..10021）
     bool game_live = false;
@@ -97,6 +97,9 @@ public:
     std::string demo_directory;
     // 0x448400：把本局记录写入 demo_directory/replay/th16_XX.rpy（或根目录回退）
     bool save_replay_slot(int slot, const char* player_name);
+    // scoreth16.dat 路径；空则不读不写（harness 默认）。启动幕 0x4497e0 读、0x42d200 / 0x43afe0 经 0x449a00 写
+    std::string score_path;
+    bool save_scores();   // 0x449a00
     // 宿主墙钟（秒）。<0 = harness/oracle 口径：跳过 0x4262f0 / 真实 0x417bc0
     double wall_clock_seconds = -1;
     i32 skip_frames = 0;                 // DAT_004c12c4：本逻辑帧额外计数（跳帧）

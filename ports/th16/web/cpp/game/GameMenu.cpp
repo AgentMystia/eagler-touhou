@@ -486,7 +486,7 @@ void GameMenu::begin_name_entry() {
     name_cursor.set(0);
     name_cursor.count = kNameCharCount;
     name_entry_active = 1;
-    std::memcpy(name, ctx.scores->last_name, 9);
+    std::memcpy(name, ctx.scores->stats.last_name, 9);
     name_length = 0;
     if (std::strcmp(name, ScoreFile::kDefaultName) != 0) name_cursor.move(-1);
     i32 len = 8;
@@ -801,13 +801,13 @@ void GameMenu::run_state_machine() {
                 if (ctx.replays != nullptr) ctx.replays->save(cursor.index + 1, name);
                 replay_slot_used[cursor.index] = ctx.replays != nullptr && ctx.replays->slot_exists(cursor.index + 1);
                 set_state(ReplaySlot);
-                std::memcpy(name, ctx.scores->last_name, 9);
+                std::memcpy(name, ctx.scores->stats.last_name, 9);
                 sfx(7);
                 return;
             }
             sfx(7);
-            std::memcpy(ctx.scores->ranks[score_block()][g.difficulty][cursor.index].name, name, 9);
-            std::memcpy(ctx.scores->last_name, name, 9);
+            std::memcpy(ctx.scores->blocks[score_block()].ranks[g.difficulty][cursor.index].name, name, 9);
+            std::memcpy(ctx.scores->stats.last_name, name, 9);
             enter_main_menu_after_rank();
             return;
         } else {
@@ -987,7 +987,7 @@ void GameMenu::draw_score_ranking(AsciiManager& text) const {
     Vec3 pos{48.0f, 96.0f, 0.0f};
     for (i32 rank = 0; rank < ScoreFile::kRanks; ++rank) {
         text.style.color = rank == highlight ? kListHighlight : kListNormal;
-        const ScoreEntry& entry = ctx.scores->ranks[score_block()][g.difficulty][rank];
+        const ScoreEntry& entry = ctx.scores->blocks[score_block()].ranks[g.difficulty][rank];
         if (entry.time == 0) {
             text.printf(pos, "%2d %s %9ld%d --/--/-- Stage -", rank + 1, entry.name, long(entry.score), i32(entry.continues));
         } else {

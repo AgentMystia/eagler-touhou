@@ -93,6 +93,8 @@ bool Application::initialize(const char* archive_path) {
     } else {
         session.demo_directory = ".";
     }
+    // 0x4497e0：scoreth16.dat 在游戏目录（0x479a65 切到该目录后相对路径读写）
+    session.score_path = session.demo_directory + "/scoreth16.dat";
     graphics.animations = &session.animations;
     if (!graphics.initialize()) { failure = graphics.error; return false; }
 

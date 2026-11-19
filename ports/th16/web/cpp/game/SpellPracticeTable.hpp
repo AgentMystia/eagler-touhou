@@ -79,7 +79,7 @@ struct SpellPracticeTable {
 
             bool open = false;
             if (scores != nullptr) {
-                const SpellRecord& all = scores->spells[ScoreFile::kAllShotsBlock][id];
+                const SpellRecord& all = scores->blocks[ScoreFile::kAllShotsBlock].spells[id];
                 open = all.attempts[0] != 0;
                 // Extra 难度（>4）：同行前序符卡任一侧取得非 0 也可开
                 if (!open && diff > 4) {
@@ -87,7 +87,7 @@ struct SpellPracticeTable {
                     for (int p = 0; p < filled; ++p) {
                         const i32 prev = raw[p];
                         if (prev < 0 || prev >= ScoreFile::kSpellRecords) { open = false; break; }
-                        const SpellRecord& prev_all = scores->spells[ScoreFile::kAllShotsBlock][prev];
+                        const SpellRecord& prev_all = scores->blocks[ScoreFile::kAllShotsBlock].spells[prev];
                         if (prev_all.captures[0] == 0 && prev_all.captures[1] == 0) { open = false; break; }
                     }
                 }
@@ -107,7 +107,7 @@ struct SpellPracticeTable {
         for (i32 id : ids) {
             if (id < 0) break;
             if (id >= ScoreFile::kSpellRecords) continue;
-            if (scores.spells[ScoreFile::kAllShotsBlock][id].attempts[0] != 0) return true;
+            if (scores.blocks[ScoreFile::kAllShotsBlock].spells[id].attempts[0] != 0) return true;
         }
         return false;
     }

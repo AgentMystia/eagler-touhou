@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstdio>
 #include <ctime>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <vector>
@@ -204,8 +206,16 @@ bool GameSession::load_boot_banks() {
         return ChainResult::Continue;
     }, 0x21, true);
     chains.enable(world_tick_chain_);
-    // 0x43adc0 → 0x4497e0 → 0x449720（ScoreFile 构造）：对 DAT_004a6d88 做 0x1ee 次单步随机（0 -> 0x41b6）
-    for (int i = 0; i < 0x1ee; ++i) animations.visual_rng.next16();
+    // 0x43adc0 → 0x4497e0：默认块（0x449720 的 noise 对 DAT_004a6d88 做 0x1ee 次单步随机，0 -> 0x41b6），再由 0x449880 覆盖读入的块
+    scores.reset();
+    for (u16& n : scores.stats.noise) n = animations.visual_rng.next16();
+    if (!score_path.empty()) {
+        std::ifstream in(score_path, std::ios::binary);
+        if (in) {
+            const std::vector<u8> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            scores.load_image(bytes.data(), u32(bytes.size()));
+        }
+    }
     return true;
 }
 
@@ -791,6 +801,8 @@ bool GameSession::enter_game(i32 replay_mode) {
     }
 
     mark_stage_reached();
+    // 0x42cb60 新游戏段末：非回放时本机体游玩次数 +1（+0x515c）
+    if (game.mode == 0) scores.record_play(globals.shot + globals.shot_aux);
     // 0x42cb60：新游戏（DAT_004c17d0，0x43ce10 case 7 置位）先建 Player，再建 Gui / Stage / …
     globals.new_game = true;
     if (!create_player()) return false;
@@ -1306,8 +1318,18 @@ void GameSession::create_screen_fade(i32 kind, i32 duration, u32 color) {
     chains.enable(draw);
 }
 
+bool GameSession::save_scores() {
+    if (score_path.empty()) return false;
+    const std::vector<u8> bytes = scores.save_image();
+    std::ofstream out(score_path, std::ios::binary);
+    if (!out) return false;
+    out.write(reinterpret_cast<const char*>(bytes.data()), std::streamsize(bytes.size()));
+    return bool(out);
+}
+
 void GameSession::leave_game() {
-    // 0x42d200：摘链、释放管理器；关卡背景 ANM 槽回收
+    // 0x42d200：先 0x449a00 写成绩文件，再摘链、释放管理器；关卡背景 ANM 槽回收
+    save_scores();
     if (game_update_chain_) { chains.remove(game_update_chain_); game_update_chain_ = nullptr; }
     for (StageManager* stage : {game.stage.get(), game.previous_stage.get()})
         if (stage != nullptr) remove_stage_chains(*stage);
@@ -1529,7 +1551,11 @@ bool GameSession::logic_step() {
         } else {
             if (leave == SceneId::Ending) leave_ending();
             if (leave == SceneId::Game) leave_game();
-            if (enter == SceneId::Quit) quit_requested = true;
+            if (enter == SceneId::Quit) {
+                // 退出进程：0x43afe0 Supervisor 析构先经 0x449a00 写成绩文件
+                quit_requested = true;
+                save_scores();
+            }
             if (enter == SceneId::Game && !enter_game()) return false;
             // 结局回标题：跳过启动幕等待，直接启用标题菜单（0x419450 之后请求 4）
             if (enter == SceneId::Title && leave == SceneId::Ending) {

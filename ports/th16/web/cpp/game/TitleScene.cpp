@@ -263,14 +263,14 @@ void TitleScene::refresh_spell_slot_names(AnmManager& anm, i32 list_index) {
         }
 
         const SpellRecord* all = scores != nullptr && id < ScoreFile::kSpellRecords
-            ? &scores->spells[ScoreFile::kAllShotsBlock][id] : nullptr;
+            ? &scores->blocks[ScoreFile::kAllShotsBlock].spells[id] : nullptr;
         // 难度 > 4（Overdrive）：本槽之前的符卡在全机体块都已收取过才开放
         bool chain_open = false;
         if (diff > 4) {
             chain_open = true;
             for (int p = 0; p < n; ++p) {
                 const SpellRecord* prev = scores != nullptr && raw[p] < ScoreFile::kSpellRecords
-                    ? &scores->spells[ScoreFile::kAllShotsBlock][raw[p]] : nullptr;
+                    ? &scores->blocks[ScoreFile::kAllShotsBlock].spells[raw[p]] : nullptr;
                 if (prev == nullptr || (prev->captures[0] == 0 && prev->captures[1] == 0)) {
                     chain_open = false;
                     break;
@@ -342,7 +342,7 @@ void TitleScene::draw_stage_practice_scores(AsciiManager& ascii) {
     ascii.style.shadow = true;
     ascii.style.group = AsciiManager::Group::Ui;
     for (int stage = 1; stage <= 6; ++stage) {
-        const PracticeRecord& rec = scores->practice[shot][diff * 8 + stage];
+        const PracticeRecord& rec = scores->blocks[shot].practice[diff * 8 + stage];
         const bool selected = (cursor.index == stage - 1);
         if (selected) {
             if (rec.reached == 0) ascii.style.color = 0xffdfdfdfu;
@@ -408,7 +408,7 @@ const char* table_name(const char* const (&table)[N], i32 index) {
 void TitleScene::print_rank_row(AsciiManager& ascii, float y, i32 rank, i32 shot, i32 diff) {
     static constexpr const char* kSeasonShort[5] = {"Sp", "Sm", "At", "Wt", "Fl"};
     static constexpr const char* kStageShort[8] = {"tst", "St1", "St2", "St3", "St4", "St5", "St6", "Ex "};
-    const ScoreEntry& e = scores->ranks[shot][diff][rank];
+    const ScoreEntry& e = scores->blocks[shot].ranks[diff][rank];
     if (e.time == 0) {
         ascii.printf(Vec3{22.0f, y, 0.0f}, "%2d  %s  %9ld%d  ----/--/-- --:-- Season  Stage -  ---%%",
                      rank + 1, e.name, long(e.score), int(e.continues));
@@ -443,10 +443,15 @@ void TitleScene::draw_player_data(AsciiManager& ascii) {
     }
 
     ascii.style.color = 0xffffffffu;
-    // 底部：通关次数 / 游戏时间占位 / 未续关通关
-    ascii.printf(Vec3{328.0f, 378.0f, 0.0f}, "    %5d", int(scores->clears[shot][diff]));
-    ascii.printf(Vec3{328.0f, 396.0f, 0.0f}, "%3d:%.2d:%.2d", 0, 0, 0);
-    ascii.printf(Vec3{328.0f, 414.0f, 0.0f}, "    %5d", int(scores->no_continue_clears[shot][diff]));
+    // 底部：游玩次数 +0x515c / 游戏时长 +0x5160（1/100 秒 → 时:分:秒）/ 该难度通关次数 +0x5168
+    const ScoreBlock& block = scores->blocks[shot];
+    ascii.printf(Vec3{328.0f, 378.0f, 0.0f}, "    %5d", int(block.play_count));
+    const u64 seconds = block.play_time / 100u;
+    const u64 minutes = seconds / 60u;
+    const u64 hours = minutes / 60u;
+    ascii.printf(Vec3{328.0f, 396.0f, 0.0f}, "%3lld:%.2lld:%.2lld", (long long)hours, (long long)(minutes - hours * 60u),
+                 (long long)(seconds - minutes * 60u));
+    ascii.printf(Vec3{328.0f, 414.0f, 0.0f}, "    %5d", int(block.clears[diff]));
     ascii.style.shadow = false;
 }
 
@@ -629,7 +634,7 @@ void TitleScene::draw_spell_hud(AsciiManager& ascii) {
         const bool selected = (screen == kSpellShot && i == cursor.index);
         const SpellRecord* rec = scores->spell_record(shot, id);
         const SpellRecord* all = (id < ScoreFile::kSpellRecords)
-            ? &scores->spells[ScoreFile::kAllShotsBlock][id] : nullptr;
+            ? &scores->blocks[ScoreFile::kAllShotsBlock].spells[id] : nullptr;
         const u32 practice_caps = rec != nullptr ? rec->captures[1] : 0;
         const u32 attempts0 = all != nullptr ? all->attempts[0] : 0;
         const u32 attempts1 = all != nullptr ? all->attempts[1] : 0;
@@ -967,7 +972,7 @@ void TitleScene::update_shot(AnmManager& anm, const InputState& input) {
         set_sub(1);
         // 通关章：机体 k 在当前难度无未续关通关（+0x5184 + k × 0x5318 + d × 4 == 0）→ 隐藏 0x9a+k
         for (i32 k = 0; k < 4; ++k)
-            if (scores == nullptr || scores->no_continue_clears[k][g.difficulty] == 0)
+            if (scores == nullptr || scores->blocks[k].no_continue_clears[g.difficulty] == 0)
                 hide_medal(anm, child_id(anm, panel, 0x9a + k));
         if (g.title_origin == 4) {
             cursor.set(g.shot);
@@ -1179,7 +1184,7 @@ void TitleScene::update_stage(AnmManager& anm, const InputState& input) {
             const i32 shot = g.shot + g.shot_aux;
             const i32 slot = g.difficulty * 8 + cursor.index + 1;
             const bool unlocked = scores != nullptr && shot >= 0 && shot < ScoreFile::kShots && slot >= 0 &&
-                                  slot < ScoreFile::kPracticeSlots && scores->practice[shot][slot].reached != 0;
+                                  slot < ScoreFile::kPracticeSlots && scores->blocks[shot].practice[slot].reached != 0;
             if (!unlocked) { sfx(0x10); return; }
             set_sub(3);
             sfx(7);
@@ -1759,7 +1764,7 @@ void TitleScene::paint_music_comment(AnmManager& anm) {
         music_comment_vms[music_comment_line] = 0;
     } else {
         const bool heard = scores != nullptr && music_comment_track >= 0 && music_comment_track < ScoreFile::kBgmFlags &&
-                           scores->bgm_heard[music_comment_track] != 0;
+                           scores->stats.bgm_heard[music_comment_track] != 0;
         if (!heard && music_notice != 0) {
             text_paint_vm(anm, *v, 0x8080ffu, 0, 0, 0, 0, kMusicNotice[music_comment_line], text_paints);
         } else {
@@ -1818,7 +1823,7 @@ void TitleScene::update_music(AnmManager& anm, const InputState& input) {
                     y += 40.0f;
                     continue;
                 }
-                const bool heard = scores != nullptr && i < ScoreFile::kBgmFlags && scores->bgm_heard[i] != 0;
+                const bool heard = scores != nullptr && i < ScoreFile::kBgmFlags && scores->stats.bgm_heard[i] != 0;
                 if (heard) {
                     text_paint_vm(anm, *v, 0xffffffu, 0, 0, 0, 0, music[i].title, text_paints);
                 } else {
@@ -1863,7 +1868,7 @@ void TitleScene::update_music(AnmManager& anm, const InputState& input) {
             timer = 0;
             const bool alt = globals != nullptr && (globals->input_config & 0x10u) != 0;
             const bool heard = scores != nullptr && cursor.index >= 0 && cursor.index < ScoreFile::kBgmFlags &&
-                               scores->bgm_heard[cursor.index] != 0;
+                               scores->stats.bgm_heard[cursor.index] != 0;
             if (!heard && music_notice == 0) {
                 play_bgm_op(alt ? 4 : 3);
                 music_notice = 1;
@@ -2425,7 +2430,7 @@ void TitleScene::begin_name_input() {
     name_pick.set(0);
     name_pick.count = kNameCharCount;
     name_pick.wrap = true;
-    std::memcpy(name_entry, scores != nullptr ? scores->last_name : ScoreFile::kDefaultName, 9);
+    std::memcpy(name_entry, scores != nullptr ? scores->stats.last_name : ScoreFile::kDefaultName, 9);
     if (std::strcmp(name_entry, ScoreFile::kDefaultName) != 0) name_pick.move(-1);
     i32 len = 8;
     while (len > 0 && name_entry[len - 1] == ' ') --len;
@@ -2507,10 +2512,10 @@ void TitleScene::update_name_entry(AnmManager& anm, const InputState& input) {
                 if (name_pick.index == kNameEnd) {
                     name_entry[8] = '\0';
                     if (scores != nullptr && globals != nullptr && name_rank >= 0) {
-                        ScoreEntry& e = scores->ranks[globals->shot + globals->shot_aux][globals->difficulty][name_rank];
+                        ScoreEntry& e = scores->blocks[globals->shot + globals->shot_aux].ranks[globals->difficulty][name_rank];
                         std::memcpy(e.name, name_entry, 9);
                     }
-                    if (scores != nullptr) std::memcpy(scores->last_name, name_entry, 9);
+                    if (scores != nullptr) std::memcpy(scores->stats.last_name, name_entry, 9);
                     events.push_back({"name-done", name_rank});
                     set_sub(3);
                 } else if (!apply_name_pick()) {
@@ -2611,7 +2616,7 @@ void TitleScene::update_name_confirm(AnmManager& anm, const InputState& input) {
                 if (write_replay_slot) write_replay_slot(slot, name_entry);
                 save_slots[cursor.index] = ReplaySummary{};
                 save_slot_live[cursor.index] = read_replay_slot && read_replay_slot(slot, save_slots[cursor.index]);
-                if (scores != nullptr) std::memcpy(scores->last_name, name_entry, 9);
+                if (scores != nullptr) std::memcpy(scores->stats.last_name, name_entry, 9);
                 events.push_back({"replay-saved", slot});
                 set_sub(2);
             } else if (!apply_name_pick()) {
