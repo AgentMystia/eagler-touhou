@@ -133,6 +133,27 @@ int main(int argc, char** argv) {
                     text_font_height(0), text_font_height(8));
         return 0;
     }
+    if (command == "title-demo-idle") {
+        // 0x44af80：主菜单无输入 0x708 帧 → flags bit6 + scene 0xd + demo 下标轮转 %3
+        GameGlobals g;
+        TitleScene title;
+        title.globals = &g;
+        title.screen = TitleScene::kMainMenu;
+        InputState in;
+        std::vector<i32> demos;
+        for (int f = 0; f < 0x708 * 4; ++f) {
+            title.tick_idle_demo(in);
+            if (title.pending_demo >= 0) {
+                demos.push_back(title.pending_demo);
+                title.pending_demo = -1;
+                g.scene_request = -1;
+            }
+        }
+        std::printf("demos=");
+        for (size_t i = 0; i < demos.size(); ++i) std::printf("%s%d", i ? "," : "", demos[i]);
+        std::printf(" flags=%x\n", g.flags);
+        return 0;
+    }
     if (command == "replay-info" && argc >= 3) {
         // 0x448c10：打印 name / stages / 每段 stage,seed,frames,input_nz,fps_len,first_held_frame
         ReplayFile file;
