@@ -380,6 +380,18 @@ test('Music Room (0x4546f0): cancel returns to main and restores default BGM', n
   assert.ok(out.events.some(e => e[0] === 'bgm-default'));
 });
 
+test('Spell Practice (0x4553d0): cancel returns to the main menu', needDat, () => {
+  const t = MAIN + 1;
+  const downs = Array.from({length: 2}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Spell Practice(3)
+  const confirmAt = t + 4 + 2;
+  const ready = confirmAt + 35;
+  const out = parse(run(['scene-boot', dat, String(ready + 20), [
+    ...downs, `${confirmAt}:${Z}`, `${ready}:${X}`,
+  ].join(',')]));
+  assert.equal(out.header.screen, 1);
+  assert.ok(out.events.some(e => e[0] === 'spell-practice'));
+});
+
 test('stub screens (Player Data/…): cancel returns to the main menu', needDat, () => {
   const t = MAIN + 1;
   const downs = Array.from({length: 4}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Score/Player Data(5)

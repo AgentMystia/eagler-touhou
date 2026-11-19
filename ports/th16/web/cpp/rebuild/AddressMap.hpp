@@ -377,9 +377,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"effect-spawn-transition", 0x418BA0, "game/Effect.cpp EffectManager::attach(0) / TitleScene::transition_effect（DAT_004c12a0，interrupt 7）"},
     {"bgm-fade", 0x43C470, nullptr},         // 0x45ed00(…,5,…)：BGM 淡出
     {"title-score", 0x452330, nullptr},      // 画面 0xa：Player Data
-    {"title-music-room", 0x4546F0, nullptr}, // 画面 0xd
-    {"title-manual", 0x4545A0, nullptr},     // 画面 0x10
-    {"title-spell-practice", 0x4553D0, nullptr}, // 画面 0x11
+    {"title-spell-practice", 0x4553D0, "game/TitleScene.cpp TitleScene::update_spell_practice（分组+机体光标，确定→0x12）"},
     {"title-draw", 0x44B530, nullptr},       // 标题绘制链 0x45
     {"score-file", 0x4497E0, nullptr},       // scoreth16.dat 读写
     {"replay-file", 0x4403C5, "game/ReplayFile.cpp 路径格式 th16_%.2d.rpy / replay/%s（宿主拼路径）"},

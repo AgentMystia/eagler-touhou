@@ -166,6 +166,9 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
     case kReplay: update_replay(anm, input); break;
     case kManual: update_manual(anm, input); break;
     case kMusicRoom: update_music(anm, input); break;
+    case kSpellPractice: update_spell_practice(anm, input); break;
+    case kSpellList:
+    case kSpellShot:
     case kKeyConfig: update_stub(anm, input); break;
     default: update_stub(anm, input); break;
     }
@@ -1084,7 +1087,102 @@ void TitleScene::update_music(AnmManager& anm, const InputState& input) {
     }
 }
 
-// 待还原画面（Key Config / Player Data / Spell Practice）
+// 0x4553d0：符卡练习分组选择（←/→ 机体副光标；确定 → 画面 0x12）
+void TitleScene::update_spell_practice(AnmManager& anm, const InputState& input) {
+    switch (sub) {
+    case 0: {
+        if (vm[kLeafEmitter] == 0 && ascii_file) spawn_into(anm, kLeafEmitter, *ascii_file, kLeafEmitterScript);
+        cursor.count = 7;
+        cursor.wrap = true;
+        cursor.set(0);
+        spell_shot_cursor.count = 4;
+        spell_shot_cursor.wrap = true;
+        spell_shot_cursor.set(globals->shot);
+        if (title_file) {
+            if (vm[0xd7] == 0) spawn_into(anm, 0xd7, *title_file, 0xd7);   // +0x61c
+            if (vm[0x11c] == 0) spawn_into(anm, 0x11c, *title_file, 0x11c); // +0x730
+            spawn_into(anm, 0x71, *title_file, 0x71);  // +0x484 底图
+        }
+        set_sub(1);
+        events.push_back({"spell-practice", 0});
+        [[fallthrough]];
+    }
+    case 1:
+        if (timer > 10) {
+            set_sub(2);
+            if (vm[0xd7]) {
+                anm.interrupt_now(vm[0xd7], 3);
+                anm.interrupt(vm[0xd7], to_short(cursor.index + 7));
+            }
+            if (vm[0x11c]) {
+                anm.interrupt_now(vm[0x11c], 3);
+                anm.interrupt(vm[0x11c], to_short(spell_shot_cursor.index + 7));
+            }
+        }
+        break;
+    case 2: {
+        const i32 prev = cursor.index;
+        const i32 prev_shot = spell_shot_cursor.index;
+        const u32 edge = input.pressed | input.repeat;
+        if (edge & InputState::kUp) cursor.move(-1);
+        if (edge & InputState::kDown) cursor.move(1);
+        if (edge & InputState::kLeft) spell_shot_cursor.move(-1);
+        if (edge & InputState::kRight) spell_shot_cursor.move(1);
+        if (cursor.index != prev) {
+            sfx(10);
+            if (vm[0xd7]) {
+                anm.interrupt_now(vm[0xd7], 3);
+                anm.interrupt(vm[0xd7], to_short(cursor.index + 7));
+            }
+        }
+        if (spell_shot_cursor.index != prev_shot) {
+            sfx(10);
+            if (vm[0x11c]) {
+                anm.interrupt_now(vm[0x11c], 3);
+                anm.interrupt(vm[0x11c], to_short(spell_shot_cursor.index + 7));
+            }
+            globals->shot = spell_shot_cursor.index;
+            globals->shot_aux = 0;  // 精确 shot/aux 组合表见 0x4560b0，随后接
+        }
+        if (input.pressed & InputState::kCancelMask) {
+            set_sub(4);
+            sfx(9);
+            break;
+        }
+        if (input.pressed & InputState::kConfirmMask) {
+            if (vm[0xd7]) anm.interrupt(vm[0xd7], 6);
+            set_sub(3);
+            sfx(7);
+            spell_group = cursor.index;
+        }
+        break;
+    }
+    case 3:
+        if (timer > 0x13) {
+            dismiss(anm, 0x71);
+            set_screen(kSpellList);
+            cursor.push();
+            cursor.set(0);
+            events.push_back({"screen", screen});
+        }
+        break;
+    case 4:
+        if (timer > 5) {
+            dismiss(anm, 0x71);
+            dismiss(anm, 0xd7);
+            dismiss(anm, 0x11c);
+            dismiss(anm, kLeafEmitter);
+            set_screen(kMainMenu);
+            cursor.pop();
+            events.push_back({"screen", screen});
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+// 待还原画面（Key Config / Player Data / Spell List 0x12 / Spell Shot 0x13）
 void TitleScene::update_stub(AnmManager& anm, const InputState& input) {
     (void)anm;
     if (sub == 0) {
@@ -1095,6 +1193,9 @@ void TitleScene::update_stub(AnmManager& anm, const InputState& input) {
         sfx(9);
         if (screen == kKeyConfig) {
             set_screen(kOption);
+            cursor.pop();
+        } else if (screen == kSpellList || screen == kSpellShot) {
+            set_screen(kSpellPractice);
             cursor.pop();
         } else {
             set_screen(kMainMenu);
