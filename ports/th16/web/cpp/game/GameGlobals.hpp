@@ -53,33 +53,37 @@ struct GameGlobals {
     i32 continues = 0;           // DAT_004a57b8：续关次数（0x43f980 续关时 +1，上限 9）
     i32 continues_left = 0;      // DAT_004a5bfc：剩余续关数（0x42cb60 按难度表 DAT_00492278 {5,5,5,5,0}；续关 -1；0 时菜单禁用“续关”）
     i32 sound_thread_state = 0;  // DAT_004d9d90：声音线程状态（GameManager 计时第 5 帧置 2；菜单打开时存旧值并置 0 / 1）
-    // DAT_004c12c6 / +1 / +2（Option 0x44c570）：BGM / SE 音量 0..100；Default → 0x5064 且 +2 清零
+    // th16.cfg 配置块 DAT_004c12a4（布局见 GameConfig.hpp）；DAT_004c12c6 / +1（Option 0x44c570）BGM / SE 音量，
+    // Default → 0x5064 且 +2 清零
+    u8 window_mode = 0;   // DAT_004c12c0（0x459830：窗口样式 0x15 / 0x17）
+    u8 bgm_mode = 1;      // DAT_004c12c1（0x45e330：== 1 才做 WAV 串流；0x45de30 非零才建 SoundManager 播放）
+    u8 se_enabled = 1;    // DAT_004c12c2（0x45e330：非零才处理音效队列）
+    u8 resolution = 5;    // DAT_004c12c3（0x459830 写进 DAT_004d9d1c bit2..5；0x407cb0 % 3 选字体表）
+    u8 frame_skip = 0;    // DAT_004c12c4（0x4262f0：帧计数每帧 +(frame_skip+1)）
+    u8 config_c5 = 2;     // DAT_004c12c5（仅校验 <3，无读者）
     u8 bgm_volume = 100;
     u8 se_volume = 80;
     u8 option_flags = 0;  // DAT_004c12c8
-    // DAT_004c12cc：输入相关配置；bit9(0x200)=自动低速（射击且火力≥10 时记录链并上 Shift）
-    u32 input_config = 0;
-    // 标题 Key Config 键位表（TitleScene+0x5b34 起 6×i16；0x44f710 写入、冲突对调）
-    // 下标：0 Shot / 1 Bomb / 2 Slow / 3 Skip / 4 Release / 5 保留
-    static constexpr int kKeyBindCount = 6;
-    i16 key_binds[kKeyBindCount] = {0x2c, 0x2d, 0x2a, 0x1d, 0x2e, 0};  // Z X LShift LCtrl C
-    // 0x44f710：写入 scancode；若其它槽已占用则对调
-    void assign_key_bind(int slot, i16 scancode) {
-        if (slot < 0 || slot >= kKeyBindCount) return;
-        if (key_binds[slot] == scancode) return;
-        for (int i = 0; i < kKeyBindCount; ++i) {
-            if (i == slot) continue;
-            if (key_binds[i] == scancode) key_binds[i] = key_binds[slot];
-        }
-        key_binds[slot] = scancode;
-    }
-    void reset_key_binds() {
-        key_binds[0] = 0x2c;
-        key_binds[1] = 0x2d;
-        key_binds[2] = 0x2a;
-        key_binds[3] = 0x1d;
-        key_binds[4] = 0x2e;
-        key_binds[5] = 0;
+    u8 config_c9 = 2;     // DAT_004c12c9（0x45b330 / 0x45b7d0：与 2 / 3 比较的窗口刷新模式）
+    // DAT_004c12cc：输入相关配置；bit8(0x100) 由 0x43c050 恒置；bit9(0x200)=自动低速（射击且火力≥10 时记录链并上 Shift）
+    u32 input_config = 0x100;
+    i32 window_x = i32(0x80000000);  // DAT_004c12d0（0x459830 退出时保存窗口位置；0x80000000 = 默认）
+    i32 window_y = i32(0x80000000);  // DAT_004c12d4
+    // 手柄按钮表 DAT_004a52e4（10×i16，与配置块 +4 互抄；exe 初值 {0,1,2,5,-1,-1,-1,-1,-1,3}）
+    // 0x4018e0 读的下标：0 Shot(bit0) / 1 Bomb(bit1) / 2 Slow(bit3) / 3 Pause(bit8) / 9 Release(bit11)；其余无读者
+    static constexpr int kPadButtonCount = 10;
+    static constexpr i16 kPadButtonDefaults[kPadButtonCount] = {0, 1, 2, 5, -1, -1, -1, -1, -1, 3};
+    i16 pad_buttons[kPadButtonCount] = {0, 1, 2, 5, -1, -1, -1, -1, -1, 3};
+    // 0x4018e0：手柄按钮位图（bit i = 按钮 i 按下）按表合成输入位，叠加到键盘位上
+    u32 pad_input_bits(u32 buttons) const {
+        auto down = [&](int slot) { return pad_buttons[slot] >= 0 && (buttons >> (pad_buttons[slot] & 0x1f) & 1u) != 0; };
+        u32 bits = 0;
+        if (down(0)) bits |= 1u;
+        if (down(1)) bits |= 2u;
+        if (down(3)) bits |= 0x100u;
+        if (down(2)) bits |= 8u;
+        if (down(9)) bits |= 0x800u;
+        return bits;
     }
     // 0x42cb60 新开局自成绩文件取本机体 × 难度的最高分（无成绩文件时 0x4497e0 默认 100000）与其续关数；
     // 0x42bc10 每帧以 Gui 显示分越过时更新并置 flags bit2；换关 0x42cb60 另取 max(最高分, 当前分)

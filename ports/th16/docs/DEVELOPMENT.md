@@ -102,6 +102,12 @@ python3 tools/oracle/draw-compare.py /tmp/st1.draw.jsonl /tmp/st1.port.jsonl --f
 
 原版 BGM / SE 音量变量（DAT_004df49c / DAT_004df4a0）只在 Option 画面 0x44dc70 写入（开机到首次进 Option 为 0），端口开机即以配置值出声；0x470bb0 每次开曲重建 DirectSound 缓冲，端口在 open 时按配置音量重置。这些只影响宿主音量，不进任何对拍。
 
+## 配置与输入
+
+`th16.cfg`（0x43c050，`game/GameConfig.*`）：100 字节块，magic 0x160002，开机读 + 六字节上限校验（失败整块回默认）+ 总是回写，退出场景再写（0x459830）；路径 `<存档根>/th16.cfg`（浏览器 IDBFS `/save`，桌面同 `scoreth16.dat` 目录）。块内保存手柄按钮表 DAT_004a52e4（10×i16，exe 初值 `{0,1,2,5,-1,-1,-1,-1,-1,3}`）、BGM / SE 音量、Option 标志、输入配置等。
+
+键盘键位固定（0x401d50：Z / X / Shift / Ctrl / C / 方向 / Esc / Q / S / P / Enter / D / R / F10），标题 Key Config（0x44e930）配置的是**手柄按钮号**：每帧取 0x401c30 快照中首个按下的按钮写入光标槽并对调冲突槽（0x44f710），Default 重载全局表，Quit 写回；0x4018e0 按表把按钮位图合成 Shot / Bomb / Slow / Pause / Release 位。宿主 `sdl/Application.cpp` 用 SDL_Joystick 采样按钮位图交给 `GameSession::pad_buttons`，摇杆轴按原版“中心 ± 1/4 量程”出方向位（POV 帽原版不读，端口一并映射）。harness `scene-boot` 以 `Pf:button` 注入手柄按钮、`config=<path>` 走开机读写；`pad-input-bits` / `config-file` 为单元入口。
+
 ## 代码质量与可读性标准
 
 见 [`docs/CODE_QUALITY.md`](./CODE_QUALITY.md)：命名规范（领域语言、禁止反编译偏移名）、文件与模块结构、函数控制流拆分、注释三要素以及精度/对拍/双处登记门禁。

@@ -138,8 +138,12 @@ public:
     i32 secret_progress = 0;
     i32 secret_timer = 0;
     MenuCursor score_page_cursor;
-    i32 key_bind_slot = -1;          // Key Config：正在捕获的槽 0..4；-1=无
-    i32 pending_scancode = -1;       // 宿主注入下一键（≥0 时 0x44f710 写入）
+    // Key Config 工作表 +0x5b34..+0x5b3e（6×i16 手柄按钮号）：进入时自 GameGlobals::pad_buttons 抄入，
+    // Quit 时写回；槽序 0 Shot / 1 Bomb / 2 Release / 3 Slow / 4 Pause / 5 保留（0x44f710 对调时参与）
+    static constexpr int kKeyTableCount = 6;
+    i16 key_table[kKeyTableCount] = {};
+    // 0x401c30 手柄按钮快照（bit i = 按钮 i 按下，i < 0x1f）；Key Config 每帧取首个按下的按钮号
+    const u32* pad_buttons = nullptr;
     char name_entry[9] = "        "; // +0x5a48：通关名字输入缓冲
     i32 name_cursor = 0;             // +0x5a54：名字光标
     i32 name_no_rank = 0;            // +0x5a58：1=未入榜
@@ -279,6 +283,11 @@ private:
     void transition_effect();                                            // 0x41a390 + 0x418ba0
     void refresh_option_items(AnmManager& anm);                          // 0x44c8c0：面板子项 0x1e/0x1f
     void apply_option_volume(AnmManager& anm);                           // 0x44dc70：音量数字 ANM（缺 VM 则跳过）
+    void load_key_table();                                               // 0x44e930 入口 / Default：pad_buttons → key_table
+    void commit_key_table();                                             // 0x44e930 Quit：key_table → pad_buttons（=配置块 +4）
+    void assign_key_button(AnmManager& anm, i32 slot, i32 button);       // 0x44f710：写入并对调冲突槽
+    void paint_key_table(AnmManager& anm);                               // 0x44ec60：按钮号 /10 %10 → 面板子脚本 0x3f..
+    void refresh_key_config_items(AnmManager& anm);                      // 0x44f810：光标前 0x1e / 后 0x1f
     void panel_item_interrupt_now(AnmManager& anm, i32 script, i32 value);
     void scan_replay_slots();                                            // 同步替代 0x402fb0 扫描线程
     i32 replay_abs_slot() const { return page_cursor.index * 0x19 + cursor.index; }

@@ -3,6 +3,9 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {copyFileSync, existsSync, mkdirSync, rmSync} from 'node:fs';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {resolve} from 'node:path';
 
 const here = resolve(import.meta.dirname);
@@ -401,50 +404,88 @@ test('Option screen (0x44c570): cancel to Quit then back to main menu', needDat,
   assert.ok(out.events.some(e => e[0] === 'option'));
 });
 
-test('Key Config (0x44e930): from Option then cancel back to Option', needDat, () => {
-  const t = MAIN + 1;
-  const downs = Array.from({length: 6}, (_, i) => `${t + i * 2}:${DOWN}`);
-  const confirmAt = t + 12 + 2;
-  const optReady = confirmAt + 30;
-  // Option 上 ↓↓ 到 KeyConfig(2) 确定 → Key Config；取消两段退出回 Option
-  const out = parse(run(['scene-boot', dat, String(optReady + 80), [
-    ...downs, `${confirmAt}:${Z}`,
-    `${optReady}:${DOWN}`, `${optReady + 2}:${DOWN}`, `${optReady + 4}:${Z}`,
-    `${optReady + 40}:${X}`, `${optReady + 42}:${X}`,
-  ].join(',')]));
-  assert.ok(out.events.some(e => e[0] === 'key-config'));
-  assert.ok(out.events.some(e => e[0] === 'screen' && e[1] === '3'));
-  assert.equal(out.header.screen, 3);
-});
-
-test('Key Config bind (0x44f710): wait → inject scancode', needDat, () => {
+test('Key Config (0x44e930): cancel ignored off Quit; ↑ to Quit then cancel → Option', needDat, () => {
   const t = MAIN + 1;
   const downs = Array.from({length: 6}, (_, i) => `${t + i * 2}:${DOWN}`);
   const confirmAt = t + 12 + 2;
   const optReady = confirmAt + 30;
   const kcReady = optReady + 40;
-  // 进 Key Config → 确认槽 0 → Sframe 注入 scancode 0x1e
-  const out = parse(run(['scene-boot', dat, String(kcReady + 20), [
+  // Option 上 ↓↓ 到 KeyConfig(2) 确定 → Key Config；光标 0 上取消无效；↑ 绕到 Quit(6) 后取消退出回 Option
+  const out = parse(run(['scene-boot', dat, String(kcReady + 40), [
     ...downs, `${confirmAt}:${Z}`,
     `${optReady}:${DOWN}`, `${optReady + 2}:${DOWN}`, `${optReady + 4}:${Z}`,
-    `${kcReady}:${Z}`,
-    `S${kcReady + 2}:0x1e`,
+    `${kcReady}:${X}`, `${kcReady + 4}:${UP}`, `${kcReady + 8}:${X}`,
   ].join(',')]));
-  assert.ok(out.events.some(e => e[0] === 'key-bind-wait' && e[1] === '0'));
-  assert.ok(out.events.some(e => e[0] === 'key-bind' && e[1] === '0'));
-  assert.ok(out.events.some(e => e[0] === 'key-scancode' && e[1] === String(0x1e)));
+  assert.ok(out.events.some(e => e[0] === 'key-config'));
+  assert.ok(!out.events.some(e => e[0] === 'key-commit'));
+  assert.ok(out.events.some(e => e[0] === 'screen' && e[1] === '3'));
+  assert.equal(out.header.screen, 3);
 });
 
-test('key-bind-assign 0x44f710 swap', () => {
-  const out = run(['key-bind-assign']);
-  assert.match(out, /swapped=1/);
-  assert.match(out, /slow=30/);
+test('Key Config bind (0x44f710): pad button → slot, swap, Quit commits to pad table + th16.cfg', needDat, () => {
+  const t = MAIN + 1;
+  const downs = Array.from({length: 6}, (_, i) => `${t + i * 2}:${DOWN}`);
+  const confirmAt = t + 12 + 2;
+  const optReady = confirmAt + 30;
+  const kcReady = optReady + 40;
+  const cfg = path.join(os.tmpdir(), `th16-keycfg-${process.pid}.cfg`);
+  try { fs.unlinkSync(cfg); } catch {}
+  // 槽 0(Shot) 按下按钮 1（原 Bomb）→ 对调：Shot=1 Bomb=0；↓ 到槽 1 按下按钮 9；↑×2 绕到 Quit(6) 确定 → 写回
+  const raw = run(['scene-boot', dat, String(kcReady + 40), `config=${cfg}`, [
+    ...downs, `${confirmAt}:${Z}`,
+    `${optReady}:${DOWN}`, `${optReady + 2}:${DOWN}`, `${optReady + 4}:${Z}`,
+    `P${kcReady}:1`,
+    `${kcReady + 2}:${DOWN}`, `P${kcReady + 4}:9`,
+    `${kcReady + 6}:${UP}`, `${kcReady + 8}:${UP}`, `${kcReady + 12}:${ENTER}`,
+  ].join(',')]);
+  const out = parse(raw);
+  const binds = out.events.filter(e => e[0] === 'key-bind').map(e => e[1]);
+  const buttons = out.events.filter(e => e[0] === 'key-button').map(e => e[1]);
+  assert.deepEqual(binds, ['0', '1']);
+  assert.deepEqual(buttons, ['1', '9']);
+  assert.ok(out.events.some(e => e[0] === 'key-commit'));
+  assert.equal(out.header.screen, 3);
+  // Quit 把工作表写回 DAT_004a52e4 / 配置块：槽 0→表[0]=1，槽 1→表[1]：对调得 0 再被 9 覆盖
+  assert.match(raw, /^pad 1,9,2,5,-1,-1,-1,-1,-1,3$/m);
+  // th16.cfg 只在开机（回写）与退出时落盘：scene-boot 未经过 Exit，文件仍是开机回写的默认表
+  const image = fs.readFileSync(cfg);
+  assert.equal(image.length, 100);
+  assert.equal(image.readUInt32LE(0), 0x160002);
+  assert.equal(image.readInt16LE(4), 0);
+  fs.unlinkSync(cfg);
 });
 
-test('key-bind-bits map to InputState', () => {
-  const out = run(['key-bind-bits']);
-  assert.match(out, /0=1 /);
-  assert.match(out, /4=800/);
+test('pad-input-bits 0x4018e0 default table', () => {
+  const out = run(['pad-input-bits']);
+  assert.match(out, /b0=1 b1=2 b2=8 b5=100 b3=800 none=0/);
+  assert.match(out, /unbound=0/);
+});
+
+test('config-file 0x43c050: missing → defaults written; bad → defaults; valid → kept; range → rejected', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'th16-cfg-'));
+  const missing = path.join(dir, 'th16.cfg');
+  const out = run(['config-file', missing]);
+  assert.match(out, /valid=0 bgm=100 se=80 opt=0 input=100 win=0 bgm_mode=1 se_on=1 res=5 skip=0 pad=0,1,2,5,-1,-1,-1,-1,-1,3/);
+  const written = fs.readFileSync(missing);
+  assert.equal(written.length, 100);
+  assert.equal(written.toString('hex'), out.trim().split('image=')[1]);
+  const custom = Buffer.alloc(100);
+  custom.writeUInt32LE(0x160002, 0);
+  [7, 1, 2, 5, -1, -1, -1, -1, -1, 3].forEach((v, i) => custom.writeInt16LE(v, 4 + 2 * i));
+  custom.writeUInt16LE(600, 0x18); custom.writeUInt16LE(600, 0x1a);
+  Buffer.from([1, 1, 1, 5, 0, 2, 55, 30, 1, 2]).copy(custom, 0x1c);
+  custom.writeUInt32LE(0x300, 0x28); custom.writeInt32LE(100, 0x2c); custom.writeInt32LE(200, 0x30);
+  const customPath = path.join(dir, 'custom.cfg');
+  fs.writeFileSync(customPath, custom);
+  const kept = run(['config-file', customPath]);
+  assert.match(kept, /valid=1 bgm=55 se=30 opt=1 input=300 win=1 bgm_mode=1 se_on=1 res=5 skip=0 pad=7,1,2,5,-1,-1,-1,-1,-1,3/);
+  assert.equal(kept.trim().split('image=')[1], custom.toString('hex'));
+  const range = Buffer.from(custom); range[0x1f] = 6;
+  fs.writeFileSync(path.join(dir, 'range.cfg'), range);
+  assert.match(run(['config-file', path.join(dir, 'range.cfg')]), /valid=0 bgm=100 se=80/);
+  fs.writeFileSync(path.join(dir, 'short.cfg'), custom.subarray(0, 99));
+  assert.match(run(['config-file', path.join(dir, 'short.cfg')]), /valid=0/);
+  fs.rmSync(dir, {recursive: true});
 });
 
 test('Option screen: ←/→ adjust BGM, Default restores 100/80', needDat, () => {

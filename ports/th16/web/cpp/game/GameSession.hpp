@@ -71,6 +71,7 @@ public:
     u32 injected_input = 0;   // 外部注入 held 位（与宿主键盘 OR）
     u32 host_input = 0;       // 宿主键盘采样
     u8 keyboard_state[256] = {};   // 宿主键盘快照（DIK 下标，bit7 = 按下）：0x402130
+    u32 pad_buttons = 0;           // 0x401c30 手柄按钮快照（bit i = 按钮 i 按下）；0x4018e0 按 GameGlobals::pad_buttons 合成位
     InputState game_input;    // DAT_004a52c8：Replay 记录链（优先级 0x10，0x447fd0）每帧抄 held 低 16 位并做边沿
     // 逻辑侧屏幕几何（DAT_004d9d34 窗口缩放 / DAT_004d9d50,54 场地偏移 / DAT_004d9d48,4c）：自机弹出界判定 0x468c00 用；
     // 原版由 Supervisor 绘制链 0x43b3d0 每帧写为 640/2、(480-448)/2，这里取同值常量
@@ -118,6 +119,10 @@ public:
     // scoreth16.dat 路径；空则不读不写（harness 默认）。启动幕 0x4497e0 读、0x42d200 / 0x43afe0 经 0x449a00 写
     std::string score_path;
     bool save_scores();   // 0x449a00
+    // th16.cfg 路径；空则不读不写（harness 默认）。0x43c050 开机读+校验+回写；退出（场景 Exit）再写
+    std::string config_path;
+    bool load_config();   // 返回文件是否合法；不合法 / 缺失时 globals 已回配置默认值
+    bool save_config();
     double play_clock_origin = 0.0;   // DAT_004a5c00：上次计时时刻（秒）
     void accumulate_play_time();      // 0x42dbc0
     void restart_play_clock();        // 0x45b130 → DAT_004a5c00（0x42cb60 末 / 0x43f6a0 / 0x43f740 / 0x43f790）

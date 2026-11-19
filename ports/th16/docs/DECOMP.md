@@ -40,7 +40,9 @@
 | 0x43adc0 / 0x43b300 / 0x43b290 | 启动幕：装载 `sig.anm`；绘制链 0x44 帧计数；装载完成后请求 Title=4 | `game/GameSession.cpp` / `game/Supervisor.hpp` |
 | 0x401730 / 0x401300 / 0x4013b0 / 0x401460 / 0x4015a0 / 0x4017a0 | Chain 条目 0x28 字节（prio/flags/cb/init/ctx）；更新链与绘制链按优先级插入、遍历返回码 | `game/Chain.cpp` |
 | 0x45a8a0 | 帧计时：逻辑时间按 1/60 追到墙钟，再跑更新链、按跳帧计数跑绘制链 | `game/FrameClock.hpp` |
-| 0x401d50 / 0x4018e0 / 0x405580 | 键盘位布局（Z=1 X=2 Shift=8 方向 0x10..0x80 Esc=0x100 Ctrl=0x200 Q=0x10000 S=0x20000 P=0x40000 Enter=0x80000）、手柄合并、边沿/连发 | `game/Input.hpp` |
+| 0x401d50 / 0x4018e0 / 0x401c30 / 0x405580 | 键盘位布局（Z=1 X=2 Shift=8 方向 0x10..0x80 Esc=0x100 Ctrl=0x200 Q=0x10000 S=0x20000 P=0x40000 Enter=0x80000；键盘固定不可配）、手柄按钮表 DAT_004a52e4 合成（[0]→1 [1]→2 [2]→8 [3]→0x100 [9]→0x800）、手柄按钮快照、边沿/连发 | `game/Input.hpp` / `game/GameGlobals.hpp pad_input_bits` / `sdl/Application.cpp` |
+| 0x43c050 / 0x459830 | th16.cfg：100 字节块 DAT_004c12a4（magic 0x160002、手柄表 +4、六字节上限校验、失败整块回默认并总是回写；退出主循环后再写） | `game/GameConfig.cpp` / `GameSession::load_config / save_config` |
+| 0x44e930 / 0x44f710 / 0x44ec60 / 0x44f810 | 标题 Key Config：配手柄按钮号（工作表 +0x5b34 ↔ DAT_004a52e4 [0][1][9][2][3]）、首个按下按钮写槽并对调冲突、数字精灵、光标前后项 0x1e/0x1f | `game/TitleScene.cpp update_key_config` |
 | 0x44af80 / 0x44b5f0 / 0x44a700 / 0x44a680 / 0x44a790 / 0x44a650 / 0x44a560 / 0x44a5e0 | 标题更新：主菜单 case 0/1/2/4（装饰、Timer 0x78/0x82/0x13、光标、确定 0x80001 / 取消 0x102、画面表）；子项查找/中断/收起；画面与子状态切换 | `game/TitleScene.cpp` |
 | 0x44fe20 / 0x4502c0 / 0x450af0 / 0x450ef0 | 难度 / 机体 / 子季节 / 练习关卡画面（VM 表 +0x2c0 按脚本号索引；面板 0x7e·0x7f / 0x96·0x98 / 0x97·0x99 / 0x71；季节 case 3 请求场景 7；练习关卡确定读 +0x51a5 = 所选关卡（光标 + 1）的到达位，未到达播 0x10；0x44a850 / 0x44a800 / 0x44a8e0 读未续关通关次数 +0x5184：主菜单 Extra 可选、Extra 机体光标与禁用、难度 / 机体通关章 0x9e+d / 0x9a+k 在条件不满足时 0x46f340 隐藏） | `game/TitleScene.cpp` |
 | 0x449190 | 模式位（DAT_004a5bec bit4-5）与 Replay 槽复位 | `game/GameGlobals.hpp` |
