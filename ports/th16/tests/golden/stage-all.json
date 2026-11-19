@@ -414,6 +414,29 @@
     "bombs": "d45393b5dcee5a51",
     "menu": "c293648b3aa95797"
    }
+  },
+  {
+   "name": "st3-hard-cirno-winter-shoot-bomb-6000",
+   "stage": 3,
+   "shot": 1,
+   "season": 3,
+   "difficulty": 2,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "3389f8e5de0c7645",
+    "enemies": "a0baf16d50e3ff7b",
+    "enemy_vms": "3a6502ee07bdbe08",
+    "bullets": "bd159b6fbe117828",
+    "items": "2b01091b24c72555",
+    "spell": "a14e77a62c343cfa",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "c79353004e4c5f7c",
+    "menu": "01eda7b4bdaaaeff"
+   }
   }
  ]
 }
