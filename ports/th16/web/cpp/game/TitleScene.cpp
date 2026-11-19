@@ -306,6 +306,57 @@ void TitleScene::refresh_spell_slot_names(AnmManager& anm) {
     }
 }
 
+void TitleScene::draw(AsciiManager& ascii) {
+    // 0x44b530
+    switch (screen) {
+    case kStage: draw_stage_practice_scores(ascii); break;  // 0x4513c0
+    case kSpellList:
+    case kSpellShot:
+    case kSpellStart: draw_spell_hud(ascii); break;         // 0x456d50（0x14 亦走 SCORE）
+    default: break;
+    }
+}
+
+void TitleScene::draw_stage_practice_scores(AsciiManager& ascii) {
+    // 0x4513c0：sub∈[2,3] 且（timer>10 或 sub==3）时打 Stage 1..6 练习分
+    if (sub != 2 && sub != 3) return;
+    if (timer <= 10 && sub != 3) return;
+    if (scores == nullptr || globals == nullptr) return;
+
+    static constexpr const char* kStageNames[7] = {
+        "test   ", "Stage 1", "Stage 2", "Stage 3", "Stage 4", "Stage 5", "Stage 6",
+    };
+    const i32 shot = globals->shot + globals->shot_aux;
+    const i32 diff = globals->difficulty;
+    float y = 192.0f;
+    ascii.style.shadow = true;
+    ascii.style.group = AsciiManager::Group::Ui;
+    for (int stage = 1; stage <= 6; ++stage) {
+        const PracticeRecord& rec = scores->practice[shot][diff * 8 + stage];
+        const bool selected = (cursor.index == stage - 1);
+        if (selected) {
+            if (rec.cleared == 0) ascii.style.color = 0xffdfdfdfu;
+            else if (sub == 3) {
+                // 闪烁：timer & 3 在 {2,3} 时黑
+                const u32 phase = u32(timer) & 3u;
+                ascii.style.color = (phase >= 2) ? 0xff000000u : 0xffffff00u;
+            } else {
+                ascii.style.color = 0xffffff00u;
+            }
+        } else {
+            ascii.style.color = 0xff808080u;
+        }
+        if (rec.cleared == 0) {
+            ascii.printf(Vec3{240.0f, y, 0.0f}, "%s  ---------", kStageNames[stage]);
+        } else {
+            ascii.printf(Vec3{240.0f, y, 0.0f}, "%s  %.8d0", kStageNames[stage], int(rec.score));
+        }
+        y += 18.0f;
+    }
+    ascii.style.color = 0xffffffffu;
+    ascii.style.shadow = false;
+}
+
 void TitleScene::draw_spell_hud(AsciiManager& ascii) {
     // 0x456d50：sub∈(0,3]（画面 0x13 时 sub==3 跳过）在 5 个槽上打 SCORE / GAME MODE
     if (screen != kSpellList && screen != kSpellShot && screen != kSpellStart) return;

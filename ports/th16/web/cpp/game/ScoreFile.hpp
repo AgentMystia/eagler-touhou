@@ -25,9 +25,12 @@ struct ScoreEntry {
 };
 
 struct PracticeRecord {
-    u32 score = 0;          // +0x00
-    u8 cleared = 0;         // +0x04
+    u32 score = 0;          // +0x00（文件 +0x5198）
+    u8 pad_04 = 0;          // +0x04
+    u8 cleared = 0;         // +0x05（文件 +0x519d 解锁判定）
+    u8 pad_06[2] = {};
 };
+static_assert(sizeof(PracticeRecord) == 8, "PracticeRecord must be 8 bytes");
 
 struct SpellRecord {
     char name[0x80] = {};   // +0x00
