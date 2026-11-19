@@ -282,12 +282,22 @@ bool GameSession::create_player() {
     game.player.setup_options(animations, globals);   // 0x4440e0
     globals.flags &= ~0x4u;
 
-    // 0x447fd0 Replay 记录链（优先级 0x10）：DAT_004a52c8 = held 低 16 位 → 0x418650 边沿
+    // 0x447e20 / 0x447760：ReplayManager 登记三条链——记录 0x10、回放快进 0x22、FPS 文字 0x47
+    // 本阶段只接链节点：记录链抄 held（已有）；0x22 / 0x47 在非回放（+0xc != 1）时恒 Continue / 不画字，
+    // 与原版同优先级占位，保证更新链条数与 oracle 一致（19）。回放文件读写与快进语义随后补全。
     replay_record_chain_ = chains.create([this]() -> ChainResult {
         game_input.held = supervisor.input.held & 0xffffu;
         game_input.commit();
         return ChainResult::Continue;
     }, 0x10, true);
+    replay_playback_chain_ = chains.create([]() -> ChainResult {
+        // 0x448e40：仅回放模式且按住 0x201 时按帧计数 % 8 返回 Restart；记录模式直接 Continue
+        return ChainResult::Continue;
+    }, 0x22, true);
+    replay_draw_chain_ = chains.create([]() -> ChainResult {
+        // 0x448e90 → 0x4482f0：只在回放模式画右下角 "%3d" 实际帧率
+        return ChainResult::Continue;
+    }, 0x47, false);
     // 0x440fb0：自机更新链 0x16（0x443720 → 0x442560）与绘制链 0x1d（0x443730）
     game.player.on_game_over = [this]() { if (menu_live) menu.open_continue(); };
     game.player.sfx_sink = &sfx_events;
@@ -305,6 +315,8 @@ bool GameSession::create_player() {
         return ChainResult::Continue;
     }, 0x1d, false);
     chains.enable(replay_record_chain_);
+    chains.enable(replay_playback_chain_);
+    chains.enable(replay_draw_chain_);
     chains.enable(player_update_chain_);
     chains.enable(player_draw_chain_);
     return true;
@@ -1026,7 +1038,9 @@ void GameSession::leave_game() {
     fade_chains_.clear();
     screen_fades.clear();
     animations.camera_pos = animations.camera_pos_offset = animations.camera_facing_norm = nullptr;
-    if (replay_record_chain_) { chains.remove(replay_record_chain_); replay_record_chain_ = nullptr; }
+    for (ChainEntry** entry : {&replay_record_chain_, &replay_playback_chain_, &replay_draw_chain_}) {
+        if (*entry) { chains.remove(*entry); *entry = nullptr; }
+    }
     if (player_update_chain_) { chains.remove(player_update_chain_); player_update_chain_ = nullptr; }
     if (player_draw_chain_) { chains.remove(player_draw_chain_); player_draw_chain_ = nullptr; }
     // 0x4099a0 末：背景 ANM 槽只在非快速重开（DAT_004a5bec bit0 清）时释放
