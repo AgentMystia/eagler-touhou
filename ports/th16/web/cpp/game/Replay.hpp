@@ -29,4 +29,11 @@ inline u32 replay_fps_color(u8 fps_byte) {
     return 0xffffffffu;
 }
 
+// 0x4263e0 全局 "%2.1ffps" 颜色：阈值 30 / 40（FrameTimer+0x30）
+inline u32 global_fps_color(float fps) {
+    if (fps < 30.0f) return 0xff5050ffu;
+    if (fps < 40.0f) return 0xffa0a0ffu;
+    return 0xffffffffu;
+}
+
 }  // namespace th16
