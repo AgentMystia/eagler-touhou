@@ -116,7 +116,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"title-scene-create", 0x44AEE0, "game/GameSession.cpp GameSession::enter_title_assets"},
     {"title-scene-thread", 0x44ABC0, "game/GameSession.cpp GameSession::activate_title_menu（等 0xb4 帧 / DAT_004c1800&0x180）"},
     {"title-scene-init", 0x44AC70, "game/GameSession.cpp enter_title_assets（title.anm / title_v.anm）+ 更新链 6 / 绘制链 0x45"},
-    {"title-update", 0x44AF80, "game/TitleScene.cpp TitleScene::update（画面分发；末尾 Timer+1）"},
+    {"title-update", 0x44AF80, "game/TitleScene.cpp TitleScene::update（空闲 demo + 画面分发；末尾 Timer+1）"},
     {"title-main-menu", 0x44B5F0, "game/TitleScene.cpp TitleScene::update_main_menu（case 0/1/2/4）"},
     {"title-difficulty", 0x44FE20, "game/TitleScene.cpp TitleScene::update_difficulty"},
     {"title-shot", 0x4502C0, "game/TitleScene.cpp TitleScene::update_shot"},
@@ -363,7 +363,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"title-has-clear", 0x44A850, nullptr},  // 任一难度通关记录 → Extra 可选（当前恒 0：无存档）
     {"title-difficulty-cleared", 0x44A8E0, nullptr}, // 某难度四项记录齐全（难度面板 0x9e+d 标记）
     {"title-extra-unlocked", 0x44A800, nullptr}, // 机体是否解锁 Extra
-    {"title-demo", 0x44AF80, nullptr},       // 0x44af80 开头：无输入 0x708 帧后播放 demo 录像（DAT_004a5bf0）
+    {"title-demo", 0x44AF80, "game/TitleScene.cpp TitleScene::tick_idle_demo（0x708 无输入 → flags bit6 + scene 0xd；demo 下标 %3）"},
     {"title-loading-text", 0x41A390, "game/GameSession.cpp GameSession::spawn_loading_vm（ascii.anm 0x11；位置 = 2 × (XMM1, XMM2) 寄存器传参，0x42d274 传 480 / 392 → (960, 784)，Ghidra 漏掉这两个寄存器实参）"},
     {"effect-transition-init", 0x4071A0, "game/Effect.cpp EffectManager::transition_init"},
     {"effect-transition-update", 0x407330, "game/Effect.cpp EffectManager::transition_update"},

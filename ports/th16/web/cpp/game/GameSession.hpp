@@ -88,6 +88,8 @@ public:
     // 0x448c10：装入回放文件；随后 enter_game(1) / start_game_direct 走回放输入链
     bool load_replay(const u8* bytes, u32 size);
     bool load_replay_file(const char* path);
+    // 标题 demo 目录（内含 demo/demo1.rpy…）；空则跳过自动装载
+    std::string demo_directory;
     // 0x43b290：AsciiManager 的更新链 4 与绘制链 0x51 / 0x35 / 0x42 在启动幕装载完成时一起打开
     void enable_ascii_chains();
     // 0x43ce10 case 0xa / 0xb / 0xe / 0x13：GameMenu 重开 / Extra 续关——0x42d200 按请求决定快速重开（bit0）或整体销毁，
