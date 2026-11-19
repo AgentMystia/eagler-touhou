@@ -392,13 +392,16 @@ test('Spell Practice (0x4553d0): cancel returns to the main menu', needDat, () =
   assert.ok(out.events.some(e => e[0] === 'spell-practice'));
 });
 
-test('stub screens (Player Data/…): cancel returns to the main menu', needDat, () => {
+test('Player Data (0x452330): cancel returns to the main menu', needDat, () => {
   const t = MAIN + 1;
   const downs = Array.from({length: 4}, (_, i) => `${t + i * 2}:${DOWN}`);   // → Score/Player Data(5)
   const confirmAt = t + 8 + 2;
-  const out = parse(run(['scene-boot', dat, String(confirmAt + 21 + 4), [...downs, `${confirmAt}:${Z}`, `${confirmAt + 22}:${X}`].join(',')]));
+  const ready = confirmAt + 30;
+  const out = parse(run(['scene-boot', dat, String(ready + 20), [
+    ...downs, `${confirmAt}:${Z}`, `${ready}:${X}`,
+  ].join(',')]));
   assert.equal(out.header.screen, 1);
-  assert.ok(out.events.some(e => e[0] === 'stub'));
+  assert.ok(out.events.some(e => e[0] === 'score'));
 });
 
 test('chain-demo: priority order, Remove, Restart, enable/disable', () => {

@@ -167,6 +167,7 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
     case kManual: update_manual(anm, input); break;
     case kMusicRoom: update_music(anm, input); break;
     case kSpellPractice: update_spell_practice(anm, input); break;
+    case kScore: update_score(anm, input); break;
     case kSpellList:
     case kSpellShot:
     case kKeyConfig: update_stub(anm, input); break;
@@ -1182,7 +1183,64 @@ void TitleScene::update_spell_practice(AnmManager& anm, const InputState& input)
     }
 }
 
-// 待还原画面（Key Config / Player Data / Spell List 0x12 / Spell Shot 0x13）
+// 0x452330：Player Data（难度←→ / 机体↑↓ / 翻页确定；取消回主菜单）
+void TitleScene::update_score(AnmManager& anm, const InputState& input) {
+    switch (sub) {
+    case 0: {
+        cursor.count = 4;
+        cursor.wrap = true;
+        cursor.set(0);
+        score_shot_cursor.count = 5;
+        score_shot_cursor.wrap = true;
+        score_shot_cursor.set(1);
+        score_page_cursor.count = 2;  // 0 列表关 / 1 翻开
+        score_page_cursor.wrap = false;
+        score_page_cursor.set(0);
+        if (vm[kLeafEmitter] == 0 && ascii_file) spawn_into(anm, kLeafEmitter, *ascii_file, kLeafEmitterScript);
+        if (title_file) spawn_into(anm, 0x6d, *title_file, 0x6d);  // +0x474
+        set_sub(1);
+        events.push_back({"score", 0});
+        [[fallthrough]];
+    }
+    case 1:
+        if (timer > 6) set_sub(2);
+        break;
+    case 2: {
+        const i32 prev_diff = cursor.index;
+        const i32 prev_shot = score_shot_cursor.index;
+        const u32 edge = input.pressed | input.repeat;
+        if (edge & InputState::kLeft) cursor.move(-1);
+        if (edge & InputState::kRight) cursor.move(1);
+        if (edge & InputState::kUp) score_shot_cursor.move(-1);
+        if (edge & InputState::kDown) score_shot_cursor.move(1);
+        if (cursor.index != prev_diff || score_shot_cursor.index != prev_shot) sfx(10);
+        if (input.pressed & InputState::kConfirmMask) {
+            // 原版：翻页光标在 0↔非0 间切换并刷成绩行；此处只发事件
+            score_page_cursor.set(score_page_cursor.index == 0 ? 1 : 0);
+            sfx(7);
+            events.push_back({"score-page", score_page_cursor.index});
+        }
+        if (input.pressed & InputState::kCancelMask) {
+            set_sub(3);
+            sfx(9);
+        }
+        break;
+    }
+    case 3:
+        if (timer > 5) {
+            dismiss(anm, 0x6d);
+            dismiss(anm, kLeafEmitter);
+            set_screen(kMainMenu);
+            cursor.pop();
+            events.push_back({"screen", screen});
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+// 待还原画面（Key Config / Spell List 0x12 / Spell Shot 0x13）
 void TitleScene::update_stub(AnmManager& anm, const InputState& input) {
     (void)anm;
     if (sub == 0) {
