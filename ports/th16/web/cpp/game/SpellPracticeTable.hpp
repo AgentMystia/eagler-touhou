@@ -15,12 +15,13 @@ struct SpellPracticeTable {
     static constexpr i32 kGroupCounts[kGroups] = {2, 3, 4, 3, 6, 9, 0xd};
 
     // DAT_00491700：每张符卡的难度字节（0..3 常规，4 Extra）
-    static constexpr u8 kSpellDifficulty[ScoreFile::kSpellRecords] = {
+    static constexpr u8 kSpellDifficulty[] = {
         0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3,
         0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1,
         2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3,
-        4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+        0, 1, 2, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
     };
+    static_assert(sizeof(kSpellDifficulty) == ScoreFile::kSpellRecords, "DAT_00491700 has one byte per spell");
 
     // DAT_00490ee0：((group * 0xd + slot) * 5) 个 i32
     static constexpr i32 kIds[kGroups][kSlots][kIdsPerSlot] = {
