@@ -1488,8 +1488,10 @@ int main(int argc, char** argv) {
         struct ScanInj { int frame; i32 code; };
         std::vector<Key> script;
         std::vector<ScanInj> scans;
+        bool unlock_spells = false;
         for (int a = 4; a < argc; ++a) {
             if (std::strcmp(argv[a], "skip") == 0) { session.supervisor.config_flags |= Supervisor::kSkipBootFlags; continue; }
+            if (std::strcmp(argv[a], "unlock-spells") == 0) { unlock_spells = true; continue; }
             const char* p = argv[a];
             while (*p) {
                 char* endp = nullptr;
@@ -1514,6 +1516,11 @@ int main(int argc, char** argv) {
             }
         }
         if (!session.begin_boot()) return fail(session.failure.c_str());
+        if (unlock_spells) {
+            // 标题符卡练习导航自测：把合计块 attempts[0] 置 1，等价于已在主线见过全部符卡
+            for (int id = 0; id < ScoreFile::kSpellRecords; ++id)
+                session.scores.spells[ScoreFile::kAllShotsBlock][id].attempts[0] = 1;
+        }
 
         // 绘制链每帧都跑（与 Application 相同），录制设备只保留最后一帧的调用
         RecordingDevice device;

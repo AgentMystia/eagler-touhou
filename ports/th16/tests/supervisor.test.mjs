@@ -460,7 +460,7 @@ test('Spell Shot (0x456a20): list confirm → shot; cancel returns to list 0x12'
   const listReady = spReady + 40;
   // 列表确定后 >0xd 进 shot，再等 case1 >10 才可取消
   const shotReady = listReady + 45;
-  const out = parse(run(['scene-boot', dat, String(shotReady + 25), [
+  const out = parse(run(['scene-boot', dat, String(shotReady + 25), 'unlock-spells', [
     ...downs, `${confirmAt}:${Z}`, `${spReady}:${Z}`, `${listReady}:${Z}`,
     `${shotReady}:${X}`,
   ].join(',')]));
@@ -476,12 +476,26 @@ test('Spell Start (0x455d50): shot confirm → 0x14; cancel → 0x13', needDat, 
   const listReady = spReady + 40;
   const shotReady = listReady + 45;
   const startReady = shotReady + 45;
-  const out = parse(run(['scene-boot', dat, String(startReady + 25), [
+  const out = parse(run(['scene-boot', dat, String(startReady + 25), 'unlock-spells', [
     ...downs, `${confirmAt}:${Z}`, `${spReady}:${Z}`, `${listReady}:${Z}`,
     `${shotReady}:${Z}`, `${startReady}:${X}`,
   ].join(',')]));
   assert.ok(out.events.some(e => e[0] === 'spell-start'));
   assert.equal(out.header.screen, 0x13);
+});
+
+test('Spell List lock (0x456060): confirm locked slot plays sfx 16', needDat, () => {
+  const t = MAIN + 1;
+  const downs = Array.from({length: 2}, (_, i) => `${t + i * 2}:${DOWN}`);
+  const confirmAt = t + 4 + 2;
+  const spReady = confirmAt + 35;
+  const listReady = spReady + 40;
+  const out = parse(run(['scene-boot', dat, String(listReady + 5), [
+    ...downs, `${confirmAt}:${Z}`, `${spReady}:${Z}`, `${listReady}:${Z}`,
+  ].join(',')]));
+  assert.ok(out.events.some(e => e[0] === 'spell-list'));
+  assert.ok(out.events.some(e => e[0] === 'sfx' && e[1] === '16'));
+  assert.equal(out.header.screen, 0x12, 'stays on list when locked');
 });
 
 test('Player Data (0x452330): cancel returns to the main menu', needDat, () => {

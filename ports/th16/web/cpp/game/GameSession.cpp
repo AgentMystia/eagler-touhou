@@ -263,6 +263,7 @@ bool GameSession::activate_title_menu() {
 
     // 0x44af80 case 0 → 0x44a560(1) → 0x44b5f0：标题对象在首次更新链调用时自行生成装饰/logo
     title.activate(title_file, title_v_file, animations.file(AnmManager::kAsciiSlot), globals);
+    title.scores = &scores;
     title.replay_directory = demo_directory;
     title.on_screen_fade = [this](i32 kind, i32 duration, u32 color) { create_screen_fade(kind, duration, color); };
     title.on_transition_effect = [this]() {
