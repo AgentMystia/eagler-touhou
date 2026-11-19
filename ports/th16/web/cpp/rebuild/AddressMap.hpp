@@ -217,6 +217,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"enemy-manager-create", 0x41B340, "game/Enemy.cpp EnemyManager::create + GameSession.cpp enter_game（0x41ae70 装 ECL + 登记更新链 0x1a）"},
     {"enemy-manager-update", 0x41B3D0, "game/Enemy.cpp EnemyManager::update（0x41b4f0 入口：遍历敌人链表、清 0x40000 重入位、同步 enemy_count）"},
     {"enemy-spawn", 0x41AA70, "game/Enemy.cpp EnemyManager::spawn_enemy / Enemy::init（分配 id、flags、invuln=2、life_timer=0x3c，承袭生成者 I0..I3/F0..F7，立即执行首帧 0x41d1e0，再定死亡音效与默认爆散脚本 Enemy::apply_default_death_effect）"},
+    {"enemy-construct", 0x41B580, "game/Enemy.cpp Enemy::init（EnemyInf 构造：清零 +0x120c 起 0x4530 字节，anm_layer_offset(+0x27c) 初值 1 → 主 VM 默认层 8、死亡脚本 0、插值器复位、父对象 id 承接）"},
     {"enemy-update", 0x41D2E0, "game/Enemy.cpp Enemy::update（0x41d1e0：0x40000 隔帧门控 → 运动 0x41bb50 → ECL 0x473bc0 → 碰撞 0x41c330 → 畸变 0x41cbd0 → invuln/season_drop 倒数）"},
     {"enemy-motion", 0x41BB50, "game/Enemy.cpp Enemy::update（两组角度 / 速度 / 半径 Vec2 / 位置插值 → motion1/2 update_velocity + integrate → 0x41c1f0 合成与 0x20000 边界钳制 → 精灵半宽高场地进出判定）"},
     {"enemy-motion-combine", 0x41C1F0, "game/Enemy.cpp Enemy::apply_motion_position（pos += (m1+m2-pos) floor 1/100 + 0x20000 边界框钳制）"},

@@ -126,7 +126,7 @@ public:
     i32 main_script_base = 0;   // +0x270：朝向脚本族基号（+1..+4 = 左右倾/回正）
     i32 sprite_direction = 0;   // +0x274：-1 左 / 0 正 / 1 右
     i32 anm_layer = 0;          // +0x278（op 550）
-    i32 anm_layer_offset = 0;   // +0x27c（op 552）：spawn 层 = 该值 + 7
+    i32 anm_layer_offset = 1;   // +0x27c（op 552；0x41b580 初值 1）：spawn 层 = 该值 + 7
     Vec3 hit_pos;               // EnemyInf+0x280：最后一次命中的伤害源坐标（0x445a30 出参）
     Vec3 delta;                 // EnemyInf+0x78：0x41c1f0 本帧位移（朝向判定 / 0x80 位 VM 的朝向角）
     float vm_rotation = 0;      // EnemyInf+0x120：上次写给 0x80 位 VM 的 rotation.z
