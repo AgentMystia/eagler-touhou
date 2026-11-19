@@ -88,7 +88,9 @@ public:
     ChainEntry* foreground_draw_chain = nullptr;
 
     // 0x4097c0 + 0x40ac30：解析 STD；anm 由调用方装入槽 3 + (stage & 1) 后传入
-    bool load(const u8* bytes, u32 size, i32 stage);
+    // 0x4097c0：解析 STD；相机先整份抄自全局 0x4c168c（上一关留下的雾色 / 雾距 / 视口 / 法向等随之继承，
+    // 直到本关 STD 自己设定），再覆盖 pos / facing / up 并清 pos_offset / facing_offset
+    bool load(const u8* bytes, u32 size, i32 stage, const Camera& global_camera = Camera{});
     // 0x40add0：建面 VM 并重置脚本
     void start(AnmManager& manager);
     // 0x409e50
