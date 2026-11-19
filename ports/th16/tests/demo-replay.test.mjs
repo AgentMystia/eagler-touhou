@@ -57,10 +57,38 @@ test('replay-roundtrip: a port recording plays back identically in the port and 
   }
 });
 
+test('replay-roundtrip: a two-segment recording (stage 1 clear → stage 2) plays back identically in the port and in the original', { skip: !existsSync(dat) && 'th16.dat not present' }, () => {
+  // 0x449030 装载时备好新段头（种子），0x42dee0 → 0x448eb0（换关后第 0x1e 帧）才换段；其间的帧仍记 / 读上一段
+  const g = golden.recorded_multi;
+  const c = JSON.parse(readFileSync(join(root, 'tests/golden/stage-clear.json'), 'utf8')).cases.find((x) => x.name === g.case);
+  const dir = mkdtempSync(join(tmpdir(), 'th16-rec-'));
+  try {
+    const run = (env, input) => {
+      const r = spawnSync(harness, ['game-digest', dat, String(c.stage), String(c.shot), String(c.season), String(g.frames), input, '', '',
+        String(c.difficulty), String(c.replay_slot), String(g.lives), '1', String(c.mode)],
+        { encoding: 'utf8', env: { ...process.env, ...env }, maxBuffer: 1 << 26 });
+      assert.equal(r.status, 0, r.stderr || r.stdout);
+      return Object.fromEntries(r.stdout.trim().split('\n').at(-1).split(' ').map((kv) => kv.split('=')));
+    };
+    const recorded = run({ TH16_RECORD_DIR: dir }, c.input);
+    const rpy = join(dir, 'replay', 'th16_01.rpy');
+    const segs = spawnSync(harness, ['replay-globals', rpy], { encoding: 'utf8' }).stdout.trim().split('\n')
+      .map((l) => ({ stage: Number(l.match(/ stage=(\d+)/)[1]), frames: Number(l.match(/ frames=(\d+)/)[1]) }));
+    assert.deepEqual(segs, g.segments, 'segment split at the 0x448eb0 point');
+    const replayed = run({ TH16_REPLAY: rpy }, '0:0');
+    for (const key of ['digest', 'enemies', 'enemy_vms', 'bullets', 'items', 'spell', 'lasers', 'bombs', 'menu']) {
+      assert.equal(recorded[key], g[key], `recording run ${key}`);
+      assert.equal(replayed[key], g[key], `port playback ${key}`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('replay-globals: stage header +0x14 snapshot decodes the 0x4a5790 block', need, () => {
   const r = spawnSync(harness, ['replay-globals', join(demosDir, 'demo1.rpy')], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr || r.stdout);
   assert.equal(r.stdout.trim(),
     '0 stage=3 shot=0+0 season=1 diff=2 score=0 lives=2/0 bombs=3/0 power=400/400/100 gauge=1140/1140 pv=1000000 graze=0 ' +
-    'replay_slot=-1 pos=0,51200 focus=0 new_game=1');
+    'replay_slot=-1 pos=0,51200 focus=0 new_game=1 seed=30966 frames=6777');
 });

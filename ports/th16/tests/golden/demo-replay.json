@@ -86,5 +86,30 @@
   "lasers": "46916e5313814d06",
   "bombs": "42cc17fdd0ef4112",
   "menu": "dbc5a4b33058e07d"
+ },
+ "recorded_multi": {
+  "_source": "stage-clear.json 第 1 例输入（残机 8、每帧补满）以 TH16_RECORD_DIR 录制两段（第 1 / 2 面），再以 game-oracle.py --replay --lives 8 --refill-lives 在原版回放 13000 帧",
+  "case": "st1-easy-reimu-spring-clear-to-st2",
+  "frames": 13000,
+  "lives": 8,
+  "segments": [
+   {
+    "stage": 1,
+    "frames": 12208
+   },
+   {
+    "stage": 2,
+    "frames": 793
+   }
+  ],
+  "digest": "132b2f53cb65a1ad",
+  "enemies": "c0f3ee7727fadd10",
+  "enemy_vms": "0cea1103d8d5ed4d",
+  "bullets": "abbef1598b97a70d",
+  "items": "8f0b34a6f76776e4",
+  "spell": "6d5d1cd1691847e9",
+  "lasers": "c5bcb01ee7d85c0f",
+  "bombs": "28bf1f31ff0129aa",
+  "menu": "342d14222d6af186"
  }
 }
