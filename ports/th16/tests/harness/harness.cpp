@@ -1594,12 +1594,18 @@ int main(int argc, char** argv) {
         bool dump_ascii = false;
         bool dump_text = false;
         i32 title_origin = -1;
+        int spell_return[3] = {-1, -1, -1};
         for (int a = 4; a < argc; ++a) {
             if (std::strcmp(argv[a], "skip") == 0) { session.supervisor.config_flags |= Supervisor::kSkipBootFlags; continue; }
             if (std::strcmp(argv[a], "ascii") == 0) { dump_ascii = true; continue; }
             if (std::strcmp(argv[a], "text") == 0) { dump_text = true; continue; }
             if (std::strcmp(argv[a], "unlock-spells") == 0) { unlock_spells = true; continue; }
             if (std::strncmp(argv[a], "origin=", 7) == 0) { title_origin = std::atoi(argv[a] + 7); continue; }
+            if (std::strncmp(argv[a], "spell-return=", 13) == 0) {
+                // DAT_004a2970 / 0049f2dc / 0049f2d8：符卡练习返回标题时要还原的分组 / 列表 / 条目
+                std::sscanf(argv[a] + 13, "%d,%d,%d", &spell_return[0], &spell_return[1], &spell_return[2]);
+                continue;
+            }
             const char* p = argv[a];
             while (*p) {
                 char* endp = nullptr;
@@ -1625,6 +1631,9 @@ int main(int argc, char** argv) {
         }
         if (!session.begin_boot()) return fail(session.failure.c_str());
         if (title_origin >= 0) session.globals.title_origin = title_origin;
+        session.globals.spell_return_group = spell_return[0];
+        session.globals.spell_return_list = spell_return[1];
+        session.globals.spell_return_entry = spell_return[2];
         if (unlock_spells) {
             // 标题符卡练习导航自测：把合计块 attempts[0] 置 1，等价于已在主线见过全部符卡
             for (int id = 0; id < ScoreFile::kSpellRecords; ++id)
@@ -1652,6 +1661,11 @@ int main(int argc, char** argv) {
                     g.difficulty, g.shot, g.season, g.stage, g.mode(), session.quit_requested ? 1 : 0,
                     unsigned(g.bgm_volume), unsigned(g.se_volume),
                     session.chains.update_count(), session.chains.draw_count(), quads.size());
+        std::printf("spell group=%d list=%d entry=%d shot=%d slots=%d,%d,%d,%d,%d return=%d,%d,%d origin=%d replay_slot=%d\n",
+                    title.spell_group, title.spell_list_index, title.spell_entry_index, title.spell_shot_cursor.index,
+                    title.spell_slot_ids[0], title.spell_slot_ids[1], title.spell_slot_ids[2], title.spell_slot_ids[3],
+                    title.spell_slot_ids[4], g.spell_return_group, g.spell_return_list, g.spell_return_entry,
+                    g.title_origin, g.replay_slot);
         for (const TitleScene::Event& e : session.title_events) std::printf("event %s %d\n", e.kind, e.value);
         for (const TitleScene::Event& e : title.events) std::printf("event %s %d\n", e.kind, e.value);
         if (dump_ascii) {

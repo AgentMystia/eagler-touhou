@@ -43,8 +43,8 @@ test('text-raster: 0x459240 TextOut order, DIB alpha flip / soften / bleed, Meir
 });
 
 test('text-paint: Spell Practice queues 0x4560b0 rows and 0x417f00 spell name with 0x459240 arguments', needDat, () => {
-  const r = spawnSync(harness, ['scene-boot', dat, '900', 'unlock-spells', 'text',
-    '260:0x20,273:0x20,286:0x1,347:0x1,420:0x1,480:0x1,540:0x1,600:0x1'], { encoding: 'latin1' });
+  const r = spawnSync(harness, ['scene-boot', dat, '1020', 'unlock-spells', 'text',
+    '380:0x20,393:0x20,406:0x1,467:0x1,540:0x1,600:0x1,660:0x1,720:0x1'], { encoding: 'latin1' });
   assert.equal(r.status, 0, r.stderr || r.stdout);
   const rows = r.stdout.split('\n').filter(l => l.startsWith('text '));
   // 0x46d990(…, 0, 0)：x = param_6×2 = 0、整串 TextOut、flags_hi bit12 清 → 带阴影
@@ -59,8 +59,8 @@ test('text-paint: Spell Practice queues 0x4560b0 rows and 0x417f00 spell name wi
 });
 
 test('text-paint: Music Room 0x4546f0 rows, comments and the unheard-track notice (PTR_DAT_004936b8, 0x8080ff)', needDat, () => {
-  // 标题 181 起、第 191 帧 0x44af80 重播 th16_01 置 0 号已听过；主菜单 ↓×5 → Music Room
-  const t = 193, ready = t + 12 + 0x14 + 17;
+  // 标题 181 起、第 191 帧 0x44af80 重播 th16_01 置 0 号已听过；主菜单（312 起）↓×5 → Music Room
+  const t = 313, ready = t + 12 + 0x14 + 17;
   const script = [0, 2, 4, 6, 8].map(i => `${t + i}:0x20`)
     .concat([`${t + 12}:0x1`, `${ready}:0x20`, `${ready + 2}:0x1`, `${ready + 30}:0x1`]).join(',');
   const r = spawnSync(harness, ['scene-boot', dat, String(ready + 60), script, 'text']);

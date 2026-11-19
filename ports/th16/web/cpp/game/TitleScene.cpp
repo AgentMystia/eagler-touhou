@@ -92,6 +92,8 @@ void TitleScene::tick_idle_demo(const InputState& input) {
         if (idle_frames < 0x708) return;
         GameGlobals& g = *globals;
         g.flags = (g.flags & ~0x80u) | 0x40u;
+        g.demo_saved_difficulty = g.difficulty;  // DAT_004a59c0
+        g.title_origin = 1;
         pending_demo = demo_index;
         events.push_back({"demo", demo_index});
         const i32 n = demo_index + 1;
@@ -119,53 +121,64 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
     switch (screen) {
     case kNone: {
         // 0x44af80 case 0：按 DAT_004a6f1c（title_origin）分流
-        const i32 origin = globals->title_origin;
-        if (origin != 3) {
-            // 非 demo 返回：10 帧后重播 th16_01（+0x5ce8 bit0）
-            title_bgm_pending = (globals->flags & 0x40u) == 0;
-            title_bgm_delay = 0;
-        }
-        if (origin == 0) {
-            globals->title_origin = 1;
-            set_screen(kMainMenu);
-            update_main_menu(anm, input);
-        } else if (origin == 1) {
-            set_screen(kMainMenu);
-            update_main_menu(anm, input);
-        } else if (origin == 2) {
-            // 回放结束回标题：进 Replay 画面（BGM th16_01 等由宿主补）
-            globals->title_origin = 1;
-            set_screen(kReplay);
-        } else if (origin == 5) {
-            // 符卡练习返回：kind 9 淡入 + 装饰 0x61 interrupt 3 → Spell Practice
-            if (on_screen_fade) on_screen_fade(9, 0x1e, 0);
-            globals->title_origin = 1;
-            u32 decor = 0;
-            if (vm[kDecor61] == 0) spawn_into(anm, kDecor61, *title_file, kDecor61);
-            decor = vm[kDecor61];
-            if (decor) anm.interrupt_now(decor, 3);
-            set_screen(kSpellPractice);
-        } else if (origin == 4) {
-            // 练习返回：kind 9 淡入 + 装饰 0x61 interrupt 3 → 难度选择
-            if (on_screen_fade) on_screen_fade(9, 0x1e, 0);
-            u32 decor = 0;
-            if (vm[kDecor61] == 0) spawn_into(anm, kDecor61, *title_file, kDecor61);
-            decor = vm[kDecor61];
-            if (decor) anm.interrupt_now(decor, 3);
-            set_screen(kDifficulty);
-        } else if (origin == 3) {
+        GameGlobals& g = *globals;
+        const i32 origin = g.title_origin;
+        if (origin == 3) {
             // 通关回标题：压栈主光标后落入 case 0xe 名字输入 / 排名登记（0x4532f0）
             cursor.count = 10;
             cursor.set(0);
             cursor.push();
             set_screen(kNameEntry);
-            globals->title_origin = 1;
+            g.title_origin = 1;
             update_name_entry(anm, input);
-        } else {
-            globals->title_origin = 1;
-            set_screen(kMainMenu);
-            update_main_menu(anm, input);
+            break;
         }
+        // +0x5ce8 bit0：非 demo 返回 10 帧后重播 th16_01；demo 返回则还原 DAT_004a59c0 难度
+        if ((g.flags & 0x40u) == 0) {
+            title_bgm_pending = true;
+            title_bgm_delay = 0;
+        } else {
+            title_bgm_pending = false;
+            g.difficulty = g.demo_saved_difficulty;
+        }
+        g.flags &= ~0x40u;
+        first_entry = origin == 0;
+        if (origin == 0) {
+            set_screen(kMainMenu);
+            g.title_origin = 1;
+        } else if (origin == 1) {
+            if (g.difficulty == kExtraDifficulty) cursor.set(1);
+            set_screen(kMainMenu);
+        } else if (origin == 2) {
+            // 回放结束：0x43c370 th16_01 + 0x43c3f0(0, 0)，模式清 0，主光标压栈停在 Replay
+            events.push_back({"bgm-default", 1});
+            if ((g.input_config & 0x10u) != 0) play_bgm_op(4);
+            play_bgm_op(2);
+            if (scores != nullptr) scores->mark_bgm_heard(0);
+            g.set_mode(0);
+            cursor.count = 10;
+            cursor.set(4);
+            cursor.push();
+            set_screen(kReplay);
+            g.title_origin = 1;
+            update_replay(anm, input);
+            break;
+        } else if (origin == 4 || origin == 5) {
+            // 练习 / 符卡练习返回：kind 9 淡入 + 装饰 0x61 interrupt 3，同帧进难度选择 / 符卡练习
+            if (on_screen_fade) on_screen_fade(9, 0x1e, 0);
+            spawn_into(anm, kDecor61, *title_file, kDecor61);
+            anm.interrupt_now(vm[kDecor61], 3);
+            if (origin == 5) {
+                set_screen(kSpellPractice);
+                g.title_origin = 1;
+                update_spell_practice(anm, input);
+            } else {
+                set_screen(kDifficulty);
+                update_difficulty(anm, input);
+            }
+            break;
+        }
+        update_main_menu(anm, input);
         break;
     }
     case kMainMenu:
@@ -200,38 +213,26 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
     ++timer;  // 0x44af80 末尾
 }
 
-void TitleScene::refresh_spell_slot_names(AnmManager& anm) {
-    // 0x4560b0：名 VM 0xd2+i、按难度填 slot id、0x46d990 刷名行
+void TitleScene::refresh_spell_slot_names(AnmManager& anm, i32 list_index) {
+    // 0x4560b0(group, list_index, +0x5dd0)：名 VM 0xd2+i、按难度填 slot id、0x46d990 刷名行
     if (title_file == nullptr) return;
 
-    // SJIS：挑戦可能！ /  No.%3d  ？×11（与 th16.exe .rdata 一致）
-    static constexpr char kChallenge[] = "\x92\xa7\x90\xed\x89\xc2\x94\\\x81I";
+    // SJIS（th16.exe 栈上常量）：挑戦可能！ / オーバードライブモード挑戦可能！；DAT_0049364c 未解锁行
+    static constexpr char kChallenge[] = "\x92\xa7\x90\xed\x89\xc2\x94\x5c\x81\x49";
+    static constexpr char kOverdriveChallenge[] =
+        "\x83\x49\x81\x5b\x83\x6f\x81\x5b\x83\x68\x83\x89\x83\x43\x83\x75\x83\x82\x81\x5b\x83\x68"
+        "\x92\xa7\x90\xed\x89\xc2\x94\x5c\x81\x49";
     static constexpr char kLockedFmt[] =
-        " No.%3d  \x81H\x81H\x81H\x81H\x81H\x81H\x81H\x81H\x81H\x81H\x81H";
-    static constexpr i32 kDiffMarker = 0x10d;  // +0x6f4：难度角标 0x10d..0x110
+        " No.%3d  \x81\x48\x81\x48\x81\x48\x81\x48\x81\x48\x81\x48\x81\x48\x81\x48\x81\x48\x81\x48\x81\x48";
+    static constexpr i32 kDiffMarker = 0x10d;  // +0x6f4：难度角标 0x10d + 难度（7 槽）
+    static constexpr size_t kBodyWidth = 0x2a;
 
-    for (int i = 0; i < 5; ++i) spell_slot_ids[i] = -2;
-
-    // 先藏旧角标（+0x6f4 起 7 槽），非 Extra 再生成 0x10d..0x110
-    for (int i = 0; i < 7; ++i) {
-        const i32 slot = kDiffMarker + i;
-        if (slot >= kVmTable) break;
-        if (vm[slot] != 0) {
-            anm.kill(vm[slot]);
-            vm[slot] = 0;
-        }
-    }
-    if (spell_group != 6) {
-        for (int i = 0; i < 4; ++i) {
-            if (vm[kDiffMarker + i] == 0) spawn_into(anm, kDiffMarker + i, *title_file, kDiffMarker + i);
-            if (vm[kDiffMarker + i] != 0) anm.interrupt_now(vm[kDiffMarker + i], 3);
-        }
-    }
+    for (i32& id : spell_slot_ids) id = -2;
+    for (int i = 0; i < 7; ++i) anm.kill(vm[kDiffMarker + i]);
 
     for (int i = 0; i < 5; ++i) {
-        if (spell_name_vms[i] == 0) {
-            AnmVm* spawned = nullptr;
-            spell_name_vms[i] = anm.spawn(*title_file, 0xd2 + i, -1, &spawned);
+        if (anm.find(spell_name_vms[i]) == nullptr) {
+            spell_name_vms[i] = anm.spawn(*title_file, 0xd2 + i, -1);
         }
         AnmVm* name_vm = anm.find(spell_name_vms[i]);
         if (name_vm == nullptr) {
@@ -241,84 +242,78 @@ void TitleScene::refresh_spell_slot_names(AnmManager& anm) {
         anm.interrupt_now(spell_name_vms[i], 2);
         text_paint_vm(anm, *name_vm, 0x808080u, 0, 0, 0, 0, " Nothing ... ", text_paints);
     }
+    if (spell_group != 6) {
+        for (int i = 0; i < 4; ++i) {
+            spawn_into(anm, kDiffMarker + i, *title_file, kDiffMarker + i);
+            anm.interrupt_now(vm[kDiffMarker + i], 3);
+        }
+    }
 
     i32 raw[5];
-    SpellPracticeTable::raw_slot_ids(spell_group, cursor.index, raw);
-    i32 max_used = -1;
-    int seen = 0;
-    for (int i = 0; i < 5; ++i) {
-        const i32 id = raw[i];
+    SpellPracticeTable::raw_slot_ids(spell_group, list_index, raw);
+    i32 max_used = 0;
+    for (int n = 0; n < 5; ++n) {
+        const i32 id = raw[n];
         if (id < 0) break;
-        if (id >= ScoreFile::kSpellRecords) { ++seen; continue; }
         const i32 diff = SpellPracticeTable::spell_difficulty(id);
-        i32 dest = 4;
-        if (spell_group == 6) dest = (diff != 4) ? 1 : 0;
-        else if (diff < 5) dest = diff;
-
+        i32 dest;
         if (spell_group == 6) {
-            // Extra：难度 4 → +0x704 脚本 0x111；难度 5 → +0x70c 脚本 0x113
-            if (diff == 4 && vm[0x111] == 0) spawn_into(anm, 0x111, *title_file, 0x111);
-            else if (diff == 5 && vm[0x113] == 0) spawn_into(anm, 0x113, *title_file, 0x113);
-        } else if (diff > 4 && vm[0x112] == 0) {
-            spawn_into(anm, 0x112, *title_file, 0x112);
-            if (vm[0x112] != 0) anm.interrupt_now(vm[0x112], 3);
+            if (diff == 4) spawn_into(anm, 0x111, *title_file, 0x111);       // +0x704
+            else if (diff == 5) spawn_into(anm, 0x113, *title_file, 0x113);  // +0x70c
+            dest = diff != 4 ? 1 : 0;
+        } else {
+            if (diff > 4) {
+                spawn_into(anm, 0x112, *title_file, 0x112);  // +0x708
+                anm.interrupt_now(vm[0x112], 3);
+            }
+            dest = diff < 5 ? diff : 4;
         }
 
-        bool open = false;
-        if (scores != nullptr) {
-            const SpellRecord& all = scores->spells[ScoreFile::kAllShotsBlock][id];
-            open = all.attempts[0] != 0;
-            if (!open && diff > 4) {
-                open = true;
-                for (int p = 0; p < seen; ++p) {
-                    const i32 prev = raw[p];
-                    if (prev < 0 || prev >= ScoreFile::kSpellRecords) { open = false; break; }
-                    const SpellRecord& prev_all = scores->spells[ScoreFile::kAllShotsBlock][prev];
-                    if (prev_all.captures[0] == 0 && prev_all.captures[1] == 0) { open = false; break; }
+        const SpellRecord* all = scores != nullptr && id < ScoreFile::kSpellRecords
+            ? &scores->spells[ScoreFile::kAllShotsBlock][id] : nullptr;
+        // 难度 > 4（Overdrive）：本槽之前的符卡在全机体块都已收取过才开放
+        bool chain_open = false;
+        if (diff > 4) {
+            chain_open = true;
+            for (int p = 0; p < n; ++p) {
+                const SpellRecord* prev = scores != nullptr && raw[p] < ScoreFile::kSpellRecords
+                    ? &scores->spells[ScoreFile::kAllShotsBlock][raw[p]] : nullptr;
+                if (prev == nullptr || (prev->captures[0] == 0 && prev->captures[1] == 0)) {
+                    chain_open = false;
+                    break;
                 }
             }
-        } else {
-            open = true;
         }
 
         AnmVm* name_vm = anm.find(spell_name_vms[dest]);
-        if (name_vm == nullptr) {
-            spell_name_vms[dest] = 0;
-            ++seen;
-            continue;
-        }
-
-        char line[0xc1] = {};
-        if (!open) {
+        if (name_vm == nullptr) spell_name_vms[dest] = 0;
+        char line[0xc1 + 0x10] = {};
+        if ((all != nullptr && all->attempts[0] != 0) || chain_open) {
+            spell_slot_ids[dest] = id;
+            char body[0xc1] = {};
+            if (all == nullptr || (all->attempts[0] == 0 && all->attempts[1] == 0)) {
+                std::snprintf(body, sizeof(body), "%s", diff < 5 ? kChallenge : kOverdriveChallenge);
+            } else {
+                std::snprintf(body, sizeof(body), "%s", all->name);
+            }
+            const size_t len = std::strlen(body);
+            if (len < kBodyWidth) std::memset(body + len, ' ', kBodyWidth - len);
+            std::snprintf(line, sizeof(line), " No.%3d  %s", id + 1, body);
+            const SpellRecord* rec = scores != nullptr ? scores->spell_record(spell_shot_cursor.index, id) : nullptr;
+            const u32 color = rec != nullptr && rec->captures[1] != 0 ? 0xffff80u : 0xefefefu;
+            if (name_vm != nullptr) text_paint_vm(anm, *name_vm, color, 0, 0, 0, 0, line, text_paints);
+        } else {
             spell_slot_ids[dest] = -1;
             std::snprintf(line, sizeof(line), kLockedFmt, id + 1);
-            text_paint_vm(anm, *name_vm, 0xb0b0b0u, 0, 0, 0, 0, line, text_paints);
-        } else {
-            spell_slot_ids[dest] = id;
-            const SpellRecord& all = scores != nullptr
-                ? scores->spells[ScoreFile::kAllShotsBlock][id]
-                : SpellRecord{};
-            const char* body = kChallenge;
-            if ((all.attempts[0] != 0 || all.attempts[1] != 0) && all.name[0] != '\0') body = all.name;
-            std::snprintf(line, sizeof(line), " No.%3d  %s", id + 1, body);
-            u32 color = 0xefefefu;
-            if (scores != nullptr) {
-                const SpellRecord* rec = scores->spell_record(spell_shot_cursor.index, id);
-                if (rec != nullptr && rec->captures[1] != 0) color = 0xffff80u;
-            }
-            text_paint_vm(anm, *name_vm, color, 0, 0, 0, 0, line, text_paints);
+            if (name_vm != nullptr) text_paint_vm(anm, *name_vm, 0xb0b0b0u, 0, 0, 0, 0, line, text_paints);
         }
         anm.interrupt_now(spell_name_vms[dest], 2);
         if (dest > max_used) max_used = dest;
-        ++seen;
     }
 
-    const i32 last = (spell_group == 6) ? 1 : 4;
-    for (int i = 0; i <= last; ++i) {
-        if (spell_name_vms[i] != 0) anm.interrupt_now(spell_name_vms[i], 3);
-    }
+    const i32 shown = spell_group == 6 ? 2 : 5;
+    for (int i = 0; i < shown; ++i) anm.interrupt_now(spell_name_vms[i], 3);
     for (int i = max_used + 1; i < 5; ++i) {
-        if (spell_name_vms[i] == 0) continue;
         anm.kill(spell_name_vms[i]);
         spell_name_vms[i] = 0;
     }
@@ -703,16 +698,23 @@ void TitleScene::update_main_menu(AnmManager& anm, const InputState& input) {
         if (mode == 2) { cursor.set(3); g.set_mode(0); }
         else if (mode != 0) { cursor.set(2); g.set_mode(0); }
         set_sub(1);
-        if (anm.find(vm[0x61]) == nullptr) {
+        if (first_entry) {
+            // 首次进标题（+0x5ce8 bit1）：装饰从头播开场，Timer 从 0 数到 0x78 才出 logo
             spawn_into(anm, 0x61, *title_file, 0x61);
-            anm.interrupt_now(vm[0x61], 2);
-        }
-        if (anm.find(vm[kDecor65]) == nullptr) {
             spawn_into(anm, kDecor65, *title_file, kDecor65);
-            anm.interrupt_now(vm[kDecor65], 2);
+            first_entry = false;
+        } else {
+            if (anm.find(vm[0x61]) == nullptr) {
+                spawn_into(anm, 0x61, *title_file, 0x61);
+                anm.interrupt_now(vm[0x61], 2);
+            }
+            if (anm.find(vm[kDecor65]) == nullptr) {
+                spawn_into(anm, kDecor65, *title_file, kDecor65);
+                anm.interrupt_now(vm[kDecor65], 2);
+            }
+            if (prev_screen != kOption) anm.interrupt_now(vm[0x61], 2);
+            timer = 0x78;  // 0x406490(&Timer, 0x78)
         }
-        if (prev_screen != kOption) anm.interrupt_now(vm[0x61], 2);
-        timer = 0x78;  // 0x406490(&Timer, 0x78)
         [[fallthrough]];
     }
     case 1:
@@ -807,6 +809,9 @@ void TitleScene::update_main_menu(AnmManager& anm, const InputState& input) {
                 anm.interrupt_now(vm[0x61], 3);
                 set_screen(kSpellPractice);
                 cursor.push();
+                spell_shot_cursor.wrap = true;
+                spell_shot_cursor.count = 4;
+                spell_shot_cursor.set(g.last_shot);
                 cursor.set(0);
                 break;
             case 4: anm.interrupt_now(vm[0x61], 3); set_screen(kReplay); cursor.push(); break;
@@ -840,7 +845,16 @@ void TitleScene::update_difficulty(AnmManager& anm, const InputState& input) {
         spawn_into(anm, panel, *title_file, panel);
         anm.interrupt_now(vm[panel], 3);
         anm.interrupt(vm[panel], to_short(cursor.index + 0xd));
-        // DAT_004a6f1c == 4（练习返回直达机体选择）待接
+        if (g.title_origin == 4) {
+            // 练习返回：按上次难度自动确认，同帧进机体选择
+            cursor.set(g.difficulty);
+            anm.interrupt_now(vm[panel], 3);
+            anm.interrupt_now(vm[panel], to_short(cursor.index + 7));
+            anm.interrupt_now(vm[panel], 6);
+            anm.interrupt(child_id(anm, panel, cursor.index + 0x74), 2);
+            enter_shot_select();
+            return;
+        }
         spawn_into(anm, kDifficultyBack, *title_file, kDifficultyBack);
         set_sub(1);
         // 无通关记录的难度显示提示标记（0x44a8e0 == 0 → reveal 子 0x9e+d）；当前无存档 → 全部显示
@@ -883,18 +897,7 @@ void TitleScene::update_difficulty(AnmManager& anm, const InputState& input) {
     case 3:
         if (timer > 0xd) {
             dismiss(anm, kDifficultyBack);
-            // LAB_004501a0
-            set_screen(kShot);
-            if (!extra) {
-                g.last_difficulty = cursor.index;
-                g.difficulty = cursor.index;
-            }
-            cursor.push();
-            cursor.wrap = true;
-            cursor.count = 4;
-            cursor.set(g.last_shot);
-            g.shot = g.last_shot;
-            events.push_back({"screen", screen});
+            enter_shot_select();
         }
         break;
     case 4:
@@ -925,6 +928,22 @@ void TitleScene::update_difficulty(AnmManager& anm, const InputState& input) {
     }
 }
 
+void TitleScene::enter_shot_select() {
+    // 0x44fe20 LAB_004501a0
+    GameGlobals& g = *globals;
+    set_screen(kShot);
+    if (g.difficulty < 4) {
+        g.last_difficulty = cursor.index;
+        g.difficulty = cursor.index;
+    }
+    cursor.push();
+    cursor.wrap = true;
+    cursor.count = 4;
+    cursor.set(g.last_shot);
+    g.shot = g.last_shot;
+    events.push_back({"screen", screen});
+}
+
 // 0x4502c0：机体选择（面板 0x96 普通 / 0x98 Extra；项 0x80+s / 0x88+s；通关标记 0x9a..0x9d；装饰 0x58/0x59）
 void TitleScene::update_shot(AnmManager& anm, const InputState& input) {
     GameGlobals& g = *globals;
@@ -948,7 +967,16 @@ void TitleScene::update_shot(AnmManager& anm, const InputState& input) {
         set_sub(1);
         // 该难度下各机体无通关记录 → reveal 0x9a..0x9d（当前无存档 → 全部）
         for (i32 k = 0; k < 4; ++k) reveal(anm, child_id(anm, panel, 0x9a + k));
-        // DAT_004a6f1c == 4 分支待接
+        if (g.title_origin == 4) {
+            cursor.set(g.shot);
+            anm.interrupt_now(vm[panel], to_short(cursor.index + 7));
+            anm.interrupt(child_id(anm, panel, cursor.index + 0x80), 6);
+            anm.interrupt(child_id(anm, panel, cursor.index + 0x88), 6);
+            anm.interrupt(child_id(anm, panel, 0x58), 6);
+            anm.interrupt(child_id(anm, panel, 0x59), 6);
+            enter_season_select(anm, panel);
+            return;
+        }
         [[fallthrough]];
     }
     case 1:
@@ -988,18 +1016,7 @@ void TitleScene::update_shot(AnmManager& anm, const InputState& input) {
     }
     case 3:
         if (timer < 0xe) return;
-        // LAB_004509e1
-        set_screen(kSeason);
-        g.shot = cursor.index;
-        g.last_shot = g.shot;
-        cursor.push();
-        cursor.disabled_count = 0;
-        cursor.wrap = true;
-        cursor.count = 5;
-        cursor.set(g.shot);
-        anm.interrupt(vm[panel], 6);
-        dismiss(anm, kShotBack);
-        events.push_back({"screen", screen});
+        enter_season_select(anm, panel);
         break;
     case 4:
         if (timer > 5) {
@@ -1015,6 +1032,21 @@ void TitleScene::update_shot(AnmManager& anm, const InputState& input) {
     default:
         break;
     }
+}
+
+void TitleScene::enter_season_select(AnmManager& anm, i32 panel) {
+    // 0x4502c0 LAB_004509e1
+    GameGlobals& g = *globals;
+    set_screen(kSeason);
+    g.shot = cursor.index;
+    g.last_shot = g.shot;
+    cursor.push();
+    cursor.wrap = true;
+    cursor.count = 5;
+    cursor.set(g.shot);
+    anm.interrupt(vm[panel], 6);
+    dismiss(anm, kShotBack);
+    events.push_back({"screen", screen});
 }
 
 // 0x450af0：子季节选择（面板 0x97 普通 / 0x99 Extra）
@@ -1033,7 +1065,11 @@ void TitleScene::update_season(AnmManager& anm, const InputState& input) {
         anm.interrupt_now(vm[panel], to_short(g.shot + 0x1f));
         set_sub(1);
         spawn_into(anm, kSeasonBack, *title_file, kSeasonBack);
-        // DAT_004a6f1c == 4 分支待接
+        if (g.title_origin == 4) {
+            cursor.set(g.season);
+            enter_practice_stage(anm, panel);
+            return;
+        }
         [[fallthrough]];
     case 1:
         if (timer > 6) set_sub(2);
@@ -1071,13 +1107,7 @@ void TitleScene::update_season(AnmManager& anm, const InputState& input) {
     case 3:
         if (timer == 10) {
             if ((g.flags & GameGlobals::kModeMask) != 0) {
-                // LAB_00450d8f：练习 / 符卡练习 → 关卡选择
-                g.season = cursor.index;
-                cursor.push();
-                dismiss(anm, panel);
-                dismiss(anm, kSeasonBack);
-                set_screen(kStage);
-                events.push_back({"screen", screen});
+                enter_practice_stage(anm, panel);
                 return;
             }
             transition_effect();
@@ -1104,6 +1134,16 @@ void TitleScene::update_season(AnmManager& anm, const InputState& input) {
     default:
         break;
     }
+}
+
+void TitleScene::enter_practice_stage(AnmManager& anm, i32 panel) {
+    // 0x450af0 LAB_00450d8f：练习 / 符卡练习 → 关卡选择
+    globals->season = cursor.index;
+    cursor.push();
+    dismiss(anm, panel);
+    dismiss(anm, kSeasonBack);
+    set_screen(kStage);
+    events.push_back({"screen", screen});
 }
 
 // 0x450ef0：练习关卡选择（底 0x71；6 关）
@@ -1855,101 +1895,144 @@ void TitleScene::update_music(AnmManager& anm, const InputState& input) {
     }
 }
 
-// 0x4553d0：符卡练习分组选择（←/→ 机体副光标；确定 → 画面 0x12）
+// 0x455790：符卡练习 3 页共用的机体副光标（←→）；0x12 / 0x13 页随之重刷名行
+void TitleScene::move_spell_shot(AnmManager& anm, const InputState& input) {
+    const u32 edge = input.pressed | input.repeat;
+    for (const i32 delta : {-1, 1}) {
+        if ((edge & (delta < 0 ? InputState::kLeft : InputState::kRight)) == 0) continue;
+        sfx(10);
+        anm.interrupt_now(vm[0x11c], to_short(spell_shot_cursor.index + (delta < 0 ? 0x19 : 0x13)));
+        spell_shot_cursor.move(delta);
+        anm.interrupt_now(vm[0x11c], to_short(spell_shot_cursor.index + (delta < 0 ? 0xd : 7)));
+        globals->shot = spell_shot_cursor.index;
+        if (screen == kSpellList) {
+            refresh_spell_slot_names(anm, cursor.index);
+        } else if (screen == kSpellShot) {
+            refresh_spell_slot_names(anm, spell_list_index);
+            highlight_spell_entry(anm, cursor.index);
+        }
+    }
+}
+
+// 0x4569a0：条目页高亮——选中名 VM 中断 2、其余 3；对应难度角标 +0x6f4 同步
+void TitleScene::highlight_spell_entry(AnmManager& anm, i32 entry) {
+    for (i32 i = 0; i < 5; ++i) {
+        const i32 value = i == entry ? 2 : 3;
+        if (anm.find(spell_name_vms[i]) == nullptr) spell_name_vms[i] = 0;
+        else anm.interrupt(spell_name_vms[i], value);
+        anm.interrupt_now(vm[0x10d + SpellPracticeTable::spell_difficulty(spell_slot_ids[i])], value);
+    }
+}
+
+// 0x456a20 / 0x455d50 case 3：开战参数；DAT_004a2970 / 0049f2dc / 0049f2d8 记下回标题时要还原的分组 / 列表 / 条目
+void TitleScene::launch_spell_practice(i32 entry, i32 season) {
+    GameGlobals& g = *globals;
+    cursor.push();
+    set_screen(kFinished);
+    const i32 sid = spell_slot_ids[entry];
+    g.stage = spell_group + 1;
+    g.title_origin = 5;
+    g.stage_copy = g.stage;
+    g.replay_slot = sid;  // DAT_004a57c8
+    g.shot = spell_shot_cursor.index;
+    g.shot_aux = 0;
+    g.season = season;
+    g.scene_request = kSceneGame;
+    g.difficulty = SpellPracticeTable::spell_difficulty(sid);  // DAT_00491700
+    g.spell_return_group = spell_group;
+    g.spell_return_list = spell_list_index;
+    g.spell_return_entry = entry;
+    events.push_back({"scene", kSceneGame});
+}
+
+// 0x4553d0：符卡练习分组选择（7 组；从符卡练习返回时直达原列表）
 void TitleScene::update_spell_practice(AnmManager& anm, const InputState& input) {
+    GameGlobals& g = *globals;
     switch (sub) {
-    case 0: {
+    case 0:
         if (vm[kLeafEmitter] == 0 && ascii_file) spawn_into(anm, kLeafEmitter, *ascii_file, kLeafEmitterScript);
         cursor.count = 7;
-        cursor.wrap = true;
-        cursor.set(0);
-        spell_shot_cursor.count = 4;
-        spell_shot_cursor.wrap = true;
-        spell_shot_cursor.set(globals->shot);
-        if (title_file) {
-            if (vm[0xd7] == 0) spawn_into(anm, 0xd7, *title_file, 0xd7);   // +0x61c
-            if (vm[0x11c] == 0) spawn_into(anm, 0x11c, *title_file, 0x11c); // +0x730
-            spawn_into(anm, 0x71, *title_file, 0x71);  // +0x484 底图
-        }
+        if (anm.find(vm[0x11c]) == nullptr) spawn_into(anm, 0x11c, *title_file, 0x11c);  // +0x730
+        if (anm.find(vm[0xd7]) == nullptr) spawn_into(anm, 0xd7, *title_file, 0xd7);     // +0x61c
         set_sub(1);
+        if (g.spell_return_group >= 0) {
+            cursor.set(g.spell_return_group);
+            g.spell_return_group = -1;
+            spell_shot_cursor.wrap = true;
+            spell_shot_cursor.count = 4;
+            spell_shot_cursor.set(g.shot + g.shot_aux);
+            anm.interrupt_now(vm[0xd7], 3);
+            anm.interrupt_now(vm[0xd7], to_short(cursor.index + 7));
+            anm.interrupt_now(vm[0xd7], 6);
+            anm.interrupt_now(vm[0x11c], 3);
+            anm.interrupt(vm[0x11c], to_short(spell_shot_cursor.index + 7));
+            enter_spell_list(anm);
+            return;
+        }
+        spawn_into(anm, 0x71, *title_file, 0x71);  // +0x484 底图
         events.push_back({"spell-practice", 0});
         [[fallthrough]];
-    }
     case 1:
         if (timer > 10) {
             set_sub(2);
-            if (vm[0xd7]) {
-                anm.interrupt_now(vm[0xd7], 3);
-                anm.interrupt(vm[0xd7], to_short(cursor.index + 7));
-            }
-            if (vm[0x11c]) {
-                anm.interrupt_now(vm[0x11c], 3);
-                anm.interrupt(vm[0x11c], to_short(spell_shot_cursor.index + 7));
-            }
+            anm.interrupt_now(vm[0xd7], 3);
+            anm.interrupt(vm[0xd7], to_short(cursor.index + 7));
+            anm.interrupt_now(vm[0x11c], 3);
+            anm.interrupt(vm[0x11c], to_short(spell_shot_cursor.index + 7));
         }
         break;
     case 2: {
         const i32 prev = cursor.index;
-        const i32 prev_shot = spell_shot_cursor.index;
         const u32 edge = input.pressed | input.repeat;
         if (edge & InputState::kUp) cursor.move(-1);
         if (edge & InputState::kDown) cursor.move(1);
-        if (edge & InputState::kLeft) spell_shot_cursor.move(-1);
-        if (edge & InputState::kRight) spell_shot_cursor.move(1);
         if (cursor.index != prev) {
             sfx(10);
-            if (vm[0xd7]) {
-                anm.interrupt_now(vm[0xd7], 3);
-                anm.interrupt(vm[0xd7], to_short(cursor.index + 7));
-            }
+            anm.interrupt_now(vm[0xd7], 3);
+            anm.interrupt(vm[0xd7], to_short(cursor.index + 7));
         }
-        if (spell_shot_cursor.index != prev_shot) {
-            sfx(10);
-            if (vm[0x11c]) {
-                anm.interrupt_now(vm[0x11c], 3);
-                anm.interrupt(vm[0x11c], to_short(spell_shot_cursor.index + 7));
-            }
-            // 0x456a20：DAT_004a57a4 = 机体光标；DAT_004a57a8 = 0；DAT_004a57ac = 4（土用）
-            globals->shot = spell_shot_cursor.index;
-            globals->shot_aux = 0;
-            globals->season = 4;
-        }
+        move_spell_shot(anm, input);
         if (input.pressed & InputState::kCancelMask) {
             set_sub(4);
             sfx(9);
+            g.last_practice_stage = cursor.index;  // DAT_004a2974
             break;
         }
         if (input.pressed & InputState::kConfirmMask) {
-            if (vm[0xd7]) anm.interrupt(vm[0xd7], 6);
+            anm.interrupt(vm[0xd7], 6);
             set_sub(3);
             sfx(7);
-            spell_group = cursor.index;
+            g.last_practice_stage = cursor.index;
         }
         break;
     }
     case 3:
-        if (timer > 0x13) {
-            dismiss(anm, 0x71);
-            set_screen(kSpellList);
-            cursor.push();
-            cursor.set(0);
-            events.push_back({"screen", screen});
-        }
+        if (timer > 0x13) enter_spell_list(anm);
         break;
     case 4:
         if (timer > 5) {
             dismiss(anm, 0x71);
             dismiss(anm, 0xd7);
             dismiss(anm, 0x11c);
-            dismiss(anm, kLeafEmitter);
             set_screen(kMainMenu);
             cursor.pop();
+            dismiss(anm, kLeafEmitter);
             events.push_back({"screen", screen});
         }
         break;
     default:
         break;
     }
+}
+
+void TitleScene::enter_spell_list(AnmManager& anm) {
+    // LAB_004556b1
+    dismiss(anm, 0x71);
+    set_screen(kSpellList);
+    spell_group = cursor.index;
+    cursor.push();
+    cursor.set(0);
+    events.push_back({"screen", screen});
 }
 
 // 0x452330：Player Data（难度←→ / 机体↑↓ / 翻页确定；取消回主菜单）
@@ -2009,29 +2092,36 @@ void TitleScene::update_score(AnmManager& anm, const InputState& input) {
     }
 }
 
-// 0x455d50：符卡列表（count 4；确定开战；取消 → 画面 0x13）
 // 0x455900：分组内符卡列表（确定 → 0x13 / 取消 → 0x11）。0x4560b0 填 id，0x456060 解锁。
 void TitleScene::update_spell_list(AnmManager& anm, const InputState& input) {
+    GameGlobals& g = *globals;
     switch (sub) {
     case 0: {
-        const i32 g = spell_group < 0 ? 0 : (spell_group > 6 ? 6 : spell_group);
-        cursor.count = SpellPracticeTable::group_count(g);
-        cursor.wrap = true;
-        cursor.set(0);
-        refresh_spell_slot_names(anm);  // 0x4560b0：填 spell_slot_ids + 名 VM
-        if (title_file && vm[0x6b] == 0) spawn_into(anm, 0x6b, *title_file, 0x6b);  // +0x46c
-        if (title_file && vm[0xd8] == 0) spawn_into(anm, 0xd8, *title_file, 0xd8);  // +0x620
+        cursor.count = SpellPracticeTable::group_count(spell_group);
+        if (anm.find(vm[0x6b]) == nullptr) spawn_into(anm, 0x6b, *title_file, 0x6b);  // +0x46c
+        if (anm.find(vm[0xd8]) == nullptr) spawn_into(anm, 0xd8, *title_file, 0xd8);  // +0x620
         set_sub(1);
+        // 列表框按条数收起多余的行（脚本 0x27 往下）
+        for (i32 i = 0; i < 0xd - cursor.count; ++i) anm.interrupt_now(vm[0xd8], to_short(0x27 - i));
         events.push_back({"spell-list", spell_group});
+        if (g.spell_return_list >= 0) {
+            cursor.set(g.spell_return_list);
+            g.spell_return_list = -1;
+            refresh_spell_slot_names(anm, cursor.index);
+            anm.interrupt_now(vm[0xd8], 3);
+            anm.interrupt_now(vm[0xd8], to_short(cursor.index + 7));
+            anm.interrupt_now(vm[0xd8], 6);
+            enter_spell_entries(anm);
+            return;
+        }
+        refresh_spell_slot_names(anm, cursor.index);
         [[fallthrough]];
     }
     case 1:
         if (timer > 10) {
             set_sub(2);
-            if (vm[0xd8]) {
-                anm.interrupt_now(vm[0xd8], 3);
-                anm.interrupt(vm[0xd8], to_short(cursor.index + 7));
-            }
+            anm.interrupt_now(vm[0xd8], 3);
+            anm.interrupt(vm[0xd8], to_short(cursor.index + 7));
         }
         break;
     case 2: {
@@ -2041,61 +2131,35 @@ void TitleScene::update_spell_list(AnmManager& anm, const InputState& input) {
         if (edge & InputState::kDown) cursor.move(1);
         if (cursor.index != prev) {
             sfx(10);
-            refresh_spell_slot_names(anm);
-            if (vm[0xd8]) {
-                anm.interrupt_now(vm[0xd8], 3);
-                anm.interrupt(vm[0xd8], to_short(cursor.index + 7));
-            }
+            anm.interrupt_now(vm[0xd8], 3);
+            anm.interrupt(vm[0xd8], to_short(cursor.index + 7));
+            refresh_spell_slot_names(anm, cursor.index);
         }
-        const i32 prev_shot = spell_shot_cursor.index;
-        if (edge & InputState::kLeft) spell_shot_cursor.move(-1);
-        if (edge & InputState::kRight) spell_shot_cursor.move(1);
-        if (spell_shot_cursor.index != prev_shot) {
-            sfx(10);
-            if (globals) globals->shot = spell_shot_cursor.index;
-        }
+        move_spell_shot(anm, input);
         if (input.pressed & InputState::kCancelMask) {
             set_sub(4);
             sfx(9);
-            break;
-        }
-        if (input.pressed & InputState::kConfirmMask) {
-            // 0x456060：未解锁 → sfx 0x10，不进下一页
+        } else if (input.pressed & InputState::kConfirmMask) {
             if (scores != nullptr && !SpellPracticeTable::unlocked(spell_group, cursor.index, *scores)) {
                 sfx(0x10);
-                break;
+            } else {
+                anm.interrupt(vm[0xd8], 6);
+                set_sub(3);
+                sfx(7);
             }
-            if (vm[0xd8]) anm.interrupt(vm[0xd8], 6);
-            set_sub(3);
-            sfx(7);
-            spell_list_index = cursor.index;
-            SpellPracticeTable::fill_slot_ids(spell_group, cursor.index, spell_slot_ids, scores);
         }
         break;
     }
     case 3:
-        if (timer > 0xd) {
-            if (vm[0x6b]) { dismiss(anm, 0x6b); }
-            set_screen(kSpellShot);
-            cursor.push();
-            events.push_back({"screen", screen});
-        }
+        if (timer >= 0xe) enter_spell_entries(anm);
         break;
     case 4:
         if (timer > 5) {
+            for (u32 id : spell_name_vms) anm.interrupt(id, 1);
+            for (i32 i = 0; i < 7; ++i) anm.kill(vm[0x10d + i]);
             dismiss(anm, 0x6b);
             dismiss(anm, 0xd8);
-            for (u32& id : spell_name_vms) {
-                if (id != 0) anm.kill(id);
-                id = 0;
-            }
-            for (int i = 0; i < 7; ++i) {
-                const i32 slot = 0x10d + i;
-                if (slot < kVmTable && vm[slot] != 0) {
-                    anm.kill(vm[slot]);
-                    vm[slot] = 0;
-                }
-            }
+            dismiss(anm, 0xd7);
             set_screen(kSpellPractice);
             cursor.pop();
             events.push_back({"screen", screen});
@@ -2106,18 +2170,30 @@ void TitleScene::update_spell_list(AnmManager& anm, const InputState& input) {
     }
 }
 
-// 0x456a20：符卡条目/机体页（Extra 组直接开战；否则 → 0x14；取消 → 0x12）
+void TitleScene::enter_spell_entries(AnmManager& anm) {
+    // LAB_00455bd4
+    set_screen(kSpellShot);
+    spell_list_index = cursor.index;
+    cursor.push();
+    dismiss(anm, 0x6b);
+    cursor.set(0);
+    events.push_back({"screen", screen});
+}
+
+// 0x456a20：符卡条目页（Extra 组直接开战；否则 → 0x14；取消 → 0x12）
 void TitleScene::update_spell_shot(AnmManager& anm, const InputState& input) {
-    (void)anm;
     switch (sub) {
     case 0:
         cursor.count = 5;
-        cursor.wrap = true;
-        cursor.set(0);
-        // 列表槽 id < 0 的项禁用（0x440c00）
-        for (int i = 0; i < 5; ++i) {
+        for (i32 i = 0; i < 5; ++i) {
             if (spell_slot_ids[i] < 0) cursor.disable(i);
         }
+        cursor.set(0);
+        if (globals->spell_return_entry >= 0) {
+            cursor.set(globals->spell_return_entry);
+            globals->spell_return_entry = -1;
+        }
+        highlight_spell_entry(anm, cursor.index);
         set_sub(1);
         events.push_back({"spell-shot", spell_group});
         [[fallthrough]];
@@ -2129,25 +2205,23 @@ void TitleScene::update_spell_shot(AnmManager& anm, const InputState& input) {
         const u32 edge = input.pressed | input.repeat;
         if (edge & InputState::kUp) cursor.move(-1);
         if (edge & InputState::kDown) cursor.move(1);
-        if (cursor.index != prev) sfx(10);
-        const i32 prev_shot = spell_shot_cursor.index;
-        if (edge & InputState::kLeft) spell_shot_cursor.move(-1);
-        if (edge & InputState::kRight) spell_shot_cursor.move(1);
-        if (spell_shot_cursor.index != prev_shot) {
+        if (cursor.index != prev) {
             sfx(10);
-            if (globals) globals->shot = spell_shot_cursor.index;
+            highlight_spell_entry(anm, cursor.index);
         }
+        move_spell_shot(anm, input);
         if (input.pressed & InputState::kCancelMask) {
             set_sub(4);
             sfx(9);
             break;
         }
         if (input.pressed & InputState::kConfirmMask) {
+            anm.interrupt(spell_name_vms[cursor.index], 6);
             set_sub(3);
             sfx(7);
             if (spell_group == 6) {
+                events.push_back({"bgm-fade", 0});  // 0x43c470
                 sfx(0x32);
-                events.push_back({"bgm-fade", 0});
             }
         }
         break;
@@ -2155,29 +2229,19 @@ void TitleScene::update_spell_shot(AnmManager& anm, const InputState& input) {
     case 3:
         if (spell_group == 6) {
             if (timer == 10) transition_effect();
-            if (timer > 0x27) {
-                if (globals) {
-                    globals->stage = spell_group + 1;
-                    globals->stage_copy = globals->stage;
-                    const i32 sid = (cursor.index >= 0 && cursor.index < 5) ? spell_slot_ids[cursor.index] : -1;
-                    globals->replay_slot = sid;  // DAT_004a57c8：符卡练习 id
-                    globals->shot = spell_shot_cursor.index;
-                    globals->shot_aux = 0;
-                    globals->difficulty = SpellPracticeTable::spell_difficulty(sid);  // DAT_00491700
-                    globals->scene_request = kSceneGame;
-                }
-                events.push_back({"scene", kSceneGame});
-                set_screen(kFinished);
-            }
+            if (timer > 0x27) launch_spell_practice(cursor.index, 4);
         } else if (timer > 0xd) {
             spell_entry_index = cursor.index;  // +0x5dcc
             set_screen(kSpellStart);
             cursor.push();
+            dismiss(anm, 0x6b);
+            cursor.set(0);
             events.push_back({"screen", screen});
         }
         break;
     case 4:
         if (timer > 5) {
+            dismiss(anm, 0xd8);
             set_screen(kSpellList);
             cursor.pop();
             events.push_back({"screen", screen});
@@ -2188,24 +2252,21 @@ void TitleScene::update_spell_shot(AnmManager& anm, const InputState& input) {
     }
 }
 
-// 0x455d50：符卡练习最终确认页（画面 0x14；取消 → 0x13）
+// 0x455d50：符卡练习子季节页（画面 0x14；确定开战；取消 → 0x13）
 void TitleScene::update_spell_start(AnmManager& anm, const InputState& input) {
     switch (sub) {
     case 0:
         cursor.count = 4;
-        cursor.wrap = true;
         cursor.set(0);
-        if (title_file && vm[0xd9] == 0) spawn_into(anm, 0xd9, *title_file, 0xd9);  // +0x624
+        if (anm.find(vm[0xd9]) == nullptr) spawn_into(anm, 0xd9, *title_file, 0xd9);  // +0x624
         set_sub(1);
         events.push_back({"spell-start", spell_group});
         [[fallthrough]];
     case 1:
         if (timer > 10) {
             set_sub(2);
-            if (vm[0xd9]) {
-                anm.interrupt_now(vm[0xd9], 3);
-                anm.interrupt(vm[0xd9], to_short(cursor.index + 7));
-            }
+            anm.interrupt_now(vm[0xd9], 3);
+            anm.interrupt(vm[0xd9], to_short(cursor.index + 7));
         }
         break;
     case 2: {
@@ -2215,53 +2276,31 @@ void TitleScene::update_spell_start(AnmManager& anm, const InputState& input) {
         if (edge & InputState::kDown) cursor.move(1);
         if (cursor.index != prev) {
             sfx(10);
-            if (vm[0xd9]) {
-                anm.interrupt_now(vm[0xd9], 3);
-                anm.interrupt(vm[0xd9], to_short(cursor.index + 7));
-            }
+            anm.interrupt_now(vm[0xd9], 3);
+            anm.interrupt(vm[0xd9], to_short(cursor.index + 7));
         }
-        const i32 prev_shot = spell_shot_cursor.index;
-        if (edge & InputState::kLeft) spell_shot_cursor.move(-1);
-        if (edge & InputState::kRight) spell_shot_cursor.move(1);
-        if (spell_shot_cursor.index != prev_shot) {
-            sfx(10);
-            if (globals) globals->shot = spell_shot_cursor.index;
-        }
+        move_spell_shot(anm, input);
         if (input.pressed & InputState::kCancelMask) {
             set_sub(4);
             sfx(9);
             break;
         }
         if (input.pressed & InputState::kConfirmMask) {
-            if (vm[0xd9]) anm.interrupt(vm[0xd9], 6);
+            anm.interrupt(vm[0xd9], 6);
             set_sub(3);
             sfx(7);
+            events.push_back({"bgm-fade", 0});  // 0x43c470
             sfx(0x32);
-            events.push_back({"bgm-fade", 0});
         }
         break;
     }
     case 3:
         if (timer == 10) transition_effect();
-        if (timer > 0x27) {
-            if (globals) {
-                globals->stage = spell_group + 1;
-                globals->stage_copy = globals->stage;
-                // 0x455d50：DAT_004a57c8 = slot id；难度 = DAT_00491700；季节 = 本页光标
-                const i32 sid = (spell_entry_index >= 0 && spell_entry_index < 5) ? spell_slot_ids[spell_entry_index] : -1;
-                globals->replay_slot = sid;
-                globals->shot = spell_shot_cursor.index;
-                globals->shot_aux = 0;
-                globals->difficulty = SpellPracticeTable::spell_difficulty(sid);
-                globals->season = cursor.index;
-                globals->scene_request = kSceneGame;
-            }
-            events.push_back({"scene", kSceneGame});
-            set_screen(kFinished);
-        }
+        if (timer > 0x27) launch_spell_practice(spell_entry_index, cursor.index);
         break;
     case 4:
         if (timer > 5) {
+            dismiss(anm, 0x6a);
             dismiss(anm, 0xd9);
             set_screen(kSpellShot);
             cursor.pop();

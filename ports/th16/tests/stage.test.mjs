@@ -36,7 +36,7 @@ const nums = s => s.split(',').map(Number);
 const close = (a, b, eps, msg) => assert.ok(Math.abs(a - b) <= eps, `${msg}: ${a} vs ${b}`);
 
 // 标题流程：主菜单 Z → 难度 Z → 机体 →/Z → 季节 →/Z（与 supervisor.test.mjs 的 game start flow 相同）
-const MAIN = 192, AFTER_MAIN = 29, AFTER_DIFF = 23, AFTER_SHOT = 23;
+const MAIN = 312, AFTER_MAIN = 29, AFTER_DIFF = 23, AFTER_SHOT = 23;
 const t = MAIN + 1, diff = t + AFTER_MAIN, shot = diff + AFTER_DIFF, season = shot + 2 + AFTER_SHOT;
 const script = [`${t}:0x1`, `${diff}:0x1`, `${shot}:0x80`, `${shot + 2}:0x1`, `${season}:0x80`, `${season + 2}:0x1`].join(',');
 const GAME_FRAME_1 = season + 2 + 0x28 + 2;   // 切到场景 7 后 GameManager 的第一次 update
