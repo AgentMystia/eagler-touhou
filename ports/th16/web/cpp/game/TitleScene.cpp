@@ -1426,12 +1426,15 @@ void TitleScene::update_spell_shot(AnmManager& anm, const InputState& input) {
                 if (globals) {
                     globals->stage = spell_group + 1;
                     globals->stage_copy = globals->stage;
+                    const i32 sid = (cursor.index >= 0 && cursor.index < 5) ? spell_slot_ids[cursor.index] : -1;
+                    globals->difficulty = SpellPracticeTable::spell_difficulty(sid);  // DAT_00491700
                     globals->scene_request = kSceneGame;
                 }
                 events.push_back({"scene", kSceneGame});
                 set_screen(kFinished);
             }
         } else if (timer > 0xd) {
+            spell_entry_index = cursor.index;  // +0x5dcc
             set_screen(kSpellStart);
             cursor.push();
             events.push_back({"screen", screen});
@@ -1508,7 +1511,10 @@ void TitleScene::update_spell_start(AnmManager& anm, const InputState& input) {
             if (globals) {
                 globals->stage = spell_group + 1;
                 globals->stage_copy = globals->stage;
-                globals->difficulty = cursor.index;
+                // 0x455d50：难度 = DAT_00491700[spell_slot_ids[+0x5dcc]]；季节 = 本页光标
+                const i32 sid = (spell_entry_index >= 0 && spell_entry_index < 5) ? spell_slot_ids[spell_entry_index] : -1;
+                globals->difficulty = SpellPracticeTable::spell_difficulty(sid);
+                globals->season = cursor.index;
                 globals->scene_request = kSceneGame;
             }
             events.push_back({"scene", kSceneGame});

@@ -77,6 +77,7 @@ public:
     MenuCursor spell_shot_cursor;    // +0x5cec：符卡练习机体副光标
     i32 spell_group = 0;             // +0x5dc4：选中的分组（确认后带入列表）
     i32 spell_list_index = 0;        // +0x5dc8：列表确认的槽（带入 0x13）
+    i32 spell_entry_index = 0;       // +0x5dcc：条目页确认的下标（带入 0x14 / 开战）
     i32 spell_slot_ids[5] = {-2, -2, -2, -2, -2};  // +0x5dd0：当前列表槽对应符卡 id
     ScoreFile* scores = nullptr;     // 0x456060 解锁判定
     MenuCursor score_shot_cursor;    // +0xfc：Player Data 机体（count 5）

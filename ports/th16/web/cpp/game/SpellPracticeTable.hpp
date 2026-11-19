@@ -13,6 +13,14 @@ struct SpellPracticeTable {
     // 0x455900 local_28
     static constexpr i32 kGroupCounts[kGroups] = {2, 3, 4, 3, 6, 9, 0xd};
 
+    // DAT_00491700：每张符卡的难度字节（0..3 常规，4 Extra）
+    static constexpr u8 kSpellDifficulty[ScoreFile::kSpellRecords] = {
+        0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3,
+        0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1,
+        2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3,
+        4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    };
+
     // DAT_00490ee0：((group * 0xd + slot) * 5) 个 i32
     static constexpr i32 kIds[kGroups][kSlots][kIdsPerSlot] = {
         {{0, 1, 2, 3, -1}, {4, 5, 6, 7, -1}},
@@ -33,6 +41,11 @@ struct SpellPracticeTable {
     static i32 group_count(i32 group) {
         if (group < 0 || group >= kGroups) return 0;
         return kGroupCounts[group];
+    }
+
+    static i32 spell_difficulty(i32 spell_id) {
+        if (spell_id < 0 || spell_id >= ScoreFile::kSpellRecords) return 0;
+        return i32(kSpellDifficulty[spell_id]);
     }
 
     // 写入最多 5 个 id 到 out（不足填 -2，对齐 0x4560b0 初值）
