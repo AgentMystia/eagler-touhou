@@ -34,6 +34,9 @@
 //   harness game-digest <...同上...>              → 同一状态流的 FNV-1a 64（tests/golden/player.json，game-oracle.py --digest 同口径）
 //   harness screen-fade <kind> <duration> <color> <frames> [hold_or_flag]
 //                                              → 每行 "frame alpha alive"（kind 4/6/7/9 步进；与 tools/oracle 对拍）
+//   harness replay-ff <mode> <counter> <held> [gm=1] [loading=0]
+//                                              → 打印 0x448e40 返回码（1 Continue / 6 Restart）
+//   harness replay-fps-color <byte>            → 打印 0x4482f0 颜色（十进制）
 #include "../../web/cpp/game/Archive.hpp"
 #include "../../web/cpp/game/AnmManager.hpp"
 #include "../../web/cpp/game/AnmGeometry.hpp"
@@ -45,6 +48,7 @@
 #include "../../web/cpp/game/GameSession.hpp"
 #include "../../web/cpp/game/Input.hpp"
 #include "../../web/cpp/game/Laser.hpp"
+#include "../../web/cpp/game/Replay.hpp"
 #include "../../web/cpp/game/Rng.hpp"
 #include "../../web/cpp/game/ScreenEffect.hpp"
 #include "../../web/cpp/game/Stage.hpp"
@@ -126,6 +130,22 @@ int main(int argc, char** argv) {
         text_paint_vm(animations, vm, 0xffffffu, 0u, 0, 0, 0, "test", &queue);
         std::printf("flag=%u queued=%zu height0=%d height8=%d\n", vm.flags_lo & 1u, queue.size(),
                     text_font_height(0), text_font_height(8));
+        return 0;
+    }
+    if (command == "replay-ff" && argc >= 5) {
+        // 0x448e40：与 unicorn 直跑同口径（gm / loading / mode / held / +0x20c）
+        const i32 mode = i32(std::atoi(argv[2]));
+        const i32 counter = i32(std::atoi(argv[3]));
+        const u32 held = u32(std::strtoul(argv[4], nullptr, 0));
+        const bool gm = argc < 6 || std::atoi(argv[5]) != 0;
+        const bool loading = argc >= 7 && std::atoi(argv[6]) != 0;
+        const ChainResult r = replay_fast_forward_result(gm, loading, mode, held, counter);
+        std::printf("%d\n", i32(r));
+        return 0;
+    }
+    if (command == "replay-fps-color" && argc >= 3) {
+        const u8 fps = u8(std::strtoul(argv[2], nullptr, 0));
+        std::printf("%u\n", replay_fps_color(fps));
         return 0;
     }
     if (command == "screen-fade" && argc >= 6) {
