@@ -73,6 +73,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -207,19 +208,19 @@ int main(int argc, char** argv) {
         const bool lock = argc >= 3 && std::strcmp(argv[2], "lock") == 0;
         if (!lock) {
             for (int id = 0; id < ScoreFile::kSpellRecords; ++id)
-                scores.spells[ScoreFile::kAllShotsBlock][id].attempts[0] = 1;
+                scores.blocks[ScoreFile::kAllShotsBlock].spells[id].attempts[0] = 1;
         }
         i32 out[5];
         // group2 slot0：表 {20,21} 难度 2/3 → 槽 2/3
         SpellPracticeTable::fill_slot_ids(2, 0, out, &scores);
         std::printf("g2s0 %d %d %d %d %d\n", out[0], out[1], out[2], out[3], out[4]);
         if (!lock) {
-            scores.spells[0][20].high_score = 123450;
-            scores.spells[0][20].captures[1] = 2;
-            scores.spells[0][20].attempts[1] = 5;
+            scores.blocks[0].spells[20].high_score = 123450;
+            scores.blocks[0].spells[20].captures[1] = 2;
+            scores.blocks[0].spells[20].attempts[1] = 5;
             scores.update_spell_high_score(0, 20, 999999);
-            std::printf("high %u caps %u/%u\n", scores.spells[0][20].high_score,
-                        scores.spells[0][20].captures[1], scores.spells[0][20].attempts[1]);
+            std::printf("high %u caps %u/%u\n", scores.blocks[0].spells[20].high_score,
+                        scores.blocks[0].spells[20].captures[1], scores.blocks[0].spells[20].attempts[1]);
         }
         return 0;
     }
@@ -280,8 +281,8 @@ int main(int argc, char** argv) {
                             e.shadow ? 1 : 0, e.text);
             }
         }
-        std::printf("last_name=[%s] rank0=[%s]\n", session.scores.last_name,
-                    session.scores.ranks[session.globals.shot + session.globals.shot_aux][difficulty][0].name);
+        std::printf("last_name=[%s] rank0=[%s]\n", session.scores.stats.last_name,
+                    session.scores.blocks[session.globals.shot + session.globals.shot_aux].ranks[difficulty][0].name);
         for (const TitleScene::Event& e : session.title.events) {
             std::printf("title %s %d\n", e.kind, e.value);
         }
@@ -520,6 +521,42 @@ int main(int argc, char** argv) {
             in.commit();
             std::printf("%x %x %x\n", in.pressed, in.repeat, in.released);
         }
+        return 0;
+    }
+    if (command == "score-tool" && argc >= 6) {
+        // tools/oracle/score-oracle.py 同口径：RNG 种子 0 → 0x4497e0（argv[2] 为 '-' 则无文件）→ 镜像；
+        // 按 OFF:HEX（相对成绩对象基址）改镜像 → 0x449a00 写出 → 写盘后镜像
+        auto write_bytes = [](const char* path, const void* p, size_t n) {
+            FILE* f = std::fopen(path, "wb");
+            if (f == nullptr) return false;
+            std::fwrite(p, 1, n, f);
+            std::fclose(f);
+            return true;
+        };
+        constexpr size_t kImage = sizeof(ScoreBlock) * ScoreFile::kShots + sizeof(ScoreStats);
+        auto scores = std::make_unique<ScoreFile>();
+        Rng rng;
+        for (u16& n : scores->stats.noise) n = rng.next16();
+        if (std::strcmp(argv[2], "-") != 0) {
+            std::vector<u8> bytes;
+            if (!read_file(argv[2], bytes)) return fail("cannot read score file");
+            scores->load_image(bytes.data(), u32(bytes.size()));
+        }
+        u8* image = reinterpret_cast<u8*>(scores->blocks);
+        if (!write_bytes(argv[3], image, kImage)) return fail("cannot write image");
+        for (int a = 6; a < argc; ++a) {
+            const char* colon = std::strchr(argv[a], ':');
+            if (colon == nullptr) return fail("bad poke");
+            const size_t off = std::strtoul(argv[a], nullptr, 16);
+            const std::string hex(colon + 1);
+            if (off < 8 || off - 8 + hex.size() / 2 > kImage) return fail("poke out of range");
+            for (size_t i = 0; i + 1 < hex.size(); i += 2)
+                image[off - 8 + i / 2] = u8(std::strtoul(hex.substr(i, 2).c_str(), nullptr, 16));
+        }
+        const std::vector<u8> saved = scores->save_image();
+        if (!write_bytes(argv[4], saved.data(), saved.size())) return fail("cannot write saved");
+        if (!write_bytes(argv[5], image, kImage)) return fail("cannot write image");
+        std::printf("rng_seed=%u saved=%zu\n", rng.seed, saved.size());
         return 0;
     }
     std::vector<u8> dat;
@@ -1609,6 +1646,7 @@ int main(int argc, char** argv) {
                 std::sscanf(argv[a] + 13, "%d,%d,%d", &spell_return[0], &spell_return[1], &spell_return[2]);
                 continue;
             }
+            if (std::strncmp(argv[a], "score=", 6) == 0) { session.score_path = argv[a] + 6; continue; }
             if (std::strncmp(argv[a], "reach=", 6) == 0) {
                 // 练习到达位 +0x519d（机体块, 难度, 关卡）：等价于该关已非回放装载过
                 int r[3] = {-1, -1, -1};
@@ -1660,12 +1698,12 @@ int main(int argc, char** argv) {
         for (const Reach& c : clears) {
             if (c.shot < 0 || c.shot >= ScoreFile::kShots || c.difficulty < 0 || c.difficulty >= ScoreFile::kDifficulties)
                 return fail("bad clear");
-            session.scores.no_continue_clears[c.shot][c.difficulty] = 1;
+            session.scores.blocks[c.shot].no_continue_clears[c.difficulty] = 1;
         }
         if (unlock_spells) {
             // 标题符卡练习导航自测：把合计块 attempts[0] 置 1，等价于已在主线见过全部符卡
             for (int id = 0; id < ScoreFile::kSpellRecords; ++id)
-                session.scores.spells[ScoreFile::kAllShotsBlock][id].attempts[0] = 1;
+                session.scores.blocks[ScoreFile::kAllShotsBlock].spells[id].attempts[0] = 1;
         }
 
         // 绘制链每帧都跑（与 Application 相同），录制设备只保留最后一帧的调用
