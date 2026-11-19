@@ -92,7 +92,8 @@ constexpr AddressAnchor kAnchors[] = {
     {"anm-layer-draw-chains", 0x46DD90, "game/GameSession.cpp GameSession::register_layer_draw_chains（0x46a3a0 登记的 33 条普通层链 0x46dd90.. + 6 条切相机的特殊链 0x46ddd0 / 0x46e030 / 0x46e0d0 / 0x46e180 / 0x46e210 / 0x46e2b0）"},
     {"anm-quad-axis", 0x465C40, "game/AnmGeometry.cpp AnmGeometry::axis_corners"},
     {"anm-quad-rotated", 0x4660B0, "game/AnmGeometry.cpp AnmGeometry::rotated_corners"},
-    {"anm-quad-submit", 0x465280, "game/AnmRenderer.cpp AnmRenderer::submit_screen_quad（像素对齐 / UV 滚动 / 顶点色 / 视口剔除 / 入批）"},
+    {"anm-quad-submit", 0x465280, "game/AnmRenderer.cpp AnmRenderer::submit_screen_corners（四角已含位置：绘制偏移 / 像素对齐 / UV 滚动 / 顶点色 / 视口剔除 / 入批；mode 0..3 经 submit_screen_quad 先加 world_position）"},
+    {"anm-draw-projected-quad", 0x466390, "game/AnmGeometry.cpp AnmGeometry::projected_corners（mode 4：entity_offset+pos+pos2 作平移世界矩阵，D3DXVec3Project 原点得屏幕点 S、再投影相机 right 得 R，|R−S| 为一单位像素长，宽高 = 精灵尺寸 × 像素长/2 × scale × scale2，按 anchor 位与 world_rotation.z 旋转，z = S.z；S.z ∉ [0,1] 不画）"},
     {"anm-world-pos", 0x406C40, "game/AnmGeometry.cpp AnmGeometry::world_position"},
     {"anm-world-adjust", 0x406A70, "game/AnmGeometry.cpp AnmGeometry::transform_position（窗口缩放 / root 链 / 父旋转 / layer group 偏移）"},
     {"boot-scene-init", 0x43ADC0, "game/GameSession.cpp GameSession::begin_boot（sig.anm → 槽 1，text.anm → 槽 0，注册启动幕绘制链 0x44）"},
@@ -315,7 +316,8 @@ constexpr AddressAnchor kAnchors[] = {
     {"stage-draw", 0x409F90, "game/Stage.cpp StageManager::draw_background（绘制链 3：相机 0x4c168c、Z 写 / ZFUNC LESSEQUAL、雾参数、以雾色清场地、淡入 ScreenEffect 3 → bit0、色调、层 0..7；无设备时 transition_step 只做逻辑部分）"},
     {"stage-draw-layer", 0x40AF70, "game/Stage.cpp StageManager::draw_layer（层精灵 → 开雾 → 相机 → 逐实例 0x40a7d0 剔除 / 四边形 entity_offset 与尺寸缩放；雾 mode 8 / 0xf；Z 写 = !(lo & 0x2000)）"},
     {"stage-draw-layer-sprites", 0x40C280, "game/Stage.cpp StageManager::draw_layer_sprites（层精灵 8 个：相机 0x4c168c、抖动偏移、无雾、Z 写关）"},
-    {"camera-matrices", 0x43C940, "game/Camera.cpp Camera::look_along_facing（LookAtLH + PerspectiveFovLH zn=30 zf=8000）"},
+    {"camera-matrices", 0x43C940, "game/Camera.cpp Camera::look_along_facing（LookAtLH + PerspectiveFovLH zn=30 zf=8000；right = normalize(facing_norm × up)）"},
+    {"camera-project", 0x48B288, "game/Camera.cpp Camera::project_translated（D3DXVec3Project 导入项 IAT 0x48b288；调用方 0x466390、0x40a7d0 用 Array 版）的 Wine 参考语义：world·view·proj 先乘成一张矩阵再 TransformCoord，x' = X + (1+x)·W/2；与 tools/oracle/game-oracle.py project_one 逐步对应）"},
     {"fog-color-add", 0x40D370, "game/Stage.cpp fog_add（BGRA 浮点分量相加）"},
     {"compositor-begin-frame", 0x43D140, "game/ScreenCompositor.cpp ScreenCompositor::pass_begin_frame（绘制链 1：清后备缓冲、切渲染目标 1 并以 DAT_004c1b0c 清场地、AnmManager 状态缓存复位、UI 相机）"},
     {"compositor-select-rt2", 0x43D400, "game/ScreenCompositor.cpp ScreenCompositor::pass_select_rt2_clear_depth（绘制链 0xe：切渲染目标 2、按渲染目标相机视口清 Z）"},
@@ -334,14 +336,14 @@ constexpr AddressAnchor kAnchors[] = {
     // —— 已定位，待还原 ——
     {"stage-draw-foreground", 0x40A410, "game/Stage.cpp StageManager::draw_foreground（绘制链 6：ANM 层 0x20 / 0x21 用 3D 相机、层 8..11、结束计时 end_timer_step）"},
     {"stage-frustum-cull", 0x40A7D0, "game/Stage.cpp StageManager::instance_visible（距离平方 > +0x331c 剔除；16 个包围点 D3DXVec3ProjectArray 后与场地 384×448 ±8 比较）"},
-    {"stage-distortion", 0x40C4A0, nullptr}, // ins 17 畸变效果（+0x3314）
+    {"stage-distortion", 0x40C4A0, "game/Stage.cpp StageManager::update_distortion（STD ins 17 畸变网格：种类 1 场地底部 384×128 七行波纹，符卡中冻结；种类 2 透镜；绘制走钩子 4 与 Boss 光环同路）"},
     {"stage-effect-fade", 0x43D140, nullptr}, // 绘制链 1：清后台缓冲、RT DAT_004c127c、场地矩形清色 DAT_004c1b0c
     {"rt-composite", 0x43D2F0, nullptr},     // 绘制链 0xf：RT 精灵 VM 0x4c128c 合成到后台缓冲（当前以视口裁剪 + x−96 代替）
     {"player-body-collide", 0x4439E0, nullptr}, // 敌机与自机身体体术碰撞（0x41c330 下半段）
     {"effect-attach", 0x418AF0, nullptr},    // ins_508：EffectManager（DAT_004a6db8）按效果种类表 DAT_004a2250 挂 update/draw 回调（effect.anm 155–196 依赖）
     {"effect-ring-update", 0x405700, nullptr}, // 效果种类 1 的 update 回调（DAT_004919e8[2]）：环形顶点缓冲 + 生成 effect.anm 0x99
     {"anm-load-file", 0x46D020, nullptr},    // AnmManager::load_file(slot, name)：从档案读 .anm 并进 bank（同步等待装载线程）
-    {"anm-draw-mode4+", 0x466390, nullptr},  // mode 4+（投影 / 世界 / 条带 / 网格）：0x466390 / 0x466820 / 0x4671b0 / …
+    {"anm-draw-mode5+", 0x466820, nullptr},  // mode 6 投影 + 手动雾色；mode 5 0x4671b0 / mode 7 0x467200 / 0xb 0x4686a2 待还原
     {"title-has-clear", 0x44A850, nullptr},  // 任一难度通关记录 → Extra 可选（当前恒 0：无存档）
     {"title-difficulty-cleared", 0x44A8E0, nullptr}, // 某难度四项记录齐全（难度面板 0x9e+d 标记）
     {"title-extra-unlocked", 0x44A800, nullptr}, // 机体是否解锁 Extra
