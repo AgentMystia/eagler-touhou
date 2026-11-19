@@ -565,6 +565,32 @@ void AnmRenderer::prepare_untextured_draw() {
     p.textureTransform = false;
 }
 
+void AnmRenderer::draw_screen_fill(float width, float height, u32 color) {
+    if (device == nullptr) return;
+    flush();
+    PipelineState& p = device->pipeline();
+    p.alpha.operation = ColorOperation::First;
+    p.color.operation = ColorOperation::First;
+    p.alpha.first = {ArgumentSource::Diffuse};
+    p.color.first = {ArgumentSource::Diffuse};
+    p.destinationBlend = BlendFactor::InverseSourceAlpha;
+    p.textureTransform = false;
+    const ScreenColorVertex quad[4] = {
+        {0.0f, 0.0f, 0.0f, 1.0f, color}, {width, 0.0f, 0.0f, 1.0f, color},
+        {0.0f, height, 0.0f, 1.0f, color}, {width, height, 0.0f, 1.0f, color},
+    };
+    device->draw(Topology::Strip, VertexLayout::ScreenColor, 2, quad, sizeof(ScreenColorVertex));
+    // +0x184fbb5..+0x184fbb7 / +0x184fbc0 / +0x184fbb0 / +0x184fbb4
+    vertex_format_cache_ = VertexFormat::Unknown;
+    texture_matrix_sprite_ = nullptr;
+    texture_key_cache_ = -1;
+    blend_cache_ = 0x0a;
+    p.alpha.operation = ColorOperation::Multiply;
+    p.color.operation = ColorOperation::Multiply;
+    p.alpha.first = {ArgumentSource::Texture};
+    p.color.first = {ArgumentSource::Texture};
+}
+
 void AnmRenderer::draw_burst_lines(AnmVm& vm) {
     EffectManager::BurstGeometry burst;
     if (!EffectManager::burst_geometry(vm, burst)) return;

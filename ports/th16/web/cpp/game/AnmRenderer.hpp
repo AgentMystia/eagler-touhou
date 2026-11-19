@@ -133,6 +133,10 @@ public:
     int draw_host_strip(AnmVm& vm, const ScreenColorUvVertex* vertices, u32 vertex_count);
     // 0x46e750：遍历一层绘制链
     void draw_layer(int layer);
+    // 0x45c690：ScreenEffect 淡入淡出的全屏单色四边形 (0,0)-(width,height)。出批后以 SELECTARG1 / DIFFUSE、
+    // DESTBLEND = INVSRCALPHA 画 XYZRHW|DIFFUSE 条带，再把贴图键 / 混合 / 顶点格式 / 纹理矩阵缓存置"未知"，
+    // 并把组合器直接拨回 MODULATE / TEXTURE（不经缓存）；贴图与 DESTBLEND 不恢复，与原版一致
+    void draw_screen_fill(float width, float height, u32 color);
     // 未实现的 render mode 计数（按模式号），对拍时据此发现缺口
     u32 unimplemented_modes[32] = {};
     // 未实现的绘制钩子（DAT_00491b2c 表下标 1..6）计数
