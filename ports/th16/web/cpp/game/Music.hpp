@@ -43,8 +43,9 @@ struct MusicOutput {
     virtual void start() = 0;                                  // 0x471120：IDirectSoundBuffer::Play
     virtual void pause() = 0;                                  // 0x4712f0
     virtual void resume() = 0;                                 // 0x471380
-    virtual void fade(i32 frames) = 0;                         // 0x45e330 case 5：声音线程逐 tick 降音量
-    virtual void set_volume(i32 ds_volume) = 0;                // 0x4711f0：DirectSound 音量（-10000..0）
+    virtual void halt() = 0;                                   // 0x43dcf0 淡出到底：仅 IDirectSoundBuffer::Stop（文件与位置保留）
+    virtual void fade(i32) {}                                  // 0x45e330 case 5 登记淡出帧数（通知用；音量由 MusicManager::tick_fade 逐帧推）
+    virtual void set_volume(i32 base) = 0;                     // 0x4711f0：base = 0 或淡出中间值（-5000..0）；宿主经 MusicManager::ds_volume(base) 换算
     virtual void switch_loop(const BgmEntry& entry) = 0;       // 0x471b00：保持相位换曲
     virtual double position_seconds() = 0;                     // 0x471bd0：当前播放时刻（秒）
     virtual void restart_at(double seconds) = 0;               // 0x471c90：从指定时刻重新开始
@@ -68,6 +69,10 @@ public:
     bool ready = true;        // DAT_004d9e1c：音频设备存在（为假时 0x45e330 整体空转，连音效也不消费）
     bool streamer_live = true;  // DAT_004df470 非空
     bool enabled = true;      // DAT_004c12c1：配置 乐曲开
+    // 串流器淡出状态（DAT_004df470 +0x1c 模式 / +0x14 剩余帧 / +0x18 总帧）：命令 5 置模式 1，0x43dcf0 每帧推进
+    i32 fade_mode = 0;
+    i32 fade_remaining = 0;
+    i32 fade_total = 0;
     i32 volume = 100;         // DAT_004df49c：配置 乐曲音量（0..100）
     MusicOutput* output = nullptr;
 
@@ -82,7 +87,9 @@ public:
     i32 head_kind() const { return queue.empty() ? 0 : queue.front().kind; }
     i32 find_track(const std::string& name) const;        // 0x45da30：去目录后按名查表；未命中回 0（首曲）
     const BgmEntry& entry(i32 index) const;               // 越界给零条目
-    i32 ds_volume() const;                                // 0x4711f0 音量曲线：1 − (1 − m/100)²
+    // 0x43dcf0（0x43b3d0 帧首紧随 0x45e330）：模式 1 每帧 音量 = 剩余 × 5000 / 总 − 5000，归零时 Stop
+    void tick_fade();
+    i32 ds_volume(i32 base = 0) const;                    // 0x4711f0 音量曲线：(1 − (1 − m/100)²) × (base + 5000) − 5000；m = 0 → -10000
 };
 
 }  // namespace th16

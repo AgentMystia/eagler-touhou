@@ -68,10 +68,20 @@ const BgmEntry& MusicManager::entry(i32 index) const {
     return entries[size_t(index)];
 }
 
-i32 MusicManager::ds_volume() const {
+i32 MusicManager::ds_volume(i32 base) const {
     if (volume == 0) return -10000;
     const float inv = 1.0f - float(volume) / 100.0f;
-    return i32((1.0f - inv * inv) * 5000.0f) - 5000;
+    return i32((1.0f - inv * inv) * float(base + 5000)) - 5000;
+}
+
+void MusicManager::tick_fade() {
+    if (!streamer_live || fade_mode != 1) return;
+    if (--fade_remaining < 1) {
+        fade_mode = 0;
+        if (output != nullptr) output->halt();
+        return;
+    }
+    if (output != nullptr) output->set_volume(fade_remaining * 5000 / fade_total - 5000);
 }
 
 i32 MusicManager::step() {
@@ -88,6 +98,7 @@ i32 MusicManager::step() {
         if (!streamer_live) { done = true; break; }
         switch (c.step) {
         case 0:
+            fade_mode = 0;   // 0x471270 置 +0x1c = 0
             if (output != nullptr) output->stop(false);
             ++c.step;
             break;
@@ -122,6 +133,7 @@ i32 MusicManager::step() {
     case 3:
         if (!streamer_live) { done = true; break; }
         if (c.step == 0) {
+            fade_mode = 0;
             if (output != nullptr) output->stop(true);
             ++c.step;
         } else if (c.step == 1) {
@@ -134,6 +146,7 @@ i32 MusicManager::step() {
         // 声音线程在端口里不存在（DAT_004d9e24 = 0）：stop 后下一步即出队，串流器保留
         if (!streamer_live) { done = true; break; }
         if (c.step == 0) {
+            fade_mode = 0;
             if (output != nullptr) output->stop(true);
             ++c.step;
         } else {
@@ -141,7 +154,11 @@ i32 MusicManager::step() {
         }
         break;
     case 5:
-        if (streamer_live && output != nullptr) output->fade(i32(float(c.track) * 60.0f));
+        if (streamer_live) {
+            fade_mode = 1;
+            fade_remaining = fade_total = i32(float(c.track) * 60.0f);
+            if (output != nullptr) output->fade(fade_total);
+        }
         done = true;
         break;
     case 6:
@@ -153,7 +170,7 @@ i32 MusicManager::step() {
         done = true;
         break;
     case 8:
-        if (streamer_live && output != nullptr) output->set_volume(ds_volume());
+        if (streamer_live && output != nullptr) output->set_volume(0);
         done = true;
         break;
     case 9:

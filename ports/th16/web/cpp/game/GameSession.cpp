@@ -36,10 +36,10 @@ struct DiskReplayStore final : ReplayStore {
 
 GameSession::GameSession() {
     sfx_events.effects = &sound;   // 各管理器的 0x45e150 / 0x45e1f0 / 0x45e2a0 请求即时进 SoundManager 队列
-    title.bgm = &music;
-    title.game_speed = &supervisor.game_speed;
-    ending.music = &music;
-    ending.game_speed = &supervisor.game_speed;
+    // 原版 DAT_004df49c / DAT_004df4a0 只在 Option 画面（0x44dc70）写入——开机到首次进 Option 前为 0；
+    // 端口按 th15 口径开机即以配置值出声（仅宿主音量，不影响任何逻辑/对拍）
+    music.volume = globals.bgm_volume;
+    sound.master_volume = globals.se_volume;
     // 0x43ba40：Supervisor 十条合成绘制链；0x46a3a0：AnmManager 各层绘制链。都在进程启动时登记、常驻
     compositor.screen_shake = &screen_shake;
     compositor.render_target_camera = &stage_camera;   // 同一全局 DAT_004c168c
@@ -342,6 +342,9 @@ bool GameSession::activate_title_menu() {
 
     // 0x44af80 case 0 → 0x44a560(1) → 0x44b5f0：标题对象在首次更新链调用时自行生成装饰/logo
     title.activate(title_file, title_v_file, animations.file(AnmManager::kAsciiSlot), globals);
+    title.bgm = &music;   // activate 重置了标题对象：乐曲 / 音效 / 游戏速度指针在此重挂
+    title.sound = &sound;
+    title.game_speed = &supervisor.game_speed;
     title.scores = &scores;
     title.config_flags = &config_flags;
     title.keyboard_state = keyboard_state;
@@ -436,6 +439,8 @@ bool GameSession::enter_ending(bool extra) {
         create_screen_fade(kind, duration, color);
     };
     ending.begin(globals.shot, globals.shot_aux, globals.continues, &scores, globals.difficulty);
+    ending.music = &music;   // begin 重置了结局对象：乐曲 / 游戏速度指针在此重挂
+    ending.game_speed = &supervisor.game_speed;
     {
         std::vector<u8> msg;
         if (archive_.read(ending.msg_name.c_str(), msg)) {
@@ -1681,6 +1686,7 @@ bool GameSession::logic_step() {
     sfx_events.clear();
     player_sfx_events.clear();
     process_sound();   // 0x43b3d0 开头的 0x45e330：乐曲命令推进一步，上一帧登记的音效在此出声
+    music.tick_fade(); // 紧随其后的 0x43dcf0
 
 
     // 游戏中登记的 DAT_004c17c4（过关 0x42e150 → 0xc、装载失败 → 2）在下一帧主循环 0x43ce10 处被消费

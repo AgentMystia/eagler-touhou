@@ -116,6 +116,7 @@ public:
     u32 row_text_vms[10] = {};
     ScoreFile* scores = nullptr;     // 0x456060 解锁判定
     MusicManager* bgm = nullptr;     // DAT_004d9e10 乐曲命令
+    SoundEffects* sound = nullptr;   // 0x44dc70 写 DAT_004df4a0（音效主音量）
     const float* game_speed = nullptr;   // DAT_004a5788（0x43c470 淡出秒数除数）
     const u32* config_flags = nullptr;   // DAT_004c1800（bit13：退出改为停在场景 2）
     // 0x44a850：任一机体在 Easy..Lunatic 有未续关通关（主菜单 Extra 项可选）

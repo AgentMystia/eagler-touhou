@@ -1243,10 +1243,14 @@ void TitleScene::refresh_option_items(AnmManager& anm) {
 }
 
 void TitleScene::apply_option_volume(AnmManager& anm) {
-    // 0x44dc70：把 BGM/SE 写到面板子脚本 0x21.. 的数字 ANM；无子 VM 时静默跳过
+    // 0x44dc70：DAT_004df49c = BGM 音量 → 0x45ed00(8, "SetVol")；DAT_004df4a0 = SE 音量；随后把两组数字写进面板子脚本 0x21.. 的 ANM
+    if (globals != nullptr) {
+        if (bgm != nullptr) bgm->volume = globals->bgm_volume;
+        if (sound != nullptr) sound->master_volume = globals->se_volume;
+    }
+    if (bgm != nullptr) bgm->enqueue(8, 0, "SetVol");
     (void)anm;
     if (vm[1] == 0) return;
-    // 宿主音量侧效在 Sound 子系统接入后再写 DAT_004df49c 族；此处保持逻辑值即可
 }
 
 // 0x44c570：Option（BGM / SE / KeyConfig / Default / Quit）
@@ -1744,6 +1748,7 @@ void TitleScene::tick_title_bgm() {
     if (!title_bgm_pending || ++title_bgm_delay <= 9) return;
     const bool alt = globals != nullptr && (globals->input_config & 0x10u) != 0;
     play_bgm_op(alt ? 4 : 3);
+    if (bgm != nullptr) bgm->current.clear();   // DAT_004dc0f0 = 0
     bgm_default();  // FUN_0043c370(0,"th16_01")
     if (alt) play_bgm_op(4);
     play_bgm_op(2);
@@ -1897,6 +1902,7 @@ void TitleScene::update_music(AnmManager& anm, const InputState& input) {
             }
             // 0x43c370(0, 路径)：载入所选曲；随后 0x45ed00(2) 播放。原版此处只置 0 号已听过位
             events.push_back({"music-play", cursor.index});
+            if (bgm != nullptr) bgm->register_track(0, music[cursor.index].path);
             if (alt) play_bgm_op(4);
             play_bgm_op(2);
             if (scores != nullptr) scores->mark_bgm_heard(0);
