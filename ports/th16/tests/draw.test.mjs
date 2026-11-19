@@ -108,14 +108,14 @@ test('draw structure: stage 1 continue → replay slots → name entry (0x43e9b0
   assert.equal(checkGolden('draw-st1-menu-replay'), 61);
 });
 
-test('draw structure (bullet.anm only): stage 3 Normal spell 26 curve lasers (0x438750 strips via 0x4681f0 + tail glow), frames 230–330', needDat, () => {
+test('draw structure: stage 3 Normal spell 26 curve lasers (0x438750 strips via 0x4681f0) + boss distortion grid (0x418c70) + HP ring / effect strips (0x4632f0), frames 230–330', needDat, () => {
   assert.equal(checkGolden('draw-st3-curve-laser'), 101);
 });
 
-test('draw structure (bullet.anm only): stage 5 Normal spell 46 line lasers (0x433720 beam / tip / origin VMs), frames 400–500', needDat, () => {
+test('draw structure: stage 5 Normal spell 46 line lasers (0x433720 beam / tip / origin VMs) + boss distortion grid, frames 400–500', needDat, () => {
   assert.equal(checkGolden('draw-st5-line-laser'), 101);
 });
 
-test('draw structure (bullet.anm only): Extra spell 115 infinite lasers (0x4357a0 beam / origin VMs), frames 210–330', needDat, () => {
+test('draw structure: Extra spell 115 infinite lasers (0x4357a0 beam / origin VMs), Extra difficulty HUD (0x42cb60), frames 210–330', needDat, () => {
   assert.equal(checkGolden('draw-st7-infinite-laser'), 121);
 });
