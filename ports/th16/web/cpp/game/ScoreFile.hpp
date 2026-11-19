@@ -129,6 +129,25 @@ struct ScoreFile {
         if (clears[shot][difficulty] < 99999) ++clears[shot][difficulty];
         if (no_continue && no_continue_clears[shot][difficulty] < 99999) ++no_continue_clears[shot][difficulty];
     }
+    // 0x44a800：该机体在 Easy..Lunatic 任一难度有未续关通关（+0x5184 + d × 4）→ Extra 可选该机体
+    bool shot_extra_unlocked(int shot) const {
+        for (int d = 0; d < 4; ++d)
+            if (no_continue_clears[shot][d] != 0) return true;
+        return false;
+    }
+    // 0x44a850：机体 0..3 任一满足 0x44a800 → 标题 Extra 项可选
+    bool extra_unlocked() const {
+        for (int shot = 0; shot < 4; ++shot)
+            if (shot_extra_unlocked(shot)) return true;
+        return false;
+    }
+    // 0x44a8e0：四个机体在该难度都有未续关通关（难度面板不显示 0x9e+d 标记）
+    bool difficulty_cleared_by_all(int difficulty) const {
+        for (int shot = 0; shot < 4; ++shot)
+            if (no_continue_clears[shot][difficulty] == 0) return false;
+        return true;
+    }
+
     // 0x42e150 过关（非回放、非符卡练习）：+0x519c
     void mark_practice_cleared(int shot, int difficulty, int stage) { practice[shot][difficulty * 8 + stage].cleared = 1; }
     // 0x42cb60 装载关卡（非回放）：+0x519d
