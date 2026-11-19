@@ -44,6 +44,7 @@ public:
     };
     static constexpr i32 kVmTable = 0x150;
     static constexpr i32 kLogo = 0;
+    static constexpr i32 kOptionPanel = 1;            // +0x2c4
     static constexpr i32 kTitleV = 0x14c;
     static constexpr i32 kLeafEmitter = 0x11f;        // +0x73c
     static constexpr i32 kLeafEmitterScript = 0x13;   // ascii.anm：每帧 ins_502 生成脚本 0x12 落叶（mode 8）
