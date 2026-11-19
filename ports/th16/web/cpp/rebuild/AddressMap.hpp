@@ -387,6 +387,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"title-spell-start", 0x455D50, "game/TitleScene.cpp TitleScene::update_spell_start（最终确认开战；取消→0x13）"},
     {"title-spell-ids", 0x4560B0, "game/SpellPracticeTable.hpp DAT_00490ee0 填槽 + TitleScene 列表"},
     {"title-spell-unlock", 0x456060, "game/SpellPracticeTable.hpp unlocked（合计块 attempts[0]）"},
+    {"title-spell-hud", 0x456D50, "game/TitleScene.cpp TitleScene::draw_spell_hud（SCORE 行）"},
     {"title-score", 0x452330, "game/TitleScene.cpp TitleScene::update_score（Player Data 难度/机体/翻页）"},
     {"ending-create", 0x419640, "game/EndingScene.cpp EndingScene::begin / GameSession::enter_ending"},
     {"ending-load", 0x4191F0, "game/EndingScene.cpp begin/load_msg（e0N.msg + 成绩见过位 + 行 VM）"},

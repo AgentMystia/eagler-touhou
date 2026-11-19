@@ -28,6 +28,7 @@ namespace th16 {
 
 struct HelpScreen;  // GameMenu.hpp：标题 Manual / 暂停 Manual 共用
 struct ScoreFile;
+class AsciiManager;
 
 class TitleScene {
 public:
@@ -110,6 +111,8 @@ public:
 
     // 0x44af80：每帧由标题更新链（优先级 6）调用
     void update(AnmManager& anm, const InputState& input);
+    // 0x456d50：符卡练习 0x12/0x13/0x14 的 SCORE 行（AsciiManager 入队，每帧重打）
+    void draw_spell_hud(AsciiManager& ascii);
     // 主菜单空闲 demo 门控（0x708 / bit6 / 下标 %3）；供单测与 update 共用
     void tick_idle_demo(const InputState& input);
     void close_help();  // 释放标题 Manual 的 HelpScreen

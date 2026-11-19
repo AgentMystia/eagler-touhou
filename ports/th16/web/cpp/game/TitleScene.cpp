@@ -1,4 +1,5 @@
 #include "TitleScene.hpp"
+#include "Ascii.hpp"
 #include "GameMenu.hpp"
 #include "ReplayFile.hpp"
 #include "ScoreFile.hpp"
@@ -177,6 +178,47 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
     default: update_stub(anm, input); break;
     }
     ++timer;  // 0x44af80 末尾
+}
+
+void TitleScene::draw_spell_hud(AsciiManager& ascii) {
+    // 0x456d50：sub∈(0,3]（画面 0x13 时 sub==3 跳过）在 5 个槽上打 SCORE 行
+    if (screen != kSpellList && screen != kSpellShot && screen != kSpellStart) return;
+    if (sub < 1) return;
+    if (sub == 3 && screen == kSpellShot) return;
+    if (scores == nullptr) return;
+
+    const i32 shot = spell_shot_cursor.index;
+    float y = 191.0f;
+    ascii.style.font = AsciiManager::Font::Medium;
+    ascii.style.shadow = true;
+    ascii.style.group = AsciiManager::Group::Ui;
+    for (int i = 0; i < 5; ++i) {
+        const i32 id = spell_slot_ids[i];
+        if (id < -1) { y += 44.0f; continue; }  // -2 = 空槽
+        if (id < 0) { y += 44.0f; continue; }
+        const bool selected = (screen == kSpellShot && i == cursor.index);
+        const SpellRecord* rec = scores->spell_record(shot, id);
+        const SpellRecord* all = (id < ScoreFile::kSpellRecords)
+            ? &scores->spells[ScoreFile::kAllShotsBlock][id] : nullptr;
+        const u32 practice_caps = rec != nullptr ? rec->captures[1] : 0;
+        const u32 attempts0 = all != nullptr ? all->attempts[0] : 0;
+        const u32 attempts1 = all != nullptr ? all->attempts[1] : 0;
+        u32 color = selected ? 0xffb0b0b0u : 0xff404040u;
+        if (practice_caps != 0) color = selected ? 0xff90d0ffu : 0xff60a0c0u;
+        ascii.style.color = color;
+        if (attempts0 == 0 && attempts1 == 0) {
+            ascii.printf(Vec3{330.0f, y, 0.0f}, "SCORE        00  ----/----");
+        } else {
+            const u32 caps = rec != nullptr ? rec->captures[0] : 0;
+            const u32 atts = rec != nullptr ? rec->attempts[0] : 0;
+            // 原版 "%8d0"：高分/10 后再拼尾 0；成绩表接入前用 0 占位
+            ascii.printf(Vec3{330.0f, y, 0.0f}, "SCORE %8d0  %4u/%4u", 0, caps, atts);
+        }
+        y += 44.0f;
+    }
+    ascii.style.color = 0xffffffffu;
+    ascii.style.font = AsciiManager::Font::Default;
+    ascii.style.shadow = false;
 }
 
 // 主菜单子项：光标前的项（3+i / 13+i）→ 0x1e，光标后 → 0x1f；无通关数据时项 1（4 / 0xe）→ 0x1d
