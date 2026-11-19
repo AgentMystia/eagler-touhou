@@ -274,6 +274,39 @@ void GameSession::sample_input() {
 }
 
 // 0x44af50 析构 / 0x43ce10 切换：摘标题更新链，标记 title*.anm VM 删除（0x46f270），释放槽
+bool GameSession::enter_ending(bool extra) {
+    // Extra 通关：0x43ce10 case 0x10 直接回标题（DAT_004a6f1c = 3），不建结局对象
+    if (extra) {
+        leave_ending();
+        supervisor.request(SceneId::Title);
+        supervisor.current = supervisor.requested = SceneId::Title;
+        return enter_title_assets() && activate_title_menu();
+    }
+    leave_ending();
+    // scores.+0x19f9e 等「未见过」标记：ScoreFile 接入前用 false → 普通 end 下标
+    const bool has_true_end = false;
+    ending.begin(globals.shot, globals.shot_aux, has_true_end);
+    ending_live = true;
+    ending_update_chain_ = chains.create([this]() -> ChainResult {
+        if (!ending_live) return ChainResult::Continue;
+        if (ending.update(supervisor.input)) {
+            leave_ending();
+            supervisor.request(SceneId::Title);
+        }
+        return ChainResult::Continue;
+    }, 0x23, true);
+    chains.enable(ending_update_chain_);
+    supervisor.current = supervisor.requested = SceneId::Ending;
+    return true;
+}
+
+void GameSession::leave_ending() {
+    if (ending_update_chain_) { chains.remove(ending_update_chain_); ending_update_chain_ = nullptr; }
+    ending_live = false;
+    ending.live = false;
+    // 保留 ending_index / finished / events 供 harness 在回标题后断言
+}
+
 void GameSession::leave_title() {
     if (title_update_chain_) { chains.remove(title_update_chain_); title_update_chain_ = nullptr; }
     title_events.insert(title_events.end(), title.events.begin(), title.events.end());
@@ -1365,10 +1398,19 @@ bool GameSession::logic_step() {
             if (leave == SceneId::Title) leave_title();
             if (!enter_game(1)) return false;
             supervisor.current = supervisor.requested = SceneId::Game;
+        } else if (enter == SceneId::Ending || enter == SceneId::ExtraEnding) {
+            if (leave == SceneId::Game) leave_game();
+            if (leave == SceneId::Title) leave_title();
+            if (!enter_ending(enter == SceneId::ExtraEnding)) return false;
         } else {
+            if (leave == SceneId::Ending) leave_ending();
             if (leave == SceneId::Game) leave_game();
             if (enter == SceneId::Quit) quit_requested = true;
             if (enter == SceneId::Game && !enter_game()) return false;
+            // 结局回标题：跳过启动幕等待，直接启用标题菜单（0x419450 之后请求 4）
+            if (enter == SceneId::Title && leave == SceneId::Ending) {
+                if (!activate_title_menu()) return false;
+            }
         }
     }
 
