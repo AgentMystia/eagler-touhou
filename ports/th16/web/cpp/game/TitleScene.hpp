@@ -32,7 +32,7 @@ public:
     enum Screen : i32 {
         kNone = 0, kMainMenu = 1, kFinished = 2, kOption = 3, kKeyConfig = 4, kDifficulty = 5, kShot = 6,
         kSeason = 7, kStage = 8, kScore = 0xa, kReplay = 0xb, kMusicRoom = 0xd, kManual = 0x10,
-        kSpellPractice = 0x11,
+        kSpellPractice = 0x11, kSpellList = 0x12, kSpellShot = 0x13,
     };
     static constexpr i32 kVmTable = 0x150;
     static constexpr i32 kLogo = 0;
@@ -71,6 +71,8 @@ public:
     HelpScreen* help = nullptr;      // DAT_004a6dd8：标题 Manual 0x4545a0
     std::vector<std::string> music_tracks;  // musiccmt.txt 的 @bgm/... 路径
     i32 music_scroll = 0;            // +0x5a44 窗口首项（可见约 10 条）
+    MenuCursor spell_shot_cursor;    // +0x5cec：符卡练习机体副光标
+    i32 spell_group = 0;             // +0x5dc4：选中的分组（确认后带入列表）
     GameGlobals* globals = nullptr;
     std::vector<Event> events;       // SFX / 画面 / 场景请求 / 过场效果（供 harness 断言）
     // GameSession 注入：0x45d150 淡入淡出 / 0x41a390 Loading + 0x418ba0 过场
@@ -131,6 +133,7 @@ private:
     void update_replay(AnmManager& anm, const InputState& input);        // 0x451750
     void update_manual(AnmManager& anm, const InputState& input);        // 0x4545a0
     void update_music(AnmManager& anm, const InputState& input);         // 0x4546f0
+    void update_spell_practice(AnmManager& anm, const InputState& input); // 0x4553d0
     void update_stub(AnmManager& anm, const InputState& input);          // 待还原画面：取消回上层
     void request_game(i32 stage, i32 table);                             // DAT_004c17c4 = 7 等
     void transition_effect();                                            // 0x41a390 + 0x418ba0
