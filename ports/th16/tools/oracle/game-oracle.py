@@ -1071,9 +1071,21 @@ class GameOracle(Oracle):
         return vms
 
     def anm_find(self, vid):
-        """0x46efa0：AnmManager（DAT_004c0f48）池 +0xec 起每 0x614 字节；id 低 13 位为池下标，+0x538 必须等于 id 且未打删除位。"""
+        """0x46efa0：id 低 13 位 == 0x1fff 时走世界链 +0xdc 再 UI 链 +0xe4（堆分配 VM）。
+        否则池 +0xec 起每 0x614 字节，下标 = id & 0x1fff，+0x538 必须等于 id 且 +0x60c 占用字节非 0。"""
         mgr = self.u32(0x4C0F48)
         if not mgr or not vid:
+            return 0
+        if (vid & 0x1FFF) == 0x1FFF:
+            for head in (0xDC, 0xE4):
+                node = self.u32(mgr + head)
+                guard = 0
+                while node and guard < 20000:
+                    vm = self.u32(node)
+                    if vm and self.u32(vm + 0x538) == vid:
+                        return vm
+                    node = self.u32(node + 4)
+                    guard += 1
             return 0
         vm = mgr + 0xEC + (vid & 0x1FFF) * 0x614
         if self.uc.mem_read(vm + 0x60C, 1)[0] == 0 or self.u32(vm + 0x538) != vid:

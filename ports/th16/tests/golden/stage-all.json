@@ -692,6 +692,29 @@
    }
   },
   {
+   "name": "st7-extra-reimu-doyou-idle-line-laser-17200",
+   "stage": 7,
+   "shot": 0,
+   "season": 4,
+   "difficulty": 4,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 17200,
+   "input": "0:0",
+   "digests": {
+    "digest": "04958b50333ef2f1",
+    "enemies": "56cb6e2d11998531",
+    "enemy_vms": "e9b4baed1114a3ec",
+    "bullets": "b78e0543e2f4372f",
+    "items": "338f9d272d1632ec",
+    "spell": "2487ce56fef0a11e",
+    "lasers": "8b72771c60bb0548",
+    "bombs": "2a0e4910d75b4e94",
+    "menu": "1436b2fe4ce9bcc4"
+   }
+  },
+  {
    "name": "st5-normal-reimu-spring-light-laser-4500",
    "stage": 5,
    "shot": 0,

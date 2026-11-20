@@ -64,7 +64,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"anm-ui-insert-front", 0x46EA00, "game/AnmManager.cpp AnmManager::insert_ui_front"},
     {"anm-tick-world", 0x46E340, "game/AnmManager.cpp AnmManager::tick_world"},
     {"anm-tick-ui", 0x46E490, "game/AnmManager.cpp AnmManager::tick_ui"},
-    {"anm-find", 0x46EFA0, "game/AnmManager.cpp AnmManager::find"},
+    {"anm-find", 0x46EFA0, "game/AnmManager.cpp AnmManager::find（低 13 位 0x1fff 走世界/UI 链）"},
     {"ascii-manager-init", 0x407CB0, "game/AnmManager.hpp kAsciiSlot（ascii*.anm → 槽 2；ins_300 负下标回退精灵 0x102）"},
     {"anm-draw-vm", 0x468490, "game/AnmRenderer.cpp AnmRenderer::draw_vm（mode 0..3 屏幕四边形、8 / 0xf 世界四边形、0x10 / 0x14..0x16 / 0x1a / 0x1b 矩形与线段、0x11..0x13 正多边形、9 / 0xc / 0xd / 0xe 宿主顶点缓冲条带 → 0x4681f0；其余模式计入 unimplemented_modes）"},
     {"anm-strip-geometry", 0x4632f0, "game/AnmVm.cpp generate_strip_geometry（VM 帧末：mode 9 环 ins_600 / 0xd 弧 ins_601 / 0xe 弧 ins_602 的 $I0×2 个 XYZRHW|DIFFUSE|TEX1 顶点写进 vertex_buffer；半径 scale.y ± scale.x/2 × 父缩放 / 窗口缩放，U 外 uv[0].x 内 uv[1].x 加滚动，V 按 $I1 重复累加）"},
