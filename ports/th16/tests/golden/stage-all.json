@@ -621,6 +621,52 @@
     "bombs": "679d39e75e18ebb8",
     "menu": "dcb758682989a0c8"
    }
+  },
+  {
+   "name": "st4-easy-reimu-spring-shoot-bomb-6000",
+   "stage": 4,
+   "shot": 0,
+   "season": 0,
+   "difficulty": 0,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "460e9abf31818b12",
+    "enemies": "a7ca76eb442e163c",
+    "enemy_vms": "c5468e9c4c869737",
+    "bullets": "13c2e71917ba2f55",
+    "items": "18c8db2a69dd018d",
+    "spell": "a90fd8af84928db0",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "9443d24ce7fabd0b",
+    "menu": "5ab9c693de320a6a"
+   }
+  },
+  {
+   "name": "st5-normal-reimu-spring-shoot-bomb-6000",
+   "stage": 5,
+   "shot": 0,
+   "season": 0,
+   "difficulty": 1,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "b9e8fa5a3e633559",
+    "enemies": "6940616831ddbf07",
+    "enemy_vms": "7ccb69bc26e1d263",
+    "bullets": "d7c834412659247b",
+    "items": "484179a4cb990d6c",
+    "spell": "9b36211a7f055c52",
+    "lasers": "7cae9197842eb6fc",
+    "bombs": "109e339f3180b7eb",
+    "menu": "41fc8ddb7efe13bf"
+   }
   }
  ]
 }
