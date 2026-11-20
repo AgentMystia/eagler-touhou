@@ -141,6 +141,10 @@ test('draw structure: stage 4 Normal st04 background (mode 8 texture-matrix cach
   assert.equal(checkGolden('draw-st4-leaves'), 299);
 });
 
+test('draw structure: stage 2 Easy Reimu spring idle, frames 10–419 match the original call stream (geometry eps 1e-4, 410 frames)', needDat, () => {
+  assert.equal(checkGolden('draw-st2'), 410);
+});
+
 test('draw structure: stage 5 Normal spell 46 line lasers (0x433720 beam / tip / origin VMs) + boss distortion grid, frames 400–500', needDat, () => {
   assert.equal(checkGolden('draw-st5-line-laser'), 101);
 });
