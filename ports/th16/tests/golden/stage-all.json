@@ -738,6 +738,29 @@
    }
   },
   {
+   "name": "st3-normal-reimu-spring-idle-curve-laser-23200",
+   "stage": 3,
+   "shot": 0,
+   "season": 0,
+   "difficulty": 1,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 23200,
+   "input": "0:0",
+   "digests": {
+    "digest": "eada3761bce68e41",
+    "enemies": "4c59a616d7d097b6",
+    "enemy_vms": "73431805ec479af8",
+    "bullets": "26b1f896a8f4cf2f",
+    "items": "bc4629627c801a9d",
+    "spell": "291461946d7c576f",
+    "lasers": "eda0046ea28b35a7",
+    "bombs": "10ebd2b3b7a845a3",
+    "menu": "831093c5f4842a03"
+   }
+  },
+  {
    "name": "st5-hard-cirno-summer-shoot-line-laser-4500",
    "stage": 5,
    "shot": 1,
