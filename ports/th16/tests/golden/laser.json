@@ -83,6 +83,8 @@
       "item_digest": "259de09749f12a0d",
       "spell_digest": "6128f5b5ce99c8bc",
       "laser_digest": "f51e5ff7ef834f43",
+      "menu_digest": "045dbc189fa0450e",
+      "sound_digest": "26c108c7cdd44f84",
       "first_laser_frame": 396,
       "laser_kinds": [
         0
@@ -116,6 +118,8 @@
       "item_digest": "8b47bbfaa8ecb01e",
       "spell_digest": "07a51876985e7ab8",
       "laser_digest": "3d8a105842eab760",
+      "menu_digest": "d1cc371a6f18262a",
+      "sound_digest": "f6b1241d60eeed17",
       "first_laser_frame": 395,
       "laser_kinds": [2],
       "max_laser_count": 41,
@@ -243,6 +247,8 @@
       "item_digest": "a1113e141236bfe7",
       "spell_digest": "96735bb71caca310",
       "laser_digest": "f3de6bb6e7a13637",
+      "menu_digest": "60ce3eb66552fd19",
+      "sound_digest": "d0df45328e2efc45",
       "first_laser_frame": 808,
       "laser_kinds": [0, 1],
       "max_laser_count": 3,

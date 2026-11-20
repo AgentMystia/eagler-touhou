@@ -37,9 +37,12 @@ const byName = name => golden.cases.find(c => c.name === name);
 for (const c of golden.cases) {
   test(`laser digest matches oracle: ${c.name} (${c.frames} frames)`, needDat, () => {
     const out = run(['game-digest', ...caseArgs(c)]);
-    for (const [key, want] of [['lasers', c.laser_digest], ['bullets', c.bullet_digest], ['enemies', c.enemy_digest],
-                               ['enemy_vms', c.enemy_vm_digest], ['items', c.item_digest], ['spell', c.spell_digest],
-                               ['digest', c.player_digest]]) {
+    const pairs = [['lasers', c.laser_digest], ['bullets', c.bullet_digest], ['enemies', c.enemy_digest],
+                   ['enemy_vms', c.enemy_vm_digest], ['items', c.item_digest], ['spell', c.spell_digest],
+                   ['digest', c.player_digest]];
+    if (c.menu_digest) pairs.push(['menu', c.menu_digest]);
+    if (c.sound_digest) pairs.push(['sound', c.sound_digest]);
+    for (const [key, want] of pairs) {
       const m = out.match(new RegExp(`\\b${key}=([0-9a-f]{16})`));
       assert.ok(m, out);
       assert.equal(m[1], want, key);
