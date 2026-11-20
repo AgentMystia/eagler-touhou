@@ -437,6 +437,52 @@
     "bombs": "c79353004e4c5f7c",
     "menu": "01eda7b4bdaaaeff"
    }
+  },
+  {
+   "name": "st6-hard-aya-autumn-shoot-bomb-6000",
+   "stage": 6,
+   "shot": 2,
+   "season": 2,
+   "difficulty": 2,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "2f46386015d3efb2",
+    "enemies": "6c7c5f7a2da2e682",
+    "enemy_vms": "e8b39ca5e32fc236",
+    "bullets": "dcbf7d5ab77223f9",
+    "items": "a6c99f25bd327c37",
+    "spell": "a07c031248936ec5",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "fc4ae3870a5556a8",
+    "menu": "bb05a82394c0dd27"
+   }
+  },
+  {
+   "name": "st6-lunatic-reimu-summer-shoot-bomb-6000",
+   "stage": 6,
+   "shot": 0,
+   "season": 1,
+   "difficulty": 3,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "204812e3ca1f7de4",
+    "enemies": "837d4c79a67a645b",
+    "enemy_vms": "27916a324b719ad4",
+    "bullets": "61d6bc5217764a8e",
+    "items": "1dde3945b0a7c4f2",
+    "spell": "6cb320c8408ec58b",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "ff2be1e3658d0b4d",
+    "menu": "d1379f790ae1c92e"
+   }
   }
  ]
 }
