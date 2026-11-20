@@ -738,6 +738,29 @@
    }
   },
   {
+   "name": "st5-normal-reimu-spring-idle-boss-line-laser-21800",
+   "stage": 5,
+   "shot": 0,
+   "season": 0,
+   "difficulty": 1,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 21800,
+   "input": "0:0",
+   "digests": {
+    "digest": "50cb3c23c97bf4e2",
+    "enemies": "5f8e0261f62b1fd8",
+    "enemy_vms": "bf9f66faf041f813",
+    "bullets": "a6381e17775ea6d6",
+    "items": "75664cc237a51fa0",
+    "spell": "4eac5692f9685c04",
+    "lasers": "59c0df906e3c841e",
+    "bombs": "89f62ce09913599a",
+    "menu": "f5c85ac35d4248df"
+   }
+  },
+  {
    "name": "st3-normal-reimu-spring-idle-curve-laser-23200",
    "stage": 3,
    "shot": 0,
