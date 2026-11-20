@@ -738,6 +738,29 @@
    }
   },
   {
+   "name": "st5-easy-marisa-spring-idle-line-laser-4500",
+   "stage": 5,
+   "shot": 3,
+   "season": 0,
+   "difficulty": 0,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 4500,
+   "input": "0:0",
+   "digests": {
+    "digest": "8a01ac084dc6d128",
+    "enemies": "36ff8b822ab78244",
+    "enemy_vms": "40523ccee2eba1ba",
+    "bullets": "c69e7dd9c9898cff",
+    "items": "36fcf6f69ee4768f",
+    "spell": "38d0e36dfa427fd0",
+    "lasers": "6141cbc298cc63ac",
+    "bombs": "c87cf6c1ebe574e6",
+    "menu": "86489f6d8134a38d"
+   }
+  },
+  {
    "name": "st5-lunatic-reimu-winter-idle-line-laser-4500",
    "stage": 5,
    "shot": 0,
