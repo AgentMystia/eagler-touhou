@@ -153,6 +153,10 @@ test('draw structure: stage 5 Normal spell 46 line lasers (0x433720 beam / tip /
   assert.equal(checkGolden('draw-st5-line-laser'), 101);
 });
 
+test('draw structure: stage 6 Easy Aya winter BossCard1 line lasers (0x433720 via 0x413860 Ex 0x8000000, bullet.anm slot 7), frames 24645–24740', needDat, () => {
+  assert.equal(checkGolden('draw-st6-boss-laser'), 96);
+});
+
 test('draw structure: Extra spell 115 infinite lasers (0x4357a0 beam / origin VMs), Extra difficulty HUD (0x42cb60), frames 210–330', needDat, () => {
   assert.equal(checkGolden('draw-st7-infinite-laser'), 121);
 });
