@@ -22,8 +22,9 @@ function run(args) {
 }
 
 function caseArgs(c, frames = c.frames) {
+  // argv[14] = mode。旧金样在 mode 0 下录制（符卡练习位未置，ins_509 仍放道具）；缺省保持 0。
   return [dat, String(c.stage), String(c.shot), String(c.season), String(frames), c.input, '', '',
-          String(c.difficulty), String(c.replay_slot), String(c.lives), String(c.refill)];
+          String(c.difficulty), String(c.replay_slot), String(c.lives), String(c.refill), String(c.mode ?? 0)];
 }
 
 function gameRun(c, frames = c.frames) {

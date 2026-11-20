@@ -59,8 +59,8 @@ function recordPort(golden, lastFrame, fromFrame) {
   const c = golden.config;
   try {
     execFileSync(harness, ['game-draw', dat, String(c.stage), String(c.shot), String(c.season), String(lastFrame + 1),
-      c.input, '', '', String(c.difficulty), String(c.replay_slot ?? -1), String(c.lives), String(c.refill ?? 0), '0', out,
-      String(fromFrame)],
+      c.input, '', '', String(c.difficulty), String(c.replay_slot ?? -1), String(c.lives), String(c.refill ?? 0),
+      String(c.mode ?? 0), out, String(fromFrame)],
     // 绘制流写进 out；stdout 上的逐帧 game-run JSON 不需要（长序列会超过 maxBuffer），直接丢弃
     {encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'], maxBuffer: 1 << 24});
     const frames = {};
@@ -167,4 +167,8 @@ test('draw structure: stage 3 Normal Reimu spring BossCard2 curve lasers (0x4387
 
 test('draw structure: Extra spell 115 infinite lasers (0x4357a0 beam / origin VMs), Extra difficulty HUD (0x42cb60), frames 210–330', needDat, () => {
   assert.equal(checkGolden('draw-st7-infinite-laser'), 121);
+});
+
+test('draw structure: stage 5 Normal spell 50 curve lasers (0x438750 strips, bullet.anm slot 7, mode 2), frames 395–495', needDat, () => {
+  assert.equal(checkGolden('draw-st5-curve-laser'), 101);
 });

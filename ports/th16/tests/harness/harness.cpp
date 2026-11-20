@@ -1114,7 +1114,7 @@ int main(int argc, char** argv) {
         session.globals.stage_copy = stage;
         session.globals.shot = shot;
         session.globals.season = season;
-        // 第 15 参 mode（game-oracle.py --mode 同口径）：0 普通 / 1 练习 / 2 符卡练习；0x449190 普通模式默认 replay_slot = -1
+        // argv[14] = mode（game-oracle.py --mode 同口径）：0 普通 / 1 练习 / 2 符卡练习；0x449190 普通模式默认 replay_slot = -1
         session.globals.set_mode((argc >= 15 && argv[14][0] != '\0') ? std::atoi(argv[14]) : 0);
         if (!enemy_script.empty()) {
             session.sync_enemy_count = false;

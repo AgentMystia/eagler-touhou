@@ -1919,7 +1919,9 @@ i32 LaserManager::cancel_curve_rect(Laser& l, const Vec3& center, const Vec3& si
             cursor = run_start;
             while (cursor < n && !hit[u32(cursor)]) { ++cursor; ++run; }
             if (run > 3) {
+                // 0x4397d0：整包复制母激光参数后把 +0x344 生成音效写成 -1（子曲线不再播出现音）
                 CurveLaserArgs child = l.curve;
+                child.spawn_sfx = -1;
                 child.step_sfx = -1;
                 child.inherited_segments = &l.curve_segments;
                 child.initial_time = l.frame_timer.current_f - float(run_start);
