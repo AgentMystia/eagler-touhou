@@ -161,6 +161,10 @@ test('draw structure: stage 6 Easy Aya winter BossCard1 line lasers (0x433720 vi
   assert.equal(checkGolden('draw-st6-boss-laser'), 96);
 });
 
+test('draw structure: stage 3 Normal Reimu spring BossCard2 curve lasers (0x438750 strip, bullet.anm slot 7), frames 22899–22999', needDat, () => {
+  assert.equal(checkGolden('draw-st3-mid-curve'), 101);
+});
+
 test('draw structure: Extra spell 115 infinite lasers (0x4357a0 beam / origin VMs), Extra difficulty HUD (0x42cb60), frames 210–330', needDat, () => {
   assert.equal(checkGolden('draw-st7-infinite-laser'), 121);
 });
