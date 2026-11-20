@@ -1,5 +1,5 @@
 {
- "$comment": "tools/oracle/game-oracle.py --enemies --bullets --items --lasers --bombs --lives 8 --refill-lives（Unicorn 直跑 th16.exe v1.00a）第 1..7 面各一组机体 × 子季节 × 难度的 6000 帧对拍：持续射击 + 向上移动，第 1500 / 3000 帧按一次炸弹。九组 FNV-1a 64 摘要与 harness game-digest 同口径（含全部音效的 GameMenu 快照 menu 摘要）。 第二组为 14000 / 16000 帧长程（第 2500 / 5000 / 7500 / 10000 帧各一次炸弹），覆盖各面中 Boss 与 Boss 前半段。第三组补第 1 面与 Extra 灵梦土用，以及第 2 / 3 / 4 / 5 面尚未入库的机体 × 难度。",
+ "$comment": "tools/oracle/game-oracle.py --enemies --bullets --items --lasers --bombs --lives 8 --refill-lives（Unicorn 直跑 th16.exe v1.00a）第 1..7 面各一组机体 × 子季节 × 难度的 6000 帧对拍：持续射击 + 向上移动，第 1500 / 3000 帧按一次炸弹。十组 FNV-1a 64 摘要与 harness game-digest 同口径（含全部音效的 GameMenu 快照 menu 摘要，以及 0x45e150 / 0x45e1f0 请求序 sound 摘要）。 第二组为 14000 / 16000 帧长程（第 2500 / 5000 / 7500 / 10000 帧各一次炸弹），覆盖各面中 Boss 与 Boss 前半段。第三组补第 1 面与 Extra 灵梦土用，以及第 2 / 3 / 4 / 5 面尚未入库的机体 × 难度。",
  "cases": [
   {
    "name": "st2-easy-reimu-winter-shoot-bomb-6000",
@@ -21,7 +21,8 @@
     "spell": "e8d11f41d724b84c",
     "lasers": "2de39c6e438a3e58",
     "bombs": "6c3adc30e6da2d2c",
-    "menu": "87a4cc749dd6fe77"
+    "menu": "87a4cc749dd6fe77",
+    "sound": "04504d098085afe0"
    }
   },
   {
@@ -44,7 +45,8 @@
     "spell": "69356db8f51f9032",
     "lasers": "2de39c6e438a3e58",
     "bombs": "a39e84f700229080",
-    "menu": "448e8da86ed8c0e9"
+    "menu": "448e8da86ed8c0e9",
+    "sound": "f5e4c71853633092"
    }
   },
   {
@@ -67,7 +69,8 @@
     "spell": "923e554277acab3c",
     "lasers": "2de39c6e438a3e58",
     "bombs": "256cd9f187bee83c",
-    "menu": "690275c764086deb"
+    "menu": "690275c764086deb",
+    "sound": "5cc867c9506cf3ba"
    }
   },
   {
@@ -90,7 +93,8 @@
     "spell": "8d283f00d0f8e538",
     "lasers": "c7bc3e73a0e1ad49",
     "bombs": "cba6815e32b78b88",
-    "menu": "df0fe350552278ce"
+    "menu": "df0fe350552278ce",
+    "sound": "35242eb21319dbd6"
    }
   },
   {
@@ -113,7 +117,8 @@
     "spell": "fa99a3b5352072f3",
     "lasers": "2de39c6e438a3e58",
     "bombs": "2602003856476308",
-    "menu": "48adddbcb23ff881"
+    "menu": "48adddbcb23ff881",
+    "sound": "2a95997c9eab3a6a"
    }
   },
   {
@@ -136,7 +141,8 @@
     "spell": "c34affb914511b8c",
     "lasers": "2de39c6e438a3e58",
     "bombs": "e4579455767c6fd9",
-    "menu": "615417f3d9eb51a9"
+    "menu": "615417f3d9eb51a9",
+    "sound": "7eee22507285049b"
    }
   },
   {
@@ -159,7 +165,8 @@
     "spell": "596aaa6059ca0416",
     "lasers": "877db59982688863",
     "bombs": "3290342de484c5fb",
-    "menu": "8ca60d0679c7ee6e"
+    "menu": "8ca60d0679c7ee6e",
+    "sound": "22742e0b753b2805"
    }
   },
   {
@@ -182,7 +189,8 @@
     "spell": "1ecfbb8522911a31",
     "lasers": "877db59982688863",
     "bombs": "c49214d47a28674e",
-    "menu": "e5800d54d4c6391f"
+    "menu": "e5800d54d4c6391f",
+    "sound": "9de98af5f1e34896"
    }
   },
   {
@@ -205,7 +213,8 @@
     "spell": "29eb929d243245c5",
     "lasers": "877db59982688863",
     "bombs": "8ad65f41c7216833",
-    "menu": "37244069de031a36"
+    "menu": "37244069de031a36",
+    "sound": "225f63b25b2e76d4"
    }
   },
   {
@@ -228,7 +237,8 @@
     "spell": "43a7b26cfa26db01",
     "lasers": "e9983cc1ccf903f7",
     "bombs": "86f79be235a17dd0",
-    "menu": "c74826ce7a1f03fc"
+    "menu": "c74826ce7a1f03fc",
+    "sound": "9726a723bc562bec"
    }
   },
   {
@@ -251,7 +261,8 @@
     "spell": "052d0eec1fd28fb3",
     "lasers": "0b2b57682191ac1b",
     "bombs": "7c6b0cd7e9e6f183",
-    "menu": "13c83feb2051f7c6"
+    "menu": "13c83feb2051f7c6",
+    "sound": "1440a505d6e2f51b"
    }
   },
   {
@@ -274,7 +285,8 @@
     "spell": "2f9fc9a1dd82ce2d",
     "lasers": "5b24e77b984291b5",
     "bombs": "94c6bcf2e280e49f",
-    "menu": "f0c2c3fc97be30e8"
+    "menu": "f0c2c3fc97be30e8",
+    "sound": "5e4d08ec928128a1"
    }
   },
   {
@@ -321,7 +333,8 @@
     "spell": "9d92fe61144a0a22",
     "lasers": "2de39c6e438a3e58",
     "bombs": "b8e98051133ab28d",
-    "menu": "04c60f95fadcfc81"
+    "menu": "04c60f95fadcfc81",
+    "sound": "ca8d276d36bcf99e"
    }
   },
   {
@@ -344,7 +357,8 @@
     "spell": "e7ec460a6a7594e3",
     "lasers": "2de39c6e438a3e58",
     "bombs": "e081d789dad160e0",
-    "menu": "42c4604f7c192694"
+    "menu": "42c4604f7c192694",
+    "sound": "654c21cce4df0600"
    }
   },
   {
@@ -367,7 +381,8 @@
     "spell": "8d2e173f65ad14c1",
     "lasers": "0c4a3bd25cd93368",
     "bombs": "a2bc68606401933c",
-    "menu": "ce2e970180c44835"
+    "menu": "ce2e970180c44835",
+    "sound": "ba0f2c6262b11277"
    }
   },
   {
@@ -414,7 +429,8 @@
     "spell": "fc3baaf9f44334d3",
     "lasers": "2de39c6e438a3e58",
     "bombs": "d45393b5dcee5a51",
-    "menu": "c293648b3aa95797"
+    "menu": "c293648b3aa95797",
+    "sound": "5b4586880eceb113"
    }
   },
   {
@@ -437,7 +453,8 @@
     "spell": "a14e77a62c343cfa",
     "lasers": "2de39c6e438a3e58",
     "bombs": "c79353004e4c5f7c",
-    "menu": "01eda7b4bdaaaeff"
+    "menu": "01eda7b4bdaaaeff",
+    "sound": "c0c68f2a084aca19"
    }
   },
   {
@@ -460,7 +477,8 @@
     "spell": "a07c031248936ec5",
     "lasers": "2de39c6e438a3e58",
     "bombs": "fc4ae3870a5556a8",
-    "menu": "bb05a82394c0dd27"
+    "menu": "bb05a82394c0dd27",
+    "sound": "d0498439e44e34bb"
    }
   },
   {
@@ -483,7 +501,8 @@
     "spell": "6cb320c8408ec58b",
     "lasers": "2de39c6e438a3e58",
     "bombs": "ff2be1e3658d0b4d",
-    "menu": "d1379f790ae1c92e"
+    "menu": "d1379f790ae1c92e",
+    "sound": "590659a98b9ebdd7"
    }
   },
   {
@@ -506,7 +525,8 @@
     "spell": "8bf228b2fa20c032",
     "lasers": "2de39c6e438a3e58",
     "bombs": "7a0d956ff5eac1d8",
-    "menu": "05e9f3f446afd937"
+    "menu": "05e9f3f446afd937",
+    "sound": "e1c005ae7520d233"
    }
   },
   {
@@ -529,7 +549,8 @@
     "spell": "2149f4d9ad96099f",
     "lasers": "bf0673a0fa7b6d7a",
     "bombs": "870c92d40def4001",
-    "menu": "ff6507792681a338"
+    "menu": "ff6507792681a338",
+    "sound": "f3d014dcfe8dac50"
    }
   },
   {
@@ -552,7 +573,8 @@
     "spell": "aa93085cdc75b091",
     "lasers": "2de39c6e438a3e58",
     "bombs": "97c7209b8c137c0a",
-    "menu": "1c28e2ea7643b6e6"
+    "menu": "1c28e2ea7643b6e6",
+    "sound": "553abf8c9a15a913"
    }
   },
   {
@@ -575,7 +597,8 @@
     "spell": "2f18d1f3d528bed7",
     "lasers": "2de39c6e438a3e58",
     "bombs": "9df626d65f8a9a6f",
-    "menu": "408d1180a8f281b7"
+    "menu": "408d1180a8f281b7",
+    "sound": "c38b192645dae6e5"
    }
   },
   {
@@ -598,7 +621,8 @@
     "spell": "9b18785ea34b974f",
     "lasers": "2de39c6e438a3e58",
     "bombs": "af7d6664c34a25b5",
-    "menu": "0291beaddc2d963a"
+    "menu": "0291beaddc2d963a",
+    "sound": "fa93c8b8329e0d5b"
    }
   },
   {
@@ -621,7 +645,8 @@
     "spell": "633ee94ffa2079ef",
     "lasers": "2de39c6e438a3e58",
     "bombs": "679d39e75e18ebb8",
-    "menu": "dcb758682989a0c8"
+    "menu": "dcb758682989a0c8",
+    "sound": "6d68990bc6cff820"
    }
   },
   {
@@ -644,7 +669,8 @@
     "spell": "a90fd8af84928db0",
     "lasers": "2de39c6e438a3e58",
     "bombs": "9443d24ce7fabd0b",
-    "menu": "5ab9c693de320a6a"
+    "menu": "5ab9c693de320a6a",
+    "sound": "5fcbc61c0b3df79d"
    }
   },
   {
@@ -691,7 +717,8 @@
     "spell": "0fb91e2ea88c1717",
     "lasers": "2de39c6e438a3e58",
     "bombs": "e57537bccbf46b6d",
-    "menu": "20142c44f18388c3"
+    "menu": "20142c44f18388c3",
+    "sound": "b2c212fc12bb9b7d"
    }
   },
   {
@@ -714,7 +741,8 @@
     "spell": "2487ce56fef0a11e",
     "lasers": "8b72771c60bb0548",
     "bombs": "2a0e4910d75b4e94",
-    "menu": "1436b2fe4ce9bcc4"
+    "menu": "1436b2fe4ce9bcc4",
+    "sound": "083078d5aa338ec1"
    }
   },
   {
@@ -737,7 +765,8 @@
     "spell": "d5802b4fd4b072a7",
     "lasers": "8bc0e1e1d36b7ac0",
     "bombs": "e9a9bccd41467e62",
-    "menu": "fe2adc70712f1a19"
+    "menu": "fe2adc70712f1a19",
+    "sound": "4a3723229ecc3261"
    }
   },
   {
@@ -760,7 +789,8 @@
     "spell": "4eac5692f9685c04",
     "lasers": "59c0df906e3c841e",
     "bombs": "89f62ce09913599a",
-    "menu": "f5c85ac35d4248df"
+    "menu": "f5c85ac35d4248df",
+    "sound": "cafde2b9b34d7a83"
    }
   },
   {
@@ -806,7 +836,8 @@
     "spell": "12dd1bfb32940c35",
     "lasers": "5fff2c77482013ee",
     "bombs": "c4e7f48ca2f3202a",
-    "menu": "2b7a9acdebde7b12"
+    "menu": "2b7a9acdebde7b12",
+    "sound": "b86abd3430199baa"
    }
   },
   {
@@ -829,7 +860,8 @@
     "spell": "38d0e36dfa427fd0",
     "lasers": "6141cbc298cc63ac",
     "bombs": "c87cf6c1ebe574e6",
-    "menu": "86489f6d8134a38d"
+    "menu": "86489f6d8134a38d",
+    "sound": "a675f120527a9b74"
    }
   },
   {
@@ -852,7 +884,8 @@
     "spell": "ade1a256ed2b3eca",
     "lasers": "0aef3cec5b160062",
     "bombs": "e5ccced11ae3445e",
-    "menu": "4a6e7e2426fc41d7"
+    "menu": "4a6e7e2426fc41d7",
+    "sound": "a8d9e2fc503dc994"
    }
   },
   {
@@ -875,7 +908,8 @@
     "spell": "693eef559006a8e0",
     "lasers": "dc0a57411999a43e",
     "bombs": "fbe011a0ee0c2d96",
-    "menu": "1e0503c762a11e87"
+    "menu": "1e0503c762a11e87",
+    "sound": "413d4fffb6ba22d2"
    }
   }
  ]
