@@ -667,6 +667,29 @@
     "bombs": "109e339f3180b7eb",
     "menu": "41fc8ddb7efe13bf"
    }
+  },
+  {
+   "name": "st6-easy-reimu-spring-shoot-bomb-6000",
+   "stage": 6,
+   "shot": 0,
+   "season": 0,
+   "difficulty": 0,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "7cf01880a1860b2d",
+    "enemies": "9b66172e0bbf306d",
+    "enemy_vms": "568ad5e1faaab98a",
+    "bullets": "a74452ad5566a149",
+    "items": "3e56cc7892b13566",
+    "spell": "0fb91e2ea88c1717",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "e57537bccbf46b6d",
+    "menu": "20142c44f18388c3"
+   }
   }
  ]
 }
