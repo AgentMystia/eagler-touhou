@@ -738,6 +738,29 @@
    }
   },
   {
+   "name": "st5-lunatic-reimu-winter-idle-line-laser-4500",
+   "stage": 5,
+   "shot": 0,
+   "season": 3,
+   "difficulty": 3,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 4500,
+   "input": "0:0",
+   "digests": {
+    "digest": "87f0137eeed81de9",
+    "enemies": "e01a50db8905c61a",
+    "enemy_vms": "7a012e5f021b54b3",
+    "bullets": "6119174a1e6b2e2b",
+    "items": "7ab801fdb4bb38ae",
+    "spell": "ade1a256ed2b3eca",
+    "lasers": "0aef3cec5b160062",
+    "bombs": "e5ccced11ae3445e",
+    "menu": "4a6e7e2426fc41d7"
+   }
+  },
+  {
    "name": "st5-normal-reimu-spring-light-laser-4500",
    "stage": 5,
    "shot": 0,
