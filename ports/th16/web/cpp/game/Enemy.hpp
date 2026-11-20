@@ -93,7 +93,7 @@ public:
     i32 life_display = 0;       // +0x3f7c / +0x5188：距下一阶段阈值的血量（Boss 血条 / 低血闪烁阈值）
     i32 life_budget = 0;        // +0x3f80 / +0x518c（符卡 7 倍血量池）
     i32 phase_life = 0;         // +0x3f84 / +0x5190
-    i32 damage_accum = 0;       // +0x3f88 / +0x5194：累计承受伤害（含无敌期；op 1001 季节道具按此放出）
+    i32 damage_accum = 0;       // +0x3f88 / +0x5194：累计承受伤害（0x41a6d0 +0x14，无敌分支同样累加；op 1001 按此放出）
     u32 life_flags = 0;         // +0x3f8c / +0x5198（bit0 = 符卡 7 倍减伤；bit1 = 立即死亡）
     float damage_rate = 1.0f;   // +0x4038 / +0x5244（op 565；Bomb 中按比例减伤，0 时音效 0x24）
     i32 season_item_step = 0;   // +0x4058（op 1001 arg0：每累计该伤害放一个季节道具）

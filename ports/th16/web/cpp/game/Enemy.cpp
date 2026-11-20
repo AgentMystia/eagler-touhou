@@ -943,15 +943,18 @@ int Enemy::resolve_hits(float game_speed) {
             // 符卡中用过炸弹（flags & 0x21 == 0x21）→ 伤害 /30
             if ((sflags & (Spellcard::kActive | Spellcard::kBombUsed)) == (Spellcard::kActive | Spellcard::kBombUsed))
                 applied /= 0x1e;
-            // 0x41a6d0：累计伤害（+0x3f88）无论是否无敌都加；符卡期间（life_flags & 1）按 7 倍血量池折算
-            damage_accum += applied;
+            // 0x41a6d0 无论是否符卡都先把伤害累加到 +0x3f88（op 1001 按此放季节道具），再扣血。
+            // 无敌（flags & 0x10 或无敌计时）不调用它，0x41c330 只累加、不扣血。
             if ((flags & 0x10u) == 0 && invuln.current < 1) {
+                damage_accum += applied;
                 if ((life_flags & 1u) != 0) {
                     life_budget -= applied;
                     life = (life_budget - phase_life * 7) / 7 + phase_life;
                 } else {
                     life -= applied;
                 }
+            } else {
+                damage_accum += applied;
             }
             // op 1001：每累计 season_item_step 伤害放一个季节道具（visual_rng：unit + angle）
             if (season_item_step > 0 && season_item_next < damage_accum && rng != nullptr) {

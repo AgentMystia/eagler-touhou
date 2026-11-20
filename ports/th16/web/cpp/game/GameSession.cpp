@@ -581,7 +581,15 @@ bool GameSession::create_player() {
     globals.point_value_initial = kPointInitial[diff] * 100;
     globals.point_value_max = kPointMax[diff] * 100;
     globals.point_value = i32((double(float(globals.point_value_initial)) / 100.0) * 100.0);
-    if (mode == 2) { globals.lives = 0; globals.bombs = 0; }
+    if (mode == 2) {
+        globals.lives = 0;
+        globals.bombs = 0;
+        // 0x42cb60：符卡练习最高分取成绩块 +0x970 + replay_slot×0x9c（SpellRecord::high_score），续关位清零
+        const int spell = globals.replay_slot;
+        if (spell >= 0 && spell < ScoreFile::kSpellRecords)
+            globals.hiscore = i32(scores.blocks[globals.shot].spells[spell].high_score);
+        globals.hiscore_continues = 0;
+    }
     else if (mode == 0) globals.lives = 2;
     else globals.lives = globals.practice_lives == 0 ? 9 : globals.practice_lives - 1;
     // 剩余续关数（DAT_00492278 按难度：Extra 无续关）
@@ -1150,7 +1158,7 @@ bool GameSession::enter_game(i32 replay_mode) {
     chains.enable(spellcard_update_chain_);
     chains.enable(spellcard_draw_chain_);
     register_game_chains();
-    // 0x42cb60 末：+0x90 = 0x3c、清 flags&4、DAT_004a5bec 清 bit0 / bit1 / bit3、0x418420 启用链
+    // 0x42cb60 末：+0x90 = 0x3c、清 flags&4、DAT_004a5bec &= 0xfffffff4（只清 bit0 / bit1 / bit3，模式位 4-5 保留）、0x418420 启用链
     game.transition_length = 0x3c;
     game.flags &= ~GameManager::kLoading;
     globals.flags &= ~0xbu;
@@ -1291,7 +1299,7 @@ bool GameSession::next_stage() {
     register_game_chains();
     game.transition_length = 0x3c;
     game.flags &= ~GameManager::kLoading;
-    globals.flags &= ~0xbu;
+    globals.flags &= ~0xbu;  // 0x42d200 末同样 DAT_004a5bec &= 0xfffffff4
     globals.post_load_frames = 0;
     game.timer.set(0);
     chains.enable(game_update_chain_);

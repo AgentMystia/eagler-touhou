@@ -263,7 +263,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"motion-angle-set", 0x411410, "game/Enemy.cpp Enemy::execute case 420/422/440/442（motion.angle = wrap(v)）"},
     {"motion-angle2-set", 0x4260D0, "game/Enemy.cpp Enemy::execute case 420/422（motion.angle2 = wrap(wrap(v))）"},
     {"enemy-motion-ops", 0x41E8D4, "game/Enemy.cpp Enemy::execute case 400..447（0x41dcb0 case 0x16..0x2c：坐标 / 位置插值（逐轴 434..439、Hermite 425/426）/ 角速度与插值（镜像 π/2 - wrap(a - π/2)、mode 7 相对、最短弧 441/443）/ 轨道 408..411 / 速度向量 418/419 / 椭圆 420..423 / 镜像位 424 / 合并 427 / 取 Boss 或 id 坐标 414/415/432/433 / 随机漫游 412/413）"},
-    {"enemy-collision", 0x41C330, "game/Enemy.cpp Enemy::resolve_hits（Bomb 换图、0x800 炸弹即死探测、0x425010 时间中断、0x445a30 伤害结算与统计、0x41a6d0 扣血、op 1001 季节道具、0x424f00 血量中断、0x41d520 死亡、0x4439e0 体碰撞 / 0x444cf0 体擦弹、受击闪烁）"},
+    {"enemy-collision", 0x41C330, "game/Enemy.cpp Enemy::resolve_hits（Bomb 换图、0x800 炸弹即死探测、0x425010 时间中断、0x445a30 伤害结算与统计、0x41a6d0 扣血并累加 +0x3f88、op 1001 季节道具、0x424f00 血量中断、0x41d520 死亡、0x4439e0 体碰撞 / 0x444cf0 体擦弹、受击闪烁）"},
     {"enemy-sub-life", 0x41A6D0, "game/Enemy.cpp Enemy::resolve_hits（普通扣血与符卡 life_flags&1 下 7 倍减伤池折算）"},
     {"enemy-death", 0x41D520, "game/Enemy.cpp Enemy::die（死亡音效、死亡特效登记 EffectManager、限时季节掉落折算、0x41a720 掉落、奖励结算、死亡子程序）"},
     {"enemy-release-items", 0x41A720, "game/Enemy.cpp Enemy::release_items（先掉 drop_item_type 再 0x41d700）"},
