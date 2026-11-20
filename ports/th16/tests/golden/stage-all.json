@@ -483,6 +483,29 @@
     "bombs": "ff2be1e3658d0b4d",
     "menu": "d1379f790ae1c92e"
    }
+  },
+  {
+   "name": "st7-extra-cirno-doyou-shoot-bomb-6000",
+   "stage": 7,
+   "shot": 1,
+   "season": 4,
+   "difficulty": 4,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "31ebc749440c2aa2",
+    "enemies": "21dbe4a007597c0b",
+    "enemy_vms": "d386e1001eaf21e9",
+    "bullets": "2a635601c89aeacc",
+    "items": "4921efe9bc07c329",
+    "spell": "8bf228b2fa20c032",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "7a0d956ff5eac1d8",
+    "menu": "05e9f3f446afd937"
+   }
   }
  ]
 }
