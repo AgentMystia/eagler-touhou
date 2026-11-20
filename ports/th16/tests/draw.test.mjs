@@ -153,6 +153,10 @@ test('draw structure: stage 5 Normal spell 46 line lasers (0x433720 beam / tip /
   assert.equal(checkGolden('draw-st5-line-laser'), 101);
 });
 
+test('draw structure: stage 5 Lunatic Reimu winter midstage line lasers (0x433720 via ECL ins_702, bullet.anm slot 7), frames 3373–3473', needDat, () => {
+  assert.equal(checkGolden('draw-st5-mid-laser'), 101);
+});
+
 test('draw structure: stage 6 Easy Aya winter BossCard1 line lasers (0x433720 via 0x413860 Ex 0x8000000, bullet.anm slot 7), frames 24645–24740', needDat, () => {
   assert.equal(checkGolden('draw-st6-boss-laser'), 96);
 });
