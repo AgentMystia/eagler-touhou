@@ -690,6 +690,29 @@
     "bombs": "e57537bccbf46b6d",
     "menu": "20142c44f18388c3"
    }
+  },
+  {
+   "name": "st5-normal-reimu-spring-light-laser-4500",
+   "stage": 5,
+   "shot": 0,
+   "season": 0,
+   "difficulty": 1,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 4500,
+   "input": "0:0x10,8:0,200:0x10,208:0,400:0x10,408:0,800:0x10,808:0,1200:0x10,1208:0,1800:0x10,1808:0,2400:0x10,2408:0,3000:0x10,3008:0,3600:0x10,3608:0",
+   "digests": {
+    "digest": "07cedf6a07fa23a9",
+    "enemies": "e42895ad204aa297",
+    "enemy_vms": "9a5bd4f1c1a5a903",
+    "bullets": "e150e5ce0b2e0417",
+    "items": "cd3568f0d6980170",
+    "spell": "693eef559006a8e0",
+    "lasers": "dc0a57411999a43e",
+    "bombs": "fbe011a0ee0c2d96",
+    "menu": "1e0503c762a11e87"
+   }
   }
  ]
 }
