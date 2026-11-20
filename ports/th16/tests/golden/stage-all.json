@@ -575,6 +575,52 @@
     "bombs": "9df626d65f8a9a6f",
     "menu": "408d1180a8f281b7"
    }
+  },
+  {
+   "name": "st1-lunatic-reimu-spring-shoot-bomb-6000",
+   "stage": 1,
+   "shot": 0,
+   "season": 0,
+   "difficulty": 3,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "068d28aab4b0c16c",
+    "enemies": "7fd4e3f7d24ee2b0",
+    "enemy_vms": "8c8fc1cfc353acde",
+    "bullets": "ea0d1ac2d1b48464",
+    "items": "ad58b2a3cc2020a4",
+    "spell": "9b18785ea34b974f",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "af7d6664c34a25b5",
+    "menu": "0291beaddc2d963a"
+   }
+  },
+  {
+   "name": "st2-lunatic-reimu-spring-shoot-bomb-6000",
+   "stage": 2,
+   "shot": 0,
+   "season": 0,
+   "difficulty": 3,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 6000,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "279b86e18d7f2423",
+    "enemies": "a0c6141255cb7c90",
+    "enemy_vms": "9fb9deae02da1c63",
+    "bullets": "eb857c2bdc9933e2",
+    "items": "51c9a518a1bc4d58",
+    "spell": "633ee94ffa2079ef",
+    "lasers": "2de39c6e438a3e58",
+    "bombs": "679d39e75e18ebb8",
+    "menu": "dcb758682989a0c8"
+   }
   }
  ]
 }
