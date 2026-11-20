@@ -738,6 +738,29 @@
    }
   },
   {
+   "name": "st5-hard-cirno-summer-shoot-line-laser-4500",
+   "stage": 5,
+   "shot": 1,
+   "season": 1,
+   "difficulty": 2,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 4500,
+   "input": "0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11",
+   "digests": {
+    "digest": "0943c771c91e72fb",
+    "enemies": "442d44806b57ecfa",
+    "enemy_vms": "609d1216d9effc95",
+    "bullets": "7159943027eb807f",
+    "items": "0e93962030f18f2c",
+    "spell": "12dd1bfb32940c35",
+    "lasers": "5fff2c77482013ee",
+    "bombs": "c4e7f48ca2f3202a",
+    "menu": "2b7a9acdebde7b12"
+   }
+  },
+  {
    "name": "st5-easy-marisa-spring-idle-line-laser-4500",
    "stage": 5,
    "shot": 3,
