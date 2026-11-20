@@ -715,6 +715,29 @@
    }
   },
   {
+   "name": "st6-easy-aya-winter-idle-line-laser-25000",
+   "stage": 6,
+   "shot": 2,
+   "season": 3,
+   "difficulty": 0,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 25000,
+   "input": "0:0",
+   "digests": {
+    "digest": "db974eb012a14bfe",
+    "enemies": "afb79a1384c6dc6f",
+    "enemy_vms": "36f68fd1985f71c9",
+    "bullets": "404b5bfc78df7499",
+    "items": "6f0ea9660377f216",
+    "spell": "d5802b4fd4b072a7",
+    "lasers": "8bc0e1e1d36b7ac0",
+    "bombs": "e9a9bccd41467e62",
+    "menu": "fe2adc70712f1a19"
+   }
+  },
+  {
    "name": "st5-normal-reimu-spring-light-laser-4500",
    "stage": 5,
    "shot": 0,
