@@ -172,3 +172,7 @@ test('draw structure: Extra spell 115 infinite lasers (0x4357a0 beam / origin VM
 test('draw structure: stage 5 Normal spell 50 curve lasers (0x438750 strips, bullet.anm slot 7, mode 2), frames 395–495', needDat, () => {
   assert.equal(checkGolden('draw-st5-curve-laser'), 101);
 });
+
+test('draw structure: Extra spell 117 infinite lasers (0x4357a0, bullet.anm slot 7, mode 2), frames 808–900', needDat, () => {
+  assert.equal(checkGolden('draw-st7-card9-laser'), 93);
+});

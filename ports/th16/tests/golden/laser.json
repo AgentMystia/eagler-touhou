@@ -1,5 +1,5 @@
 {
-  "note": "tools/oracle/game-oracle.py --enemies --bullets --items --lasers（Unicorn 直跑 th16.exe 全游戏）激光池快照 laser_digest 与同场景 player / enemy / bullet / item / spell digest 的 FNV-1a 64；harness game-digest 同口径（--lives 8 --refill-lives，避免 Game Over 截断长程对拍）。输入 MOVE 序列每 150 帧换向（含低速 0x8），让自机反复撞进 / 擦过激光并在复活入场期（0x442560 状态 0 前 30 帧）以 pos_copy 为心的扩圆切断激光。st3 Card2（replay_slot 26，st03bs BossCard2_at op 711）：曲线激光 0x4370a0，64 节点逐帧按采样时刻重算、矩形 / 圆形消弹（0x4397d0 / 0x43a2f0）派生子激光；st5 Card1（46，st05bs op 702）：直线激光 0x431b30 / 0x432f40 的伸长 / 折返 / 消弹切段（0x433860 / 0x434730）；st5 Card1B（50，mode 2，st05bs BossCard1B op 711）：曲线激光 0x4370a0，第 395 帧起种类 2，峰值 41，0x4397d0 派生子曲线时 +0x344 生成音效写成 -1；st6 Card4（82，op 632 arg 1）：敌机每帧钩子 0x4252d0——F0 半径内 Ex 0x8000 参数 1 的子弹跳到 Ex 第 8 步（第 1367 帧起）；st6 Card9（102，op 703/704 + op 632 arg 2）：照射激光 0x435050 预告 / 展开 / 维持 / 收束四态，钩子 0x4253b0 自第 204 帧起每帧把火力与季节量表归零并重建子机；st7 Card7（115，op 703/708）：照射激光 + ECL 503 清 0x20 后 0x46f300 整棵 VM 树显示。",
+  "note": "tools/oracle/game-oracle.py --enemies --bullets --items --lasers（Unicorn 直跑 th16.exe 全游戏）激光池快照 laser_digest 与同场景 player / enemy / bullet / item / spell digest 的 FNV-1a 64；harness game-digest 同口径（--lives 8 --refill-lives，避免 Game Over 截断长程对拍）。输入 MOVE 序列每 150 帧换向（含低速 0x8），让自机反复撞进 / 擦过激光并在复活入场期（0x442560 状态 0 前 30 帧）以 pos_copy 为心的扩圆切断激光。st3 Card2（replay_slot 26，st03bs BossCard2_at op 711）：曲线激光 0x4370a0，64 节点逐帧按采样时刻重算、矩形 / 圆形消弹（0x4397d0 / 0x43a2f0）派生子激光；st5 Card1（46，st05bs op 702）：直线激光 0x431b30 / 0x432f40 的伸长 / 折返 / 消弹切段（0x433860 / 0x434730）；st5 Card1B（50，mode 2，st05bs BossCard1B op 711）：曲线激光 0x4370a0，第 395 帧起种类 2，峰值 41，0x4397d0 派生子曲线时 +0x344 生成音效写成 -1；st6 Card4（82，op 632 arg 1）：敌机每帧钩子 0x4252d0——F0 半径内 Ex 0x8000 参数 1 的子弹跳到 Ex 第 8 步（第 1367 帧起）；st6 Card9（102，op 703/704 + op 632 arg 2）：照射激光 0x435050 预告 / 展开 / 维持 / 收束四态，钩子 0x4253b0 自第 204 帧起每帧把火力与季节量表归零并重建子机；st7 Card7（115，op 703/708）：照射激光 + ECL 503 清 0x20 后 0x46f300 整棵 VM 树显示；st7 Card9（117，mode 2，op 703/708）：照射激光第 808 帧起，种类 0 与 1。",
   "cases": [
     {
       "name": "st3-normal-card2-curve-900",
@@ -223,6 +223,37 @@
       },
       "last_power": 211,
       "last_season_gauge": 113
+    },
+    {
+      "name": "st7-extra-card9-infinite-1200",
+      "stage": 7,
+      "shot": 0,
+      "season": 4,
+      "difficulty": 4,
+      "replay_slot": 117,
+      "mode": 2,
+      "lives": 8,
+      "refill": 1,
+      "frames": 1200,
+      "input": "0:0",
+      "player_digest": "68091f5b63132410",
+      "enemy_digest": "04fe2f71030fc545",
+      "bullet_digest": "41bdf22dbe7201f2",
+      "enemy_vm_digest": "522c2e7e66799b88",
+      "item_digest": "a1113e141236bfe7",
+      "spell_digest": "96735bb71caca310",
+      "laser_digest": "f3de6bb6e7a13637",
+      "first_laser_frame": 808,
+      "laser_kinds": [0, 1],
+      "max_laser_count": 3,
+      "last_next_handle": 65539,
+      "last_resources": {
+        "score": 28,
+        "graze": 94,
+        "lives": 8
+      },
+      "last_power": 302,
+      "last_season_gauge": 398
     }
   ]
 }
