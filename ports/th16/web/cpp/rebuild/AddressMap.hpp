@@ -406,7 +406,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"title-key-digits", 0x44EC60, "game/TitleScene.cpp TitleScene::paint_key_table（槽 i 十位/个位 → 子脚本 0x3f+2i / 0x40+2i 与 0x49+2i / 0x4a+2i，精灵 +0x2a）"},
     {"title-key-items", 0x44F810, "game/TitleScene.cpp TitleScene::refresh_key_config_items（光标前 i+0x31 / i+0x38 / 数字 → 0x1e，光标后 → 0x1f）"},
     {"title-replay", 0x451750, "game/TitleScene.cpp TitleScene::update_replay（25×3 槽、关卡选择、场景 0xd）"},
-    {"title-manual", 0x4545A0, "game/TitleScene.cpp TitleScene::update_manual（0x42ea30 HelpScreen，scroll=112）"},
+    {"title-manual", 0x4545A0, "game/TitleScene.cpp TitleScene::update_manual（0x42ea30 HelpScreen，scroll=112；help.anm 由 0x42e760 装载线程写入 +0x12c，标题路径不跑该线程，目录项不生成）"},
     {"title-music", 0x4546F0, "game/TitleScene.cpp TitleScene::update_music（case 0 每帧生成 2 行曲名 title.anm 0xbc+i / 未听过印 No.%2d ？×11；text.anm 0x13+k 8 行注释每偶数帧刷 1 行；未听过曲首次确认刷 8 行提示 0x8080ff；10 行滚动窗、相距 ≥80 直接落位；取消中断 1 + SE 9 → case 3 Timer>9 回主菜单恢复 th16_01）"},
     {"music-skip-line", 0x455330, "game/TitleScene.cpp music_skip_line（跳过本行与其后连续 \\r\\n）"},
     {"music-copy-line", 0x455370, "game/TitleScene.cpp music_copy_line（本行 strcpy、行尾写 NUL、跳过连续换行；'@' 行不计入剩余长度）"},

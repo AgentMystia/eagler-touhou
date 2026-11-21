@@ -8,7 +8,7 @@
 
 1. 已关闭：难度画面绘制窗口第 344–353 帧已对拍。见「已关闭」。
 2. 已关闭：Extra 四季 600 帧矩阵已锁。见「已关闭」。
-3. 标题其余画面绘制对拍：Manual 0x4545a0。第 360 帧移植版 help.anm（槽 19）一次画出 18 个图元，原版同位置是 title.anm 的 2 个图元。Option 0x44c570、Replay 0x451750、Player Data 0x452330、Music Room 0x4546f0、Spell Practice 0x4553d0 已关闭。
+3. 标题画面绘制对拍已关闭。见「已关闭」。
 4. ANM mode 6（0x466820）：`artifacts/th16/dat` 全部 54 个 `.anm` 的 ins_302 渲染模式只有 0/1/2/3/4/8/21，没有 6。与钩子 6 相同，数据不可达，不排期。`AddressMap.hpp` 的空登记保留为说明。
 5. 全关卡 × 难度 × 机体 × 子季节的长程像素对拍。600 帧摘要与若干绘制窗口已锁；通关全程与关键帧像素对照未覆盖全部组合。
 6. 性能：Snapdragon 865 级 60fps。本机无该设备，不能记为通过。WASI 3600 帧 <10s：本机没有 wasi-sdk，不能记为通过。
@@ -23,4 +23,5 @@
 - Player Data 画面绘制窗口第 362–371 帧已对拍（第 324 帧确认，第 345 帧进入，第 353 帧子状态 2）。测试 `player data screen: 10 settled draw frames match original structure and vertices`。
 - Music Room 画面绘制窗口第 370–379 帧已对拍（第 326 帧确认，第 347 帧进入，第 362 帧子状态 2）。测试 `music room: 10 settled draw frames match original structure and vertices`。
 - Spell Practice 画面绘制窗口第 360–369 帧已对拍（第 320 帧确认，第 341 帧进入，第 353 帧子状态 2）。测试 `spell practice: 10 settled draw frames match original structure and vertices`。
+- Manual 画面绘制窗口第 360–369 帧已对拍（第 330 帧确认，第 351 帧进入）。help.anm 由装载线程写入，标题路径不跑该线程，目录项不出现。测试 `manual screen: 10 settled draw frames match original structure and vertices`。
 - Extra 四季 600 帧矩阵已锁：第 7 面 4 机体 × 春夏秋冬（子季节 0..3）× 难度 Extra，16 组十个摘要字段与 `game-oracle.py` 一致，写入 `tests/golden/stage-matrix-st7.json`，原有 4 条土用 case 保留，由 `tests/stage-matrix.test.mjs` 驱动 harness `game-digest`。

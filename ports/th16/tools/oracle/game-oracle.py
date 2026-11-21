@@ -734,10 +734,19 @@ class GameOracle(Oracle):
         self.uc.reg_write(UC_X86_REG_EAX, p)
 
     def on_anm_load_file(self, o):
-        # 0x46d020 入口钩子：槽已装 → 直接返回；否则挂起，在模拟器外同步跑装载线程工作步（0x46cf80 / 0x46d1c0）
+        # 0x46d020 入口钩子：槽已装 → 直接返回；否则挂起，在模拟器外同步跑装载线程工作步（0x46cf80 / 0x46d1c0）。
+        # help.anm 由 0x43c5b0 丢给装载线程。标题 oracle 不跑该线程，+0x12c 保持空，
+        # HelpScreen 不生成目录项。同步装载会在进入当帧画出 9 个 help 图元。
         uc = self.uc
         slot = self.arg(0)
         name = self.cstr(self.arg(1))
+        if name == 'help.anm':
+            esp = uc.reg_read(UC_X86_REG_ESP)
+            ret = struct.unpack('<I', uc.mem_read(esp, 4))[0]
+            uc.reg_write(UC_X86_REG_ESP, esp + 4 + 8)
+            uc.reg_write(UC_X86_REG_EAX, 0)
+            uc.reg_write(UC_X86_REG_EIP, ret)
+            return
         current = self.u32(self.manager + BANK_ARRAY + slot * 4)
         if current:
             esp = uc.reg_read(UC_X86_REG_ESP)

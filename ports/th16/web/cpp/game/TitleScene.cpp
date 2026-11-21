@@ -1648,7 +1648,9 @@ void TitleScene::update_manual(AnmManager& anm, const InputState& input) {
         if (title_file) spawn_into(anm, 0x72, *title_file, 0x72);  // +0x488
         close_help();
         help = new HelpScreen();
-        help->anm = load_help_anm ? load_help_anm() : nullptr;
+        // 0x42e760 在装载线程里写 +0x12c。标题路径不跑该线程，help.anm 保持未装，目录项不生成。
+        // 局内暂停菜单有自己的装载回调，不走这里。
+        help->anm = nullptr;
         help->scroll = 112.0f;  // 0x43000000
         set_sub(1);
         events.push_back({"manual", 0});
@@ -1656,7 +1658,6 @@ void TitleScene::update_manual(AnmManager& anm, const InputState& input) {
     }
     case 1:
         if (help != nullptr) {
-            if (help->anm == nullptr && load_help_anm) help->anm = load_help_anm();
             if (help->anm != nullptr) {
                 help->update(anm, input, 1.0f);
                 for (i32 id : help->sfx_queue) sfx(id);

@@ -46,6 +46,10 @@ const MUSIC_DRAW_TO = 379;
 // ↓×2 到 Spell Practice，第 320 帧确认。第 341 帧进入（0x4553d0），第 353 帧子状态 2。窗口 360–369。
 const SPELL_DRAW_FROM = 360;
 const SPELL_DRAW_TO = 369;
+// ↓×7 到 Manual，第 330 帧确认。第 351 帧进入（0x4545a0）。help.anm 在装载线程里，
+// 标题路径不跑该线程，目录项不出现。窗口 360–369。
+const MANUAL_DRAW_FROM = 360;
+const MANUAL_DRAW_TO = 369;
 
 function asciiLines(text) {
   return text.split('\n').filter(line => line.startsWith('ascii '));
@@ -223,6 +227,27 @@ test('spell practice: 10 settled draw frames match original structure and vertic
     execFileSync(harness, ['scene-boot', dat, String(SPELL_DRAW_TO), input, `draw=${portDraw}`,
                            `draw-from=${SPELL_DRAW_FROM}`], {stdio: ['ignore', 'ignore', 'pipe']});
     const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', `${SPELL_DRAW_FROM}-${SPELL_DRAW_TO}`, '--eps', '1e-4'],
+                                  {encoding: 'utf8'});
+    process.stdout.write(compared);
+    assert.match(compared, /frames=10 mismatches=0/);
+  } finally {
+    rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('manual screen: 10 settled draw frames match original structure and vertices', needOracle, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'th16-title-manual-'));
+  try {
+    const state = join(dir, 'state.json');
+    const oracleDraw = join(dir, 'oracle.draw.jsonl');
+    const portDraw = join(dir, 'port.draw.jsonl');
+    const input = `314:${DOWN},315:0,316:${DOWN},317:0,318:${DOWN},319:0,320:${DOWN},321:0,322:${DOWN},323:0,324:${DOWN},325:0,326:${DOWN},327:0,330:${Z},331:0`;
+    execFileSync(py, [oracle, exe, datDir, String(MANUAL_DRAW_TO), state, '--input', input,
+                      '--draw-out', oracleDraw, '--draw-from', String(MANUAL_DRAW_FROM)],
+                 {stdio: ['ignore', 'ignore', 'pipe']});
+    execFileSync(harness, ['scene-boot', dat, String(MANUAL_DRAW_TO), input, `draw=${portDraw}`,
+                           `draw-from=${MANUAL_DRAW_FROM}`], {stdio: ['ignore', 'ignore', 'pipe']});
+    const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', `${MANUAL_DRAW_FROM}-${MANUAL_DRAW_TO}`, '--eps', '1e-4'],
                                   {encoding: 'utf8'});
     process.stdout.write(compared);
     assert.match(compared, /frames=10 mismatches=0/);
