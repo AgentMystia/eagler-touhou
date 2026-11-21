@@ -60,7 +60,8 @@ struct ScoreBlock {
     u32 size = 0;                             // +0x08
     u32 index = 0;                            // +0x0c：0x449a00 写机体序号，0x449880 据此放回
     ScoreEntry ranks[kDifficulties][kRanks];  // +0x10
-    u8 unused_790[0x140] = {};                // +0x790
+    // +0x790。尾部 0x9c 在 0x456d50 里被当成 spells[-1] 读取（未解锁槽 id == -1）；默认全 0。
+    u8 unused_790[0x140] = {};
     SpellRecord spells[kSpellRecords];        // +0x8d0
     u32 play_count = 0;                       // +0x5154：0x42cb60 新游戏且非回放 +1（上限 9999999）
     u64 play_time = 0;                        // +0x5158：0x42dbc0 累计游戏时长（1/100 秒）
@@ -71,6 +72,7 @@ struct ScoreBlock {
 };
 static_assert(sizeof(ScoreBlock) == ScoreBlock::kSize, "ScoreBlock must be 0x5318 bytes");
 static_assert(offsetof(ScoreBlock, spells) == 0x8d0, "spells at block +0x8d0 (file +0x8d8)");
+static_assert(offsetof(ScoreBlock, spells) >= sizeof(SpellRecord), "spells[-1] stays inside the block");
 static_assert(offsetof(ScoreBlock, play_count) == 0x5154, "play count at file +0x515c");
 static_assert(offsetof(ScoreBlock, clears) == 0x5160, "clears at file +0x5168");
 static_assert(offsetof(ScoreBlock, no_continue_clears) == 0x517c, "no-continue clears at file +0x5184");

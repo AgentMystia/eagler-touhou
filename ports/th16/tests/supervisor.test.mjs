@@ -713,6 +713,19 @@ test('Spell Start (0x455d50): shot confirm → 0x14; cancel → 0x13', needDat, 
   assert.equal(out.header.screen, 0x13);
 });
 
+test('Spell HUD (0x456d50): locked id -1 still prints the empty SCORE line', needDat, () => {
+  // cmp id,-1; jl 只跳过 -2。-1 读符卡数组前 0x9c（默认 0），四条未解锁槽都画空 SCORE，选中色只在机体页。
+  const t = MAIN + 1;
+  const downs = Array.from({length: 2}, (_, i) => `${t + i * 2}:${DOWN}`);
+  const confirmAt = t + 4 + 2;
+  const spReady = confirmAt + 35;
+  const at = spReady + 46;
+  const ascii = run(['scene-boot', dat, String(at), 'ascii', [...downs, `${confirmAt}:${Z}`, `${spReady}:${Z}`].join(',')])
+    .split('\n').filter(l => l.startsWith('ascii '));
+  assert.deepEqual(ascii, [0, 1, 2, 3].map(i =>
+    `ascii 330.0 ${(191 + i * 44).toFixed(1)} ff404040 1 [SCORE        00  ----/----]`));
+});
+
 test('Spell List lock (0x456060): confirm locked slot plays sfx 16', needDat, () => {
   const t = MAIN + 1;
   const downs = Array.from({length: 2}, (_, i) => `${t + i * 2}:${DOWN}`);

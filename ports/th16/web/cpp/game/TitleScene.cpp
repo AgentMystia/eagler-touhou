@@ -632,13 +632,25 @@ void TitleScene::draw_spell_hud(AsciiManager& ascii) {
     ascii.style.group = AsciiManager::Group::Ui;
     for (int i = 0; i < 5; ++i) {
         const i32 id = spell_slot_ids[i];
-        if (id < -1) { y += 44.0f; continue; }  // -2 = 空槽
-        if (id < 0) { y += 44.0f; continue; }   // -1 = 未解锁：原版仍跳过 SCORE（id 判断 -2 起）
-        // 原版：id > -2 才进；-1 也会进但 derefer 成绩——我们跳过 -1 避免野读
+        // 0x456dd5：cmp id, -1; jl 跳过。-2 是空槽；-1 是未解锁，edi = id*0x9c 落在符卡数组前一条（默认全 0），仍画空 SCORE 行。
+        if (id < -1) { y += 44.0f; continue; }
         const bool selected = (screen == kSpellShot && i == cursor.index);
-        const SpellRecord* rec = scores->spell_record(shot, id);
-        const SpellRecord* all = (id < ScoreFile::kSpellRecords)
-            ? &scores->blocks[ScoreFile::kAllShotsBlock].spells[id] : nullptr;
+        SpellRecord shot_prefix{}, all_prefix{};
+        const SpellRecord* rec = nullptr;
+        const SpellRecord* all = nullptr;
+        if (id == -1) {
+            if (shot >= 0 && shot < ScoreFile::kAllShotsBlock) {
+                const auto* base = reinterpret_cast<const u8*>(&scores->blocks[shot]);
+                std::memcpy(&shot_prefix, base + offsetof(ScoreBlock, spells) - sizeof(SpellRecord), sizeof(shot_prefix));
+                rec = &shot_prefix;
+            }
+            const auto* all_base = reinterpret_cast<const u8*>(&scores->blocks[ScoreFile::kAllShotsBlock]);
+            std::memcpy(&all_prefix, all_base + offsetof(ScoreBlock, spells) - sizeof(SpellRecord), sizeof(all_prefix));
+            all = &all_prefix;
+        } else {
+            rec = scores->spell_record(shot, id);
+            all = id < ScoreFile::kSpellRecords ? &scores->blocks[ScoreFile::kAllShotsBlock].spells[id] : nullptr;
+        }
         const u32 practice_caps = rec != nullptr ? rec->captures[1] : 0;
         const u32 attempts0 = all != nullptr ? all->attempts[0] : 0;
         const u32 attempts1 = all != nullptr ? all->attempts[1] : 0;

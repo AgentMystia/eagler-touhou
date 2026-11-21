@@ -424,7 +424,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"title-spell-start", 0x455D50, "game/TitleScene.cpp TitleScene::update_spell_start（子季节页；开战 launch_spell_practice：DAT_004a6f1c = 5、记 DAT_004a2970/0049f2dc/0049f2d8；取消→0x13）"},
     {"title-spell-ids", 0x4560B0, "game/TitleScene.cpp refresh_spell_slot_names（按 DAT_00491700 难度填槽 + 0xd2 名 VM（失效即重建）+ 0x46d990；名体补空格到 0x2a；Overdrive 未挑战显示 オーバードライブモード挑戦可能！）"},
     {"title-spell-unlock", 0x456060, "game/SpellPracticeTable.hpp unlocked（合计块 attempts[0]）"},
-    {"title-spell-hud", 0x456D50, "game/TitleScene.cpp draw_spell_hud（SCORE %8d0 练习统计 + GAME MODE）"},
+    {"title-spell-hud", 0x456D50, "game/TitleScene.cpp draw_spell_hud（id>=-1 才画；id==-1 读 spells 前 0x9c 字节的空 SCORE；SCORE %8d0 + GAME MODE）"},
     {"spell-practice-hiscore", 0x42E150, "game/ScoreFile.hpp update_spell_high_score（+0x970；Gui::stage_clear mode2）"},
     {"title-score", 0x452330, "game/TitleScene.cpp TitleScene::update_score（Player Data：+0x24 机体 ←→ / +0xfc 难度 ↑↓ 标签 VM 0xa7+/0xaf+、箭头 0xb7..0xba 中断 2、确定翻页 +0x1d4（0 排名，页数 (张数+9)/10+1）、text.anm 3..12 十行）"},
     {"title-score-spell-page", 0x452C30, "game/TitleScene.cpp TitleScene::refresh_score_spell_page（No.全角序号 + 名字补到 0x2a + 收取/挑战；未见 808080 / 已收取 ffff80 / 其余 efefef；空行 \" \"）"},
