@@ -1,4 +1,4 @@
-// 全关卡对拍：第 1..7 面各一组机体 × 子季节 × 难度，6000 帧（含两次炸弹）的摘要对照
+// 全关卡对拍：第 1..7 面机体 × 子季节 × 难度的长程摘要对照（含第 3 面 Easy 灵梦春点射 6000 帧、第 4 面 Hard 魔理沙夏射击+炸弹 4000 帧）。
 // tools/oracle/game-oracle.py（Unicorn 直跑原版）。覆盖面向：各面 ECL / 弹幕 / 激光 / 道具 / 炸弹 / 音效调用序。
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
