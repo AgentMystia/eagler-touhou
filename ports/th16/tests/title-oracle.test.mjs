@@ -1,6 +1,8 @@
 // 标题主菜单对拍：title-oracle.py 直跑原版 0x44ac70 / 0x44af80 / 0x44b530，
 // 与 harness scene-boot 比启动幕结束后静止 30 帧的 Ascii 行、一次光标下移的音效与画面号，
 // 以及 10 帧 D3D 结构 + 顶点（draw-compare.py --eps 1e-4）。
+// 难度画面（0x44fe20）另对第 344–353 帧：第 313 帧确认 Game Start，第 334 帧进入 Difficulty，
+// 第 342 帧光标下移，窗口含下移前后各几帧。
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
@@ -20,9 +22,13 @@ const compare = resolve(here, '../tools/oracle/draw-compare.py');
 const ready = existsSync(dat) && existsSync(exe) && existsSync(py) && existsSync(datDir);
 const needOracle = {skip: !ready && 'th16.exe / th16.dat / title oracle python not present'};
 
+const Z = '0x1';
 const DOWN = '0x20';
 // scene-boot 帧号：第 N 次 logic step 之后。主菜单可输入在第 312 帧（sub==2）。
 const MENU_STILL = 312;
+// 第 313 帧确认 Game Start；第 334 帧 screen=5（0x44fe20 case 0）；第 342 帧可下移。
+const DIFF_DRAW_FROM = 344;
+const DIFF_DRAW_TO = 353;
 
 function asciiLines(text) {
   return text.split('\n').filter(line => line.startsWith('ascii '));
@@ -77,6 +83,27 @@ test('title menu: 10 draw frames match original structure and vertices', needOra
     execFileSync(harness, ['scene-boot', dat, '321', `draw=${portDraw}`, 'draw-from=312'], {stdio: ['ignore', 'ignore', 'pipe']});
     execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '312-321', '--eps', '1e-4'],
                  {stdio: ['ignore', 'pipe', 'pipe']});
+  } finally {
+    rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('difficulty screen: 10 draw frames around a cursor-down match original structure and vertices', needOracle, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'th16-title-diff-'));
+  try {
+    const state = join(dir, 'state.json');
+    const oracleDraw = join(dir, 'oracle.draw.jsonl');
+    const portDraw = join(dir, 'port.draw.jsonl');
+    const input = `313:${Z},342:${DOWN}`;
+    execFileSync(py, [oracle, exe, datDir, String(DIFF_DRAW_TO), state, '--input', input,
+                      '--draw-out', oracleDraw, '--draw-from', String(DIFF_DRAW_FROM)],
+                 {stdio: ['ignore', 'ignore', 'pipe']});
+    execFileSync(harness, ['scene-boot', dat, String(DIFF_DRAW_TO), input, `draw=${portDraw}`,
+                           `draw-from=${DIFF_DRAW_FROM}`], {stdio: ['ignore', 'ignore', 'pipe']});
+    const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', `${DIFF_DRAW_FROM}-${DIFF_DRAW_TO}`, '--eps', '1e-4'],
+                                  {encoding: 'utf8'});
+    process.stdout.write(compared);
+    assert.match(compared, /frames=10 mismatches=0/);
   } finally {
     rmSync(dir, {recursive: true, force: true});
   }
