@@ -30,6 +30,8 @@
 
 ## 顺序
 
+当前缺口以 [`backlog.md`](backlog.md) 为准。下面第 1–3 项在 `docs/DECOMP.md` 中已经对齐，保留作历史索引，不再当作未实现工作。
+
 1. Game 场景（DAT_004c17c4=7）余项：Player 魔理沙激光（回调 2：0x446200/0x446260/0x446870）、自机弹命中敌人（active=2）与追踪回调 1 目标选择、被弹/复活/炸弹状态 2/3/4（0x443cd0/0x4449b0/0x40dda0/0x40db20）、残影特效 0x40e5c0、缩放模式 0x10；Enemy ANM VM 操作码 302..325（真实 VM 入世界链）/ Laser 0x4314a0 / Gui 0x427ca0（+0x1c8 对话、残机 0x42c280）/ Bomb 0x40d890 / Effect 0x418a30 / 0x42f440 / 0x43e5a0 / Replay 0x449e50 余项 / 0x4178a0；自机绘制 0x443730 → 0x468490 直绘入渲染器；RT 合成链（绘制链 1/0xe/0xf/0x38/0x39：DAT_004c127c/1280/1284、front.anm RT 精灵 0x4c128c/0x4c1298——当前以 GL 视口裁剪 + x−96 代替）、绘制链 6（ANM 层 0x20/0x21 用 3D 相机）、视锥剔除 0x40a7d0、畸变 0x40c4a0、ins 17 效果；BGM 0x43c370；季节确定后过场（EffectManager 0x418ba0 + ascii 0x11）；关卡结束/切换（flags 0x70/0x4000/0x10000）。game-oracle 加 `--draw` 跑绘制链 0x4015a0 需补 D3DXVec3ProjectArray 等桩。
 2. 标题余项：Option 0x44c570、Replay 0x451750、Player Data 0x452330、Music Room 0x4546f0、Manual 0x4545a0、Spell Practice 0x4553d0；demo 录像触发（无输入 0x708 帧）；标题绘制链 0x44b530；存档（scoreth16.dat）驱动的 Extra/练习解锁。
 3. ANM 其余绘制模式（4..7 / 9+ / 0x10.. 矩形线段：投影/条带/网格/特效）、mode 0 的渐变色位（0x60000）、全局色乘 0x1c7fd88 与外部钩子：ins_508 EffectManager（0x418af0）、sprite_mapper（0x491b1c）、update/draw/delete 回调表（0x4919e8 / 0x491b58）；标题画面逐帧对照。

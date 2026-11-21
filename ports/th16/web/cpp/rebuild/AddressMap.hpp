@@ -389,7 +389,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"effect-attach", 0x418AF0, nullptr},    // ins_508：EffectManager（DAT_004a6db8）按效果种类表 DAT_004a2250 挂 update/draw 回调（effect.anm 155–196 依赖）
     {"effect-ring-update", 0x405700, nullptr}, // 效果种类 1 的 update 回调（DAT_004919e8[2]）：环形顶点缓冲 + 生成 effect.anm 0x99
     {"anm-load-file", 0x46D020, nullptr},    // AnmManager::load_file(slot, name)：从档案读 .anm 并进 bank（同步等待装载线程）
-    {"anm-draw-mode5+", 0x466820, nullptr},  // mode 6 投影 + 手动雾色
+    {"anm-draw-mode6", 0x466820, nullptr},  // mode 6：0x466390 投影后再按相机距离改写雾色。54 个 .anm 的 ins_302 无参数 6，数据不可达，不移植
     // —— 绘制钩子表 DAT_00491b2c（draw_vm 可见性检查之前按 vm.draw_callback 分派）——
     {"anm-draw-hook-burst", 0x406860, "game/AnmRenderer.cpp AnmRenderer::draw_burst_lines（钩子 3：EffectManager::burst_geometry 取 64 点折线 + 顶点色，0x469890 出批后以无贴图 XYZRHW|DIFFUSE 线带绘制 count−1 段；count < 1 时原版的 −1 段 DrawPrimitiveUP 被设备拒绝，这里直接不画）"},
     {"anm-draw-hook-noop", 0x405EC0, "game/AnmRenderer.cpp AnmRenderer::draw_vm（钩子 2：xor eax,eax; ret 空函数，充能环只靠更新钩子 0x405700）"},

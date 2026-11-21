@@ -1,0 +1,21 @@
+# th16 待办
+
+对照 `docs/DECOMP.md`、`web/cpp/rebuild/AddressMap.hpp` 与黄金测试后的未达交付项。`DECOMP.md` 已登记对齐的系统（Laser、Bomb、Gui、标题各画面逻辑、过关、回放文件、EffectManager、魔理沙激光、RT 合成、视锥剔除、关卡畸变）不在此列。`docs/plans/roadmap.md`「顺序」早于上述登记，不以它为准。
+
+`flags & 0x1000` 矩形体碰撞（0x443af0 / 0x4049c0）无 ECL 设置路径，不排期。钩子 6（0x46a330，ANM 渲染模式 10）全部 `.anm` 无 302(10)，数据不可达，不排期。
+
+## 开放项
+
+1. 已关闭：难度画面绘制窗口第 344–353 帧已对拍。见「已关闭」。
+2. 已关闭：Extra 四季 600 帧矩阵已锁。见「已关闭」。
+3. 标题其余画面绘制对拍：Option 0x44c570、Replay 0x451750、Player Data 0x452330、Music Room 0x4546f0、Manual 0x4545a0、Spell Practice 0x4553d0。逻辑测试已有，画面没有 `title-oracle.py --draw-out` 对拍。
+4. ANM mode 6（0x466820）：`artifacts/th16/dat` 全部 54 个 `.anm` 的 ins_302 渲染模式只有 0/1/2/3/4/8/21，没有 6。与钩子 6 相同，数据不可达，不排期。`AddressMap.hpp` 的空登记保留为说明。
+5. 全关卡 × 难度 × 机体 × 子季节的长程像素对拍。600 帧摘要与若干绘制窗口已锁；通关全程与关键帧像素对照未覆盖全部组合。
+6. 性能：Snapdragon 865 级 60fps。本机无该设备，不能记为通过。WASI 3600 帧 <10s：本机没有 wasi-sdk，不能记为通过。
+7. 登记：`launcher/config/workspace.json`、`runtime-builds.json`、`product-catalog`、`docs/migration`、`docs/TOUHOU_PROGRESS.md`、`ports/README`、`WORKSPACE.md`、`ADAPTATION.md` 验收。黄金交付标准达成前不开 PR。
+8. 版本文件 0x43b480（`th16_%.4x%c.ver`）：开机 0x43b520 读取并写入 DAT_004c1af0 / DAT_004c1aec，退出路径 0x43b681 释放缓冲。没有其它读者。宿主落盘可后接，不阻塞对拍。
+
+## 已关闭
+
+- 难度画面绘制窗口第 344–353 帧已对拍（第 313 帧确认进入，第 334 帧 Difficulty，第 342 帧光标下移）。测试 `difficulty screen: 10 draw frames around a cursor-down match original structure and vertices`。
+- Extra 四季 600 帧矩阵已锁：第 7 面 4 机体 × 春夏秋冬（子季节 0..3）× 难度 Extra，16 组十个摘要字段与 `game-oracle.py` 一致，写入 `tests/golden/stage-matrix-st7.json`，原有 4 条土用 case 保留，由 `tests/stage-matrix.test.mjs` 驱动 harness `game-digest`。
