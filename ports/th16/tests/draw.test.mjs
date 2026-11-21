@@ -149,6 +149,22 @@ test('draw structure: stage 6 Easy Reimu spring idle, frames 10–419 match the 
   assert.equal(checkGolden('draw-st6'), 410);
 });
 
+test('draw structure: stage 3 Easy Reimu spring idle, frames 10–419 match the original call stream (geometry eps 1e-4, 410 frames)', needDat, () => {
+  assert.equal(checkGolden('draw-st3'), 410);
+});
+
+test('draw structure: stage 4 Easy Reimu spring idle, frames 10–419 match the original call stream (geometry eps 1e-4, 410 frames)', needDat, () => {
+  assert.equal(checkGolden('draw-st4'), 410);
+});
+
+test('draw structure: stage 5 Easy Reimu spring idle, frames 10–419 match the original call stream (geometry eps 1e-4, 410 frames)', needDat, () => {
+  assert.equal(checkGolden('draw-st5'), 410);
+});
+
+test('draw structure: Extra Reimu doyou idle, frames 10–419 match the original call stream (geometry eps 1e-4, 410 frames)', needDat, () => {
+  assert.equal(checkGolden('draw-st7'), 410);
+});
+
 test('draw structure: stage 5 Normal spell 46 line lasers (0x433720 beam / tip / origin VMs) + boss distortion grid, frames 400–500', needDat, () => {
   assert.equal(checkGolden('draw-st5-line-laser'), 101);
 });
