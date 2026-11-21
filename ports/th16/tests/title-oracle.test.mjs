@@ -33,6 +33,10 @@ const DIFF_DRAW_TO = 353;
 // 第 405 帧子状态 2。窗口取画面稳定后的 425–434。
 const OPTION_DRAW_FROM = 425;
 const OPTION_DRAW_TO = 434;
+// Extra 禁用时 ↓×3 到 Replay，第 322 帧确认。第 343 帧进入 Replay（0x451750），第 351 帧子状态 2。
+// title-oracle 会把输入保持到下一条，所以每拍后写 0。窗口取稳定后的 360–369。
+const REPLAY_DRAW_FROM = 360;
+const REPLAY_DRAW_TO = 369;
 
 function asciiLines(text) {
   return text.split('\n').filter(line => line.startsWith('ascii '));
@@ -126,6 +130,27 @@ test('option screen: 10 settled draw frames match original structure and vertice
     execFileSync(harness, ['scene-boot', dat, String(OPTION_DRAW_TO), input, `draw=${portDraw}`,
                            `draw-from=${OPTION_DRAW_FROM}`], {stdio: ['ignore', 'ignore', 'pipe']});
     const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', `${OPTION_DRAW_FROM}-${OPTION_DRAW_TO}`, '--eps', '1e-4'],
+                                  {encoding: 'utf8'});
+    process.stdout.write(compared);
+    assert.match(compared, /frames=10 mismatches=0/);
+  } finally {
+    rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('replay screen: 10 settled draw frames match original structure and vertices', needOracle, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'th16-title-replay-'));
+  try {
+    const state = join(dir, 'state.json');
+    const oracleDraw = join(dir, 'oracle.draw.jsonl');
+    const portDraw = join(dir, 'port.draw.jsonl');
+    const input = `314:${DOWN},315:0,316:${DOWN},317:0,318:${DOWN},319:0,322:${Z},323:0`;
+    execFileSync(py, [oracle, exe, datDir, String(REPLAY_DRAW_TO), state, '--input', input,
+                      '--draw-out', oracleDraw, '--draw-from', String(REPLAY_DRAW_FROM)],
+                 {stdio: ['ignore', 'ignore', 'pipe']});
+    execFileSync(harness, ['scene-boot', dat, String(REPLAY_DRAW_TO), input, `draw=${portDraw}`,
+                           `draw-from=${REPLAY_DRAW_FROM}`], {stdio: ['ignore', 'ignore', 'pipe']});
+    const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', `${REPLAY_DRAW_FROM}-${REPLAY_DRAW_TO}`, '--eps', '1e-4'],
                                   {encoding: 'utf8'});
     process.stdout.write(compared);
     assert.match(compared, /frames=10 mismatches=0/);

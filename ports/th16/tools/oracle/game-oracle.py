@@ -481,6 +481,10 @@ class GameOracle(Oracle):
             'FindClose': (4, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 1)),
             'GetLastError': (0, lambda o: self.uc.reg_write(UC_X86_REG_EAX, getattr(self, '_last_error', 0))),
             'SetLastError': (4, lambda o: setattr(self, '_last_error', self.arg(0))),
+            # CRT fopen（scoreth16.dat）走 _beginthreadex：GetModuleHandleExW 取模块，CreateThread 建锁线程。
+            # 标题 Replay 扫描不依赖该句柄。返回非空假句柄，避免调用方把 NULL 当函数指针跳走。
+            'GetModuleHandleExW': (12, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 1)),
+            'CreateThread': (24, lambda o: self.uc.reg_write(UC_X86_REG_EAX, 0x7100)),
         }
         for imp in imports:
             name = imp['name']
