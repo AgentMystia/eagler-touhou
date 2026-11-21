@@ -149,6 +149,10 @@ test('draw structure: stage 2 Easy Reimu spring idle, frames 10–419 match the 
   assert.equal(checkGolden('draw-st2'), 410);
 });
 
+test('draw structure: stage 2 Easy Reimu spring boss dialogue (0x429ff0 / draw hook 5), frames 7570–7660', needDat, () => {
+  assert.equal(checkGolden('draw-st2-dialogue'), 91);
+});
+
 test('draw structure: stage 6 Easy Reimu spring idle, frames 10–419 match the original call stream (geometry eps 1e-4, 410 frames)', needDat, () => {
   assert.equal(checkGolden('draw-st6'), 410);
 });
