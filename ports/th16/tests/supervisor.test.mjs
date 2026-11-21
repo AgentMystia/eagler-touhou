@@ -537,12 +537,13 @@ test('Option screen: ←/→ adjust BGM, Default restores 100/80', needDat, () =
   const downs = Array.from({length: 6}, (_, i) => `${t + i * 2}:${DOWN}`);
   const confirmAt = t + 12 + 2;
   const ready = confirmAt + 30;
+  // 未读 th16.cfg 时 DAT_004c12c6/c7 为 BSS 初值 0。两次 ← 仍夹在 0。
   const left = parse(run(['scene-boot', dat, String(ready + 4), [
     ...downs, `${confirmAt}:${Z}`, `${ready}:${LEFT}`, `${ready + 2}:${LEFT}`,
   ].join(',')]));
   assert.equal(left.header.screen, 3);
-  assert.equal(left.header.bgm, 90);
-  assert.equal(left.header.se, 80);
+  assert.equal(left.header.bgm, 0);
+  assert.equal(left.header.se, 0);
   // ↓↓↓ 到 Default(3) 再确定
   const restored = parse(run(['scene-boot', dat, String(ready + 12), [
     ...downs, `${confirmAt}:${Z}`,

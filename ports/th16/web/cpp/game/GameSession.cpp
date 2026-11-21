@@ -37,10 +37,13 @@ struct DiskReplayStore final : ReplayStore {
 
 GameSession::GameSession() {
     sfx_events.effects = &sound;   // 各管理器的 0x45e150 / 0x45e1f0 / 0x45e2a0 请求即时进 SoundManager 队列
-    // 原版 DAT_004df49c / DAT_004df4a0 只在 Option 画面（0x44dc70）写入——开机到首次进 Option 前为 0；
-    // 端口按 th15 口径开机即以配置值出声（仅宿主音量，不影响任何逻辑/对拍）
-    music.volume = globals.bgm_volume;
-    sound.master_volume = globals.se_volume;
+    // 原版 DAT_004df49c / DAT_004df4a0 只在 Option 画面（0x44dc70）写入——开机到首次进 Option 前为 0。
+    // DAT_004c12a4 配置块在 BSS，进程起来是 0；0x43c050 读 th16.cfg 失败才写成 100/80。
+    // harness 不读配置文件时保持这份 BSS 初值，Option 数字的前导零才和 title-oracle 一致。
+    globals.bgm_volume = 0;
+    globals.se_volume = 0;
+    music.volume = 0;
+    sound.master_volume = 0;
     // 0x43ba40：Supervisor 十条合成绘制链；0x46a3a0：AnmManager 各层绘制链。都在进程启动时登记、常驻
     compositor.screen_shake = &screen_shake;
     compositor.render_target_camera = &stage_camera;   // 同一全局 DAT_004c168c

@@ -29,6 +29,10 @@ const MENU_STILL = 312;
 // 第 313 帧确认 Game Start；第 334 帧 screen=5（0x44fe20 case 0）；第 342 帧可下移。
 const DIFF_DRAW_FROM = 344;
 const DIFF_DRAW_TO = 353;
+// 主菜单第 313 帧起下移到 Option，第 376 帧确认。第 397 帧进入 Option（0x44c570），
+// 第 405 帧子状态 2。窗口取画面稳定后的 425–434。
+const OPTION_DRAW_FROM = 425;
+const OPTION_DRAW_TO = 434;
 
 function asciiLines(text) {
   return text.split('\n').filter(line => line.startsWith('ascii '));
@@ -101,6 +105,27 @@ test('difficulty screen: 10 draw frames around a cursor-down match original stru
     execFileSync(harness, ['scene-boot', dat, String(DIFF_DRAW_TO), input, `draw=${portDraw}`,
                            `draw-from=${DIFF_DRAW_FROM}`], {stdio: ['ignore', 'ignore', 'pipe']});
     const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', `${DIFF_DRAW_FROM}-${DIFF_DRAW_TO}`, '--eps', '1e-4'],
+                                  {encoding: 'utf8'});
+    process.stdout.write(compared);
+    assert.match(compared, /frames=10 mismatches=0/);
+  } finally {
+    rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('option screen: 10 settled draw frames match original structure and vertices', needOracle, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'th16-title-option-'));
+  try {
+    const state = join(dir, 'state.json');
+    const oracleDraw = join(dir, 'oracle.draw.jsonl');
+    const portDraw = join(dir, 'port.draw.jsonl');
+    const input = `313:${DOWN},338:${DOWN},346:${DOWN},354:${DOWN},362:${DOWN},370:${DOWN},376:${Z}`;
+    execFileSync(py, [oracle, exe, datDir, String(OPTION_DRAW_TO), state, '--input', input,
+                      '--draw-out', oracleDraw, '--draw-from', String(OPTION_DRAW_FROM)],
+                 {stdio: ['ignore', 'ignore', 'pipe']});
+    execFileSync(harness, ['scene-boot', dat, String(OPTION_DRAW_TO), input, `draw=${portDraw}`,
+                           `draw-from=${OPTION_DRAW_FROM}`], {stdio: ['ignore', 'ignore', 'pipe']});
+    const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', `${OPTION_DRAW_FROM}-${OPTION_DRAW_TO}`, '--eps', '1e-4'],
                                   {encoding: 'utf8'});
     process.stdout.write(compared);
     assert.match(compared, /frames=10 mismatches=0/);
