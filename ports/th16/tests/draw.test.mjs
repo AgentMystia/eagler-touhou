@@ -185,6 +185,40 @@ test('draw structure: Extra Reimu doyou idle, frames 10–419 match the original
   assert.equal(checkGolden('draw-st7'), 410);
 });
 
+// 第 1 面 Easy 灵梦，子季节 1/2/3。输入与 stage-matrix-st1 相同。窗口取第 590–599 帧，
+// 由 game-oracle.py --draw 与 harness game-draw 逐顶点对拍。
+test('stage 1 Easy Reimu summer/autumn/winter: frames 590–599 match original vertices', needDat, () => {
+  const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
+  const datDir = resolve(monorepo, 'artifacts/th16/dat');
+  const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
+  const oracle = resolve(here, '../tools/oracle/game-oracle.py');
+  const compare = resolve(here, '../tools/oracle/draw-compare.py');
+  assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
+  const input = '0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11';
+  for (const season of [1, 2, 3]) {
+    const dir = mkdtempSync(join(tmpdir(), 'th16-st1-season-'));
+    try {
+      const state = join(dir, 'state.json');
+      const oracleDraw = join(dir, 'oracle.draw.jsonl');
+      const portDraw = join(dir, 'port.draw.jsonl');
+      execFileSync(py, [oracle, exe, datDir, '600', state,
+                        '--stage', '1', '--shot', '0', '--season', String(season), '--difficulty', '0',
+                        '--lives', '8', '--refill-lives', '--input', input, '--enemies',
+                        '--draw', '--draw-out', oracleDraw, '--draw-from', '590'],
+                   {stdio: ['ignore', 'ignore', 'pipe']});
+      execFileSync(harness, ['game-draw', dat, '1', '0', String(season), '600', input, '', '',
+                             '0', '-1', '8', '1', '0', portDraw, '590'],
+                   {stdio: ['ignore', 'ignore', 'pipe']});
+      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '590-599', '--eps', '1e-4'],
+                                    {encoding: 'utf8'});
+      process.stdout.write(compared);
+      assert.match(compared, /frames=10 mismatches=0/, `season ${season}`);
+    } finally {
+      rmSync(dir, {recursive: true, force: true});
+    }
+  }
+});
+
 test('draw structure: stage 5 Normal spell 46 line lasers (0x433720 beam / tip / origin VMs) + boss distortion grid, frames 400–500', needDat, () => {
   assert.equal(checkGolden('draw-st5-line-laser'), 101);
 });

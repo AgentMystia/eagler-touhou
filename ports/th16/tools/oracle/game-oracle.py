@@ -740,7 +740,7 @@ class GameOracle(Oracle):
         uc = self.uc
         slot = self.arg(0)
         name = self.cstr(self.arg(1))
-        if name == 'help.anm':
+        if name == 'help.anm' and getattr(self, 'defer_help_anm', False):
             esp = uc.reg_read(UC_X86_REG_ESP)
             ret = struct.unpack('<I', uc.mem_read(esp, 4))[0]
             uc.reg_write(UC_X86_REG_ESP, esp + 4 + 8)

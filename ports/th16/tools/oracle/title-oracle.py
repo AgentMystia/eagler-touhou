@@ -37,6 +37,8 @@ class TitleOracle(GameOracle):
     def __init__(self, exe, dat_dir, debug=False):
         # 绘制链里的合成 / 纹理面需要 DeviceRecorder 的 GetBackBuffer，即使不落盘也要装上
         super().__init__(exe, dat_dir, debug=debug, draw=True)
+        # 标题 Manual 的 help.anm 由装载线程写入。本 oracle 不跑该线程。
+        self.defer_help_anm = True
         self.title_armed = False
         self.boot_obj = 0
 
