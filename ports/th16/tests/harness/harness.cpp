@@ -1838,6 +1838,8 @@ int main(int argc, char** argv) {
         bool unlock_spells = false;
         bool dump_ascii = false;
         bool dump_text = false;
+        const char* draw_path = nullptr;
+        int draw_from = 1;
         i32 title_origin = -1;
         int spell_return[3] = {-1, -1, -1};
         bool trace_scenes = false;
@@ -1850,6 +1852,8 @@ int main(int argc, char** argv) {
             if (std::strcmp(argv[a], "skip") == 0) { session.supervisor.config_flags |= Supervisor::kSkipBootFlags; continue; }
             if (std::strncmp(argv[a], "cfg=", 4) == 0) { session.config_flags = u32(std::strtoul(argv[a] + 4, nullptr, 0)); continue; }
             if (std::strcmp(argv[a], "ascii") == 0) { dump_ascii = true; continue; }
+            if (std::strncmp(argv[a], "draw=", 5) == 0) { draw_path = argv[a] + 5; continue; }
+            if (std::strncmp(argv[a], "draw-from=", 10) == 0) { draw_from = std::atoi(argv[a] + 10); continue; }
             if (std::strcmp(argv[a], "text") == 0) { dump_text = true; continue; }
             if (std::strcmp(argv[a], "unlock-spells") == 0) { unlock_spells = true; continue; }
             if (std::strncmp(argv[a], "origin=", 7) == 0) { title_origin = std::atoi(argv[a] + 7); continue; }
@@ -1933,9 +1937,14 @@ int main(int argc, char** argv) {
                 session.scores.blocks[ScoreFile::kAllShotsBlock].spells[id].attempts[0] = 1;
         }
 
-        // 绘制链每帧都跑（与 Application 相同），录制设备只保留最后一帧的调用
+        // 绘制链每帧都跑（与 Application 相同）。draw=<path> 时按 game-draw 的口径逐帧落 JSON Lines（帧号 1 起）
         RecordingDevice device;
         session.attach_device(&device);
+        std::FILE* draw_out = nullptr;
+        if (draw_path != nullptr) {
+            draw_out = std::fopen(draw_path, "w");
+            if (draw_out == nullptr) return fail("cannot open draw output");
+        }
         for (int f = 0; f < frames; ++f) {
             session.injected_input = 0;
             for (const Key& k : script) if (k.frame == f) session.injected_input |= k.bits;
@@ -1952,7 +1961,9 @@ int main(int argc, char** argv) {
             if (!session.logic_step()) return fail(session.failure.c_str());
             if (trace_scenes && session.supervisor.current != before)
                 std::printf("scene-change frame=%d %d->%d\n", f, int(before), int(session.supervisor.current));
+            if (draw_out != nullptr && f + 1 >= draw_from) device.write_frame(draw_out, f + 1);
         }
+        if (draw_out != nullptr) std::fclose(draw_out);
         const std::vector<RecordingDevice::QuadSummary> quads = device.quads();
         const Supervisor& sup = session.supervisor;
         const TitleScene& title = session.title;

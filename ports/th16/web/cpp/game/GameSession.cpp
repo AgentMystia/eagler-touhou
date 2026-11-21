@@ -15,6 +15,8 @@ namespace th16 {
 namespace {
 // 0x42d200 / 0x41a390：Loading VM 位置 = 2 × (480, 392) 寄存器实参 = (960, 784)
 constexpr Vec3 kLoadingVmPos{960.0f, 784.0f, 0.0f};
+// 0x43b300：启动幕首帧另在 (960, 832) 生成 ascii.anm 0x11（0x40e5c0），落叶在层 0x28
+constexpr Vec3 kBootLoadingVmPos{960.0f, 832.0f, 0.0f};
 
 // 目录型 ReplayStore：读槽 0x447ef0 / 写槽 0x448400（经 ReplayRecording）
 struct DiskReplayStore final : ReplayStore {
@@ -297,9 +299,13 @@ bool GameSession::begin_boot() {
 
     // 0x43af60：启动幕绘制链（优先级 0x44）；0x43adc0 末尾启用
     boot_draw_chain_ = chains.create([this]() -> ChainResult {
-        // 0x43b300：首帧 spawn script0（layer -1），之后 +0x638 递增
+        // 0x43b300：首帧 spawn sig 脚本 0，并在 ascii+0x19248 为空时 0x40e5c0 生成脚本 0x11；之后 +0x638 递增
         if (supervisor.boot_frames == 0) {
-            if (AnmFile* f = animations.file(1)) animations.spawn(*f, 0, -1);
+            if (AnmFile* sig = animations.file(1)) animations.spawn(*sig, 0, -1);
+            if (game.loading_vm == 0) {
+                if (AnmFile* ascii = animations.file(AnmManager::kAsciiSlot))
+                    game.loading_vm = animations.spawn_effect(*ascii, 0x11, -1, kBootLoadingVmPos, 0.0f);
+            }
         }
         ++supervisor.boot_frames;
         return ChainResult::Continue;
@@ -350,6 +356,7 @@ bool GameSession::activate_title_menu() {
     title.config_flags = &config_flags;
     title.keyboard_state = keyboard_state;
     title.pad_buttons = &pad_buttons;
+    title.loading_vm = &game.loading_vm;
     title.text_paints = &text_into_texture;
     title.replay_directory = replay_directory();
     title.read_replay_slot = [this](int slot, ReplaySummary& out) {
