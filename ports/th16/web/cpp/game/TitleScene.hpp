@@ -120,6 +120,7 @@ public:
     SoundEffects* sound = nullptr;   // 0x45e150 音效请求；0x44dc70 写 DAT_004df4a0（音效主音量）
     const float* game_speed = nullptr;   // DAT_004a5788（0x43c470 淡出秒数除数）
     const u32* config_flags = nullptr;   // DAT_004c1800（bit13：退出改为停在场景 2）
+    u32* loading_vm = nullptr;           // AsciiManager+0x19248：0x41a360 进标题时中断 1 并清掉
     // 0x44a850：任一机体在 Easy..Lunatic 有未续关通关（主菜单 Extra 项可选）
     bool extra_unlocked() const { return scores != nullptr && scores->extra_unlocked(); }
     bool shot_extra_unlocked(i32 shot) const { return scores != nullptr && scores->shot_extra_unlocked(shot); }        // 0x44a800

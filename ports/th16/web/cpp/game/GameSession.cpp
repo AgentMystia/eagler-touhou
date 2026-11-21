@@ -352,6 +352,7 @@ bool GameSession::activate_title_menu() {
     title.config_flags = &config_flags;
     title.keyboard_state = keyboard_state;
     title.pad_buttons = &pad_buttons;
+    title.loading_vm = &game.loading_vm;
     title.text_paints = &text_into_texture;
     title.replay_directory = replay_directory();
     title.read_replay_slot = [this](int slot, ReplaySummary& out) {

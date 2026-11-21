@@ -113,6 +113,16 @@ void TitleScene::update(AnmManager& anm, const InputState& input) {
     tick_title_bgm();
     switch (screen) {
     case kNone: {
+        // 0x44af80 case 0 开头：0x46f270 标删 front / bullet / ascii / text 槽的链表 VM，
+        // 再 0x41a360 给启动幕 Loading VM 挂中断 1 并清句柄。下一帧 UI tick 回收落叶。
+        anm.kill_file(5);
+        anm.kill_file(7);
+        anm.kill_file(AnmManager::kAsciiSlot);
+        anm.kill_file(0);
+        if (loading_vm != nullptr && *loading_vm != 0) {
+            anm.interrupt(*loading_vm, 1);
+            *loading_vm = 0;
+        }
         // 0x44af80 case 0：按 DAT_004a6f1c（title_origin）分流
         GameGlobals& g = *globals;
         const i32 origin = g.title_origin;
