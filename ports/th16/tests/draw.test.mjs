@@ -185,9 +185,9 @@ test('draw structure: Extra Reimu doyou idle, frames 10–419 match the original
   assert.equal(checkGolden('draw-st7'), 410);
 });
 
-// 第 1、2 面 Easy 灵梦，子季节 1/2/3。输入与 stage-matrix 相同。窗口取第 590–599 帧，
+// 第 1–3 面 Easy 灵梦，子季节 1/2/3。输入与 stage-matrix 相同。窗口取第 590–599 帧，
 // 由 game-oracle.py --draw 与 harness game-draw 逐顶点对拍。
-test('stage 1 and 2 Easy Reimu summer/autumn/winter: frames 590–599 match original vertices', needDat, () => {
+test('stage 1–3 Easy Reimu summer/autumn/winter: frames 590–599 match original vertices', needDat, () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
@@ -195,7 +195,7 @@ test('stage 1 and 2 Easy Reimu summer/autumn/winter: frames 590–599 match orig
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
   const input = '0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11';
-  for (const stage of [1, 2]) {
+  for (const stage of [1, 2, 3]) {
     for (const season of [1, 2, 3]) {
       const dir = mkdtempSync(join(tmpdir(), 'th16-season-draw-'));
       try {
