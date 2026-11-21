@@ -212,3 +212,33 @@ test('draw structure: stage 5 Normal spell 50 curve lasers (0x438750 strips, bul
 test('draw structure: Extra spell 117 infinite lasers (0x4357a0, bullet.anm slot 7, mode 2), frames 808–900', needDat, () => {
   assert.equal(checkGolden('draw-st7-card9-laser'), 93);
 });
+
+function checkBootGolden(name) {
+  const golden = JSON.parse(readFileSync(resolve(here, 'golden', `${name}.json`), 'utf8'));
+  const wanted = Object.keys(golden.frames).map(Number).sort((a, b) => a - b);
+  const dir = mkdtempSync(join(tmpdir(), 'th16-boot-draw-'));
+  const out = join(dir, 'port.jsonl');
+  try {
+    execFileSync(harness, ['scene-boot', dat, String(wanted.at(-1)), `draw=${out}`, `draw-from=${wanted[0]}`],
+      {encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe']});
+    const frames = {};
+    for (const line of readFileSync(out, 'utf8').split('\n')) {
+      if (!line) continue;
+      const rec = JSON.parse(line);
+      if (golden.frames[String(rec.frame)] !== undefined) frames[rec.frame] = rec.ops;
+    }
+    const bad = [];
+    for (const frame of wanted) {
+      assert.ok(frames[frame], `port recorded boot frame ${frame}`);
+      if (structureDigest(frames[frame], null) !== golden.frames[String(frame)]) bad.push(frame);
+    }
+    assert.deepEqual(bad, []);
+    return wanted.length;
+  } finally {
+    rmSync(dir, {recursive: true, force: true});
+  }
+}
+
+test('draw structure: boot logo frames 170–180 match the original (0x43b300 ascii.anm 0x11 @ (960,784))', needDat, () => {
+  assert.equal(checkBootGolden('draw-boot-170'), 11);
+});

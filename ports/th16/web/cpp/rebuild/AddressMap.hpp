@@ -100,7 +100,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"boot-scene-init", 0x43ADC0, "game/GameSession.cpp GameSession::begin_boot（sig.anm → 槽 1，text.anm → 槽 0，注册启动幕绘制链 0x44）"},
     {"front-load", 0x43AD20, "game/GameSession.cpp GameSession::begin_boot（front.anm → 槽 5）"},
     {"effect-banks-load", 0x418790, "game/GameSession.cpp GameSession::begin_boot（effect.anm → 槽 8，bullet.anm → 槽 7）"},
-    {"boot-scene-draw", 0x43B300, "game/GameSession.cpp begin_boot 内绘制链回调（spawn / boot_frames++）"},
+    {"boot-scene-draw", 0x43B300, "game/GameSession.cpp begin_boot 内绘制链回调（sig 脚本 0 + ascii.anm 0x11 @ (960,784) / boot_frames++）"},
     {"boot-scene-update", 0x43B290, "game/Supervisor.hpp Supervisor::boot_init_finished（请求 Title=4）"},
     {"supervisor-register", 0x43BA40, "game/Supervisor.hpp（主更新 0x43b3d0 / 场景切换 0x43ce10）"},
     {"supervisor-frame", 0x43B3D0, "game/GameSession.cpp GameSession::logic_step"},

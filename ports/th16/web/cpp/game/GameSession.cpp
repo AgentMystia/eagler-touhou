@@ -297,9 +297,11 @@ bool GameSession::begin_boot() {
 
     // 0x43af60：启动幕绘制链（优先级 0x44）；0x43adc0 末尾启用
     boot_draw_chain_ = chains.create([this]() -> ChainResult {
-        // 0x43b300：首帧 spawn script0（layer -1），之后 +0x638 递增
+        // 0x43b300：+0x630==1 时生成 sig 脚本 0；+0x634==1 且 ascii+0x19248 为空时
+        // 0x40e5c0 生成脚本 0x11 @ (960, 784)（ebp-0x14 = 0x44700000 / 0x44440000）。之后 +0x638 递增。
         if (supervisor.boot_frames == 0) {
-            if (AnmFile* f = animations.file(1)) animations.spawn(*f, 0, -1);
+            if (AnmFile* sig = animations.file(1)) animations.spawn(*sig, 0, -1);
+            spawn_loading_vm(kLoadingVmPos);
         }
         ++supervisor.boot_frames;
         return ChainResult::Continue;
