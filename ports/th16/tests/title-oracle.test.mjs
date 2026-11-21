@@ -43,6 +43,9 @@ const PDATA_DRAW_TO = 371;
 // ↓×5 到 Music Room，第 326 帧确认。第 347 帧进入（0x4546f0），第 362 帧子状态 2。窗口 370–379。
 const MUSIC_DRAW_FROM = 370;
 const MUSIC_DRAW_TO = 379;
+// ↓×2 到 Spell Practice，第 320 帧确认。第 341 帧进入（0x4553d0），第 353 帧子状态 2。窗口 360–369。
+const SPELL_DRAW_FROM = 360;
+const SPELL_DRAW_TO = 369;
 
 function asciiLines(text) {
   return text.split('\n').filter(line => line.startsWith('ascii '));
@@ -199,6 +202,27 @@ test('music room: 10 settled draw frames match original structure and vertices',
     execFileSync(harness, ['scene-boot', dat, String(MUSIC_DRAW_TO), input, `draw=${portDraw}`,
                            `draw-from=${MUSIC_DRAW_FROM}`], {stdio: ['ignore', 'ignore', 'pipe']});
     const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', `${MUSIC_DRAW_FROM}-${MUSIC_DRAW_TO}`, '--eps', '1e-4'],
+                                  {encoding: 'utf8'});
+    process.stdout.write(compared);
+    assert.match(compared, /frames=10 mismatches=0/);
+  } finally {
+    rmSync(dir, {recursive: true, force: true});
+  }
+});
+
+test('spell practice: 10 settled draw frames match original structure and vertices', needOracle, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'th16-title-spell-'));
+  try {
+    const state = join(dir, 'state.json');
+    const oracleDraw = join(dir, 'oracle.draw.jsonl');
+    const portDraw = join(dir, 'port.draw.jsonl');
+    const input = `314:${DOWN},315:0,316:${DOWN},317:0,320:${Z},321:0`;
+    execFileSync(py, [oracle, exe, datDir, String(SPELL_DRAW_TO), state, '--input', input,
+                      '--draw-out', oracleDraw, '--draw-from', String(SPELL_DRAW_FROM)],
+                 {stdio: ['ignore', 'ignore', 'pipe']});
+    execFileSync(harness, ['scene-boot', dat, String(SPELL_DRAW_TO), input, `draw=${portDraw}`,
+                           `draw-from=${SPELL_DRAW_FROM}`], {stdio: ['ignore', 'ignore', 'pipe']});
+    const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', `${SPELL_DRAW_FROM}-${SPELL_DRAW_TO}`, '--eps', '1e-4'],
                                   {encoding: 'utf8'});
     process.stdout.write(compared);
     assert.match(compared, /frames=10 mismatches=0/);
