@@ -257,7 +257,7 @@ test('stage 1–6 Cirno/Aya/Marisa summer/autumn/winter: frames 590–599 match 
   }
 });
 
-test('stage 1–3 Normal four shots summer/autumn/winter: frames 590–599 match original vertices', needDat, () => {
+test('stage 1–6 Normal four shots summer/autumn/winter: frames 590–599 match original vertices', needDat, () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
@@ -265,7 +265,7 @@ test('stage 1–3 Normal four shots summer/autumn/winter: frames 590–599 match
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
   const input = '0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11';
-  for (const stage of [1, 2, 3]) {
+  for (const stage of [1, 2, 3, 4, 5, 6]) {
   for (const shot of [0, 1, 2, 3]) {
     for (const season of [1, 2, 3]) {
       const dir = mkdtempSync(join(tmpdir(), 'th16-normal-draw-'));
