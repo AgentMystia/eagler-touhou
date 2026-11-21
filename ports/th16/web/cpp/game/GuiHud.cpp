@@ -307,7 +307,7 @@ void Gui::update_boss_bars() {
     if (enemies == nullptr || enemies->hud_hidden) return;
     for (int slot = 0; slot < kBossBarSlots; ++slot) {
         BossBar& bar = boss_bars[slot];
-        Enemy* boss = enemies->boss_ids[slot] != 0 ? enemies->find_id(enemies->boss_ids[slot]) : nullptr;
+        Enemy* boss = enemies->boss_slot(slot);
         if (boss == nullptr) {
             bar.shown = 0.0f;
             for (float& marker : bar.markers) marker = 0.0f;
@@ -398,7 +398,7 @@ void Gui::update_spell_stars() {
 // 0x427cf0 段 (i)：Boss 槽 0 存活且未隐藏（flags bit5）、未标记 bit0 时显示方位标
 void Gui::update_boss_indicator() {
     if (enemies == nullptr) return;
-    Enemy* boss = enemies->boss_ids[0] != 0 ? enemies->find_id(enemies->boss_ids[0]) : nullptr;
+    Enemy* boss = enemies->boss_slot(0);
     if (boss == nullptr || (boss->flags & 0x20u) != 0 || (boss->flags & 0x1u) != 0) {
         if (AnmVm* vm = animations->find(boss_indicator_vm)) AnmManager::hide_tree(*vm);
         return;

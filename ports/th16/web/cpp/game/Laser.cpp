@@ -943,8 +943,9 @@ bool LaserManager::step_infinite(Laser& l) {
         if (a.target_length < grown) l.length = a.target_length;
     }
     l.angle = wrap_angle(a.angular_vel * gs + l.angle);
-    if ((a.flags & 0x1u) != 0 && enemies != nullptr && enemies->boss_ids[0] != 0) {
-        if (Enemy* boss = enemies->find_id(enemies->boss_ids[0])) l.pos = boss->pos;
+    // 0x4353d1：跟随位置走 0x417580(0)，槽号过期时落在链表最后一只上
+    if ((a.flags & 0x1u) != 0 && enemies != nullptr) {
+        if (Enemy* boss = enemies->boss_slot(0)) l.pos = boss->pos;
     }
     const float vy = a.velocity.y * gs;
     const float vz = a.velocity.z * gs;

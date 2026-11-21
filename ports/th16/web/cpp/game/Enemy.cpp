@@ -135,10 +135,9 @@ float Enemy::angle_to_player(const Vec3& from) const noexcept {
     return atan2_f(dy, dx);
 }
 
-// 0x417580：按 boss_ids[slot] 查敌机（未命中时原版返回最后遍历到的敌机，此处与 find_id 的 nullptr 口径一致）
+// 0x417580：id 为 0 或链表为空 → 空；否则命中该 id，未命中返回链表最后一只（与 find_id_or_last 同一遍历序）
 Enemy* Enemy::boss(int slot) const {
-    if (manager == nullptr || manager->boss_ids[slot] == 0) return nullptr;
-    return manager->find_id(manager->boss_ids[slot]);
+    return manager != nullptr ? manager->find_id_or_last(manager->boss_ids[slot]) : nullptr;
 }
 
 bool Enemy::integer(i32 var, i32& value) {
@@ -1094,8 +1093,8 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
 
     switch (opcode) {
         case 309: case 310: case 311: case 312:
-            // 0x41dcb0 case 6：Boss 槽 0（0x417580(0)）仍在时不生成
-            if (manager != nullptr && manager->boss_ids[0] != 0 && manager->find_id(manager->boss_ids[0]) != nullptr)
+            // 0x41dd5a：0x417580(0) 非空就不生成（槽号过期仍指向已消失的 id 时，原版落在链表最后一只上，一样拦住生成）
+            if (manager != nullptr && manager->boss_slot(0) != nullptr)
                 return 0;
             [[fallthrough]];
         case 300: case 301: case 304: case 305: case 321: {
@@ -1347,11 +1346,10 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
         }
         case 513: life_timer.set(0); return 0;
         case 515: invuln.set(iarg(0)); return 0;
-        case 520: {
-            if (manager) {
-                for (u32 bid : manager->boss_ids)
-                    if (bid && manager->find_id(bid)) return -1;
-            }
+        case 520: {  // 0x421708：三个 Boss 槽任一个 0x417580 非空就等待
+            if (manager != nullptr && (manager->boss_slot(0) != nullptr || manager->boss_slot(1) != nullptr ||
+                                       manager->boss_slot(2) != nullptr))
+                return -1;
             return 0;
         }
         case 518: {  // case 0x3f：对话开始 0x429ff0 + 0x416f40 全屏消弹 + 0x431af0 激光全灭 + 落入 case 0x46 敌机全灭

@@ -551,7 +551,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"gui-update", 0x427CF0, "game/Gui.cpp Gui::update（Msg 部分：0x42a1d0 返回 0 → 年龄计时推进，否则 0x4264a0 删除；Boss 计时 update_boss_timer；HUD 其余部分渲染阶段补齐）"},
     {"gui-boss-timer", 0x427CF0, "game/Gui.cpp Gui::update_boss_timer（隐藏条件 / 自机靠近移位状态 bit9·bit10 / 秒数变化换精灵 0xef+ / 4 秒·1 秒警告音 0xb·0xc）"},
     {"enemy-hud-hidden", 0x41A950, "game/Enemy.cpp ECL 642（EnemyManager::hud_hidden）"},
-    {"enemy-boss-slot", 0x417580, "game/Enemy.hpp EnemyManager::boss_slot（未命中返回链表最后一只）"},
+    {"enemy-boss-slot", 0x417580, "game/Enemy.hpp EnemyManager::boss_slot / Enemy::boss（id 为 0 或链表空 → 空；未命中返回最后一只。ECL 309..312 生成门、520 等待、414/415/802、-9963/-9962、激光跟随 0x4353d1、Gui 血条/方位标、Spellcard 倒计时跟随都走这条）"},
     {"gui-dialogue-start", 0x429FF0, "game/Gui.cpp Gui::start_dialogue（entry ≥ 0：msg[4 + entry×8] 起点；-1 / -3 切曲 + logo 标题；-2 过关 → Gui::stage_clear）"},
     {"msg-create", 0x429B20, "game/Gui.cpp Gui::create_dialogue（text.anm 0 ×2 / 1 ×2 文字 VM（+0x52c/+0x52d = 0x15、flags_hi 0x1000、draw_callback 5）、0x416f40 全屏消弹、0x41d900 敌机全灭、文字位置 (384,640) 宽 320）"},
     {"msg-update", 0x42A1D0, "game/Gui.cpp Gui::run_dialogue / Gui::execute（ecl_release 倒数、长按 Z/Ctrl ≥ 20 帧快进、指令 0..35；op 11 等待期间脚本时刻冻结；文字 VM 跟随文字框子 VM 0xb4+下标）"},

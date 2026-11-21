@@ -47,16 +47,10 @@ void Spellcard::destroy() {
     reset();
 }
 
-// 0x417f00 / 0x417930 内联：EnemyManager+0x48 槽 0 的 Boss；链表找不到时原版落在最后遍历到的敌机上
+// 0x417f00 / 0x417930：EnemyManager+0x48 槽 0 的 Boss（0x417580；未命中落在链表最后一只）
 Vec3 Spellcard::boss_position() const {
-    if (enemies == nullptr || enemies->boss_ids[0] == 0) return Vec3{};
-    const Enemy* last = nullptr;
-    for (const auto& e : enemies->enemies) {
-        if (!e) continue;
-        last = e.get();
-        if (e->id == enemies->boss_ids[0]) break;
-    }
-    return last != nullptr ? last->pos : Vec3{};
+    const Enemy* boss = enemies != nullptr ? enemies->boss_slot(0) : nullptr;
+    return boss != nullptr ? boss->pos : Vec3{};
 }
 
 // 0x417f00
