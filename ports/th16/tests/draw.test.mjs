@@ -93,6 +93,10 @@ test('draw structure: stage 1 Reimu / Spring Easy, frames 800–820 and 1000–1
   assert.equal(checkGolden('draw-st1'), 522);
 });
 
+test('draw structure: stage 1 Normal Reimu spring idle, frames 2000–2100 match the original call stream (geometry eps 1e-4, 101 frames)', needDat, () => {
+  assert.equal(checkGolden('draw-st1-normal-2000'), 101);
+});
+
 test('draw structure: stage 1 Cirno / Autumn Normal, first 8 frames after load (HUD frame, logo, loading text camera switch)', needDat, () => {
   assert.equal(checkGolden('draw-st1-boot'), 8);
 });
