@@ -221,7 +221,7 @@ test('stage 1–6 Easy Reimu summer/autumn/winter: frames 590–599 match origin
   }
 });
 
-test('stage 1 Cirno/Aya/Marisa summer/autumn/winter: frames 590–599 match original vertices', needDat, () => {
+test('stage 1–6 Cirno/Aya/Marisa summer/autumn/winter: frames 590–599 match original vertices', needDat, () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
@@ -229,6 +229,7 @@ test('stage 1 Cirno/Aya/Marisa summer/autumn/winter: frames 590–599 match orig
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
   const input = '0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11';
+  for (const stage of [1, 2, 3, 4, 5, 6]) {
   for (const shot of [1, 2, 3]) {
     for (const season of [1, 2, 3]) {
       const dir = mkdtempSync(join(tmpdir(), 'th16-shot-draw-'));
@@ -237,21 +238,22 @@ test('stage 1 Cirno/Aya/Marisa summer/autumn/winter: frames 590–599 match orig
         const oracleDraw = join(dir, 'oracle.draw.jsonl');
         const portDraw = join(dir, 'port.draw.jsonl');
         execFileSync(py, [oracle, exe, datDir, '600', state,
-                          '--stage', '1', '--shot', String(shot), '--season', String(season), '--difficulty', '0',
+                          '--stage', String(stage), '--shot', String(shot), '--season', String(season), '--difficulty', '0',
                           '--lives', '8', '--refill-lives', '--input', input, '--enemies',
                           '--draw', '--draw-out', oracleDraw, '--draw-from', '590'],
                      {stdio: ['ignore', 'ignore', 'pipe']});
-        execFileSync(harness, ['game-draw', dat, '1', String(shot), String(season), '600', input, '', '',
+        execFileSync(harness, ['game-draw', dat, String(stage), String(shot), String(season), '600', input, '', '',
                                '0', '-1', '8', '1', '0', portDraw, '590'],
                      {stdio: ['ignore', 'ignore', 'pipe']});
         const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '590-599', '--eps', '1e-4'],
                                       {encoding: 'utf8'});
         process.stdout.write(compared);
-        assert.match(compared, /frames=10 mismatches=0/, `shot ${shot} season ${season}`);
+        assert.match(compared, /frames=10 mismatches=0/, `stage ${stage} shot ${shot} season ${season}`);
       } finally {
         rmSync(dir, {recursive: true, force: true});
       }
     }
+  }
   }
 });
 
