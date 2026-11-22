@@ -257,6 +257,45 @@ test('stage 1–6 Cirno/Aya/Marisa summer/autumn/winter: frames 590–599 match 
   }
 });
 
+test('idle frames 8000–8009: stage 1 Easy, stage 3 Normal, stage 6 Easy, Extra doyou match original vertices', needDat, () => {
+  const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
+  const datDir = resolve(monorepo, 'artifacts/th16/dat');
+  const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
+  const oracle = resolve(here, '../tools/oracle/game-oracle.py');
+  const compare = resolve(here, '../tools/oracle/draw-compare.py');
+  assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
+  const cases = [
+    {stage: 1, season: 0, difficulty: 0},
+    {stage: 3, season: 0, difficulty: 1},
+    {stage: 6, season: 0, difficulty: 0},
+    {stage: 7, season: 4, difficulty: 4},
+  ];
+  for (const c of cases) {
+    const dir = mkdtempSync(join(tmpdir(), 'th16-idle8000-draw-'));
+    try {
+      const state = join(dir, 'state.json');
+      const oracleDraw = join(dir, 'oracle.draw.jsonl');
+      const portDraw = join(dir, 'port.draw.jsonl');
+      execFileSync(py, [oracle, exe, datDir, '8010', state,
+                        '--stage', String(c.stage), '--shot', '0', '--season', String(c.season),
+                        '--difficulty', String(c.difficulty),
+                        '--lives', '8', '--refill-lives', '--input', '0:0', '--enemies',
+                        '--draw', '--draw-out', oracleDraw, '--draw-from', '8000'],
+                   {stdio: ['ignore', 'ignore', 'pipe']});
+      execFileSync(harness, ['game-draw', dat, String(c.stage), '0', String(c.season), '8010', '0:0', '', '',
+                             String(c.difficulty), '-1', '8', '1', '0', portDraw, '8000'],
+                   {stdio: ['ignore', 'ignore', 'pipe']});
+      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '8000-8009', '--eps', '1e-4'],
+                                    {encoding: 'utf8'});
+      process.stdout.write(compared);
+      assert.match(compared, /frames=10 mismatches=0/,
+                   `idle8000 stage ${c.stage} season ${c.season} difficulty ${c.difficulty}`);
+    } finally {
+      rmSync(dir, {recursive: true, force: true});
+    }
+  }
+});
+
 test('Extra Reimu spring/summer/autumn/winter/doyou idle: frames 6000–6009 match original vertices', needDat, () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
