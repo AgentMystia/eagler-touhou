@@ -257,6 +257,37 @@ test('stage 1–6 Cirno/Aya/Marisa summer/autumn/winter: frames 590–599 match 
   }
 });
 
+test('Extra Reimu spring/summer/autumn/winter/doyou idle: frames 6000–6009 match original vertices', needDat, () => {
+  const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
+  const datDir = resolve(monorepo, 'artifacts/th16/dat');
+  const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
+  const oracle = resolve(here, '../tools/oracle/game-oracle.py');
+  const compare = resolve(here, '../tools/oracle/draw-compare.py');
+  assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
+  for (const season of [0, 1, 2, 3, 4]) {
+    const dir = mkdtempSync(join(tmpdir(), 'th16-extra6000-draw-'));
+    try {
+      const state = join(dir, 'state.json');
+      const oracleDraw = join(dir, 'oracle.draw.jsonl');
+      const portDraw = join(dir, 'port.draw.jsonl');
+      execFileSync(py, [oracle, exe, datDir, '6010', state,
+                        '--stage', '7', '--shot', '0', '--season', String(season), '--difficulty', '4',
+                        '--lives', '8', '--refill-lives', '--input', '0:0', '--enemies',
+                        '--draw', '--draw-out', oracleDraw, '--draw-from', '6000'],
+                   {stdio: ['ignore', 'ignore', 'pipe']});
+      execFileSync(harness, ['game-draw', dat, '7', '0', String(season), '6010', '0:0', '', '',
+                             '4', '-1', '8', '1', '0', portDraw, '6000'],
+                   {stdio: ['ignore', 'ignore', 'pipe']});
+      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '6000-6009', '--eps', '1e-4'],
+                                    {encoding: 'utf8'});
+      process.stdout.write(compared);
+      assert.match(compared, /frames=10 mismatches=0/, `extra6000 season ${season}`);
+    } finally {
+      rmSync(dir, {recursive: true, force: true});
+    }
+  }
+});
+
 test('stage 1–6 Easy Reimu spring idle: frames 6000–6009 match original vertices', needDat, () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
