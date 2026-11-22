@@ -10,7 +10,7 @@
 2. 已关闭：Extra 四季 600 帧矩阵已锁。见「已关闭」。
 3. 标题画面绘制对拍已关闭。见「已关闭」。
 4. ANM mode 6（0x466820）：`artifacts/th16/dat` 全部 54 个 `.anm` 的 ins_302 渲染模式只有 0/1/2/3/4/8/21，没有 6。与钩子 6 相同，数据不可达，不排期。`AddressMap.hpp` 的空登记保留为说明。
-5. 全关卡 × 难度 × 机体 × 子季节的长程像素对拍。600 帧摘要与若干绘制窗口已锁。第 1–6 面 Easy、Normal、Hard 四机体夏/秋/冬、Extra 四机体春夏秋冬第 590–599 帧顶点已对拍。通关全程与 Lunatic 的关键帧像素对照未覆盖。
+5. 全关卡 × 难度 × 机体 × 子季节的长程像素对拍。600 帧摘要与若干绘制窗口已锁。第 1–6 面 Easy、Normal、Hard、Lunatic 四机体夏/秋/冬、Extra 四机体春夏秋冬第 590–599 帧顶点已对拍。通关全程与第 1–6 面春、Extra 以外的长窗口未覆盖。
 6. 性能：Snapdragon 865 级 60fps。本机无该设备，不能记为通过。WASI 3600 帧 <10s：本机没有 wasi-sdk，不能记为通过。
 7. 登记：`launcher/config/workspace.json`、`runtime-builds.json`、`product-catalog`、`docs/migration`、`docs/TOUHOU_PROGRESS.md`、`ports/README`、`WORKSPACE.md`、`ADAPTATION.md` 验收。黄金交付标准达成前不开 PR。
 8. 版本文件 0x43b480（`th16_%.4x%c.ver`）：开机 0x43b520 读取并写入 DAT_004c1af0 / DAT_004c1aec，退出路径 0x43b681 释放缓冲。没有其它读者。宿主落盘可后接，不阻塞对拍。
@@ -29,4 +29,5 @@
 - Extra 四机体春夏秋冬第 590–599 帧绘制顶点已对拍。测试 `Extra four shots spring/summer/autumn/winter: frames 590–599 match original vertices`。
 - 第 1–6 面 Normal 四机体夏/秋/冬第 590–599 帧绘制顶点已对拍。测试 `stage 1–6 Normal four shots summer/autumn/winter: frames 590–599 match original vertices`。
 - 第 1–6 面 Hard 四机体夏/秋/冬第 590–599 帧绘制顶点已对拍。测试 `stage 1–6 Hard four shots summer/autumn/winter: frames 590–599 match original vertices`。
+- 第 1–6 面 Lunatic 四机体夏/秋/冬第 590–599 帧绘制顶点已对拍。测试 `stage 1–6 Lunatic four shots summer/autumn/winter: frames 590–599 match original vertices`。
 - 第 1–6 面 Easy 琪露诺/文/魔理沙夏/秋/冬第 590–599 帧绘制顶点已对拍。测试 `stage 1–6 Cirno/Aya/Marisa summer/autumn/winter: frames 590–599 match original vertices`。
