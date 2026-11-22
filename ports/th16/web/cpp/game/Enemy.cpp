@@ -1068,10 +1068,14 @@ void Enemy::die(float game_speed) {
     }
 }
 
-// 0x41ba10：移出列表时（flags2 & 4 未置）杀掉全部绑定 VM 及其子树；畸变网格无条件析构
+// 0x41ba10：移出列表时（flags2 & 4 未置）先注销 Boss 槽，再杀掉全部绑定 VM 及其子树；畸变网格无条件析构
 void Enemy::destroy() {
     distortion.reset();
-    if (manager == nullptr || manager->animations == nullptr) return;
+    if (manager == nullptr) return;
+    // 0x41ba54：flags & 0x800000 的敌机析构时清掉所在槽（+0x527c）。不清的话槽里留着已消失的 id，
+    // 之后 0x417580 查不到就落到链表最后一只——Gui 给同一只 Boss 画出第二套血环，ECL 520 的等待也一直不满足
+    if ((flags & 0x800000u) != 0 && boss_slot >= 0 && boss_slot < 3) manager->boss_ids[boss_slot] = 0;
+    if (manager->animations == nullptr) return;
     for (u32& vid : vm_ids) {
         if (AnmVm* vm = manager->animations->find(vid)) AnmManager::kill_tree(*vm);
         vid = 0;

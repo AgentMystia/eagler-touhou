@@ -1,5 +1,5 @@
 {
- "$comment": "tools/oracle/game-oracle.py --enemies --bullets --items --lasers --bombs --lives 8 --refill-lives（Unicorn 直跑 th16.exe v1.00a）第 1..7 面各一组机体 × 子季节 × 难度的 6000 帧对拍：持续射击 + 向上移动，第 1500 / 3000 帧按一次炸弹。十组 FNV-1a 64 摘要与 harness game-digest 同口径（含全部音效的 GameMenu 快照 menu 摘要，以及 0x45e150 / 0x45e1f0 请求序 sound 摘要）。 第二组为 14000 / 16000 帧长程（第 2500 / 5000 / 7500 / 10000 帧各一次炸弹），覆盖各面中 Boss 与 Boss 前半段。第三组补第 1 面与 Extra 灵梦土用，以及第 2 / 3 / 4 / 5 面尚未入库的机体 × 难度。 第 3 面 Easy 灵梦春以过关点射输入（每 8 帧按 6 帧 Z + 向上，第 2000 / 4500 帧炸弹）锁 6000 帧；第 4 面 Hard 魔理沙夏以持续射击 + 第 1500 / 3000 帧炸弹锁 4000 帧。",
+ "$comment": "tools/oracle/game-oracle.py --enemies --bullets --items --lasers --bombs --lives 8 --refill-lives（Unicorn 直跑 th16.exe v1.00a）第 1..7 面各一组机体 × 子季节 × 难度的 6000 帧对拍：持续射击 + 向上移动，第 1500 / 3000 帧按一次炸弹。十组 FNV-1a 64 摘要与 harness game-digest 同口径（含全部音效的 GameMenu 快照 menu 摘要，以及 0x45e150 / 0x45e1f0 请求序 sound 摘要）。 第二组为 14000 / 16000 帧长程（第 2500 / 5000 / 7500 / 10000 帧各一次炸弹），覆盖各面中 Boss 与 Boss 前半段。第三组补第 1 面与 Extra 灵梦土用，以及第 2 / 3 / 4 / 5 面尚未入库的机体 × 难度。 第 3 面 Easy 灵梦春以过关点射输入（每 8 帧按 6 帧 Z + 向上，第 2000 / 4500 帧炸弹）锁 6000 帧；第 4 面 Hard 魔理沙夏以持续射击 + 第 1500 / 3000 帧炸弹锁 4000 帧。。第 4 面 Easy 灵梦春以空闲输入锁 43000 帧：从 Boss 登场到第 42223 帧过关换到第 5 面——敌机析构 0x41ba10 注销 Boss 槽，槽内不留已消失的 id",
  "cases": [
   {
    "name": "st2-easy-reimu-winter-shoot-bomb-6000",
@@ -959,6 +959,30 @@
     "bombs": "913a12484bf35519",
     "menu": "709cd1e30c1906ae",
     "sound": "dd620587a20c44ce"
+   }
+  },
+  {
+   "name": "st4-easy-reimu-spring-idle-stage-clear-43000",
+   "stage": 4,
+   "shot": 0,
+   "season": 0,
+   "difficulty": 0,
+   "replay_slot": -1,
+   "lives": 8,
+   "refill": 1,
+   "frames": 43000,
+   "input": "0:0",
+   "digests": {
+    "digest": "97568fb45dcada7c",
+    "enemies": "0d7494322e87aba7",
+    "enemy_vms": "1fc6266754937efd",
+    "bullets": "e96a1532a0ccb4f1",
+    "items": "00e599ad9eff6edf",
+    "spell": "0ae672df939b3388",
+    "lasers": "193c7c6a82454ee0",
+    "bombs": "b4b5b08e5c297470",
+    "menu": "e61cc79ab8039a24",
+    "sound": "70a03b37100cf95f"
    }
   }
  ]

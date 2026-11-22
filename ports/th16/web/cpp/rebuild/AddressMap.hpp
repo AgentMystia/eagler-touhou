@@ -275,7 +275,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"enemy-interrupt-life", 0x424F00, "game/Enemy.cpp Enemy::life_interrupt（life_display / phase_life 刷新、阈值触发切子程序）"},
     {"enemy-interrupt-time", 0x425010, "game/Enemy.cpp Enemy::time_interrupt（超时切子程序 + Spellcard 超时标志 / 奖励）"},
     {"enemy-kill-all", 0x41D900, "game/Enemy.cpp EnemyManager::kill_all（op 525；0x41da30 op 551 按 anm_layer；0x41db70 op 571）"},
-    {"enemy-destroy", 0x41BA10, "game/Enemy.cpp Enemy::destroy（移出时杀全部绑定 VM 子树）"},
+    {"enemy-destroy", 0x41BA10, "game/Enemy.cpp Enemy::destroy（0x41ade0 基类析构后：+0x5270 & 4 未置 → flags & 0x800000 的敌机清 Boss 槽 boss_ids[+0x527c] → 杀全部绑定 VM 子树；畸变网格无条件析构。清槽遗漏会让 0x417580 落到链表最后一只：Gui 画第二套血环、ECL 520 一直等待）"},
     {"enemy-ecl-dispatch", 0x41DCB0, "game/Enemy.cpp Enemy::execute（敌方操作码 ≥300：生成 300..305/309..312/321、ANM 302..340、运动 400..447 全族、属性 500..517/520..528/535..543/546..552/554/556/561..572、弹幕 600..641、掉落 1000/1001）"},
     {"enemy-anm-op-303", 0x423260, "game/Enemy.cpp Enemy::execute case 303（按槽重绑 VM）"},
     {"enemy-anm-op-319", 0x4233A0, "game/Enemy.cpp Enemy::execute case 319/325..337（主 VM 脚本族 / 朝向）"},

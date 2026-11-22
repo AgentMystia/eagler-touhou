@@ -188,7 +188,7 @@ public:
     // op 303 / 306 / 313 / 316 / 318 公共体：杀旧 VM，用 anm_file(source) 的 script 在 anm_layer_offset+7 层
     // 生成（0x426160 链表头）到 vm_ids[slot]；full 时 slot 0 同步 sprite_size、flags & 0x20 隐藏整棵子树
     AnmVm* rebind_vm(int slot, i32 source, i32 script, bool full);
-    // 0x41ba10：移出列表时杀掉全部绑定 VM
+    // 0x41ba10：移出列表时先注销 Boss 槽，再杀掉全部绑定 VM
     void destroy();
     // 0x41d700：按掉落表散布道具（visual_rng 调用序与原版一致），随后清表
     void scatter_items();
