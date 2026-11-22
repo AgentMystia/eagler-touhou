@@ -259,7 +259,7 @@ def structure_digest(ops, texture_slots=None):
 
 
 # ---- 整段摘要：每帧把操作流压成几条 sha1，两侧在各自进程里算，只交换摘要 ----
-# 原始绘制流每帧可达数百 KB，整段落盘不可行；原版 x87 与移植版 SSE 在个别顶点差 1 ulp，又不能直接比位。
+# 原始绘制流每帧可达数百 KB，整段落盘不可行；顶点又不能直接比位（个别字会差 1 ulp）。
 # 所以每帧出四条：s = 结构（structure_lines），v = 位级顶点与矩阵，a / b = 量化网格 a / b。
 # 量化：浮点字按二进制档位取格宽 cell = QUANT_EPS × 2^max(0, E - 127)（E 为指数位），格号 floor((|v| + half·cell) / cell)；
 # 网格 a 的 half = 0，网格 b 的 half = 0.5。两值相差不超过一格时至少在一张网格里同格。两侧（本文件 / tools/draw-structure.mjs）

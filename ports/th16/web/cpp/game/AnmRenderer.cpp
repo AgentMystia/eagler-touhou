@@ -375,18 +375,19 @@ int AnmRenderer::submit_screen_corners(AnmVm& vm, const AnmRuntimeSprite& sprite
     }
     for (int i = 0; i < 4; ++i) vm.drawn_corners[i] = {corners[i][0], corners[i][1], z};
 
-    // UV：基 UV + 滚动，uv_scale 缩放宽 / 高分量
+    // UV：基 UV + 滚动，uv_scale 缩放宽 / 高分量。0x465480 起的次序是先舍入（滚动 + 基 UV），再加上（差 × 缩放）；
+    // 写成 差 × 缩放 + 滚动 + 基 UV 会在个别帧差 1 ulp（第 1 面整段对拍里背景层的 V 坐标）
     const Vec2* uv = vm.uv;
     const Vec2 scroll = vm.uv_scroll;
     float u[4], v[4];
     u[0] = scroll.x + uv[0].x;
     v[0] = uv[0].y + scroll.y;
-    u[1] = (uv[1].x - uv[0].x) * vm.uv_scale.x + scroll.x + uv[0].x;
+    u[1] = (uv[1].x - uv[0].x) * vm.uv_scale.x + (scroll.x + uv[0].x);
     v[1] = uv[1].y + scroll.y;
     u[2] = uv[2].x + scroll.x;
-    v[2] = (uv[2].y - uv[0].y) * vm.uv_scale.y + scroll.y + uv[0].y;
-    u[3] = (uv[3].x - uv[2].x) * vm.uv_scale.x + scroll.x + uv[2].x;
-    v[3] = (uv[3].y - uv[1].y) * vm.uv_scale.y + scroll.y + uv[1].y;
+    v[2] = (uv[2].y - uv[0].y) * vm.uv_scale.y + (scroll.y + uv[0].y);
+    u[3] = (uv[3].x - uv[2].x) * vm.uv_scale.x + (scroll.x + uv[2].x);
+    v[3] = (uv[3].y - uv[1].y) * vm.uv_scale.y + (scroll.y + uv[1].y);
 
     if (!in_camera_viewport(corners)) return 0;
 

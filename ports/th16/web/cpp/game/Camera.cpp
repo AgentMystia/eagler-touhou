@@ -22,21 +22,37 @@ void multiply(float out[16], const float a[16], const float b[16]) {
     for (int k = 0; k < 16; ++k) out[k] = r[k];
 }
 
+namespace {
+
+// 原版的 D3DXMatrixRotationX/Y/Z 经 CRT 的 x87 fsin / fcos 在扩展精度里算完再截成 float；这里用双精度 sin / cos
+// 再舍入来逼近。单精度库函数 sinf / cosf 的结果与之经常差 1 ulp（AnmGeometry.cpp 的扇面 / 环带同理），
+// 第 2 面整段对拍里几乎每一帧的世界矩阵都因此差 1 ulp
+void sin_cos(float angle, float& c, float& s) {
+    const double a = angle;
+    c = float(std::cos(a));
+    s = float(std::sin(a));
+}
+
+}  // namespace
+
 void rotation_x(float m[16], float angle) {
     identity(m);
-    const float c = std::cos(angle), s = std::sin(angle);
+    float c, s;
+    sin_cos(angle, c, s);
     m[5] = c; m[6] = s; m[9] = -s; m[10] = c;
 }
 
 void rotation_y(float m[16], float angle) {
     identity(m);
-    const float c = std::cos(angle), s = std::sin(angle);
+    float c, s;
+    sin_cos(angle, c, s);
     m[0] = c; m[2] = -s; m[8] = s; m[10] = c;
 }
 
 void rotation_z(float m[16], float angle) {
     identity(m);
-    const float c = std::cos(angle), s = std::sin(angle);
+    float c, s;
+    sin_cos(angle, c, s);
     m[0] = c; m[1] = s; m[4] = -s; m[5] = c;
 }
 

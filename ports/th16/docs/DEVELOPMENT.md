@@ -96,8 +96,7 @@ python3 tools/oracle/draw-compare.py /tmp/st1.draw.jsonl /tmp/st1.port.jsonl --f
 0x408ef0 切到场地相机再切回 UI 相机），紧随其后出批的那条绘制在移植版会记到不同的视口，这类差异要等该子系统移植后才消失。
 
 回归守护在 `tests/draw.test.mjs`：原版流经 `draw-compare.py <oracle.jsonl> - --structure-golden tests/golden/draw-st1.json --frames a-b`
-折叠成每帧一条 sha1（口径 = `structure_lines`：目标 / 视口 / 图元 / 格式 / 纹理 / 状态子集，**不含顶点与矩阵**——原版 x87 与
-移植版 SSE 单精度在个别顶点差 1 ulp，位级摘要会误报），测试跑 `game-draw` 后按同一口径复算；原版 jsonl 本身（数十 MB）不入库。
+折叠成每帧一条 sha1（口径 = `structure_lines`：目标 / 视口 / 图元 / 格式 / 纹理 / 状态子集，**不含顶点与矩阵**），测试跑 `game-draw` 后按同一口径复算；原版 jsonl 本身（数十 MB）不入库。
 顶点级对拍仍用上面的 `--eps` 命令手工做。场景里还有未移植子系统时加 `--only-textures 7`：摘要只含用该 AnmFile 槽贴图的绘制
 （Clear 一并丢弃），槽号写进 golden 的 `texture_slots`，测试侧按同一过滤复算——`draw-st3-curve-laser.json` 等激光黄金就是这样
 只守 bullet.anm（弹幕 + 激光），不被同场景尚未移植的 Boss 畸变光环 / 特效条带 / Boss 血环拖住。golden 的 `config.replay_slot`
@@ -111,7 +110,7 @@ python3 tools/oracle/draw-compare.py /tmp/st1.draw.jsonl /tmp/st1.port.jsonl --f
 
 - `s`：结构，即 `structure_lines`。
 - `v`：位级顶点字与世界矩阵。
-- `a` / `b`：量化顶点。浮点字按二进制档位取格宽 `1e-4 × 2^max(0, 指数位 − 127)`，格号 `floor((|v| + half·格宽) / 格宽)`；网格 a 的 half 为 0，网格 b 为 0.5。原版 x87 与移植版 SSE 的 1 ulp 差在至少一张网格里同格，等价于窗口对拍的 `--eps 1e-4`。
+- `a` / `b`：量化顶点。浮点字按二进制档位取格宽 `1e-4 × 2^max(0, 指数位 − 127)`，格号 `floor((|v| + half·格宽) / 格宽)`；网格 a 的 half 为 0，网格 b 为 0.5。个别的 1 ulp 差在至少一张网格里同格，等价于窗口对拍的 `--eps 1e-4`；报告行的 bit-identical 给出位级一致的帧数，浮点次序对齐后的整段是逐帧位级一致的。
 
 ```bash
 # 原版：--draw-ops - 把折叠后的逐帧操作流写上标准输出，交给 Node 折摘要（重弹幕帧上 Python 逐字折要慢一个量级）
