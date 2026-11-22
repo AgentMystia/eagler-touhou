@@ -396,9 +396,11 @@ void BulletManager::draw(AnmRenderer& renderer) {
                     vm.rotation.z = wrap_angle(b->angle + kHalfPi);
                     vm.flags_lo |= AnmVm::kRotationDirty;
                 }
+                // 缩放中的敌弹：写的是 VM 的 scale2（子弹 +0x80 = VM +0x58），与脚本自己的 scale 相乘——出生闪光的
+                // 5 → 1 插值因此保留在 scale 里（0x412a60：`[bullet + 0x80] = [bullet + 0x141c]`）
                 if ((b->flags & Bullet::kFlagScaled) != 0) {
                     vm.flags_lo |= AnmVm::kScaleDirty;
-                    vm.scale = {b->scale, b->scale};
+                    vm.scale2 = {b->scale, b->scale};
                 }
                 renderer.draw_vm(vm);
             };
