@@ -87,6 +87,10 @@ public:
     AnmRenderer(AnmManager& manager, const AnmGeometry& geometry) : manager_(manager), geometry_(geometry) {}
 
     RenderDevice* device = nullptr;   // 为空 = 无绘制（逻辑 harness）
+    // 诊断（harness TH16_VM_DUMP=<帧>，与 game-oracle.py --vm-dump 同格式）：trace_frame == trace_current 的那一帧，
+    // 每个进入 draw_vm 的 VM 向 stderr 打一行身份与绘制状态
+    int trace_frame = -1;
+    int trace_current = -1;
     AnmDrawHooks* draw_hooks = nullptr;   // Gui（钩子 5）
     std::string error;
 

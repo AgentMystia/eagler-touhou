@@ -5,7 +5,7 @@
 
 用法：
     game-oracle.py <th16.exe> <dat 解包目录> <frames> <out.json> [--stage N] [--shot N] [--season N] [--difficulty N]
-                   [--input "f:held,f:held,..."] [--seed N] [--every N] [--lives N] [--debug] [--draw]
+                   [--input "f:held,f:held,..." | "@<脚本文件>"] [--seed N] [--every N] [--lives N] [--debug] [--draw]
     game-oracle.py --digest <out.json>...        → 已有快照的 Player 规范字段 FNV-1a 64（harness game-digest 同口径）
 
 快照（每帧）：frame / game_frame / stage_frame / input [held, pressed] / power / season_gauge / enemy_count / dialogue /
@@ -1674,6 +1674,9 @@ def sound_digest(frames):
 def parse_input(spec):
     events = {}
     if spec:
+        # "@<路径>"：脚本从文件读入（长通关脚本会超过命令行单参数的长度上限），与 harness 的输入脚本同口径
+        if spec.startswith('@'):
+            spec = pathlib.Path(spec[1:]).read_text().strip()
         for part in spec.split(','):
             f, v = part.split(':')
             events[int(f)] = int(v, 0)

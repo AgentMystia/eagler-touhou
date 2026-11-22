@@ -1070,7 +1070,7 @@ int main(int argc, char** argv) {
     if ((command == "game-run" || command == "game-digest" || command == "game-draw") && argc >= 8) {
         // 直接进入场景 7（跳过启动幕/标题），每帧注入 held 位并按 tools/oracle/game-oracle.py 的规范字段导出 Player 状态。
         // 参数：<th16.dat> <stage> <shot> <season> <frames> <input "f:held,..."> [enemies "f:count,..."] [dialogue "f:v,..."]
-        // 输入脚本语义与 game-oracle --input 相同：第 f 帧（0 起）起 held 持续到下一事件。
+        // 输入脚本语义与 game-oracle --input 相同：第 f 帧（0 起）起 held 持续到下一事件；"@<路径>" 从文件读入。
         // enemies/dialogue 为其它管理器未移植时的 PlayerWorld 外部输入（oracle 快照 enemy_count / dialogue 字段）。
         const bool digest_only = command == "game-digest";
         // game-draw：与 game-run 同参，另加第 16/17 参 <out.jsonl> [from_frame]；跑绘制链并把每帧设备调用写成 JSON 行。
@@ -1102,7 +1102,18 @@ int main(int argc, char** argv) {
         const int season = std::atoi(argv[5]);
         const int frames = std::atoi(argv[6]);
         struct Event { int frame; i32 value; };
-        auto parse_schedule = [&](const char* p, std::vector<Event>& out) -> bool {
+        auto parse_schedule = [&](const char* spec, std::vector<Event>& out) -> bool {
+            // "@<路径>"：脚本从文件读入（长通关脚本会超过命令行单参数的长度上限），首尾空白忽略
+            std::string text;
+            const char* p = spec;
+            if (*p == '@') {
+                std::vector<u8> bytes;
+                if (!read_file(p + 1, bytes)) return false;
+                while (!bytes.empty() && (bytes.back() == '\n' || bytes.back() == '\r' || bytes.back() == ' ' || bytes.back() == '\t'))
+                    bytes.pop_back();
+                text.assign(bytes.begin(), bytes.end());
+                p = text.c_str();
+            }
             while (*p) {
                 char* endp = nullptr;
                 const long frame = std::strtol(p, &endp, 10);
@@ -1181,6 +1192,13 @@ int main(int argc, char** argv) {
             };
         }
 
+        // TH16_VM_DUMP=<帧>：该帧进入 AnmRenderer::draw_vm 的每个 VM 打一行身份（与 game-oracle.py --vm-dump 对照）
+        const char* vm_dump_env = std::getenv("TH16_VM_DUMP");
+        // 取值 "<帧>" 或 "<起帧>-<止帧>"
+        int vm_dump_frame = -1, vm_dump_end = -1;
+        if (vm_dump_env != nullptr) {
+            if (std::sscanf(vm_dump_env, "%d-%d", &vm_dump_frame, &vm_dump_end) == 1) vm_dump_end = vm_dump_frame;
+        }
         const char* dump_layers_env = std::getenv("TH16_DUMP_LAYERS");
         const int dump_layers_frame = dump_layers_env != nullptr ? std::atoi(dump_layers_env) : 0;
 
@@ -1318,6 +1336,8 @@ int main(int argc, char** argv) {
             if (refill_lives >= 0 && session.globals.lives < refill_lives) session.globals.lives = refill_lives;
             trace_state.current = f + 1;
             device.begin_frame();
+            if (f + 1 >= vm_dump_frame && f + 1 <= vm_dump_end) session.renderer.trace_frame = f + 1;
+            session.renderer.trace_current = f + 1;
             if (!session.logic_step()) return fail(session.failure.c_str());
             if (draw_out != nullptr && f + 1 >= draw_from) {
                 if (digest_mode) write_digest_line(draw_out, f + 1, device.ops);

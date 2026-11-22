@@ -5,6 +5,7 @@
 #include "Effect.hpp"
 
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 
 namespace th16 {
@@ -237,8 +238,24 @@ const AnmRuntimeSprite* AnmRenderer::sprite_of(const AnmVm& vm) const {
 // 绘制
 // ---------------------------------------------------------------------------------------------
 
+namespace {
+
+void trace_vm(int frame, const AnmVm& vm) {
+    const u32 color = (u32(vm.color[3]) << 24) | (u32(vm.color[2]) << 16) | (u32(vm.color[1]) << 8) | u32(vm.color[0]);
+    std::fprintf(stderr,
+                 "frame=%d vm=%u layer=%d slot=%d script=%d sprite=%d mode=%d pos=%.9g,%.9g,%.9g offset=%.9g,%.9g,%.9g scale=%.9g,%.9g "
+                 "rot_z=%.9g color=%08x flags=%08x,%08x ins=%d time=%d age=%d parent=%u I=%d,%d,%d,%d\n",
+                 frame, vm.id, vm.layer, vm.file_slot, vm.script_index, vm.sprite_index, vm.render_mode(), vm.pos.x, vm.pos.y, vm.pos.z,
+                 vm.entity_offset.x, vm.entity_offset.y, vm.entity_offset.z, vm.scale.x, vm.scale.y, vm.rotation.z, color,
+                 vm.flags_lo, vm.flags_hi, vm.ins_offset, vm.time.current, vm.age.current, vm.parent != nullptr ? vm.parent->id : 0u,
+                 vm.int_vars[0], vm.int_vars[1], vm.int_vars[2], vm.int_vars[3]);
+}
+
+}  // namespace
+
 int AnmRenderer::draw_vm(AnmVm& vm) {
     if (device == nullptr) return -1;
+    if (trace_frame >= 0 && trace_frame == trace_current) trace_vm(trace_current, vm);
     // 绘制钩子表 DAT_00491b2c（在可见性检查之前调用，返回值不用）：
     //   1 = 0x4073a0 过场（EffectManager 种类 0，标题 0x418ba0 / 中断 7）；2 = 0x405ec0 空函数（充能环）；
     //   3 = 0x406860 爆散粒子折线；4 = 0x418c60 畸变网格；5 = 0x42b5f0 对话文字跟随；
