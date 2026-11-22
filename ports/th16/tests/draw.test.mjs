@@ -257,6 +257,54 @@ test('stage 1–6 Cirno/Aya/Marisa summer/autumn/winter: frames 590–599 match 
   }
 });
 
+test('stage 1–6 and Extra idle: frames 2000–2009 match original vertices', needDat, () => {
+  const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
+  const datDir = resolve(monorepo, 'artifacts/th16/dat');
+  const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
+  const oracle = resolve(here, '../tools/oracle/game-oracle.py');
+  const compare = resolve(here, '../tools/oracle/draw-compare.py');
+  assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
+  const cases = [];
+  for (const stage of [1, 2, 3, 4, 5, 6]) {
+    for (const shot of [0, 1, 2, 3]) {
+      for (const season of [0, 1, 2, 3]) {
+        for (const difficulty of [0, 1, 2, 3]) {
+          cases.push({stage, shot, season, difficulty});
+        }
+      }
+    }
+  }
+  for (const shot of [0, 1, 2, 3]) {
+    for (const season of [0, 1, 2, 3, 4]) {
+      cases.push({stage: 7, shot, season, difficulty: 4});
+    }
+  }
+  for (const c of cases) {
+    const dir = mkdtempSync(join(tmpdir(), 'th16-idle2000-draw-'));
+    try {
+      const state = join(dir, 'state.json');
+      const oracleDraw = join(dir, 'oracle.draw.jsonl');
+      const portDraw = join(dir, 'port.draw.jsonl');
+      execFileSync(py, [oracle, exe, datDir, '2010', state,
+                        '--stage', String(c.stage), '--shot', String(c.shot), '--season', String(c.season),
+                        '--difficulty', String(c.difficulty),
+                        '--lives', '8', '--refill-lives', '--input', '0:0', '--enemies',
+                        '--draw', '--draw-out', oracleDraw, '--draw-from', '2000'],
+                   {stdio: ['ignore', 'ignore', 'pipe']});
+      execFileSync(harness, ['game-draw', dat, String(c.stage), String(c.shot), String(c.season), '2010', '0:0', '', '',
+                             String(c.difficulty), '-1', '8', '1', '0', portDraw, '2000'],
+                   {stdio: ['ignore', 'ignore', 'pipe']});
+      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '2000-2009', '--eps', '1e-4'],
+                                    {encoding: 'utf8'});
+      process.stdout.write(compared);
+      assert.match(compared, /frames=10 mismatches=0/,
+                   `idle2000 stage ${c.stage} shot ${c.shot} season ${c.season} difficulty ${c.difficulty}`);
+    } finally {
+      rmSync(dir, {recursive: true, force: true});
+    }
+  }
+});
+
 test('stage 1–6 four shots spring four difficulties: frames 590–599 match original vertices', needDat, () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
