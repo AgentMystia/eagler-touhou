@@ -3,6 +3,7 @@
 Hidden Star in Four Seasons v1.00a 的网页移植：C++17 / SDL3 / GLES 3.0 / Emscripten。还原方式是**行为还原**——以 Ghidra 对 `th16.exe` 的反编译导出为唯一依据，目标是“稳定输入 → 原版输出 = 还原输出”（行为与画面）。
 
 - 开发入口：[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
+- 逐项适配检查：[ADAPTATION.md](ADAPTATION.md)
 - 反编译分区与地址锚点：[docs/DECOMP.md](docs/DECOMP.md) · [web/cpp/rebuild/AddressMap.hpp](web/cpp/rebuild/AddressMap.hpp)
 - 资源与格式：[docs/ASSETS.md](docs/ASSETS.md)
 - 路线图与里程碑：[docs/plans/roadmap.md](docs/plans/roadmap.md)

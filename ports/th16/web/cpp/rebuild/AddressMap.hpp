@@ -294,7 +294,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"spellcard-end", 0x4182F0, "game/Spellcard.cpp Spellcard::end（Stage 绘制位、名牌中断 1、背景 / 倒计时 VM 删、Gui 计时中断 3、取得 → 0x43e080 加分 + 0x42bcf0(bonus,0) + 音效 0x2e；失败 → 0x42bcf0(0,1)；超时音效 0x45）"},
     {"spellcard-ecl-start-op", 0x41DCB0, "game/Enemy.cpp Enemy::execute case 522/528/537..539（case 0x43：指令偏移 32 处 XOR 解密符卡名（key 0x77 步 7 / +0x10）、537..539 加难度偏移、life_flags |= 1 与 7 倍血量池）"},
     {"spellcard-gui-timer-start", 0x4175D0, "game/Spellcard.cpp Spellcard::start → Gui::set_boss_timer_style(Spell)（计时数字中断 2）"},
-    {"spellcard-gui-timer-end", 0x417650, nullptr},    // 同上中断 3
+    {"spellcard-gui-timer-end", 0x417650, "game/Spellcard.cpp Spellcard::end → Gui::set_boss_timer_style(Normal)（计时数字中断 3）"},
     {"spellcard-timing", 0x417BC0, "game/Spellcard.cpp Spellcard::tick_realtime（墙钟取得用时 → +0x90 / +0xa4；记录局 record_time → ReplayRecording::set_spell_time 写本关段头 +0x240 + 计次×4，回放局 replay_time → GameSession::replay_spell_time_ 读回；oracle 不跑主循环，恒 0）"},
     {"spellcard-time-check", 0x417530, "game/Spellcard.cpp Spellcard::spell_time_invalid（+0xa4 校验：/100000 − 0x16 ≠ 秒解码 + 百分秒解码 → 回放读回值改 0x6ad1584）"},
     {"spellcard-draw", 0x417D70, "game/Spellcard.cpp Spellcard::draw_text（绘制链 0xc：名牌 VM 透明度、字体 2 组 2；奖励 \"%8d\" / 已失 \"$\"；取得 / 挑战 \"%.2d/%.2d\"、≥100 次 \"99+\" / \"MASTER\"）"},
@@ -379,16 +379,16 @@ constexpr AddressAnchor kAnchors[] = {
     {"compositor-render-targets", 0x43D970, "sdl/GraphicsDevice.cpp（text.anm '@R' 项 2 / 3 建渲染目标纹理；RecordingDevice 以 [0,2] / [0,3] 记目标）"},
     {"screen-fade-in-step", 0x45C630, "game/ScreenEffect.cpp screen_fade_in_step（kind 0 / 3：alpha = 255 − t·255/duration 钳 ≥ 0，无条件推进计时，t ≥ duration 自删；0x409f90 切关淡入用 kind 3 色 0）"},
     {"stage-bg-color", 0x40B3B0, "game/Stage.cpp StageManager::step_script ins 13（DAT_004c1b0c → ScreenCompositor::background_color；0x42d200 析构时回到黑 / 快速重开透明黑）"},
-    // —— 已定位，待还原 ——
+    // —— Stage 绘制余项与画面合成 ——
     {"stage-draw-foreground", 0x40A410, "game/Stage.cpp StageManager::draw_foreground（绘制链 6：ANM 层 0x20 / 0x21 用 3D 相机、层 8..11、结束计时 end_timer_step）"},
     {"stage-frustum-cull", 0x40A7D0, "game/Stage.cpp StageManager::instance_visible（距离平方 > +0x331c 剔除；16 个包围点 D3DXVec3ProjectArray 后与场地 384×448 ±8 比较）"},
     {"stage-distortion", 0x40C4A0, "game/Stage.cpp StageManager::update_distortion（STD ins 17 畸变网格：种类 1 场地底部 384×128 七行波纹，符卡中冻结；种类 2 透镜；绘制走钩子 4 与 Boss 光环同路）"},
-    {"stage-effect-fade", 0x43D140, nullptr}, // 绘制链 1：清后台缓冲、RT DAT_004c127c、场地矩形清色 DAT_004c1b0c
-    {"rt-composite", 0x43D2F0, nullptr},     // 绘制链 0xf：RT 精灵 VM 0x4c128c 合成到后台缓冲（当前以视口裁剪 + x−96 代替）
-    {"player-body-collide", 0x4439E0, nullptr}, // 敌机与自机身体体术碰撞（0x41c330 下半段）
-    {"effect-attach", 0x418AF0, nullptr},    // ins_508：EffectManager（DAT_004a6db8）按效果种类表 DAT_004a2250 挂 update/draw 回调（effect.anm 155–196 依赖）
-    {"effect-ring-update", 0x405700, nullptr}, // 效果种类 1 的 update 回调（DAT_004919e8[2]）：环形顶点缓冲 + 生成 effect.anm 0x99
-    {"anm-load-file", 0x46D020, nullptr},    // AnmManager::load_file(slot, name)：从档案读 .anm 并进 bank（同步等待装载线程）
+    {"stage-effect-fade", 0x43D140, "game/ScreenCompositor.cpp ScreenCompositor::pass_begin_frame（绘制链 1：清后台缓冲 → 切 RT1 DAT_004c127c → 按渲染目标相机视口以 DAT_004c1b0c 清场地 → AnmRenderer::reset_state_cache → UI 相机）"},
+    {"rt-composite", 0x43D2F0, "game/ScreenCompositor.cpp ScreenCompositor::pass_copy_rt1_to_rt2（绘制链 0xf：合成 VM DAT_004c128c 把 RT1 画进 RT2，渲染目标相机，再画图层 0x22）"},
+    {"player-body-collide", 0x4439E0, "game/Player.cpp Player::collide_body（敌机与自机身体碰撞，0x41c330 下半段：0 未触 / 1 被弹 / 2 擦弹圈内）"},
+    {"effect-attach", 0x418AF0, "game/Effect.cpp EffectManager::attach（ins_508：按效果种类表 DAT_004a2250 挂 update / draw 回调，effect.anm 155–196 依赖）"},
+    {"effect-ring-update", 0x405700, "game/Effect.cpp EffectManager::ring_update（效果种类 1 的 update 回调 DAT_004919e8[2]：环形顶点缓冲 + 生成 effect.anm 0x99；光点全部消亡返回 -1）"},
+    {"anm-load-file", 0x46D020, "game/GameSession.cpp GameSession::create_stage 等（AnmManager::load_file(slot, name)：从档案读 .anm 并进 bank；槽已装着同一文件时沿用；移植为同步装载）"},
     {"anm-draw-mode6", 0x466820, nullptr},  // mode 6：0x466390 投影后再按相机距离改写雾色。54 个 .anm 的 ins_302 无参数 6，数据不可达，不移植
     // —— 绘制钩子表 DAT_00491b2c（draw_vm 可见性检查之前按 vm.draw_callback 分派）——
     {"anm-draw-hook-burst", 0x406860, "game/AnmRenderer.cpp AnmRenderer::draw_burst_lines（钩子 3：EffectManager::burst_geometry 取 64 点折线 + 顶点色，0x469890 出批后以无贴图 XYZRHW|DIFFUSE 线带绘制 count−1 段；count < 1 时原版的 −1 段 DrawPrimitiveUP 被设备拒绝，这里直接不画）"},
@@ -464,7 +464,7 @@ constexpr AddressAnchor kAnchors[] = {
     {"replay-save", 0x448400, "game/ReplayRecording.cpp write_slot / ReplayFile::encode（LZSS+双重加密+USER 尾）"},
     {"replay-slot-header", 0x447EF0, "game/ReplayRecording.cpp slot_summary（GameMenu DiskReplayStore）"},
     {"ver-file", 0x43B480, nullptr},         // th16_%.4x%c.ver
-    {"music-fmt", 0x43AEAE, nullptr},        // ../../bgm/thbgm.fmt
+    {"music-fmt", 0x43AEAE, "game/GameSession.cpp GameSession::begin_boot（thbgm.fmt → MusicManager::load_table；缺失时查表落到首曲）"},
     // —— EffectManager（DAT_004a6db8）——
     {"effect-manager-create", 0x418A30, "game/Effect.cpp EffectManager::create（0x4187d0 装 bullet.anm 槽 7 / effect.anm 槽 8；更新链 0x1f）"},
     {"effect-manager-sweep", 0x418AB0, "game/Effect.cpp EffectManager::sweep"},

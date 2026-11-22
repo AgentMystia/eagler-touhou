@@ -91,15 +91,15 @@ python3 tools/oracle/draw-compare.py /tmp/st1.draw.jsonl /tmp/st1.port.jsonl --f
 前四个顶点；oracle 侧每项带 `[0x地址]`，即 DrawPrimitiveUP 发生时正在运行的绘制链回调（0x4015a0 链游标处的钩子记录），
 因为批量顶点是惰性出批，归因可能落到下一条链。移植版再配 `TH16_DUMP_LAYERS=<帧>` 把该帧各图层链上的 VM
 （槽 / 脚本 / 精灵及其来源槽 / 渲染模式 / 位置 / 颜色 / 标志）打印到 stderr，逐 VM 对账。
-尚未移植的子系统用 `--skip-textures 2`（AnmFile 槽号，2 = ascii.anm 文字）在两侧同时剔除其绘制，其余操作就能逐条对位；
+需要排除的子系统用 `--skip-textures 2`（AnmFile 槽号，2 = ascii.anm 文字）在两侧同时剔除其绘制，其余操作就能逐条对位；
 不能按链地址剔除，因为链回调里的出批会把上一层的残批记在它名下。注意被剔除的子系统若切相机（如 AsciiManager 的
 0x408ef0 切到场地相机再切回 UI 相机），紧随其后出批的那条绘制在移植版会记到不同的视口，这类差异要等该子系统移植后才消失。
 
 回归守护在 `tests/draw.test.mjs`：原版流经 `draw-compare.py <oracle.jsonl> - --structure-golden tests/golden/draw-st1.json --frames a-b`
 折叠成每帧一条 sha1（口径 = `structure_lines`：目标 / 视口 / 图元 / 格式 / 纹理 / 状态子集，**不含顶点与矩阵**），测试跑 `game-draw` 后按同一口径复算；原版 jsonl 本身（数十 MB）不入库。
-顶点级对拍仍用上面的 `--eps` 命令手工做。场景里还有未移植子系统时加 `--only-textures 7`：摘要只含用该 AnmFile 槽贴图的绘制
+顶点级对拍仍用上面的 `--eps` 命令手工做。要让黄金只守一个管理器时加 `--only-textures 7`：摘要只含用该 AnmFile 槽贴图的绘制
 （Clear 一并丢弃），槽号写进 golden 的 `texture_slots`，测试侧按同一过滤复算——`draw-st3-curve-laser.json` 等激光黄金就是这样
-只守 bullet.anm（弹幕 + 激光），不被同场景尚未移植的 Boss 畸变光环 / 特效条带 / Boss 血环拖住。golden 的 `config.replay_slot`
+只守 bullet.anm（弹幕 + 激光），不受同场景的 Boss 畸变光环 / 特效条带 / Boss 血环影响。golden 的 `config.replay_slot`
 （默认 −1）用于符卡练习槽直入。
 
 `scene-boot` / `anm-draw` 也经 RecordingDevice 输出可读的 `quad` 行（屏幕四边形直接取顶点，世界四边形按 world·view·projection 投影并算线性顶点雾）。XYZRHW 顶点不经 TnL，原版从不关 TEXTURETRANSFORMFLAGS 而移植版对屏幕批显式关掉，draw-compare 对屏幕格式不比较该位。
