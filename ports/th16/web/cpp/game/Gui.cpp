@@ -601,8 +601,8 @@ void Gui::execute(Msg& m, const MsgInstruction& ins, float game_speed) {
     case 13:
         anm.interrupt_now(m.portrait_vm, a0 + 0x11);
         break;
-    case 14:
-        anm.interrupt_now(m.face_vms[a1 & 3], a0 + 0x11);
+    case 14:  // Boss 立绘 index a1 换表情：槽下标不做掩码，a1 ≥ 4 时落到文字等 VM 槽（0x42aff8）
+        anm.interrupt_now(m.slot_vm(a1), a0 + 0x11);
         break;
     case 15: {
         const std::string text = decrypt_text(ins.data);

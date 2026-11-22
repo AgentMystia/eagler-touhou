@@ -91,6 +91,16 @@ struct Msg {
     struct TextRequest { u32 vm_id; std::string text; u32 color; u32 shadow_color; i32 font; i32 x; i32 y; };
     std::vector<TextRequest> text_requests;
 
+    // 0x42aff8（对话指令 14）：按参数直接取 +0x44 起的第 index 个 VM 槽，不做掩码——index 4 起依次落到 frame_vm、
+    // text_vms、name_vm、box_vm（第 5 面对话用了 index 8，即 text_vms[3]）。负下标与 11 以外在本作脚本里不出现，夹到端点槽
+    u32& slot_vm(int index) noexcept {
+        if (index <= 0) return face_vms[0];
+        if (index < 4) return face_vms[index];
+        if (index == 4) return frame_vm;
+        if (index < 9) return text_vms[index - 5];
+        if (index == 9) return name_vm;
+        return box_vm;
+    }
     const MsgInstruction* ins() const noexcept { return reinterpret_cast<const MsgInstruction*>(pc); }
     i32 iarg(int i) const noexcept;
     float farg(int i) const noexcept;
