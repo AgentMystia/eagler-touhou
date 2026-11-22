@@ -16,11 +16,18 @@
         写成 tests/golden 用的 JSON；tests/draw.test.mjs 用同一口径（structure_lines）对移植版复算。
         --only-textures 把摘要限定在用这些 AnmFile 槽贴图的绘制操作（Clear 一并丢弃），并把槽号列表写进 golden 的
         texture_slots，供在其它子系统尚未对齐的场景里单独守住一个管理器（如 7 = bullet.anm：弹幕与激光）
+    draw-compare.py <raw.jsonl> - --digest <out.jsonl>
+        整段摘要：原始流（原版或移植侧格式）→ 每帧一行 {"frame","ops","s","v","a","b"}（口径见 frame_digests）。
+        原版长程用 game-oracle.py --draw --draw-digest 直接在回放里出摘要，不必落原始流
+    draw-compare.py <oracle.digest.jsonl> <port.digest.jsonl> --compare-digests [--segment 600] [--golden-segments out.json]
+        逐帧比摘要：结构相同且顶点在量化网格 a 或 b 之一同格即通过；通过的帧按网格折成段，
+        --golden-segments 写出 tests/golden/draw-long.json 用的段表（tests/draw-long.test.mjs 对移植侧复算）
 退出码：0 全部一致；1 有差异；2 输入问题。
 """
 import argparse
 import hashlib
 import json
+import math
 import struct
 import sys
 
@@ -251,6 +258,156 @@ def structure_digest(ops, texture_slots=None):
     return hashlib.sha1('\n'.join(structure_lines(ops)).encode()).hexdigest()
 
 
+# ---- 整段摘要：每帧把操作流压成几条 sha1，两侧在各自进程里算，只交换摘要 ----
+# 原始绘制流每帧可达数百 KB，整段落盘不可行；原版 x87 与移植版 SSE 在个别顶点差 1 ulp，又不能直接比位。
+# 所以每帧出四条：s = 结构（structure_lines），v = 位级顶点与矩阵，a / b = 量化网格 a / b。
+# 量化：浮点字按二进制档位取格宽 cell = QUANT_EPS × 2^max(0, E - 127)（E 为指数位），格号 floor((|v| + half·cell) / cell)；
+# 网格 a 的 half = 0，网格 b 的 half = 0.5。两值相差不超过一格时至少在一张网格里同格。两侧（本文件 / tools/draw-structure.mjs）
+# 都只用位运算与二进制精确的乘除，不调 libm，记号逐字一致。
+QUANT_EPS = 1e-4
+
+
+def quant_token(value, bits, half):
+    magnitude = abs(value)
+    exponent = (bits >> 23) & 0xff
+    if exponent == 0xff:
+        return 'n%08x' % bits if bits & 0x7fffff else ('-' if value < 0.0 else '') + 'inf'
+    cell = QUANT_EPS if exponent < 128 else math.ldexp(QUANT_EPS, exponent - 127)
+    return ('-' if value < 0.0 else '') + str(exponent) + ':' + str(int(math.floor((magnitude + cell * half) / cell)))
+
+
+def _float_mask(layout):
+    per, float_idx = LAYOUT_WORDS.get(layout, (1, ()))
+    return [i % per in float_idx for i in range(per)]
+
+
+def _word_tokens(words, mask, half):
+    if not any(mask):
+        return ','.join(map(str, words))
+    picks = [i for i in range(len(words)) if mask[i % len(mask)]]
+    floats = struct.unpack('<%df' % len(picks), struct.pack('<%dI' % len(picks), *[words[i] for i in picks]))
+    tokens = [str(w) for w in words]
+    for i, value in zip(picks, floats):
+        tokens[i] = quant_token(value, words[i], half)
+    return ','.join(tokens)
+
+
+def _op_tails(op):
+    """绘制操作在结构行之后追加的部分（位级 / 网格 a / 网格 b 三份）：顶点字，世界格式再加 world / view / projection（与纹理矩阵）。"""
+    mask = _float_mask(op['layout'])
+    matrices = [name for name in ('world', 'view', 'projection', 'textureMatrix') if name in op]
+    exact = '|' + '|'.join([','.join(map(str, op['words']))] + [name[0] + ','.join(map(str, op[name])) for name in matrices])
+
+    def tail(half):
+        parts = [_word_tokens(op['words'], mask, half)]
+        for name in matrices:
+            parts.append(name[0] + _word_tokens(op[name], [True], half))
+        return '|' + '|'.join(parts)
+    return [exact, tail(0.0), tail(0.5)]
+
+
+def frame_digests(ops):
+    """{"frame" 之外的字段：ops = 操作数，s / v / a / b = 四条 sha1（见上）。ops 可含移植侧的 target / viewport 记录。"""
+    ops = [op for op in ops if op['op'] in ('clear', 'draw')]
+    lines = structure_lines(ops)
+    digests = {'ops': len(ops), 's': hashlib.sha1('\n'.join(lines).encode()).hexdigest()}
+    tails = [('|', '|', '|') if op['op'] == 'clear' else _op_tails(op) for op in ops]
+    for column, grid in enumerate('vab'):
+        digests[grid] = hashlib.sha1('\n'.join(line + tail[column] for line, tail in zip(lines, tails)).encode()).hexdigest()
+    return digests
+
+
+def digest_record(rec, st):
+    """一行原始流 → 一行摘要。原版流（有 calls）先经 st 折叠；移植侧直接取 ops。"""
+    if 'calls' not in rec:
+        return dict(frame=rec['frame'], **frame_digests(rec['ops']))
+    for call in rec.get('prefix', []):
+        st.apply(call)
+    return dict(frame=rec['frame'], **frame_digests(st.fold(rec['calls'])))
+
+
+def load_digests(path):
+    rows = {}
+    with open(path) as f:
+        for line in f:
+            if line.strip():
+                rec = json.loads(line)
+                rows[rec['frame']] = rec
+    return rows
+
+
+def segment_digest(rows, frames, grid):
+    return hashlib.sha1('\n'.join('%d|%s|%s' % (frame, rows[frame]['s'], rows[frame][grid]) for frame in frames).encode()).hexdigest()
+
+
+def compare_digests(oracle, port, segment, max_report):
+    """逐帧：s 相同且（a 同格或 b 同格）即通过；grid 记通过所用的网格（两张都同记 a）。
+    连续同网格的帧折成一段，每段至多 segment 帧，段摘要进 golden（tests/draw-long.test.mjs 对移植侧复算）。"""
+    frames = sorted(set(oracle) & set(port))
+    missing = sorted(set(oracle) ^ set(port))
+    segments, run = [], []
+    bad = {'structure': [], 'vertices': []}
+    identical = quantized = 0
+    for frame in frames:
+        o, p = oracle[frame], port[frame]
+        if o['s'] != p['s']:
+            bad['structure'].append(frame)
+            grid = None
+        elif o['v'] == p['v']:
+            grid, identical = 'a', identical + 1
+        elif o['a'] == p['a']:
+            grid, quantized = 'a', quantized + 1
+        elif o['b'] == p['b']:
+            grid, quantized = 'b', quantized + 1
+        else:
+            bad['vertices'].append(frame)
+            grid = None
+        if grid is None:
+            if run:
+                segments.append(run)
+                run = []
+            continue
+        if run and (run[-1][1] != grid or len(run) >= segment):
+            segments.append(run)
+            run = []
+        run.append((frame, grid))
+    if run:
+        segments.append(run)
+    report = ['frames=%d bit-identical=%d quantized=%d structure-differs=%d vertices-differ=%d only-one-side=%d'
+              % (len(frames), identical, quantized, len(bad['structure']), len(bad['vertices']), len(missing))]
+    for kind, label in (('structure', 'structure differs'), ('vertices', 'vertices differ beyond one grid cell')):
+        if bad[kind]:
+            report.append('%s on frames %s%s' % (label, bad[kind][:max_report], ' …' if len(bad[kind]) > max_report else ''))
+    if missing:
+        report.append('frames recorded on one side only: %s%s' % (missing[:max_report], ' …' if len(missing) > max_report else ''))
+    golden = [[run[0][0], run[-1][0], run[0][1], segment_digest(oracle, [f for f, _ in run], run[0][1])] for run in segments]
+    return report, golden, not bad['structure'] and not bad['vertices'] and not missing
+
+
+def write_digests(path, out_path):
+    """原始流（原版或移植侧格式，逐行）→ 每帧一行摘要。原版流的折叠状态跨帧连续。"""
+    st, count = OracleState(), 0
+    with open(path) as src, open(out_path, 'w') as dst:
+        for line in src:
+            if not line.strip():
+                continue
+            dst.write(json.dumps(digest_record(json.loads(line), st), separators=(',', ':')) + '\n')
+            count += 1
+    print('digests: %d frames → %s' % (count, out_path))
+    return 0
+
+
+def compare_digest_files(oracle_path, port_path, segment, max_report, golden_path):
+    report, golden, ok = compare_digests(load_digests(oracle_path), load_digests(port_path), segment, max_report)
+    print('\n'.join(report))
+    if golden_path:
+        with open(golden_path, 'w') as f:
+            json.dump({'segment': segment, 'segments': golden}, f, separators=(',', ':'))
+            f.write('\n')
+        print('segments: %d → %s' % (len(golden), golden_path))
+    return 0 if ok else 1
+
+
 def describe(op):
     if op['op'] == 'clear':
         return 'clear flags=%d color=%08x rect=%s target=%s' % (op['flags'], op['color'], op['rect'], op['target'])
@@ -339,7 +496,15 @@ def main():
     ap.add_argument('--structure-golden', default='', help='只读原版流，写出每帧结构摘要 JSON（见模块说明）')
     ap.add_argument('--only-textures', default='',
                     help='--structure-golden 用：逗号分隔的 AnmFile 槽号，摘要只含用这些槽贴图的绘制操作')
+    ap.add_argument('--digest', default='', help='原始流（第一个参数，原版或移植侧格式）→ 每帧一行摘要，写到该路径')
+    ap.add_argument('--compare-digests', action='store_true', help='两个输入都是 --draw-digest / --digest 的摘要流')
+    ap.add_argument('--segment', type=int, default=600, help='--compare-digests：每段至多多少帧（默认 600）')
+    ap.add_argument('--golden-segments', default='', help='--compare-digests：把通过帧的段表写到该路径')
     a = ap.parse_args()
+    if a.digest:
+        return write_digests(a.oracle, a.digest)
+    if a.compare_digests:
+        return compare_digest_files(a.oracle, a.port, a.segment, a.max_report, a.golden_segments)
     ignore_state = set(filter(None, a.ignore_state.split(',')))
     skip_textures = {int(x, 0) for x in filter(None, a.skip_textures.split(','))}
 

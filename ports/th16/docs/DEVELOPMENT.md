@@ -105,6 +105,29 @@ python3 tools/oracle/draw-compare.py /tmp/st1.draw.jsonl /tmp/st1.port.jsonl --f
 
 `scene-boot` / `anm-draw` 也经 RecordingDevice 输出可读的 `quad` 行（屏幕四边形直接取顶点，世界四边形按 world·view·projection 投影并算线性顶点雾）。XYZRHW 顶点不经 TnL，原版从不关 TEXTURETRANSFORMFLAGS 而移植版对屏幕批显式关掉，draw-compare 对屏幕格式不比较该位。
 
+### 整段绘制对拍
+
+窗口对拍每次都要让原版从第 0 帧跑到窗口起点，约 30 帧/秒；整关、整局的覆盖改为一次回放比完整段。两侧在各自进程里把每一帧的操作流折成四条 sha1，只交换摘要（`tools/draw-structure.mjs` 的 `frameDigests`，与 `tools/oracle/draw-compare.py` 的 `frame_digests`、`tests/harness/DrawDigest.hpp` 逐字一致）：
+
+- `s`：结构，即 `structure_lines`。
+- `v`：位级顶点字与世界矩阵。
+- `a` / `b`：量化顶点。浮点字按二进制档位取格宽 `1e-4 × 2^max(0, 指数位 − 127)`，格号 `floor((|v| + half·格宽) / 格宽)`；网格 a 的 half 为 0，网格 b 为 0.5。原版 x87 与移植版 SSE 的 1 ulp 差在至少一张网格里同格，等价于窗口对拍的 `--eps 1e-4`。
+
+```bash
+# 原版：--draw-ops - 把折叠后的逐帧操作流写上标准输出，交给 Node 折摘要（重弹幕帧上 Python 逐字折要慢一个量级）
+toolchains/venv/bin/python ports/th16/tools/oracle/game-oracle.py games/th16/original/th16.exe artifacts/th16/dat 23000 \
+    /tmp/st1.json --stage 1 --shot 0 --season 0 --difficulty 0 --lives 8 --refill-lives --input 0:0 --every 1000000 \
+    --draw --draw-ops - 2> /tmp/st1.oracle.log | node ports/th16/tools/draw-digest.mjs - /tmp/st1.oracle.digest.jsonl
+# 移植版：harness 内直接折（输出路径写成 digest:<dst>；dst 可为 fd:<n>）
+tests/build/harness game-draw ../../games/th16/original/th16.dat 1 0 0 23000 "0:0" "" "" 0 -1 8 1 0 digest:/tmp/st1.port.digest.jsonl 1
+# 逐帧比摘要：结构相同且顶点在网格 a 或 b 之一同格即通过；--golden-segments 把通过帧按网格折成段表
+python3 tools/oracle/draw-compare.py /tmp/st1.oracle.digest.jsonl /tmp/st1.port.digest.jsonl --compare-digests --golden-segments /tmp/st1.segments.json
+```
+
+报告行给出位级一致帧数、同格帧数、结构不同的帧与越格的帧。整段跑出差异时，用上面的窗口对拍定位到具体操作：原版补跑一次 `--draw-out`，窗口取报告里的首个差异帧。`TH16_DIGEST_DUMP=<帧>` 让 digest 模式把该帧的结构行写到 stderr，用于核对三处实现。
+
+回归守护在 `tests/draw-long.test.mjs`：`tests/golden/draw-long.json` 每个用例是一组参数加段表（段 = 起帧、止帧、网格、段摘要），测试只跑移植侧，各用例并发；另有两个自检用例拿同一段跑的原始 JSON 走 `tools/draw-structure.mjs`，要求与 harness 内折出的摘要逐帧相同。
+
 ## 页面壳
 
 `web/sdl-runtime/th16-dev.html` 把 `assets/th16.dat` 整档 fetch 进 MEMFS `/assets/th16.dat`，C++ `Archive` 按名解密/LZSS 解码——与原版读档路径同构，不预解包。`python3 web/sdl-runtime/serve.py` 提供 no-store 服务。观测面：`mod._th16_frame()`、`mod._th16_phase()`、`mod._th16_audio_status()`。

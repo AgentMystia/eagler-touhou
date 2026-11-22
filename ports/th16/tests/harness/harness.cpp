@@ -75,6 +75,7 @@
 #include "../../web/cpp/game/Std.hpp"
 #include "../../web/cpp/game/Supervisor.hpp"
 #include "RecordingDevice.hpp"
+#include "DrawDigest.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -1072,13 +1073,27 @@ int main(int argc, char** argv) {
         // 输入脚本语义与 game-oracle --input 相同：第 f 帧（0 起）起 held 持续到下一事件。
         // enemies/dialogue 为其它管理器未移植时的 PlayerWorld 外部输入（oracle 快照 enemy_count / dialogue 字段）。
         const bool digest_only = command == "game-digest";
-        // game-draw：与 game-run 同参，另加第 16/17 参 <out.jsonl> [from_frame]；跑绘制链并把每帧设备调用写成 JSON 行
+        // game-draw：与 game-run 同参，另加第 16/17 参 <out.jsonl> [from_frame]；跑绘制链并把每帧设备调用写成 JSON 行。
+        // <out.jsonl> 的两种写法：
+        //   "digest:<dst>"  每帧一行整段摘要（DrawDigest.hpp，tools/oracle/draw-compare.py frame_digests 同口径；tests/draw-long.test.mjs）
+        //   "fd:<n>"        直接使用继承来的文件描述符（两种行格式都可，经管道流式读，整段不落盘）
         const bool draw_mode = command == "game-draw";
         std::FILE* draw_out = nullptr;
+        bool digest_mode = false;
         int draw_from = 1;
         if (draw_mode) {
             if (argc < 16) return fail("game-draw needs <out.jsonl>");
-            draw_out = std::fopen(argv[15], "w");
+            const char* destination = argv[15];
+            if (std::strncmp(destination, "digest:", 7) == 0) {
+                digest_mode = true;
+                destination += 7;
+            }
+#if defined(__wasi__)
+            draw_out = std::fopen(destination, "w");
+#else
+            if (std::strncmp(destination, "fd:", 3) == 0) draw_out = fdopen(std::atoi(destination + 3), "w");
+            else draw_out = std::fopen(destination, "w");
+#endif
             if (draw_out == nullptr) return fail("cannot open draw output");
             if (argc >= 17) draw_from = std::atoi(argv[16]);
         }
@@ -1304,7 +1319,15 @@ int main(int argc, char** argv) {
             trace_state.current = f + 1;
             device.begin_frame();
             if (!session.logic_step()) return fail(session.failure.c_str());
-            if (draw_out != nullptr && f + 1 >= draw_from) device.write_frame(draw_out, f + 1);
+            if (draw_out != nullptr && f + 1 >= draw_from) {
+                if (digest_mode) write_digest_line(draw_out, f + 1, device.ops);
+                else device.write_frame(draw_out, f + 1);
+            }
+            // TH16_DIGEST_DUMP=<frame>（1 起）：digest 模式下把该帧的结构行写到标准误（DrawDigest.hpp，口径排查用）
+            if (digest_mode) {
+                if (const char* dump = std::getenv("TH16_DIGEST_DUMP"); dump != nullptr && std::atoi(dump) == f + 1)
+                    dump_structure_lines(stderr, device.ops);
+            }
             // TH16_DUMP_LAYERS=<frame>（1 起）：该帧绘制后把各层的 VM 列到 stderr（层 / 槽 / 脚本 / 精灵 / 渲染模式 / 位置 /
             // 颜色 / 标志），用于和 oracle 的 draw 记录逐 VM 对账
             if (dump_layers_frame == f + 1) {

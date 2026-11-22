@@ -34,6 +34,9 @@ Oracle = anm_oracle.Oracle
 spec_d3d = importlib.util.spec_from_file_location('d3d_recorder', HERE / 'd3d-recorder.py')
 d3d_recorder = importlib.util.module_from_spec(spec_d3d)
 spec_d3d.loader.exec_module(d3d_recorder)
+spec_compare = importlib.util.spec_from_file_location('draw_compare', HERE / 'draw-compare.py')
+draw_compare = importlib.util.module_from_spec(spec_compare)
+spec_compare.loader.exec_module(draw_compare)
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import UC_X86_REG_XMM2, UC_X86_REG_EAX, UC_X86_REG_ECX, UC_X86_REG_EDX, UC_X86_REG_ESI, UC_X86_REG_EDI, UC_X86_REG_ESP, UC_X86_REG_EIP
 
@@ -1705,6 +1708,12 @@ def main():
     ap.add_argument('--draw', action='store_true', help='每帧按 0x45a8a0 顺序跑绘制链 0x4015a0，D3D 设备调用由 d3d-recorder.py 记录')
     ap.add_argument('--draw-out', default='', help='--draw 的设备调用流输出（JSON Lines，每帧一行；默认 <out>.draw.jsonl）')
     ap.add_argument('--draw-from', type=int, default=1, help='--draw 只记录帧号 ≥ 此值的帧（1 起）')
+    ap.add_argument('--draw-digest', default='',
+                    help='--draw 的整段摘要（JSON Lines，每帧一行 {"frame","ops","s","v","a","b"}，口径见 draw-compare.py frame_digests）：'
+                         '回放里直接折叠出摘要，不必落原始流；--draw-from 之前的帧照常折叠以保持状态连续')
+    ap.add_argument('--draw-ops', default='',
+                    help='--draw：把折叠后的每帧操作流（与 harness game-draw 的原始 JSON 同形）写到该路径，"-" 为标准输出，'
+                         '供 node tools/draw-digest.mjs 经管道流式折摘要（比 --draw-digest 的 Python 折要快得多）')
     ap.add_argument('--enemies', action='store_true', help='每帧附敌人快照（EnemyManager 链表）')
     ap.add_argument('--bullets', action='store_true', help='每帧附敌弹快照（BulletManager 链表）')
     ap.add_argument('--items', action='store_true', help='每帧附道具快照（ItemManager 池）与得分/残机/得点值等资源全局')
@@ -1740,13 +1749,33 @@ def main():
         [(p, hex(cb)) for p, cb, _ in o.chain_list()], o.loaded_banks,
         {slot: hex(o.u32(o.manager + BANK_ARRAY + slot * 4)) for slot in o.loaded_banks}, o.device_calls), file=sys.stderr)
     events = parse_input(a.input)
-    draw_file = None
+    if (a.draw_digest or a.draw_ops) and not a.draw:
+        ap.error('--draw-digest / --draw-ops need --draw')
+    draw_file = ops_file = digest_file = None
+    # 摘要与折叠流都要求每帧连续折叠（状态跨帧连续），与 --draw-from 无关
+    fold_state = draw_compare.OracleState() if (a.draw_digest or a.draw_ops) else None
+    if a.draw_digest:
+        digest_file = open(a.draw_digest, 'w')
+    if a.draw_ops:
+        ops_file = sys.stdout if a.draw_ops == '-' else open(a.draw_ops, 'w')
     if a.draw:
-        draw_file = open(a.draw_out or (a.out + '.draw.jsonl'), 'w')
+        if a.draw_out or fold_state is None:
+            draw_file = open(a.draw_out or (a.out + '.draw.jsonl'), 'w')
         # --draw-from 之前的帧不输出，但其状态调用（rs/tss/ss/tex/fvf/xf/vp/rt）折叠成 prefix 随首个输出帧写出，
         # 让 draw-compare.py 从任意帧起步时仍知道生效状态
         carried = {}
         def write_draw_frame(frame, calls):
+            if fold_state is not None:
+                ops = fold_state.fold(calls)
+                if frame >= a.draw_from:
+                    if ops_file is not None:
+                        # 折叠后的操作流（与 harness game-draw 的原始 JSON 同形），供 node tools/draw-digest.mjs 流式折摘要：
+                        # Python 侧逐字折摘要在重弹幕帧上会把回放拖慢数倍
+                        ops_file.write(json.dumps({'frame': frame, 'ops': ops}, separators=(',', ':')) + '\n')
+                    if digest_file is not None:
+                        digest_file.write(json.dumps(dict(frame=frame, **draw_compare.frame_digests(ops)), separators=(',', ':')) + '\n')
+            if draw_file is None:
+                return
             if frame < a.draw_from:
                 for c in calls:
                     if c[0] in ('rs', 'fvf', 'rt', 'vp'):
@@ -1784,6 +1813,12 @@ def main():
             frames.append(o.snapshot())
     if draw_file is not None:
         draw_file.close()
+    if digest_file is not None:
+        digest_file.close()
+    if ops_file is not None:
+        ops_file.flush()
+        if ops_file is not sys.stdout:
+            ops_file.close()
     notes = [e for e in o.errors if not e.startswith('note')]
     pathlib.Path(a.out).write_text(json.dumps({'stage': a.stage, 'shot': a.shot, 'season': a.season, 'difficulty': a.difficulty,
                                                'input': a.input, 'scene_exit': o.scene_exit, 'exit_frame': o.frame if o.scene_exit is not None else None,
@@ -1794,6 +1829,7 @@ def main():
         pathlib.Path(a.trace_rng).write_text(json.dumps(o.rng_trace, separators=(',', ':')))
     if a.trace_vm:
         pathlib.Path(a.trace_vm).write_text(json.dumps(o.vm_trace, separators=(',', ':')))
+    # --draw-ops - 占用标准输出时，摘要行改走标准误
     print('game-oracle: %d frames → %s digest=%016x enemies=%016x enemy_vms=%016x bullets=%016x items=%016x spell=%016x lasers=%016x bombs=%016x menu=%016x sound=%016x errors=%s' % (
         a.frames, a.out, frame_digest(frames),
         enemy_digest(frames) if a.enemies else 0,
@@ -1805,7 +1841,7 @@ def main():
         bomb_digest(frames) if a.bombs else 0,
         menu_digest(frames),
         sound_digest(frames),
-        notes[:3]))
+        notes[:3]), file=sys.stderr if ops_file is sys.stdout else sys.stdout)
     return 0
 
 

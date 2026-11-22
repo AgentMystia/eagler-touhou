@@ -8,49 +8,16 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
+import {structureDigest} from '../tools/draw-structure.mjs';
 
 const here = resolve(import.meta.dirname);
 const monorepo = resolve(here, '../../..');
 const harness = process.env.TH16_HARNESS ?? resolve(here, 'build/harness');
 const dat = process.env.TH16_DAT ?? resolve(monorepo, 'games/th16/original/th16.dat');
 const needDat = {skip: !existsSync(dat) && 'original th16.dat not present'};
-
-const WORLD_LAYOUTS = new Set(['WorldUv', 'WorldColorUv']);
-const STRUCTURE_STATE_KEYS = ['depthTest', 'depthWrite', 'depthCompare', 'blend', 'srcBlend', 'dstBlend', 'blendOp',
-  'alphaTest', 'alphaRef', 'alphaCompare', 'fog', 'fogColor', 'textureFactor',
-  'colorOp', 'colorArg1', 'colorArg2', 'alphaOp', 'alphaArg1', 'alphaArg2', 'textureTransform',
-  'minFilter', 'magFilter', 'addressU', 'addressV', 'cull'];
-
-function structureLines(ops) {
-  const lines = [];
-  for (const op of ops) {
-    if (op.op !== 'clear' && op.op !== 'draw') continue;
-    const target = `${op.target[0]},${op.target[1]}`;
-    if (op.op === 'clear') {
-      const rect = op.rect === null ? '-' : op.rect.join(',');
-      lines.push(`C|${target}|${op.flags}|${op.color}|${rect}`);
-      continue;
-    }
-    const world = WORLD_LAYOUTS.has(op.layout);
-    const state = [];
-    for (const key of STRUCTURE_STATE_KEYS) {
-      if (key === 'textureTransform' && !world) continue;
-      state.push(String(op.state[key]));
-    }
-    lines.push(`D|${target}|${op.topology}|${op.layout}|${op.primitives}|${op.texture[0]},${op.texture[1]}|${op.viewport.join(',')}|${state.join(',')}`);
-  }
-  return lines;
-}
-
-// golden.texture_slots 存在时只摘要用这些 AnmFile 槽贴图的绘制操作（draw-compare.py --only-textures 同口径）
-function structureDigest(ops, textureSlots) {
-  if (textureSlots) ops = ops.filter(op => op.op === 'draw' && textureSlots.has(op.texture[0]));
-  return createHash('sha1').update(structureLines(ops).join('\n')).digest('hex');
-}
 
 // 跑 harness game-draw，返回 {frame: ops[]}（只保留 golden 里有的帧）
 function recordPort(golden, lastFrame, fromFrame) {
