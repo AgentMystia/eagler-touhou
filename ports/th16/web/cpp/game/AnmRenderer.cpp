@@ -325,8 +325,9 @@ int AnmRenderer::draw_screen_sprite(AnmVm& vm) {
 int AnmRenderer::draw_host_strip(AnmVm& vm, const ScreenColorUvVertex* vertices, u32 vertex_count) {
     if (device == nullptr) return -1;
     if ((vm.flags_lo & AnmVm::kVisible) == 0 || (vm.flags_lo & AnmVm::kFlag2) == 0 || vm.color[3] == 0) return -1;
-    // 原版不检查顶点数；条带不足一个三角形时 DrawPrimitiveUP 会被 D3D 拒绝，这里直接跳过
-    if (vertex_count < 3) return -1;
+    // 原版不检查顶点数：恰好两个顶点的条带（曲线激光首帧只有一个采样点，0x438750 末尾）照样设置状态并提交
+    // PrimitiveCount = 0 的绘制，设备调用流里留有这一笔；不足两个顶点的调用会被 D3D 整个拒绝，这里不出批
+    if (vertex_count < 2) return -1;
     flush();
     const AnmRuntimeSprite* sprite = sprite_of(vm);
     if (sprite != nullptr) bind_sprite_texture(*sprite);
