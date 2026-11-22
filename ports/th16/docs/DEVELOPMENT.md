@@ -20,6 +20,19 @@
 | thtk | 源码构建 | `thdat -x16` 解包、`thanm -l16/-x16`、`thecl -d16`、`thstd`、`thmsg` 对照 |
 | python venv | unicorn 2.1.4、capstone、pefile、pillow、numpy | `tools/oracle/*.py` |
 
+## 容器内开发
+
+上表工具链全部固定在 `container/Dockerfile`，本机不安装任何依赖：构建、oracle 与测试都在 `podman run --rm` 的临时容器中进行。仓库根挂载为 `/work`，容器退出即销毁；落在挂载卷里的只有 git 忽略的产物（`.cache/emscripten`、`artifacts/`、`ports/th16/tests/build/`、`ports/th16/web/artifacts/`）。镜像与 `ports/th13/container` 同构，相同阶段共享层缓存。
+
+```bash
+ports/th16/container/podman.sh bash ports/th16/tools/thtk-dumps.sh    # thtk 对照基准：artifacts/th16/{dat,dumps/anm}
+ports/th16/container/podman.sh bash -lc 'bash ports/th16/tests/run.sh'        # 首次运行自动构建镜像 th16-dev
+ports/th16/container/podman.sh bash -lc 'node ports/th16/web/scripts/cpp/analyze.mjs'
+ports/th16/container/podman.sh bash -lc 'cd ports/th16 && node portable/build.mjs && node portable/build-harness.mjs'
+```
+
+容器以仓库根为工作目录，镜像内已设好 `EMSDK`、`WASI_SDK_PATH`、`TH16_PYTHON`（`/opt/venv`）与 `TH16_DECOMP_TOOLS`（Ghidra 12.1.3 + JDK 21），thtk 各工具在 `PATH` 上。下文各命令在容器里运行时，去掉 `toolchains/venv/bin/python`、`EMSDK=`、`WASI_SDK_PATH=` 这几处前缀即可；原版文件仍放在 `games/th16/original/`。
+
 ## 构建
 
 ```bash
