@@ -308,6 +308,7 @@ bool Enemy::spawn(EclContext& source, i32 id, u32 skipped_arguments) {
     ctx->game_rng = rng;
     ctx->difficulty = source.difficulty;
     ctx->interpolation_rate = source.interpolation_rate;
+    ctx->live_rate = source.live_rate;
     ctx->thread_id = id;
     ctx->program = program;
     if (!source.instruction || !program) return false;
@@ -430,8 +431,19 @@ void Enemy::apply_default_death_effect() {
     death_anm_slot = 1;
 }
 
+float Enemy::live_speed(float fallback) const noexcept {
+    return manager != nullptr && manager->global_game_speed != nullptr ? *manager->global_game_speed : fallback;
+}
+
+const float* Enemy::live_speed_ptr(float& fallback) const noexcept {
+    return manager != nullptr && manager->global_game_speed != nullptr ? manager->global_game_speed : &fallback;
+}
+
 bool Enemy::update(float game_speed) {
     if (!alive) return false;
+    // 0x406190（计时推进）与 0x402ff0 / 0x403110（运动积分）每次都直接读全局速度 DAT_004a5788：本敌机的 ECL 547 之后
+    // 立刻是新值；ECL 步进 0x473bc0 的 elapsed 取调用当时的值。没有管理器（独立驱动）时用入口参数
+    const float* const live = live_speed_ptr(game_speed);
     // 0x41d2e0：若 0x40000 已置位则整帧跳过（生成后首个管理器回合只清标志）
     if ((flags & kFlagReentry) != 0) return true;
     flags |= kFlagReentry;
@@ -441,13 +453,13 @@ bool Enemy::update(float game_speed) {
     for (int slot = 0; slot < 2; ++slot) {
         MotionState& m = slot == 0 ? motion1 : motion2;
         if (angle_interp[slot].end_time != 0 && (m.mode & 0xf) != 2 && (m.mode & 0xf) != 3)
-            m.angle = wrap_angle(wrap_angle(step_interp_float(angle_interp[slot], game_speed)));
-        if (speed_interp[slot].end_time != 0) m.speed = step_interp_float(speed_interp[slot], game_speed);
+            m.angle = wrap_angle(wrap_angle(step_interp_float(angle_interp[slot], *live)));
+        if (speed_interp[slot].end_time != 0) m.speed = step_interp_float(speed_interp[slot], *live);
     }
     for (int slot = 0; slot < 2; ++slot) {
         MotionState& m = slot == 0 ? motion1 : motion2;
         if (radius_interp[slot].end_time != 0) {
-            const Vec2 r = step_interp_vec2(radius_interp[slot], game_speed);
+            const Vec2 r = step_interp_vec2(radius_interp[slot], *live);
             m.radius = r.x;
             m.radius_speed = r.y;
         }
@@ -455,17 +467,17 @@ bool Enemy::update(float game_speed) {
     for (int slot = 0; slot < 2; ++slot) {
         MotionState& m = slot == 0 ? motion1 : motion2;
         if (pos_interp[slot].end_time == 0) {
-            m.update_velocity(game_speed);
+            m.update_velocity(*live);
         } else {
-            const Vec3 target = step_pos_interp(pos_interp[slot], game_speed);
+            const Vec3 target = step_pos_interp(pos_interp[slot], *live);
             m.velocity.x = target.x - m.pos.x;
             m.velocity.y = target.y - m.pos.y;
             m.velocity.z = target.z - m.pos.z;
         }
     }
-    motion1.integrate(game_speed);
+    motion1.integrate(*live);
     // flags & 0x4000000：motion2.pos += DAT_004c140c..14（从未写入，恒 0）
-    motion2.integrate(game_speed);
+    motion2.integrate(*live);
     apply_motion_position();
 
     // 0x41bb50 尾：朝向切换 + 从主 VM 回读精灵宽高（+0x3f58/+0x3f5c，绑定前为 0），再判进入场地与出界销毁
@@ -480,31 +492,33 @@ bool Enemy::update(float game_speed) {
     }
 
     // 0x473bc0：先取下一节点再执行当前上下文——执行中头插的新线程（0x474430）本帧不跑
-    primary.interpolation_rate = game_speed;
+    primary.live_rate = live;
+    primary.interpolation_rate = *live;
     auto it = async_threads.begin();
-    int r = primary.step(game_speed);
+    int r = primary.step(*live);
     if (r == -2) { error = primary.error; alive = false; return false; }
     if (r == -1) { alive = false; return false; }
     while (it != async_threads.end()) {
         auto next = std::next(it);
         auto& t = *it;
         if (!t || t->instruction_offset < 0) { async_threads.erase(it); it = next; continue; }
-        t->interpolation_rate = game_speed;
-        const int ar = t->step(game_speed);
+        t->live_rate = live;
+        t->interpolation_rate = *live;
+        const int ar = t->step(*live);
         if (ar == -2) { error = t->error; alive = false; return false; }
         if (ar == -1) async_threads.erase(it);
         it = next;
     }
 
     if (frame_hook != FrameHook::None && run_frame_hook(frame_hook) != 0) { alive = false; return false; }
-    if (resolve_hits(game_speed) != 0) { alive = false; return false; }
-    update_distortion(game_speed);
+    if (resolve_hits(*live) != 0) { alive = false; return false; }
+    update_distortion(*live);
     sync_vm_offsets();
 
-    if (invuln.current > 0) invuln.untick(game_speed);
-    if (no_hit_timer.current > 0) no_hit_timer.untick(game_speed);
-    life_timer.tick(game_speed);
-    if (season_drop_timer.current > 0) season_drop_timer.untick(game_speed);
+    if (invuln.current > 0) invuln.untick(*live);
+    if (no_hit_timer.current > 0) no_hit_timer.untick(*live);
+    life_timer.tick(*live);
+    if (season_drop_timer.current > 0) season_drop_timer.untick(*live);
     // 注意：不在这里清除 kFlagReentry——由 EnemyManager::update 清除（对齐 0x41b3d0）
     return true;
 }
@@ -615,7 +629,7 @@ void Enemy::sync_sprite_direction() {
 //   4. 相位整体推进 π/16 × 速度 / π/32 × 速度。
 void Enemy::update_distortion(float game_speed) {
     // 0x41cbd0 的三处（+0x44c8 / +0x44d0 / +0x44d4）都直接读 DAT_004a5788：本敌机的 ECL 547 之后已是新值
-    const float live = manager != nullptr && manager->global_game_speed != nullptr ? *manager->global_game_speed : game_speed;
+    const float live = live_speed(game_speed);
     if (!distortion || manager == nullptr || manager->animations == nullptr) return;
     DistortionGrid& grid = *distortion;
     const float radius = distortion_radius;
@@ -872,8 +886,9 @@ bool Enemy::switch_routine(const std::string& sub, float game_speed) {
     async_threads.clear();
     if (routine < 0) { error = "missing interrupt sub " + sub; return false; }
     reset_context(primary, routine);
-    primary.interpolation_rate = game_speed;
-    const int r = primary.step(game_speed);
+    primary.live_rate = live_speed_ptr(game_speed);
+    primary.interpolation_rate = live_speed(game_speed);
+    const int r = primary.step(live_speed(game_speed));
     if (r == -2) { error = primary.error; return false; }
     return r == 0;
 }
@@ -1065,8 +1080,9 @@ void Enemy::die(float game_speed) {
         async_threads.clear();
         if (routine >= 0) {
             reset_context(primary, routine);
-            primary.interpolation_rate = game_speed;
-            primary.step(game_speed);
+            primary.live_rate = live_speed_ptr(game_speed);
+            primary.interpolation_rate = live_speed(game_speed);
+            primary.step(live_speed(game_speed));
         }
         death_sub.clear();
     }
@@ -1581,7 +1597,7 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             if (radius > kSentinel) m.radius = radius;
             if (radius_speed > kSentinel) m.radius_speed = radius_speed;
             m.mode = (m.mode & ~0xdu) | 2u;
-            sync_motion_center(m, ctx.interpolation_rate);
+            sync_motion_center(m, ctx.rate());
             apply_motion_position();
             return 0;
         }
@@ -1612,7 +1628,7 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             ri.goal = {radius, radius_speed};
             ri.timer.reset();
             m.mode = (m.mode & ~0xdu) | 2u;
-            sync_motion_center(m, ctx.interpolation_rate);
+            sync_motion_center(m, ctx.rate());
             apply_motion_position();
             return 0;
         }
@@ -1621,7 +1637,7 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             const float vx = farg(0), vy = farg(1);
             if (vx > kSentinel) m.velocity.x = vx;
             if (vy > kSentinel) m.velocity.y = vy;
-            sync_motion_center(m, ctx.interpolation_rate);
+            sync_motion_center(m, ctx.rate());
             apply_motion_position();
             return 0;
         }
@@ -1637,7 +1653,7 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             if (angle2 > kSentinel) m.angle2 = wrap_angle(wrap_angle(angle2));
             if (ratio > kSentinel) m.f2c = ratio;
             m.mode = (m.mode & ~0xcu) | 3u;
-            sync_motion_center(m, ctx.interpolation_rate);
+            sync_motion_center(m, ctx.rate());
             apply_motion_position();
             return 0;
         }
@@ -1683,7 +1699,7 @@ int Enemy::execute(EclContext& ctx, u16 opcode) {
             ei.timer.reset();
             m.velocity = m.pos;
             m.mode = (m.mode & ~0xcu) | 3u;
-            sync_motion_center(m, ctx.interpolation_rate);
+            sync_motion_center(m, ctx.rate());
             apply_motion_position();
             return 0;
         }
@@ -2685,7 +2701,7 @@ void EnemyManager::update(float game_speed) {
         else player->flags |= 0x20u;
         player->scale2 = 1.0f;
     }
-    timer.tick(game_speed);
+    timer.tick(global_game_speed != nullptr ? *global_game_speed : game_speed);
 }
 
 // 0x41d900（mode 0）/ 0x41da30（mode 1：仅 anm_slot == *filter）/ 0x41db70（mode 2：并清死亡子程序）

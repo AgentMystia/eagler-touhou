@@ -196,6 +196,9 @@ public:
     void release_items();
     // op 509 / 0x41d520 共用：按限时计时折算季节道具数到 season_drop_max
     void settle_season_drop();
+    // 全局速度 DAT_004a5788 的实时值（见 Enemy::update）；没有管理器时用调用方给的值
+    float live_speed(float fallback) const noexcept;
+    const float* live_speed_ptr(float& fallback) const noexcept;
     // 0x41d520：死亡结算（音效、死亡特效、掉落、死亡子程序）；返回后敌机移出列表
     void die(float game_speed);
     // 0x41c330：受击 / 阶段中断 / 死亡 / 体碰撞 / 闪烁；返回 0 继续，非 0 → 敌机移出列表

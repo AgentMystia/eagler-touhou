@@ -435,7 +435,7 @@ int EclContext::step(float elapsed) {
                 if (!instruction) return fail("ECL interpolation target unavailable");
                 auto* destination = float_destination(1);
                 if (!destination) return -2;
-                *destination = step_interp_float(interpolators[slot], interpolation_rate);
+                *destination = step_interp_float(interpolators[slot], rate());
             }
         }
         instruction = saved;
@@ -665,7 +665,7 @@ int EclContext::step(float elapsed) {
                 if (slot < 0 || u32(slot) >= interpolators.size()) return fail("ECL interpolation slot outside context");
                 auto& interpolation = interpolators[u32(slot)];
                 interpolation_targets[u32(slot)] = instruction;
-                step_interp_float(interpolation, interpolation_rate);
+                step_interp_float(interpolation, rate());
                 const i32 frames = integer_arg(2), mode = integer_arg(3);
                 const float from = float_arg(4), to = float_arg(5);
                 interpolation.initial = from;

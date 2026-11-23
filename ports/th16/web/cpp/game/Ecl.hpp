@@ -126,7 +126,11 @@ public:
     u32 thread_flags = 0;
     EclCommands* commands = nullptr;
     Rng* game_rng = nullptr;
+    // ECL 插值的推进速度。原版的计时推进（0x406190）每次直接读全局速度 DAT_004a5788，ECL 547 在本帧改了速度后
+    // 收尾阶段的插值就按新值走：Enemy::update 把 live_rate 指向这一份；独立驱动（harness）时用 interpolation_rate
     float interpolation_rate = 1;
+    const float* live_rate = nullptr;
+    float rate() const noexcept { return live_rate != nullptr ? *live_rate : interpolation_rate; }
     std::array<Interp<float>, 8> interpolators{};
     std::array<const EclInstruction*, 8> interpolation_targets{};
     std::string error;
@@ -144,7 +148,7 @@ public:
     bool bind_code(const u8* bytes, u32 size, i32 routine_id = 0) noexcept;
     bool bind(EclProgram& source, i32 routine_id) noexcept;
     // 0x472030：返回 0 继续（本帧耗尽时间）、-1 删除/结束、-2 错误
-    int step(float elapsed);
+    int step(float elapsed);   // 0x473bc0 的 elapsed：调用当时的全局速度，本步内不变
 };
 
 }  // namespace th16
