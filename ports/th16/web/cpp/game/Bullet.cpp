@@ -354,7 +354,6 @@ int BulletManager::spawn_single(const EtShooter& sh, i32 way_idx, i32 stack_idx,
 // 0x412860
 
 void BulletManager::update(float gs, bool frozen) {
-    game_speed = gs;
     iterate_current_ = active_head;
     iterate_next_ = active_head ? active_head->active_next : nullptr;
     active_count = 0;

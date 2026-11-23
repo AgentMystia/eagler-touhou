@@ -69,6 +69,8 @@ public:
     static constexpr int kAsciiSlot = 2;   // AsciiManager（DAT_004a6d98，0x407cb0）把 ascii*.anm 装入槽 2
 
     AnmManager();
+    // game_speed 引用外部的那一份全局游戏速度（GameSession 传入 Supervisor::game_speed：原版是同一个全局量）
+    explicit AnmManager(float& game_speed);
 
     // 0x46cf80 + 0x46d1c0：把资源装进槽位，建精灵表、脚本表并预跑模板。texture 尺寸由调用方给出
     // （浏览器端为 GraphicsDevice 实际创建的纹理尺寸，离线 harness 为 entry 声明尺寸）。
@@ -140,7 +142,11 @@ public:
     const AnmVm* pool_vm(u32 index) const { return &pool_[index]; }
 
     // 全局状态（原版为独立全局变量，oracle 中亦为零/默认）
-    float game_speed = 1.0f;          // DAT_004a5788
+    // DAT_004a5788 全局游戏速度。原版 0x45f980 每次跑 VM 都直接读这个全局量：ECL 在敌机链里改成慢动作后，同一帧里
+    // 排在后面的道具 / 敌弹等链立刻按新速度推进。GameSession 构造时把它绑到 Supervisor::game_speed；
+    // 单独驱动管理器的 harness 命令用自带的存储
+    float game_speed_storage = 1.0f;
+    float& game_speed;
     const AnmVm* running_vm = nullptr;  // 正在 run 的 VM（0x45f980 入口；RNG 调试钩子归因用）
     Rng game_rng;                     // DAT_004a6d80
     Rng visual_rng;                   // DAT_004a6d88
@@ -172,6 +178,7 @@ private:
     AnmVm* create_child(AnmFile& file, int script, AnmVm& parent, u32 list_flags, u32* out_id);  // 0x46ed60
     AnmVm* create_detached(AnmFile& file, int script, AnmVm& parent, u32* out_id);               // 0x46eea0
     void tick_list(AnmListNode*& head, bool ui);
+    void init_pool();
 
     std::vector<AnmVm> pool_;
     std::vector<u8> pool_in_use_;

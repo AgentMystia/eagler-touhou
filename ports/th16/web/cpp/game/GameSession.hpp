@@ -45,14 +45,15 @@ public:
     // 资源装入后的回调（浏览器端建纹理；无头端空）
     using OnResourceLoaded = std::function<bool(AnmResource&)>;
 
-    AnmManager animations;
+    // Supervisor 先于 animations：AnmManager 的 game_speed 引用 Supervisor::game_speed（原版同一个全局量 DAT_004a5788）
+    Supervisor supervisor;
+    AnmManager animations{supervisor.game_speed};
     AsciiManager ascii;           // DAT_004a6d98（0x407cb0：启动期创建，更新链 4，绘制链 0x51 / 0x35 / 0x42）
     EffectManager effects;        // DAT_004a6db8（0x418a30：启动期创建，更新链 0x1f）
     Spellcard spellcard;          // DAT_004a6db0（0x4178a0：进游戏时创建；敌机 / 自机被弹共用其标志）
     ScreenShakeOffset screen_shake;  // DAT_004c1788 / DAT_004c1530：ECL 517 画面震动当前偏移
     std::vector<std::shared_ptr<ScreenFade>> screen_fades;  // 存活的淡入淡出 ScreenEffect（绘制链 0x54 全屏色块；渲染侧读）
     std::vector<TextIntoTextureRequest> text_into_texture;  // 0x46d990 / 0x46dab0：逻辑帧入队，宿主绘制前刷入纹理
-    Supervisor supervisor;
     ChainManager chains;
     GameGlobals globals;
     TitleScene title;

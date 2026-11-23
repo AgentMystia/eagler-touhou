@@ -251,6 +251,10 @@ struct BulletLaserRequest {
 // 0x411dd0：弹幕管理器（DAT_004a6dac）
 class BulletManager {
 public:
+    // game_speed 引用全局游戏速度 DAT_004a5788（GameSession 传入 Supervisor::game_speed）：原版 0x416840 族消弹的末步直接读它，
+    // ECL 在敌机链里刚改成慢动作时，同一帧里的消弹就按新速度推进
+    explicit BulletManager(float& game_speed) : game_speed(game_speed) {}
+
     static constexpr int kMaxBullets = 2000;
     static constexpr int kLayerBuckets = 6;
     static constexpr int kBulletAnmSlot = 7;
@@ -265,7 +269,7 @@ public:
     float bounce_width = 0;             // +0x48 全局反弹宽（0 = 用弹自身的 Ex 参数）
     float bounce_height = 0;            // +0x4c
     i32 cancel_item_counter = 0;        // +0x58（消弹模式 5 每 3 颗出一个道具）
-    float game_speed = 1.0f;            // DAT_004a5788 镜像（update 入口抄入；帧间 ECL 消弹亦按此推进）
+    float& game_speed;                 // DAT_004a5788
     i32 total_canceled = 0;             // +0x1403b14
     std::vector<u32> cancel_effect_ids; // +0x13ffc8c：按槽记录消弹特效 VM id
     std::vector<i32> sfx_queue;         // 0x45e1f0 音效登记（发射 / Ex 变换 / 擦弹 0x2a / 消弹 0x47）

@@ -614,12 +614,14 @@ void Enemy::sync_sprite_direction() {
 //      UV 以截断后的节点坐标 / 渲染目标尺寸重算（负值截 0）；
 //   4. 相位整体推进 π/16 × 速度 / π/32 × 速度。
 void Enemy::update_distortion(float game_speed) {
+    // 0x41cbd0 的三处（+0x44c8 / +0x44d0 / +0x44d4）都直接读 DAT_004a5788：本敌机的 ECL 547 之后已是新值
+    const float live = manager != nullptr && manager->global_game_speed != nullptr ? *manager->global_game_speed : game_speed;
     if (!distortion || manager == nullptr || manager->animations == nullptr) return;
     DistortionGrid& grid = *distortion;
     const float radius = distortion_radius;
     float angle_a = distortion_angle_a;
     float angle_b = distortion_angle_b;
-    if (radius < distortion_radius_target) distortion_radius = game_speed * 2.0f + radius;
+    if (radius < distortion_radius_target) distortion_radius = live * 2.0f + radius;
 
     static const AnmGeometry kDefaultGeometry;
     const AnmGeometry& geometry = manager->animations->geometry != nullptr ? *manager->animations->geometry : kDefaultGeometry;
@@ -688,8 +690,8 @@ void Enemy::update_distortion(float game_speed) {
         if (vertex->u < 0.0f) vertex->u = 0.0f;
         if (vertex->v < 0.0f) vertex->v = 0.0f;
     }
-    distortion_angle_a = wrap_angle(game_speed * 0.19634955f + distortion_angle_a);
-    distortion_angle_b = wrap_angle(game_speed * 0.09817477f + distortion_angle_b);
+    distortion_angle_a = wrap_angle(live * 0.19634955f + distortion_angle_a);
+    distortion_angle_b = wrap_angle(live * 0.09817477f + distortion_angle_b);
 }
 
 // 0x41d2e0 后段
@@ -2655,6 +2657,9 @@ u32 EnemyManager::nearest_targetable_id(const Vec3& pos, float range) const noex
 }
 
 void EnemyManager::update(float game_speed) {
+    // 0x41b3d0：速度在每只敌机开始更新时才从全局量 DAT_004a5788 取一次——同一帧里排在前面的敌机经 ECL 547 改了
+    // 速度，后面的敌机本帧就按新速度推进；一只敌机自己的这一轮更新（含 ECL 时钟与插值）全程用入口时的值
+    const auto speed_at_entry = [&]() -> float { return global_game_speed != nullptr ? *global_game_speed : game_speed; };
     // 0x41b3d0：更新前先保存 next。列表末尾的敌机在本回合里（含其死亡子程序）生成的新敌机排在它之后，
     // 本帧不再被访问，于是带着 0x40000 进入下一帧并在那里被整帧跳过；即使末尾敌机随即死亡也必须沿用保存的 next，
     // 不能取 erase 返回的后继。kill_all 标过 0x2000000 的直接移出
@@ -2664,7 +2669,7 @@ void EnemyManager::update(float game_speed) {
         auto next = std::next(it);
         auto& e = *it;
         if (!e) { it = enemies.erase(it); continue; }
-        if ((e->flags & 0x2000000u) != 0 || !e->update(game_speed)) {
+        if ((e->flags & 0x2000000u) != 0 || !e->update(speed_at_entry())) {
             e->destroy();
             enemies.erase(it);
             it = next;

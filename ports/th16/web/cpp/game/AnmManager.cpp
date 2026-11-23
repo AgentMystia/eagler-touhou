@@ -86,7 +86,16 @@ void unlink(AnmListNode& node) {
 
 }  // namespace
 
-AnmManager::AnmManager() : pool_(kPoolSize), pool_in_use_(kPoolSize, 0) {
+// 速度（引用）在类里先于池声明，初始化列表按声明次序
+AnmManager::AnmManager() : game_speed(game_speed_storage), pool_(kPoolSize), pool_in_use_(kPoolSize, 0) {
+    init_pool();
+}
+
+AnmManager::AnmManager(float& speed) : game_speed(speed), pool_(kPoolSize), pool_in_use_(kPoolSize, 0) {
+    init_pool();
+}
+
+void AnmManager::init_pool() {
     free_stack_.reserve(kPoolSize);
     for (u32 i = 0; i < kPoolSize; ++i) {
         pool_[i].pool_index = i;

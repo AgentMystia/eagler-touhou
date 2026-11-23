@@ -262,9 +262,9 @@ bool GameSession::load_boot_banks() {
     }, 0x1f, true);
     chains.enable(effect_update_chain_);
     // 0x418790 → 0x46e740 / 0x46e710：AnmManager 的两条推进链。UI 表（链 9）排在 GameManager 之前，暂停时仍推进；
-    // 世界表（链 0x21）在 GameManager 返回 3 时与其它游戏链一起被截断，且装载中（flags bit0|bit2 且 bit1）跳过
+    // 世界表（链 0x21）在 GameManager 返回 3 时与其它游戏链一起被截断，且装载中（flags bit0|bit2 且 bit1）跳过。
+    // 速度不在这里抄：管理器的 game_speed 就是 Supervisor 的那一份（0x45f980 每次跑 VM 直接读 DAT_004a5788）
     ui_tick_chain_ = chains.create([this]() -> ChainResult {
-        animations.game_speed = supervisor.game_speed;
         animations.tick_ui();
         return ChainResult::Continue;
     }, 9, true);
@@ -274,7 +274,6 @@ bool GameSession::load_boot_banks() {
             const u32 f = game.flags;
             if ((((f >> 2) | f) & 1u) != 0 && (f & 2u) != 0) return ChainResult::Continue;
         }
-        animations.game_speed = supervisor.game_speed;
         animations.tick_world();
         return ChainResult::Continue;
     }, 0x21, true);
@@ -856,7 +855,6 @@ bool GameSession::create_enemies() {
         enemy_update_chain_ = chains.create([this]() -> ChainResult {
             if (game.enemies_live && !game.chains_suspended) {
                 game.enemies.shake_requests.clear();
-                if (game.bullets_live) game.bullets->game_speed = supervisor.game_speed;
                 game.enemies.sfx_sink = &sfx_events;   // 敌机受击 / 击破与 ECL 601 发射音效按 0x45e1f0 调用序直接汇总
                 sync_bomb_state();
                 game.enemies.update(supervisor.game_speed);
@@ -997,7 +995,7 @@ bool GameSession::enter_game(i32 replay_mode) {
     {
         AnmFile* bullet_anm = animations.file(BulletManager::kBulletAnmSlot);
         if (bullet_anm == nullptr) { failure = "bullet.anm not loaded"; return false; }
-        game.bullets = std::make_unique<BulletManager>();
+        game.bullets = std::make_unique<BulletManager>(supervisor.game_speed);
         game.bullets->create(animations, *bullet_anm, animations.file(8), globals,
                              game.player_live ? &game.player : nullptr, &game.world, animations.visual_rng);
         game.bullets->sfx_sink = &sfx_events;
