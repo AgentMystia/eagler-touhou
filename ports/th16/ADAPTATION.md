@@ -15,9 +15,9 @@
 | 编号 | 检查项 | normal | 记录 |
 | --- | --- | --- | --- |
 | BUILD-01 | [源码目录与普通版／MP归属](../../docs/adaptation/build.md#build-01) | 已验证 | normal：[source-inputs](../../docs/adaptation/status.json) |
-| BUILD-02 | [工具链与外部依赖](../../docs/adaptation/build.md#build-02) | 待核对 | normal：按本项步骤执行，结果写入验证记录 |
-| BUILD-03 | [对应模式独立构建](../../docs/adaptation/build.md#build-03) | 待核对 | normal：按本项步骤执行，结果写入验证记录 |
-| BUILD-04 | [Runtime 文件与来源记录](../../docs/adaptation/build.md#build-04) | 待核对 | normal：按本项步骤执行，结果写入验证记录 |
+| BUILD-02 | [工具链与外部依赖](../../docs/adaptation/build.md#build-02) | 已验证 | normal：[2026-11-23 验收记录](../../archive/th16-delivery-20261123/README.md) |
+| BUILD-03 | [对应模式独立构建](../../docs/adaptation/build.md#build-03) | 已验证 | normal：[2026-11-23 验收记录](../../archive/th16-delivery-20261123/README.md) |
+| BUILD-04 | [Runtime 文件与来源记录](../../docs/adaptation/build.md#build-04) | 已验证 | normal：[2026-11-23 验收记录](../../archive/th16-delivery-20261123/README.md) |
 | BUILD-05 | [前端搭配单个游戏运行](../../docs/adaptation/build.md#build-05) | 待核对 | normal：按本项步骤执行，结果写入验证记录 |
 | BUILD-06 | [源码与素材来源](../../docs/adaptation/build.md#build-06) | 待核对 | normal：按本项步骤执行，结果写入验证记录 |
 
@@ -159,17 +159,19 @@
 
 | 编号 | 检查项 | normal | 记录 |
 | --- | --- | --- | --- |
-| VERIFY-01 | [全部内置 Demo 对照](../../docs/adaptation/validation.md#verify-01) | 待核对 | normal：按本项步骤执行，结果写入验证记录 |
-| VERIFY-02 | [长 Replay 样本](../../docs/adaptation/validation.md#verify-02) | 待核对 | normal：按本项步骤执行，结果写入验证记录 |
-| VERIFY-03 | [原版基准与内容哈希](../../docs/adaptation/validation.md#verify-03) | 待核对 | normal：按本项步骤执行，结果写入验证记录 |
-| VERIFY-04 | [读取固定基准](../../docs/adaptation/validation.md#verify-04) | 待核对 | normal：按本项步骤执行，结果写入验证记录 |
-| VERIFY-05 | [单独维护原版基准](../../docs/adaptation/validation.md#verify-05) | 待核对 | normal：按本项步骤执行，结果写入验证记录 |
+| VERIFY-01 | [全部内置 Demo 对照](../../docs/adaptation/validation.md#verify-01) | 已验证 | normal：[2026-11-23 验收记录](../../archive/th16-delivery-20261123/README.md) |
+| VERIFY-02 | [长 Replay 样本](../../docs/adaptation/validation.md#verify-02) | 已验证 | normal：[2026-11-23 验收记录](../../archive/th16-delivery-20261123/README.md) |
+| VERIFY-03 | [原版基准与内容哈希](../../docs/adaptation/validation.md#verify-03) | 已验证 | normal：[2026-11-23 验收记录](../../archive/th16-delivery-20261123/README.md) |
+| VERIFY-04 | [读取固定基准](../../docs/adaptation/validation.md#verify-04) | 已验证 | normal：[2026-11-23 验收记录](../../archive/th16-delivery-20261123/README.md) |
+| VERIFY-05 | [单独维护原版基准](../../docs/adaptation/validation.md#verify-05) | 已验证 | normal：[2026-11-23 验收记录](../../archive/th16-delivery-20261123/README.md) |
 | VERIFY-06 | [逐逻辑帧比较](../../docs/adaptation/validation.md#verify-06) | 待核对 | normal：按本项步骤执行，结果写入验证记录 |
 | VERIFY-07 | [诊断构建与正常构建](../../docs/adaptation/validation.md#verify-07) | 待核对 | normal：按本项步骤执行，结果写入验证记录 |
-| VERIFY-08 | [本作状态映射与结束条件](../../docs/adaptation/validation.md#verify-08) | 待核对 | normal：按本项步骤执行，结果写入验证记录 |
+| VERIFY-08 | [本作状态映射与结束条件](../../docs/adaptation/validation.md#verify-08) | 已验证 | normal：[2026-11-23 验收记录](../../archive/th16-delivery-20261123/README.md) |
 
 <!-- manual-verification -->
 
 ## 运行验收记录
 
 按检查编号附[验证记录](../../docs/adaptation/record-template.md)，写明源码身份、模式、环境、操作与结果。自动更新保留本节内容。
+
+- [2026-11-23 构建、性能与逐帧验收](../../archive/th16-delivery-20261123/README.md)：normal 的 BUILD-02／03／04 与 VERIFY-01／02／03／04／05／08 已验证；二十九段 1594703 帧逐帧位级一致，WASI 3600 帧逻辑加完整绘制 8.230–8.451 秒。

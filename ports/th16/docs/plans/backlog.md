@@ -4,16 +4,16 @@
 
 `flags & 0x1000` 矩形体碰撞（0x443af0 / 0x4049c0）无 ECL 设置路径，不排期。钩子 6（0x46a330，ANM 渲染模式 10）全部 `.anm` 无 302(10)，数据不可达，不排期。
 
-## 开放项
+## 本轮交付项
 
 1. 已关闭：难度画面绘制窗口第 344–353 帧已对拍。见「已关闭」。
 2. 已关闭：Extra 四季 600 帧矩阵已锁。见「已关闭」。
 3. 标题画面绘制对拍已关闭。见「已关闭」。
-4. ANM mode 6（0x466820）：`artifacts/th16/dat` 全部 54 个 `.anm` 的 ins_302 渲染模式只有 0/1/2/3/4/8/21，没有 6。与钩子 6 相同，数据不可达，不排期。`AddressMap.hpp` 的空登记保留为说明。
+4. 已关闭（数据不可达，不排期）：ANM mode 6（0x466820）在 `artifacts/th16/dat` 全部 54 个 `.anm` 的 ins_302 渲染模式中没有实例，实际只有 0/1/2/3/4/8/21。与钩子 6 相同，`AddressMap.hpp` 的空登记保留为说明。
 5. 已关闭：长程像素对拍扩到整段，二十九段 1594703 帧逐帧位级一致。见「已关闭」。
-6. 性能：Snapdragon 865 级 60fps。本机无该设备，不能记为通过。WASI 3600 帧 <10s：本机没有 wasi-sdk，不能记为通过。
-7. 登记：`launcher/config/workspace.json`、`runtime-builds.json`、`product-catalog`、`docs/migration`、`docs/TOUHOU_PROGRESS.md`、`ports/README`、`WORKSPACE.md`、`ADAPTATION.md` 验收。黄金交付标准达成前不开 PR。
-8. 版本文件 0x43b480（`th16_%.4x%c.ver`）：开机 0x43b520 读取并写入 DAT_004c1af0 / DAT_004c1aec，退出路径 0x43b681 释放缓冲。没有其它读者。宿主落盘可后接，不阻塞对拍。
+6. 已关闭（容器性能门禁）：WASI 3600 帧逻辑三次 0.334–0.363 秒，逻辑加完整绘制三次 8.230–8.451 秒，均通过 <10 秒门禁；normal Runtime 与发布打包已验收。Snapdragon 865 级 60fps 保持真机待验证。见[验收记录](../../../../archive/th16-delivery-20261123/README.md)。
+7. 已关闭：启动器工作区、构建配方、产品目录、`docs/TOUHOU_PROGRESS.md`、`ports/README`、`WORKSPACE.md` 与 `ADAPTATION.md` 登记和验收完成；`docs/migration` 与源码哈希清单由收尾快照固定本轮身份。全程不开 PR。
+8. 已关闭（可后接）：版本文件 0x43b480（`th16_%.4x%c.ver`）开机 0x43b520 读取并写入 DAT_004c1af0 / DAT_004c1aec，退出路径 0x43b681 释放缓冲，没有其它读者。宿主落盘是后续可选增强，不影响原版等价与本轮交付。
 
 ## 已关闭
 
