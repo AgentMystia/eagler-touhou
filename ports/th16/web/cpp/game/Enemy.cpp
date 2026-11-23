@@ -735,6 +735,8 @@ int Enemy::run_frame_hook(FrameHook hook) {
                 globals->power = globals->power_max < 0 ? globals->power_max : 0;
                 if (player != nullptr && manager != nullptr && manager->animations != nullptr)
                     player->setup_options(*manager->animations, *globals);
+                // 量表归零当帧就刷量表条与等级图标（0x42c600）
+                if (manager != nullptr && manager->gui != nullptr) manager->gui->refresh_season_gauge();
             }
             return 0;
         case FrameHook::None: break;
