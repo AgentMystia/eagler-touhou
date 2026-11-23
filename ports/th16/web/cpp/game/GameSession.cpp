@@ -1128,6 +1128,8 @@ bool GameSession::enter_game(i32 replay_mode) {
         game.gui.on_return_to_title = [this]() { if (menu_live) menu.open_return_to_title(); };
         game.gui.on_final_clear = [this]() {
             game.flags |= GameManager::kStageClear;
+            // 0x442560 的射击条件直接读 GameManager+0x88 的 0x4000：通关结算起自机不再射击
+            game.world.stage_clear = true;
             game.end_counter = 0;
             accumulate_play_time();
         };
