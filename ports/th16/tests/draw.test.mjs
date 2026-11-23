@@ -7,7 +7,7 @@
 // 行口径必须与 draw-compare.py 的 structure_lines 逐字一致。
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {execFileSync} from 'node:child_process';
+import {execFileSync, spawn} from 'node:child_process';
 import {existsSync, readFileSync, mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
@@ -18,6 +18,36 @@ const monorepo = resolve(here, '../../..');
 const harness = process.env.TH16_HARNESS ?? resolve(here, 'build/harness');
 const dat = process.env.TH16_DAT ?? resolve(monorepo, 'games/th16/original/th16.dat');
 const needDat = {skip: !existsSync(dat) && 'original th16.dat not present'};
+
+// 独立场景各自使用临时目录；异步子进程默认每进程 8 路，大矩阵显式提高上限，外层可按测试名分片。
+function runAsync(file, args, options = {}) {
+  const rest = {...options};
+  delete rest.encoding;
+  delete rest.maxBuffer;
+  const stdio = rest.stdio ?? ['ignore', 'pipe', 'pipe'];
+  return new Promise((resolve, reject) => {
+    const child = spawn(file, args, {...rest, stdio});
+    let stdout = '', stderr = '';
+    if (child.stdout) child.stdout.on('data', data => { stdout += data; });
+    if (child.stderr) child.stderr.on('data', data => { stderr += data; });
+    child.on('error', reject);
+    child.on('close', (code, signal) => {
+      if (code === 0) resolve(stdout);
+      else reject(new Error(`${file} exited with ${signal ?? code}\n${stderr}\n${stdout}`));
+    });
+  });
+}
+
+async function mapConcurrent(items, worker, limit = 8) {
+  let next = 0;
+  async function run() {
+    while (next < items.length) {
+      const index = next++;
+      await worker(items[index], index);
+    }
+  }
+  await Promise.all(Array.from({length: Math.min(limit, items.length)}, run));
+}
 
 // 跑 harness game-draw，返回 {frame: ops[]}（只保留 golden 里有的帧）
 function recordPort(golden, lastFrame, fromFrame) {
@@ -154,7 +184,7 @@ test('draw structure: Extra Reimu doyou idle, frames 10–419 match the original
 
 // 第 1–6 面 Easy 灵梦，子季节 1/2/3。输入与 stage-matrix 相同。窗口取第 590–599 帧，
 // 由 game-oracle.py --draw 与 harness game-draw 逐顶点对拍。
-test('stage 1–6 Easy Reimu summer/autumn/winter: frames 590–599 match original vertices', needDat, () => {
+test('stage 1–6 Easy Reimu summer/autumn/winter: frames 590–599 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
@@ -162,22 +192,22 @@ test('stage 1–6 Easy Reimu summer/autumn/winter: frames 590–599 match origin
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
   const input = '0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11';
-  for (const stage of [1, 2, 3, 4, 5, 6]) {
+  await mapConcurrent([1, 2, 3, 4, 5, 6], async stage => {
     for (const season of [1, 2, 3]) {
       const dir = mkdtempSync(join(tmpdir(), 'th16-season-draw-'));
       try {
         const state = join(dir, 'state.json');
         const oracleDraw = join(dir, 'oracle.draw.jsonl');
         const portDraw = join(dir, 'port.draw.jsonl');
-        execFileSync(py, [oracle, exe, datDir, '600', state,
+        await runAsync(py, [oracle, exe, datDir, '600', state,
                           '--stage', String(stage), '--shot', '0', '--season', String(season), '--difficulty', '0',
                           '--lives', '8', '--refill-lives', '--input', input, '--enemies',
                           '--draw', '--draw-out', oracleDraw, '--draw-from', '590'],
                      {stdio: ['ignore', 'ignore', 'pipe']});
-        execFileSync(harness, ['game-draw', dat, String(stage), '0', String(season), '600', input, '', '',
+        await runAsync(harness, ['game-draw', dat, String(stage), '0', String(season), '600', input, '', '',
                                '0', '-1', '8', '1', '0', portDraw, '590'],
                      {stdio: ['ignore', 'ignore', 'pipe']});
-        const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '590-599', '--eps', '1e-4'],
+        const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '590-599', '--eps', '1e-4'],
                                       {encoding: 'utf8'});
         process.stdout.write(compared);
         assert.match(compared, /frames=10 mismatches=0/, `stage ${stage} season ${season}`);
@@ -185,10 +215,10 @@ test('stage 1–6 Easy Reimu summer/autumn/winter: frames 590–599 match origin
         rmSync(dir, {recursive: true, force: true});
       }
     }
-  }
+  }, 8);
 });
 
-test('stage 1–6 Cirno/Aya/Marisa summer/autumn/winter: frames 590–599 match original vertices', needDat, () => {
+test('stage 1–6 Cirno/Aya/Marisa summer/autumn/winter: frames 590–599 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
@@ -196,7 +226,7 @@ test('stage 1–6 Cirno/Aya/Marisa summer/autumn/winter: frames 590–599 match 
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
   const input = '0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11';
-  for (const stage of [1, 2, 3, 4, 5, 6]) {
+  await mapConcurrent([1, 2, 3, 4, 5, 6], async stage => {
   for (const shot of [1, 2, 3]) {
     for (const season of [1, 2, 3]) {
       const dir = mkdtempSync(join(tmpdir(), 'th16-shot-draw-'));
@@ -204,15 +234,15 @@ test('stage 1–6 Cirno/Aya/Marisa summer/autumn/winter: frames 590–599 match 
         const state = join(dir, 'state.json');
         const oracleDraw = join(dir, 'oracle.draw.jsonl');
         const portDraw = join(dir, 'port.draw.jsonl');
-        execFileSync(py, [oracle, exe, datDir, '600', state,
+        await runAsync(py, [oracle, exe, datDir, '600', state,
                           '--stage', String(stage), '--shot', String(shot), '--season', String(season), '--difficulty', '0',
                           '--lives', '8', '--refill-lives', '--input', input, '--enemies',
                           '--draw', '--draw-out', oracleDraw, '--draw-from', '590'],
                      {stdio: ['ignore', 'ignore', 'pipe']});
-        execFileSync(harness, ['game-draw', dat, String(stage), String(shot), String(season), '600', input, '', '',
+        await runAsync(harness, ['game-draw', dat, String(stage), String(shot), String(season), '600', input, '', '',
                                '0', '-1', '8', '1', '0', portDraw, '590'],
                      {stdio: ['ignore', 'ignore', 'pipe']});
-        const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '590-599', '--eps', '1e-4'],
+        const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '590-599', '--eps', '1e-4'],
                                       {encoding: 'utf8'});
         process.stdout.write(compared);
         assert.match(compared, /frames=10 mismatches=0/, `stage ${stage} shot ${shot} season ${season}`);
@@ -221,7 +251,7 @@ test('stage 1–6 Cirno/Aya/Marisa summer/autumn/winter: frames 590–599 match 
       }
     }
   }
-  }
+  }, 8);
 });
 
 test('stage 6 Easy Reimu spring idle: frames 25000–25009 match original vertices', needDat, () => {
@@ -282,226 +312,226 @@ test('stage 6 Easy Reimu spring idle: frames 24000–24009 match original vertic
   }
 });
 
-test('stage 1–6 Easy Reimu spring idle: frames 22000–22009 match original vertices', needDat, () => {
+test('stage 1–6 Easy Reimu spring idle: frames 22000–22009 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
   const oracle = resolve(here, '../tools/oracle/game-oracle.py');
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
-  for (const stage of [1, 2, 3, 4, 5, 6]) {
+  await mapConcurrent([1, 2, 3, 4, 5, 6], async stage => {
     const dir = mkdtempSync(join(tmpdir(), 'th16-easy22000-draw-'));
     try {
       const state = join(dir, 'state.json');
       const oracleDraw = join(dir, 'oracle.draw.jsonl');
       const portDraw = join(dir, 'port.draw.jsonl');
-      execFileSync(py, [oracle, exe, datDir, '22010', state,
+      await runAsync(py, [oracle, exe, datDir, '22010', state,
                         '--stage', String(stage), '--shot', '0', '--season', '0', '--difficulty', '0',
                         '--lives', '8', '--refill-lives', '--input', '0:0', '--enemies',
                         '--draw', '--draw-out', oracleDraw, '--draw-from', '22000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      execFileSync(harness, ['game-draw', dat, String(stage), '0', '0', '22010', '0:0', '', '',
+      await runAsync(harness, ['game-draw', dat, String(stage), '0', '0', '22010', '0:0', '', '',
                              '0', '-1', '8', '1', '0', portDraw, '22000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '22000-22009', '--eps', '1e-4'],
+      const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '22000-22009', '--eps', '1e-4'],
                                     {encoding: 'utf8'});
       process.stdout.write(compared);
       assert.match(compared, /frames=10 mismatches=0/, `easy22000 stage ${stage}`);
     } finally {
       rmSync(dir, {recursive: true, force: true});
     }
-  }
+  }, 8);
 });
 
 // 第 4 面第 18700 帧前后 Boss 登场：敌机析构 0x41ba10 注销 Boss 槽之后，槽内不再残留已消失的 id（否则 0x417580 落到
 // 链表最后一只，Gui 给同一只 Boss 画第二套血环：front.anm 244 / 245 / 246 三条 38 节点条带各画两遍）。
-test('stage 1–6 Easy Reimu spring idle: frames 20000–20009 match original vertices', needDat, () => {
+test('stage 1–6 Easy Reimu spring idle: frames 20000–20009 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
   const oracle = resolve(here, '../tools/oracle/game-oracle.py');
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
-  for (const stage of [1, 2, 3, 4, 5, 6]) {
+  await mapConcurrent([1, 2, 3, 4, 5, 6], async stage => {
     const dir = mkdtempSync(join(tmpdir(), 'th16-easy20000-draw-'));
     try {
       const state = join(dir, 'state.json');
       const oracleDraw = join(dir, 'oracle.draw.jsonl');
       const portDraw = join(dir, 'port.draw.jsonl');
-      execFileSync(py, [oracle, exe, datDir, '20010', state,
+      await runAsync(py, [oracle, exe, datDir, '20010', state,
                         '--stage', String(stage), '--shot', '0', '--season', '0', '--difficulty', '0',
                         '--lives', '8', '--refill-lives', '--input', '0:0', '--enemies',
                         '--draw', '--draw-out', oracleDraw, '--draw-from', '20000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      execFileSync(harness, ['game-draw', dat, String(stage), '0', '0', '20010', '0:0', '', '',
+      await runAsync(harness, ['game-draw', dat, String(stage), '0', '0', '20010', '0:0', '', '',
                              '0', '-1', '8', '1', '0', portDraw, '20000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '20000-20009', '--eps', '1e-4'],
+      const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '20000-20009', '--eps', '1e-4'],
                                     {encoding: 'utf8'});
       process.stdout.write(compared);
       assert.match(compared, /frames=10 mismatches=0/, `easy20000 stage ${stage}`);
     } finally {
       rmSync(dir, {recursive: true, force: true});
     }
-  }
+  }, 8);
 });
 
-test('stage 1–6 Easy Reimu spring idle: frames 18000–18009 match original vertices', needDat, () => {
+test('stage 1–6 Easy Reimu spring idle: frames 18000–18009 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
   const oracle = resolve(here, '../tools/oracle/game-oracle.py');
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
-  for (const stage of [1, 2, 3, 4, 5, 6]) {
+  await mapConcurrent([1, 2, 3, 4, 5, 6], async stage => {
     const dir = mkdtempSync(join(tmpdir(), 'th16-easy18000-draw-'));
     try {
       const state = join(dir, 'state.json');
       const oracleDraw = join(dir, 'oracle.draw.jsonl');
       const portDraw = join(dir, 'port.draw.jsonl');
-      execFileSync(py, [oracle, exe, datDir, '18010', state,
+      await runAsync(py, [oracle, exe, datDir, '18010', state,
                         '--stage', String(stage), '--shot', '0', '--season', '0', '--difficulty', '0',
                         '--lives', '8', '--refill-lives', '--input', '0:0', '--enemies',
                         '--draw', '--draw-out', oracleDraw, '--draw-from', '18000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      execFileSync(harness, ['game-draw', dat, String(stage), '0', '0', '18010', '0:0', '', '',
+      await runAsync(harness, ['game-draw', dat, String(stage), '0', '0', '18010', '0:0', '', '',
                              '0', '-1', '8', '1', '0', portDraw, '18000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '18000-18009', '--eps', '1e-4'],
+      const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '18000-18009', '--eps', '1e-4'],
                                     {encoding: 'utf8'});
       process.stdout.write(compared);
       assert.match(compared, /frames=10 mismatches=0/, `easy18000 stage ${stage}`);
     } finally {
       rmSync(dir, {recursive: true, force: true});
     }
-  }
+  }, 8);
 });
 
-test('stage 1–6 Easy Reimu spring idle: frames 16000–16009 match original vertices', needDat, () => {
+test('stage 1–6 Easy Reimu spring idle: frames 16000–16009 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
   const oracle = resolve(here, '../tools/oracle/game-oracle.py');
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
-  for (const stage of [1, 2, 3, 4, 5, 6]) {
+  await mapConcurrent([1, 2, 3, 4, 5, 6], async stage => {
     const dir = mkdtempSync(join(tmpdir(), 'th16-easy16000-draw-'));
     try {
       const state = join(dir, 'state.json');
       const oracleDraw = join(dir, 'oracle.draw.jsonl');
       const portDraw = join(dir, 'port.draw.jsonl');
-      execFileSync(py, [oracle, exe, datDir, '16010', state,
+      await runAsync(py, [oracle, exe, datDir, '16010', state,
                         '--stage', String(stage), '--shot', '0', '--season', '0', '--difficulty', '0',
                         '--lives', '8', '--refill-lives', '--input', '0:0', '--enemies',
                         '--draw', '--draw-out', oracleDraw, '--draw-from', '16000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      execFileSync(harness, ['game-draw', dat, String(stage), '0', '0', '16010', '0:0', '', '',
+      await runAsync(harness, ['game-draw', dat, String(stage), '0', '0', '16010', '0:0', '', '',
                              '0', '-1', '8', '1', '0', portDraw, '16000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '16000-16009', '--eps', '1e-4'],
+      const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '16000-16009', '--eps', '1e-4'],
                                     {encoding: 'utf8'});
       process.stdout.write(compared);
       assert.match(compared, /frames=10 mismatches=0/, `easy16000 stage ${stage}`);
     } finally {
       rmSync(dir, {recursive: true, force: true});
     }
-  }
+  }, 8);
 });
 
-test('stage 1–6 Easy Reimu spring idle: frames 14000–14009 match original vertices', needDat, () => {
+test('stage 1–6 Easy Reimu spring idle: frames 14000–14009 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
   const oracle = resolve(here, '../tools/oracle/game-oracle.py');
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
-  for (const stage of [1, 2, 3, 4, 5, 6]) {
+  await mapConcurrent([1, 2, 3, 4, 5, 6], async stage => {
     const dir = mkdtempSync(join(tmpdir(), 'th16-easy14000-draw-'));
     try {
       const state = join(dir, 'state.json');
       const oracleDraw = join(dir, 'oracle.draw.jsonl');
       const portDraw = join(dir, 'port.draw.jsonl');
-      execFileSync(py, [oracle, exe, datDir, '14010', state,
+      await runAsync(py, [oracle, exe, datDir, '14010', state,
                         '--stage', String(stage), '--shot', '0', '--season', '0', '--difficulty', '0',
                         '--lives', '8', '--refill-lives', '--input', '0:0', '--enemies',
                         '--draw', '--draw-out', oracleDraw, '--draw-from', '14000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      execFileSync(harness, ['game-draw', dat, String(stage), '0', '0', '14010', '0:0', '', '',
+      await runAsync(harness, ['game-draw', dat, String(stage), '0', '0', '14010', '0:0', '', '',
                              '0', '-1', '8', '1', '0', portDraw, '14000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '14000-14009', '--eps', '1e-4'],
+      const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '14000-14009', '--eps', '1e-4'],
                                     {encoding: 'utf8'});
       process.stdout.write(compared);
       assert.match(compared, /frames=10 mismatches=0/, `easy14000 stage ${stage}`);
     } finally {
       rmSync(dir, {recursive: true, force: true});
     }
-  }
+  }, 8);
 });
 
-test('stage 1–6 Easy Reimu spring idle: frames 12000–12009 match original vertices', needDat, () => {
+test('stage 1–6 Easy Reimu spring idle: frames 12000–12009 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
   const oracle = resolve(here, '../tools/oracle/game-oracle.py');
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
-  for (const stage of [1, 2, 3, 4, 5, 6]) {
+  await mapConcurrent([1, 2, 3, 4, 5, 6], async stage => {
     const dir = mkdtempSync(join(tmpdir(), 'th16-easy12000-draw-'));
     try {
       const state = join(dir, 'state.json');
       const oracleDraw = join(dir, 'oracle.draw.jsonl');
       const portDraw = join(dir, 'port.draw.jsonl');
-      execFileSync(py, [oracle, exe, datDir, '12010', state,
+      await runAsync(py, [oracle, exe, datDir, '12010', state,
                         '--stage', String(stage), '--shot', '0', '--season', '0', '--difficulty', '0',
                         '--lives', '8', '--refill-lives', '--input', '0:0', '--enemies',
                         '--draw', '--draw-out', oracleDraw, '--draw-from', '12000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      execFileSync(harness, ['game-draw', dat, String(stage), '0', '0', '12010', '0:0', '', '',
+      await runAsync(harness, ['game-draw', dat, String(stage), '0', '0', '12010', '0:0', '', '',
                              '0', '-1', '8', '1', '0', portDraw, '12000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '12000-12009', '--eps', '1e-4'],
+      const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '12000-12009', '--eps', '1e-4'],
                                     {encoding: 'utf8'});
       process.stdout.write(compared);
       assert.match(compared, /frames=10 mismatches=0/, `easy12000 stage ${stage}`);
     } finally {
       rmSync(dir, {recursive: true, force: true});
     }
-  }
+  }, 8);
 });
 
-test('stage 1–6 Easy Reimu spring idle: frames 10000–10009 match original vertices', needDat, () => {
+test('stage 1–6 Easy Reimu spring idle: frames 10000–10009 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
   const oracle = resolve(here, '../tools/oracle/game-oracle.py');
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
-  for (const stage of [1, 2, 3, 4, 5, 6]) {
+  await mapConcurrent([1, 2, 3, 4, 5, 6], async stage => {
     const dir = mkdtempSync(join(tmpdir(), 'th16-easy10000-draw-'));
     try {
       const state = join(dir, 'state.json');
       const oracleDraw = join(dir, 'oracle.draw.jsonl');
       const portDraw = join(dir, 'port.draw.jsonl');
-      execFileSync(py, [oracle, exe, datDir, '10010', state,
+      await runAsync(py, [oracle, exe, datDir, '10010', state,
                         '--stage', String(stage), '--shot', '0', '--season', '0', '--difficulty', '0',
                         '--lives', '8', '--refill-lives', '--input', '0:0', '--enemies',
                         '--draw', '--draw-out', oracleDraw, '--draw-from', '10000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      execFileSync(harness, ['game-draw', dat, String(stage), '0', '0', '10010', '0:0', '', '',
+      await runAsync(harness, ['game-draw', dat, String(stage), '0', '0', '10010', '0:0', '', '',
                              '0', '-1', '8', '1', '0', portDraw, '10000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '10000-10009', '--eps', '1e-4'],
+      const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '10000-10009', '--eps', '1e-4'],
                                     {encoding: 'utf8'});
       process.stdout.write(compared);
       assert.match(compared, /frames=10 mismatches=0/, `easy10000 stage ${stage}`);
     } finally {
       rmSync(dir, {recursive: true, force: true});
     }
-  }
+  }, 8);
 });
 
-test('idle frames 10000–10009: stage 1 Easy, stage 3 Easy, stage 6 Easy, Extra doyou match original vertices', needDat, () => {
+test('idle frames 10000–10009: stage 1 Easy, stage 3 Easy, stage 6 Easy, Extra doyou match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
@@ -514,22 +544,22 @@ test('idle frames 10000–10009: stage 1 Easy, stage 3 Easy, stage 6 Easy, Extra
     {stage: 6, season: 0, difficulty: 0},
     {stage: 7, season: 4, difficulty: 4},
   ];
-  for (const c of cases) {
+  await mapConcurrent(cases, async c => {
     const dir = mkdtempSync(join(tmpdir(), 'th16-idle10000-draw-'));
     try {
       const state = join(dir, 'state.json');
       const oracleDraw = join(dir, 'oracle.draw.jsonl');
       const portDraw = join(dir, 'port.draw.jsonl');
-      execFileSync(py, [oracle, exe, datDir, '10010', state,
+      await runAsync(py, [oracle, exe, datDir, '10010', state,
                         '--stage', String(c.stage), '--shot', '0', '--season', String(c.season),
                         '--difficulty', String(c.difficulty),
                         '--lives', '8', '--refill-lives', '--input', '0:0', '--enemies',
                         '--draw', '--draw-out', oracleDraw, '--draw-from', '10000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      execFileSync(harness, ['game-draw', dat, String(c.stage), '0', String(c.season), '10010', '0:0', '', '',
+      await runAsync(harness, ['game-draw', dat, String(c.stage), '0', String(c.season), '10010', '0:0', '', '',
                              String(c.difficulty), '-1', '8', '1', '0', portDraw, '10000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '10000-10009', '--eps', '1e-4'],
+      const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '10000-10009', '--eps', '1e-4'],
                                     {encoding: 'utf8'});
       process.stdout.write(compared);
       assert.match(compared, /frames=10 mismatches=0/,
@@ -537,41 +567,41 @@ test('idle frames 10000–10009: stage 1 Easy, stage 3 Easy, stage 6 Easy, Extra
     } finally {
       rmSync(dir, {recursive: true, force: true});
     }
-  }
+  }, 8);
 });
 
-test('stage 1–6 Easy Reimu spring idle: frames 8000–8009 match original vertices', needDat, () => {
+test('stage 1–6 Easy Reimu spring idle: frames 8000–8009 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
   const oracle = resolve(here, '../tools/oracle/game-oracle.py');
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
-  for (const stage of [1, 2, 3, 4, 5, 6]) {
+  await mapConcurrent([1, 2, 3, 4, 5, 6], async stage => {
     const dir = mkdtempSync(join(tmpdir(), 'th16-easy8000-draw-'));
     try {
       const state = join(dir, 'state.json');
       const oracleDraw = join(dir, 'oracle.draw.jsonl');
       const portDraw = join(dir, 'port.draw.jsonl');
-      execFileSync(py, [oracle, exe, datDir, '8010', state,
+      await runAsync(py, [oracle, exe, datDir, '8010', state,
                         '--stage', String(stage), '--shot', '0', '--season', '0', '--difficulty', '0',
                         '--lives', '8', '--refill-lives', '--input', '0:0', '--enemies',
                         '--draw', '--draw-out', oracleDraw, '--draw-from', '8000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      execFileSync(harness, ['game-draw', dat, String(stage), '0', '0', '8010', '0:0', '', '',
+      await runAsync(harness, ['game-draw', dat, String(stage), '0', '0', '8010', '0:0', '', '',
                              '0', '-1', '8', '1', '0', portDraw, '8000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '8000-8009', '--eps', '1e-4'],
+      const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '8000-8009', '--eps', '1e-4'],
                                     {encoding: 'utf8'});
       process.stdout.write(compared);
       assert.match(compared, /frames=10 mismatches=0/, `easy8000 stage ${stage}`);
     } finally {
       rmSync(dir, {recursive: true, force: true});
     }
-  }
+  }, 8);
 });
 
-test('idle frames 8000–8009: stage 1 Easy, stage 3 Normal, stage 6 Easy, Extra doyou match original vertices', needDat, () => {
+test('idle frames 8000–8009: stage 1 Easy, stage 3 Normal, stage 6 Easy, Extra doyou match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
@@ -584,22 +614,22 @@ test('idle frames 8000–8009: stage 1 Easy, stage 3 Normal, stage 6 Easy, Extra
     {stage: 6, season: 0, difficulty: 0},
     {stage: 7, season: 4, difficulty: 4},
   ];
-  for (const c of cases) {
+  await mapConcurrent(cases, async c => {
     const dir = mkdtempSync(join(tmpdir(), 'th16-idle8000-draw-'));
     try {
       const state = join(dir, 'state.json');
       const oracleDraw = join(dir, 'oracle.draw.jsonl');
       const portDraw = join(dir, 'port.draw.jsonl');
-      execFileSync(py, [oracle, exe, datDir, '8010', state,
+      await runAsync(py, [oracle, exe, datDir, '8010', state,
                         '--stage', String(c.stage), '--shot', '0', '--season', String(c.season),
                         '--difficulty', String(c.difficulty),
                         '--lives', '8', '--refill-lives', '--input', '0:0', '--enemies',
                         '--draw', '--draw-out', oracleDraw, '--draw-from', '8000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      execFileSync(harness, ['game-draw', dat, String(c.stage), '0', String(c.season), '8010', '0:0', '', '',
+      await runAsync(harness, ['game-draw', dat, String(c.stage), '0', String(c.season), '8010', '0:0', '', '',
                              String(c.difficulty), '-1', '8', '1', '0', portDraw, '8000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '8000-8009', '--eps', '1e-4'],
+      const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '8000-8009', '--eps', '1e-4'],
                                     {encoding: 'utf8'});
       process.stdout.write(compared);
       assert.match(compared, /frames=10 mismatches=0/,
@@ -607,72 +637,72 @@ test('idle frames 8000–8009: stage 1 Easy, stage 3 Normal, stage 6 Easy, Extra
     } finally {
       rmSync(dir, {recursive: true, force: true});
     }
-  }
+  }, 8);
 });
 
-test('Extra Reimu spring/summer/autumn/winter/doyou idle: frames 6000–6009 match original vertices', needDat, () => {
+test('Extra Reimu spring/summer/autumn/winter/doyou idle: frames 6000–6009 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
   const oracle = resolve(here, '../tools/oracle/game-oracle.py');
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
-  for (const season of [0, 1, 2, 3, 4]) {
+  await mapConcurrent([0, 1, 2, 3, 4], async season => {
     const dir = mkdtempSync(join(tmpdir(), 'th16-extra6000-draw-'));
     try {
       const state = join(dir, 'state.json');
       const oracleDraw = join(dir, 'oracle.draw.jsonl');
       const portDraw = join(dir, 'port.draw.jsonl');
-      execFileSync(py, [oracle, exe, datDir, '6010', state,
+      await runAsync(py, [oracle, exe, datDir, '6010', state,
                         '--stage', '7', '--shot', '0', '--season', String(season), '--difficulty', '4',
                         '--lives', '8', '--refill-lives', '--input', '0:0', '--enemies',
                         '--draw', '--draw-out', oracleDraw, '--draw-from', '6000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      execFileSync(harness, ['game-draw', dat, '7', '0', String(season), '6010', '0:0', '', '',
+      await runAsync(harness, ['game-draw', dat, '7', '0', String(season), '6010', '0:0', '', '',
                              '4', '-1', '8', '1', '0', portDraw, '6000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '6000-6009', '--eps', '1e-4'],
+      const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '6000-6009', '--eps', '1e-4'],
                                     {encoding: 'utf8'});
       process.stdout.write(compared);
       assert.match(compared, /frames=10 mismatches=0/, `extra6000 season ${season}`);
     } finally {
       rmSync(dir, {recursive: true, force: true});
     }
-  }
+  }, 8);
 });
 
-test('stage 1–6 Easy Reimu spring idle: frames 6000–6009 match original vertices', needDat, () => {
+test('stage 1–6 Easy Reimu spring idle: frames 6000–6009 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
   const oracle = resolve(here, '../tools/oracle/game-oracle.py');
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
-  for (const stage of [1, 2, 3, 4, 5, 6]) {
+  await mapConcurrent([1, 2, 3, 4, 5, 6], async stage => {
     const dir = mkdtempSync(join(tmpdir(), 'th16-idle6000-draw-'));
     try {
       const state = join(dir, 'state.json');
       const oracleDraw = join(dir, 'oracle.draw.jsonl');
       const portDraw = join(dir, 'port.draw.jsonl');
-      execFileSync(py, [oracle, exe, datDir, '6010', state,
+      await runAsync(py, [oracle, exe, datDir, '6010', state,
                         '--stage', String(stage), '--shot', '0', '--season', '0', '--difficulty', '0',
                         '--lives', '8', '--refill-lives', '--input', '0:0', '--enemies',
                         '--draw', '--draw-out', oracleDraw, '--draw-from', '6000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      execFileSync(harness, ['game-draw', dat, String(stage), '0', '0', '6010', '0:0', '', '',
+      await runAsync(harness, ['game-draw', dat, String(stage), '0', '0', '6010', '0:0', '', '',
                              '0', '-1', '8', '1', '0', portDraw, '6000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '6000-6009', '--eps', '1e-4'],
+      const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '6000-6009', '--eps', '1e-4'],
                                     {encoding: 'utf8'});
       process.stdout.write(compared);
       assert.match(compared, /frames=10 mismatches=0/, `idle6000 stage ${stage}`);
     } finally {
       rmSync(dir, {recursive: true, force: true});
     }
-  }
+  }, 8);
 });
 
-test('stage 1, 3, 6 and Extra: frames 6000–6009 and Extra 4000–4009 match original vertices', needDat, () => {
+test('stage 1, 3, 6 and Extra: frames 6000–6009 and Extra 4000–4009 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
@@ -685,22 +715,22 @@ test('stage 1, 3, 6 and Extra: frames 6000–6009 and Extra 4000–4009 match or
     {stage: 6, shot: 0, season: 3, difficulty: 3, frames: 6010, from: 6000, window: '6000-6009'},
     {stage: 7, shot: 0, season: 0, difficulty: 4, frames: 4010, from: 4000, window: '4000-4009'},
   ];
-  for (const c of cases) {
+  await mapConcurrent(cases, async c => {
     const dir = mkdtempSync(join(tmpdir(), 'th16-long-draw-'));
     try {
       const state = join(dir, 'state.json');
       const oracleDraw = join(dir, 'oracle.draw.jsonl');
       const portDraw = join(dir, 'port.draw.jsonl');
-      execFileSync(py, [oracle, exe, datDir, String(c.frames), state,
+      await runAsync(py, [oracle, exe, datDir, String(c.frames), state,
                         '--stage', String(c.stage), '--shot', String(c.shot), '--season', String(c.season),
                         '--difficulty', String(c.difficulty),
                         '--lives', '8', '--refill-lives', '--input', '0:0', '--enemies',
                         '--draw', '--draw-out', oracleDraw, '--draw-from', String(c.from)],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      execFileSync(harness, ['game-draw', dat, String(c.stage), String(c.shot), String(c.season), String(c.frames),
+      await runAsync(harness, ['game-draw', dat, String(c.stage), String(c.shot), String(c.season), String(c.frames),
                              '0:0', '', '', String(c.difficulty), '-1', '8', '1', '0', portDraw, String(c.from)],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', c.window, '--eps', '1e-4'],
+      const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', c.window, '--eps', '1e-4'],
                                     {encoding: 'utf8'});
       process.stdout.write(compared);
       assert.match(compared, /frames=10 mismatches=0/,
@@ -708,10 +738,10 @@ test('stage 1, 3, 6 and Extra: frames 6000–6009 and Extra 4000–4009 match or
     } finally {
       rmSync(dir, {recursive: true, force: true});
     }
-  }
+  }, 8);
 });
 
-test('stage 1–6 idle and firing: frames 4000–4009 match original vertices', needDat, () => {
+test('stage 1–6 idle and firing: frames 4000–4009 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
@@ -727,22 +757,22 @@ test('stage 1–6 idle and firing: frames 4000–4009 match original vertices', 
       cases.push({stage, shot: i, season: (i + 1) % 4, difficulty: (i + 2) % 4, input: i % 2 === 0 ? firing : '0:0'});
     }
   }
-  for (const c of cases) {
+  await mapConcurrent(cases, async c => {
     const dir = mkdtempSync(join(tmpdir(), 'th16-f4000-draw-'));
     try {
       const state = join(dir, 'state.json');
       const oracleDraw = join(dir, 'oracle.draw.jsonl');
       const portDraw = join(dir, 'port.draw.jsonl');
-      execFileSync(py, [oracle, exe, datDir, '4010', state,
+      await runAsync(py, [oracle, exe, datDir, '4010', state,
                         '--stage', String(c.stage), '--shot', String(c.shot), '--season', String(c.season),
                         '--difficulty', String(c.difficulty),
                         '--lives', '8', '--refill-lives', '--input', c.input, '--enemies',
                         '--draw', '--draw-out', oracleDraw, '--draw-from', '4000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      execFileSync(harness, ['game-draw', dat, String(c.stage), String(c.shot), String(c.season), '4010', c.input, '', '',
+      await runAsync(harness, ['game-draw', dat, String(c.stage), String(c.shot), String(c.season), '4010', c.input, '', '',
                              String(c.difficulty), '-1', '8', '1', '0', portDraw, '4000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '4000-4009', '--eps', '1e-4'],
+      const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '4000-4009', '--eps', '1e-4'],
                                     {encoding: 'utf8'});
       process.stdout.write(compared);
       assert.match(compared, /frames=10 mismatches=0/,
@@ -750,10 +780,10 @@ test('stage 1–6 idle and firing: frames 4000–4009 match original vertices', 
     } finally {
       rmSync(dir, {recursive: true, force: true});
     }
-  }
+  }, 16);
 });
 
-test('stage 1–6 and Extra idle: frames 2000–2009 match original vertices', needDat, () => {
+test('stage 1–6 and Extra idle: frames 2000–2009 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
@@ -775,22 +805,22 @@ test('stage 1–6 and Extra idle: frames 2000–2009 match original vertices', n
       cases.push({stage: 7, shot, season, difficulty: 4});
     }
   }
-  for (const c of cases) {
+  await mapConcurrent(cases, async c => {
     const dir = mkdtempSync(join(tmpdir(), 'th16-idle2000-draw-'));
     try {
       const state = join(dir, 'state.json');
       const oracleDraw = join(dir, 'oracle.draw.jsonl');
       const portDraw = join(dir, 'port.draw.jsonl');
-      execFileSync(py, [oracle, exe, datDir, '2010', state,
+      await runAsync(py, [oracle, exe, datDir, '2010', state,
                         '--stage', String(c.stage), '--shot', String(c.shot), '--season', String(c.season),
                         '--difficulty', String(c.difficulty),
                         '--lives', '8', '--refill-lives', '--input', '0:0', '--enemies',
                         '--draw', '--draw-out', oracleDraw, '--draw-from', '2000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      execFileSync(harness, ['game-draw', dat, String(c.stage), String(c.shot), String(c.season), '2010', '0:0', '', '',
+      await runAsync(harness, ['game-draw', dat, String(c.stage), String(c.shot), String(c.season), '2010', '0:0', '', '',
                              String(c.difficulty), '-1', '8', '1', '0', portDraw, '2000'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '2000-2009', '--eps', '1e-4'],
+      const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '2000-2009', '--eps', '1e-4'],
                                     {encoding: 'utf8'});
       process.stdout.write(compared);
       assert.match(compared, /frames=10 mismatches=0/,
@@ -798,10 +828,10 @@ test('stage 1–6 and Extra idle: frames 2000–2009 match original vertices', n
     } finally {
       rmSync(dir, {recursive: true, force: true});
     }
-  }
+  }, 32);
 });
 
-test('stage 1–6 four shots spring four difficulties: frames 590–599 match original vertices', needDat, () => {
+test('stage 1–6 four shots spring four difficulties: frames 590–599 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
@@ -809,7 +839,7 @@ test('stage 1–6 four shots spring four difficulties: frames 590–599 match or
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
   const input = '0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11';
-  for (const stage of [1, 2, 3, 4, 5, 6]) {
+  await mapConcurrent([1, 2, 3, 4, 5, 6], async stage => {
     for (const shot of [0, 1, 2, 3]) {
       for (const difficulty of [0, 1, 2, 3]) {
         const dir = mkdtempSync(join(tmpdir(), 'th16-spring-draw-'));
@@ -817,15 +847,15 @@ test('stage 1–6 four shots spring four difficulties: frames 590–599 match or
           const state = join(dir, 'state.json');
           const oracleDraw = join(dir, 'oracle.draw.jsonl');
           const portDraw = join(dir, 'port.draw.jsonl');
-          execFileSync(py, [oracle, exe, datDir, '600', state,
+          await runAsync(py, [oracle, exe, datDir, '600', state,
                             '--stage', String(stage), '--shot', String(shot), '--season', '0', '--difficulty', String(difficulty),
                             '--lives', '8', '--refill-lives', '--input', input, '--enemies',
                             '--draw', '--draw-out', oracleDraw, '--draw-from', '590'],
                        {stdio: ['ignore', 'ignore', 'pipe']});
-          execFileSync(harness, ['game-draw', dat, String(stage), String(shot), '0', '600', input, '', '',
+          await runAsync(harness, ['game-draw', dat, String(stage), String(shot), '0', '600', input, '', '',
                                  String(difficulty), '-1', '8', '1', '0', portDraw, '590'],
                        {stdio: ['ignore', 'ignore', 'pipe']});
-          const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '590-599', '--eps', '1e-4'],
+          const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '590-599', '--eps', '1e-4'],
                                         {encoding: 'utf8'});
           process.stdout.write(compared);
           assert.match(compared, /frames=10 mismatches=0/, `spring stage ${stage} shot ${shot} difficulty ${difficulty}`);
@@ -834,10 +864,10 @@ test('stage 1–6 four shots spring four difficulties: frames 590–599 match or
         }
       }
     }
-  }
+  }, 8);
 });
 
-test('stage 1–6 Lunatic four shots summer/autumn/winter: frames 590–599 match original vertices', needDat, () => {
+test('stage 1–6 Lunatic four shots summer/autumn/winter: frames 590–599 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
@@ -845,7 +875,7 @@ test('stage 1–6 Lunatic four shots summer/autumn/winter: frames 590–599 matc
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
   const input = '0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11';
-  for (const stage of [1, 2, 3, 4, 5, 6]) {
+  await mapConcurrent([1, 2, 3, 4, 5, 6], async stage => {
     for (const shot of [0, 1, 2, 3]) {
       for (const season of [1, 2, 3]) {
         const dir = mkdtempSync(join(tmpdir(), 'th16-lunatic-draw-'));
@@ -853,15 +883,15 @@ test('stage 1–6 Lunatic four shots summer/autumn/winter: frames 590–599 matc
           const state = join(dir, 'state.json');
           const oracleDraw = join(dir, 'oracle.draw.jsonl');
           const portDraw = join(dir, 'port.draw.jsonl');
-          execFileSync(py, [oracle, exe, datDir, '600', state,
+          await runAsync(py, [oracle, exe, datDir, '600', state,
                             '--stage', String(stage), '--shot', String(shot), '--season', String(season), '--difficulty', '3',
                             '--lives', '8', '--refill-lives', '--input', input, '--enemies',
                             '--draw', '--draw-out', oracleDraw, '--draw-from', '590'],
                        {stdio: ['ignore', 'ignore', 'pipe']});
-          execFileSync(harness, ['game-draw', dat, String(stage), String(shot), String(season), '600', input, '', '',
+          await runAsync(harness, ['game-draw', dat, String(stage), String(shot), String(season), '600', input, '', '',
                                  '3', '-1', '8', '1', '0', portDraw, '590'],
                        {stdio: ['ignore', 'ignore', 'pipe']});
-          const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '590-599', '--eps', '1e-4'],
+          const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '590-599', '--eps', '1e-4'],
                                         {encoding: 'utf8'});
           process.stdout.write(compared);
           assert.match(compared, /frames=10 mismatches=0/, `lunatic stage ${stage} shot ${shot} season ${season}`);
@@ -870,10 +900,10 @@ test('stage 1–6 Lunatic four shots summer/autumn/winter: frames 590–599 matc
         }
       }
     }
-  }
+  }, 8);
 });
 
-test('stage 1–6 Hard four shots summer/autumn/winter: frames 590–599 match original vertices', needDat, () => {
+test('stage 1–6 Hard four shots summer/autumn/winter: frames 590–599 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
@@ -881,7 +911,7 @@ test('stage 1–6 Hard four shots summer/autumn/winter: frames 590–599 match o
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
   const input = '0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11';
-  for (const stage of [1, 2, 3, 4, 5, 6]) {
+  await mapConcurrent([1, 2, 3, 4, 5, 6], async stage => {
     for (const shot of [0, 1, 2, 3]) {
       for (const season of [1, 2, 3]) {
         const dir = mkdtempSync(join(tmpdir(), 'th16-hard-draw-'));
@@ -889,15 +919,15 @@ test('stage 1–6 Hard four shots summer/autumn/winter: frames 590–599 match o
           const state = join(dir, 'state.json');
           const oracleDraw = join(dir, 'oracle.draw.jsonl');
           const portDraw = join(dir, 'port.draw.jsonl');
-          execFileSync(py, [oracle, exe, datDir, '600', state,
+          await runAsync(py, [oracle, exe, datDir, '600', state,
                             '--stage', String(stage), '--shot', String(shot), '--season', String(season), '--difficulty', '2',
                             '--lives', '8', '--refill-lives', '--input', input, '--enemies',
                             '--draw', '--draw-out', oracleDraw, '--draw-from', '590'],
                        {stdio: ['ignore', 'ignore', 'pipe']});
-          execFileSync(harness, ['game-draw', dat, String(stage), String(shot), String(season), '600', input, '', '',
+          await runAsync(harness, ['game-draw', dat, String(stage), String(shot), String(season), '600', input, '', '',
                                  '2', '-1', '8', '1', '0', portDraw, '590'],
                        {stdio: ['ignore', 'ignore', 'pipe']});
-          const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '590-599', '--eps', '1e-4'],
+          const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '590-599', '--eps', '1e-4'],
                                         {encoding: 'utf8'});
           process.stdout.write(compared);
           assert.match(compared, /frames=10 mismatches=0/, `hard stage ${stage} shot ${shot} season ${season}`);
@@ -906,10 +936,10 @@ test('stage 1–6 Hard four shots summer/autumn/winter: frames 590–599 match o
         }
       }
     }
-  }
+  }, 8);
 });
 
-test('stage 1–6 Normal four shots summer/autumn/winter: frames 590–599 match original vertices', needDat, () => {
+test('stage 1–6 Normal four shots summer/autumn/winter: frames 590–599 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
@@ -917,7 +947,7 @@ test('stage 1–6 Normal four shots summer/autumn/winter: frames 590–599 match
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
   const input = '0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11';
-  for (const stage of [1, 2, 3, 4, 5, 6]) {
+  await mapConcurrent([1, 2, 3, 4, 5, 6], async stage => {
   for (const shot of [0, 1, 2, 3]) {
     for (const season of [1, 2, 3]) {
       const dir = mkdtempSync(join(tmpdir(), 'th16-normal-draw-'));
@@ -925,15 +955,15 @@ test('stage 1–6 Normal four shots summer/autumn/winter: frames 590–599 match
         const state = join(dir, 'state.json');
         const oracleDraw = join(dir, 'oracle.draw.jsonl');
         const portDraw = join(dir, 'port.draw.jsonl');
-        execFileSync(py, [oracle, exe, datDir, '600', state,
+        await runAsync(py, [oracle, exe, datDir, '600', state,
                           '--stage', String(stage), '--shot', String(shot), '--season', String(season), '--difficulty', '1',
                           '--lives', '8', '--refill-lives', '--input', input, '--enemies',
                           '--draw', '--draw-out', oracleDraw, '--draw-from', '590'],
                      {stdio: ['ignore', 'ignore', 'pipe']});
-        execFileSync(harness, ['game-draw', dat, String(stage), String(shot), String(season), '600', input, '', '',
+        await runAsync(harness, ['game-draw', dat, String(stage), String(shot), String(season), '600', input, '', '',
                                '1', '-1', '8', '1', '0', portDraw, '590'],
                      {stdio: ['ignore', 'ignore', 'pipe']});
-        const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '590-599', '--eps', '1e-4'],
+        const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '590-599', '--eps', '1e-4'],
                                       {encoding: 'utf8'});
         process.stdout.write(compared);
         assert.match(compared, /frames=10 mismatches=0/, `normal stage ${stage} shot ${shot} season ${season}`);
@@ -942,10 +972,10 @@ test('stage 1–6 Normal four shots summer/autumn/winter: frames 590–599 match
       }
     }
   }
-  }
+  }, 8);
 });
 
-test('Extra four shots spring/summer/autumn/winter: frames 590–599 match original vertices', needDat, () => {
+test('Extra four shots spring/summer/autumn/winter: frames 590–599 match original vertices', needDat, async () => {
   const exe = process.env.TH16_EXE ?? resolve(monorepo, 'games/th16/original/th16.exe');
   const datDir = resolve(monorepo, 'artifacts/th16/dat');
   const py = process.env.TH16_PYTHON ?? '/tmp/th16-venv/bin/python';
@@ -953,22 +983,22 @@ test('Extra four shots spring/summer/autumn/winter: frames 590–599 match origi
   const compare = resolve(here, '../tools/oracle/draw-compare.py');
   assert.ok(existsSync(exe) && existsSync(py) && existsSync(datDir), 'th16.exe / oracle python / dat dir');
   const input = '0:0x11,1500:0x13,1505:0x11,3000:0x13,3005:0x11';
-  for (const shot of [0, 1, 2, 3]) {
+  await mapConcurrent([0, 1, 2, 3], async shot => {
   for (const season of [0, 1, 2, 3]) {
     const dir = mkdtempSync(join(tmpdir(), 'th16-extra-draw-'));
     try {
       const state = join(dir, 'state.json');
       const oracleDraw = join(dir, 'oracle.draw.jsonl');
       const portDraw = join(dir, 'port.draw.jsonl');
-      execFileSync(py, [oracle, exe, datDir, '600', state,
+      await runAsync(py, [oracle, exe, datDir, '600', state,
                         '--stage', '7', '--shot', String(shot), '--season', String(season), '--difficulty', '4',
                         '--lives', '8', '--refill-lives', '--input', input, '--enemies',
                         '--draw', '--draw-out', oracleDraw, '--draw-from', '590'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      execFileSync(harness, ['game-draw', dat, '7', String(shot), String(season), '600', input, '', '',
+      await runAsync(harness, ['game-draw', dat, '7', String(shot), String(season), '600', input, '', '',
                              '4', '-1', '8', '1', '0', portDraw, '590'],
                    {stdio: ['ignore', 'ignore', 'pipe']});
-      const compared = execFileSync('python3', [compare, oracleDraw, portDraw, '--frames', '590-599', '--eps', '1e-4'],
+      const compared = await runAsync('python3', [compare, oracleDraw, portDraw, '--frames', '590-599', '--eps', '1e-4'],
                                     {encoding: 'utf8'});
       process.stdout.write(compared);
       assert.match(compared, /frames=10 mismatches=0/, `extra shot ${shot} season ${season}`);
@@ -976,7 +1006,7 @@ test('Extra four shots spring/summer/autumn/winter: frames 590–599 match origi
       rmSync(dir, {recursive: true, force: true});
     }
   }
-  }
+  }, 8);
 });
 
 test('draw structure: stage 5 Normal spell 46 line lasers (0x433720 beam / tip / origin VMs) + boss distortion grid, frames 400–500', needDat, () => {
