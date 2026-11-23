@@ -1339,6 +1339,13 @@ int main(int argc, char** argv) {
             if (f + 1 >= vm_dump_frame && f + 1 <= vm_dump_end) session.renderer.trace_frame = f + 1;
             session.renderer.trace_current = f + 1;
             if (!session.logic_step()) return fail(session.failure.c_str());
+            if (!session.game_live) {
+                // 场景在本步切换（exit_frame）：这一帧画的是新场景的首帧，而 oracle 在同一帧只记录请求、仍画游戏场景，
+                // 两侧不出图也不记录状态
+                scene_exit = i32(session.supervisor.current);
+                exit_frame = f + 1;
+                break;
+            }
             if (draw_out != nullptr && f + 1 >= draw_from) {
                 if (digest_mode) write_digest_line(draw_out, f + 1, device.ops);
                 else device.write_frame(draw_out, f + 1);
@@ -1360,12 +1367,6 @@ int main(int argc, char** argv) {
                     }
                 }
             }
-            if (!session.game_live) {
-                scene_exit = i32(session.supervisor.current);
-                exit_frame = f + 1;
-                break;
-            }
-
             const Player& pl = session.game.player;
             const GameGlobals& g = session.globals;
             std::vector<u32> w;

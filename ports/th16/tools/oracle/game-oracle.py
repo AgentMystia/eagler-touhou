@@ -1768,6 +1768,10 @@ def main():
         # 让 draw-compare.py 从任意帧起步时仍知道生效状态
         carried = {}
         def write_draw_frame(frame, calls):
+            # 收到回标题 / 结局 / 退出请求的那一帧：switch_scene 只记录请求、没有真的切换场景，这一帧画的仍是游戏场景
+            #（原版此刻已换成新场景），不与移植侧比较，不出图
+            if o.scene_exit is not None:
+                return
             if fold_state is not None:
                 ops = fold_state.fold(calls)
                 if frame >= a.draw_from:

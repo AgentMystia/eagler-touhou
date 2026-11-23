@@ -125,7 +125,7 @@ python3 tools/oracle/draw-compare.py /tmp/st1.oracle.digest.jsonl /tmp/st1.port.
 
 报告行给出位级一致帧数、同格帧数、结构不同的帧与越格的帧。整段跑出差异时，用上面的窗口对拍定位到具体操作：原版补跑一次 `--draw-out`，窗口取报告里的首个差异帧。`TH16_DIGEST_DUMP=<帧>` 让 digest 模式把该帧的结构行写到 stderr，用于核对三处实现。
 
-定位到具体操作后，`TH16_VM_DUMP=<帧>`（或 `<起帧>-<止帧>`）让 harness 把这些帧进入 `AnmRenderer::draw_vm` 的每个 VM 的身份与状态写到 stderr：层、ANM 槽、脚本、精灵、位置、缩放、颜色、脚本时刻、存活帧数、父 VM，再对照 `harness anm-script` 的脚本反汇编查到指令。超过命令行单参数长度的通关脚本用 `@<路径>` 从文件读入，harness 的输入脚本参数与 `game-oracle.py --input` 同口径。原版在收到回标题 / 结局请求的那一帧并不切换场景（`switch_scene` 只记录请求），两侧在这一帧画的分别是游戏场景的重复帧与新场景首帧，整段比较截止到该帧之前。
+定位到具体操作后，`TH16_VM_DUMP=<帧>`（或 `<起帧>-<止帧>`）让 harness 把这些帧进入 `AnmRenderer::draw_vm` 的每个 VM 的身份与状态写到 stderr：层、ANM 槽、脚本、精灵、位置、缩放、颜色、脚本时刻、存活帧数、父 VM，再对照 `harness anm-script` 的脚本反汇编查到指令。超过命令行单参数长度的通关脚本用 `@<路径>` 从文件读入，harness 的输入脚本参数与 `game-oracle.py --input` 同口径。原版在收到回标题 / 结局请求的那一帧并不切换场景（`switch_scene` 只记录请求），两侧在这一帧画的分别是游戏场景的重复帧与新场景首帧，所以两侧都不记录场景切换帧（`exit_frame`），绘制流止于它的前一帧。
 
 回归守护在 `tests/draw-long.test.mjs`：`tests/golden/draw-long.json` 每个用例是一组参数加段表（段 = 起帧、止帧、网格、段摘要），测试只跑移植侧，各用例并发；另有两个自检用例拿同一段跑的原始 JSON 走 `tools/draw-structure.mjs`，要求与 harness 内折出的摘要逐帧相同。
 
